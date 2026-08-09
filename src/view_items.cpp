@@ -2009,6 +2009,57 @@ void items_view::update_item_scroller_sections()
 	_items_scroller.sections(std::move(sections));
 }
 
+int layout_media_column(const media_column_inputs& in, ui::measure_context& mc, ui::control_layouts& positions)
+{
+	flex_container_layout media_column;
+	media_column.direction = flex_direction::column;
+	media_column.wrap = flex_wrap::no_wrap;
+	media_column.align_items = flex_align::start;
+	media_column.padding.cx = 8;
+
+	// Detail stacks below at its natural height, so it scrolls off the bottom.
+	const auto layout_detail = [&](const int detail_top)
+	{
+		const auto detail_extent = calc_flex_layout(*in.detail, mc, {in.bounds.width(), -1}, media_column).extent;
+		const recti detail_bounds{
+			in.bounds.left, in.bounds.top + detail_top,
+			in.bounds.right, in.bounds.top + detail_top + detail_extent.cy
+		};
+		layout_flex_elements(*in.detail, mc, positions, detail_bounds, media_column);
+		return detail_top + detail_extent.cy;
+	};
+
+	if (in.priority->empty())
+	{
+		if (calc_flex_layout(*in.all, mc, {in.bounds.width(), -1}, media_column).extent.cy < in.bounds.height())
+		{
+			auto centred = media_column;
+			centred.justify = flex_justify::center;
+			return layout_flex_elements(*in.all, mc, positions, in.bounds, centred).cy;
+		}
+
+		return layout_detail(0);
+	}
+
+	if (!in.verbose_metadata)
+	{
+		// The media, the first information group and the verbose toggle own the pane and centre in it.
+		// The media shrinks so all three stay visible; anything else starts past the bottom edge.
+		auto centred = media_column;
+		centred.justify = flex_justify::center;
+		layout_flex_elements(*in.priority, mc, positions, in.bounds, centred);
+		return layout_detail(in.bounds.height());
+	}
+
+	// Verbose metadata is open, so the pane scrolls anyway. The media and its first information group
+	// are held at the top with both always visible - the media shrinking to make that true - and the
+	// metadata blocks follow immediately below. Top aligned rather than centred for a second reason:
+	// a centred line reports the container height instead of the content height, so asking where the
+	// group ended left a gap below it the size of the pane's free space.
+	const auto priority_extent = layout_flex_elements(*in.priority, mc, positions, in.bounds, media_column);
+	return layout_detail(priority_extent.cy);
+}
+
 void items_view::layout(ui::measure_context& mc, const sizei extent)
 {
 	const auto focus = _state.focus_item();
@@ -2044,9 +2095,13 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	// Regions must exist before anything else in layout asks for the item or media bounds.
 	update_regions();
 
+	// Attached whether or not the sidebar is shown. The frame is this view's own, and the sidebar
+	// keeps populating, counting and scanning drives while hidden, so binding the handle to
+	// visibility would leave all of that running against a frame that does not exist.
+	_sidebar->attach_embedded(_host->frame(), _host->owner());
+
 	if (setting.show_sidebar)
 	{
-		_sidebar->attach_embedded(_host->frame(), _host->owner());
 		_sidebar->layout_embedded(mc, sidebar_bounds());
 	}
 
@@ -2071,50 +2126,12 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	}
 	else
 	{
-		flex_container_layout media_column;
-		media_column.direction = flex_direction::column;
-		media_column.wrap = flex_wrap::no_wrap;
-		media_column.align_items = flex_align::start;
-		media_column.padding.cx = 8;
-
-		// Detail stacks below the priority block at its natural height, so it scrolls off the bottom.
-		const auto layout_media_detail = [&](const int detail_top)
-		{
-			const auto detail_extent = calc_flex_layout(
-				_media_detail_elements, mc, {avail_media_bounds.width(), -1}, media_column).extent;
-			const recti detail_bounds{
-				avail_media_bounds.left, avail_media_bounds.top + detail_top,
-				avail_media_bounds.right, avail_media_bounds.top + detail_top + detail_extent.cy
-			};
-			layout_flex_elements(_media_detail_elements, mc, positions, detail_bounds, media_column);
-			return detail_top + detail_extent.cy;
+		const media_column_inputs media_inputs{
+			&_media_priority_elements, &_media_detail_elements, &_media_elements,
+			avail_media_bounds, setting.verbose_metadata
 		};
+		const auto media_height = layout_media_column(media_inputs, mc, positions);
 
-		int media_height;
-
-		if (!setting.verbose_metadata && !_media_priority_elements.empty())
-		{
-			// With verbose metadata hidden the media and its primary properties own the whole pane:
-			// they shrink to fit it, or centre in it when the media cannot fill the height.
-			auto priority_column = media_column;
-			priority_column.justify = flex_justify::center;
-			const auto priority_extent = layout_flex_elements(
-				_media_priority_elements, mc, positions, avail_media_bounds, priority_column);
-			media_height = layout_media_detail(std::max(priority_extent.cy, avail_media_bounds.height()));
-		}
-		else if (calc_flex_layout(_media_elements, mc, {avail_media_bounds.width(), -1}, media_column).extent.cy
-			< avail_media_bounds.height())
-		{
-			media_column.justify = flex_justify::center;
-			media_height = layout_flex_elements(
-				_media_elements, mc, positions, avail_media_bounds, media_column).cy;
-		}
-		else
-		{
-			const auto priority_extent = layout_flex_elements(
-				_media_priority_elements, mc, positions, avail_media_bounds, media_column);
-			media_height = layout_media_detail(priority_extent.cy);
-		}
 		const auto split_x = splitter_pos();
 		const auto control_padding = mc.scroll_width / 2;
 		const recti media_scroll_bounds{

@@ -128,7 +128,6 @@ namespace df
 	struct item_hash;
 
 	using unique_item_elements = hash_map<file_path, item_element_ptr, ihash, ieq>;
-	using file_items_by_folder = hash_map<folder_path, item_elements, ihash, ieq>;
 
 	using index_folder_item_ptr = std::shared_ptr<index_folder_item>;
 	using index_folder_info_const_ptr = std::shared_ptr<const index_folder_item>;
@@ -1047,6 +1046,40 @@ namespace df
 			return is_valid(_cover_art);
 		}
 
+		size_t thumbnail_blob_bytes() const
+		{
+			assert_true(ui::is_ui_thread());
+			size_t bytes = 0;
+			if (is_valid(_thumbnail)) bytes += _thumbnail->data().size();
+			if (is_valid(_cover_art)) bytes += _cover_art->data().size();
+			return bytes;
+		}
+
+		// Gives up the encoded thumbnail so it can be reloaded from the database when the item returns to
+		// view; re-arming the query is what makes that the cheap path rather than a fresh file scan.
+		// Layout dimensions are deliberately left as they are: the same thumbnail comes back, so
+		// recomputing them here would reflow the row for nothing. Returns the bytes released.
+		size_t clear_thumbnail_blob()
+		{
+			assert_true(ui::is_ui_thread());
+
+			if (_is_visible || is_selected() || _is_folder || is_loading_thumbnail()) return 0;
+
+			const auto bytes = thumbnail_blob_bytes();
+			if (bytes == 0) return 0;
+
+			++_thumbnail_surface_generation;
+			_thumbnail.reset();
+			_cover_art.reset();
+			_texture.reset();
+			_thumbnail_surface.reset();
+			_cover_art_surface.reset();
+			set_thumbnail_state(thumbnail_state::surface_cached, false);
+			set_thumbnail_state(thumbnail_state::db_query_pending, true);
+
+			return bytes;
+		}
+
 		ui::const_image_ptr thumbnail() const
 		{
 			assert_true(ui::is_ui_thread());
@@ -1201,6 +1234,14 @@ namespace df
 		{
 			assert_true(ui::is_ui_thread());
 			return _thumbnail_state && thumbnail_state::surface_cached;
+		}
+
+		// The decoded thumbnail, where the browser has already staged one. Handed to the display so it can
+		// show something the moment an item is selected instead of decoding the same pixels again.
+		const ui::const_surface_ptr& thumbnail_surface() const
+		{
+			assert_true(ui::is_ui_thread());
+			return _thumbnail_surface;
 		}
 
 		void stage_thumbnail_surface(async_strategy& async, bool invalidate_on_complete = false) const;
@@ -1651,6 +1692,12 @@ namespace df
 			return code == process_result_code::ok;
 		}
 	};
+
+	// Keeps the encoded thumbnails the user is most likely to scroll back to and releases the rest.
+	// Distance from the viewport, not age: a retained blob is a texture upload away from the screen
+	// while an evicted one is a database round trip, and scrolling is what decides which is which.
+	// Items inside the viewport are never released. Returns the bytes released.
+	size_t trim_thumbnail_blobs(const item_elements& items, recti viewport, size_t budget_bytes);
 
 	class item_set_info
 	{

@@ -1549,7 +1549,12 @@ public:
 			_col_3_width = std::max(extent.cx + col_padding, _col_3_width);
 		}
 
-		return {_col_1_width + _col_2_width + _col_3_width, static_cast<int>(_line_height * _lines.size())};
+		// Render steps past each column by a further col_padding, so the width has to carry those two
+		// gaps or the right-aligned size column lands outside the element.
+		return {
+			_col_1_width + _col_2_width + _col_3_width + col_padding * 2,
+			static_cast<int>(_line_height * _lines.size())
+		};
 	}
 };
 
@@ -2041,7 +2046,10 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {32, 32};
+		// Transport leads the row, so it is drawn larger than the icon controls beside it - but it is
+		// the same glyph font, so an unscaled box would clip it once the display scale passes 175%.
+		const auto cxy = df::round(32 * mc.scale_factor);
+		return {cxy, cxy};
 	}
 
 	void dispatch_event(const view_element_event& event) override

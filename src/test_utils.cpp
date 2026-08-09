@@ -151,6 +151,69 @@ static void should_icmp_natural()
 	assert_equal(true, str::icmp_natural("IMG_9999.png", "IMG_10000.png") < 0, "IMG sequence overflow");
 }
 
+static void should_group_elements_by_folder()
+{
+	struct element
+	{
+		df::folder_path folder;
+		int id = 0;
+		bool skip = false;
+	};
+
+	const std::vector<element> elements{
+		{df::folder_path("c:\\a"), 1},
+		{df::folder_path("c:\\b"), 2},
+		{df::folder_path("c:\\a"), 3},
+		{df::folder_path("c:\\b"), 4, true},
+		{df::folder_path("C:\\A"), 5},
+		{df::folder_path("c:\\c"), 6},
+	};
+
+	df::folder_groups groups;
+	groups.build(elements,
+	             [](const element& e) { return e.folder; },
+	             [](const element& e) { return !e.skip; });
+
+	assert_equal(3, static_cast<int>(groups.groups().size()), "one group per distinct folder");
+
+	// Groups are in first-seen order and each keeps its elements in input order.
+	assert_equal("c:\\a", groups.groups()[0].folder.text().str(), "first group");
+	assert_equal("c:\\b", groups.groups()[1].folder.text().str(), "second group");
+	assert_equal("c:\\c", groups.groups()[2].folder.text().str(), "third group");
+
+	const auto ids = [&](const size_t g)
+	{
+		std::string result;
+		for (const auto i : groups.elements(groups.groups()[g])) result += std::to_string(elements[i].id);
+		return result;
+	};
+
+	// Interning is case sensitive, so "C:\A" must still reach the group "c:\a" created.
+	assert_equal("135", ids(0), "case variants share one group");
+	assert_equal("2", ids(1), "excluded element is dropped");
+	assert_equal("6", ids(2), "single element group");
+
+	groups.build(elements, [](const element& e) { return e.folder; });
+	assert_equal(3, static_cast<int>(groups.groups().size()), "rebuild replaces the previous grouping");
+	assert_equal("24", ids(1), "no predicate includes every element");
+
+	// Enough distinct folders to force the lookup tables to grow and rehash.
+	std::vector<element> many;
+	for (auto i = 0; i < 500; ++i) many.emplace_back(df::folder_path(std::format("c:\\f{}", i)), i);
+	for (auto i = 0; i < 500; ++i) many.emplace_back(df::folder_path(std::format("c:\\f{}", i)), i);
+
+	groups.build(many, [](const element& e) { return e.folder; });
+	assert_equal(500, static_cast<int>(groups.groups().size()), "grown tables keep folders distinct");
+
+	for (const auto& g : groups.groups())
+	{
+		assert_equal(2, static_cast<int>(groups.elements(g).size()), "each folder collected both elements");
+	}
+
+	groups.clear();
+	assert_equal(true, groups.empty(), "cleared grouping has no groups");
+}
+
 static void should_cancel_superseded_tokens()
 {
 	std::atomic_int version = 0;
@@ -830,6 +893,182 @@ static void should_convert_yuv_surfaces_for_software_rendering()
 	assert_equal(true, scaler.scale_surface(p010_view, scaled, {2, 1}), "scale P010 surface");
 	assert_equal(true, scaled->dimensions() == sizei{2, 1}, "scaled P010 dimensions");
 	assert_equal(true, scaled->format() == ui::texture_format::RGB, "scaled P010 format");
+}
+
+static void should_area_downscale_packed_surfaces()
+{
+	const auto make_source = [](const int cx, const int cy, const ui::texture_format format)
+	{
+		auto s = std::make_shared<ui::surface>();
+		s->alloc(cx, cy, format, ui::orientation::left_bottom);
+		s->color_space(ui::color_space::rec709_limited);
+		return s;
+	};
+
+	// A flat source must survive a reduction untouched. Any weight run that does not sum to exactly
+	// 256 shifts the level here, which is the failure this whole scheme has to rule out.
+	{
+		const auto src = make_source(97, 61, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 61; ++y)
+		{
+			auto* const row = src->pixels_line(y);
+			for (auto x = 0; x < 97; ++x)
+			{
+				row[x * 4 + 0] = 17;
+				row[x * 4 + 1] = 134;
+				row[x * 4 + 2] = 251;
+				row[x * 4 + 3] = 200;
+			}
+		}
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::area_downscale(src, dst, {13, 9}), "reduce a flat surface");
+		assert_equal(true, dst->dimensions() == sizei{13, 9}, "reduced dimensions");
+		assert_equal(true, dst->format() == ui::texture_format::ARGB, "reduced format");
+		assert_equal(true, dst->orientation() == ui::orientation::left_bottom, "reduced orientation");
+		assert_equal(true, dst->color_space() == ui::color_space::rec709_limited, "reduced colour space");
+
+		for (auto y = 0; y < 9; ++y)
+		{
+			const auto* const row = dst->pixels_line(y);
+
+			for (auto x = 0; x < 13; ++x)
+			{
+				assert_equal(17, static_cast<int>(row[x * 4 + 0]), "flat blue");
+				assert_equal(134, static_cast<int>(row[x * 4 + 1]), "flat green");
+				assert_equal(251, static_cast<int>(row[x * 4 + 2]), "flat red");
+				assert_equal(200, static_cast<int>(row[x * 4 + 3]), "flat alpha");
+			}
+		}
+	}
+
+	// An exact 2:1 reduction must be the mean of each 2x2 block, so a checkerboard of 0 and 200
+	// answers 100 everywhere. Nearest neighbour or a dropped contribution cannot produce that.
+	{
+		const auto src = make_source(64, 64, ui::texture_format::RGB);
+
+		for (auto y = 0; y < 64; ++y)
+		{
+			auto* const row = src->pixels_line(y);
+			for (auto x = 0; x < 64; ++x)
+			{
+				const auto v = static_cast<uint8_t>(((x + y) & 1) ? 200 : 0);
+				row[x * 4 + 0] = row[x * 4 + 1] = row[x * 4 + 2] = row[x * 4 + 3] = v;
+			}
+		}
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::area_downscale(src, dst, {32, 32}), "reduce a checkerboard");
+
+		for (auto y = 0; y < 32; ++y)
+		{
+			const auto* const row = dst->pixels_line(y);
+			for (auto x = 0; x < 32; ++x)
+			{
+				assert_equal(100, static_cast<int>(row[x * 4 + 1]), "checkerboard mean");
+			}
+		}
+	}
+
+	// A horizontal ramp reduced 4:1 must stay monotonic and keep its ends, which a wrong first index
+	// or a truncated run would break.
+	{
+		const auto src = make_source(256, 8, ui::texture_format::RGB);
+
+		for (auto y = 0; y < 8; ++y)
+		{
+			auto* const row = src->pixels_line(y);
+			for (auto x = 0; x < 256; ++x)
+			{
+				row[x * 4 + 0] = row[x * 4 + 1] = row[x * 4 + 2] = static_cast<uint8_t>(x);
+				row[x * 4 + 3] = 255;
+			}
+		}
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::area_downscale(src, dst, {64, 2}), "reduce a ramp");
+
+		const auto* const row = dst->pixels_line(0);
+		assert_equal(2, static_cast<int>(row[0]), "ramp first sample");
+		assert_equal(254, static_cast<int>(row[63 * 4]), "ramp last sample");
+
+		auto monotonic = true;
+		for (auto x = 1; x < 64; ++x) monotonic = monotonic && row[x * 4] > row[(x - 1) * 4];
+		assert_equal(true, monotonic, "ramp stays monotonic");
+	}
+
+	// Refusals hand the work back to swscale rather than producing a wrong picture.
+	{
+		const auto rgb = make_source(8, 8, ui::texture_format::RGB);
+		ui::surface_ptr dst;
+		assert_equal(false, ui::area_downscale(rgb, dst, {16, 4}), "refuse an enlargement");
+		assert_equal(false, ui::area_downscale(rgb, dst, {0, 4}), "refuse an empty extent");
+
+		ui::surface nv12;
+		nv12.alloc(8, 8, ui::texture_format::NV12);
+		const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
+		{
+		});
+		assert_equal(false, ui::area_downscale(nv12_view, dst, {4, 4}), "refuse a planar format");
+	}
+
+	// Same size on one axis is still a reduction; the identity run must not be rejected or shifted.
+	{
+		const auto src = make_source(40, 10, ui::texture_format::RGB);
+
+		for (auto y = 0; y < 10; ++y)
+		{
+			auto* const row = src->pixels_line(y);
+			for (auto x = 0; x < 40; ++x)
+			{
+				row[x * 4 + 0] = row[x * 4 + 1] = row[x * 4 + 2] = row[x * 4 + 3] = static_cast<uint8_t>(
+					(x == 20) ? 240 : 10);
+			}
+		}
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::area_downscale(src, dst, {40, 5}), "reduce one axis only");
+		assert_equal(240, static_cast<int>(dst->pixels_line(0)[20 * 4]), "identity axis keeps the column");
+		assert_equal(10, static_cast<int>(dst->pixels_line(0)[19 * 4]), "identity axis keeps its neighbour");
+	}
+
+	// The AVX2 and SSE2 accumulators must agree byte for byte, or a picture would depend on the CPU
+	// it was reduced on. Sizes are deliberately not multiples of the vector widths so both the wide
+	// loops and their scalar tails are covered.
+	{
+		const auto src = make_source(211, 97, ui::texture_format::ARGB);
+		auto seed = 0x9e3779b9u;
+
+		for (auto y = 0; y < 97; ++y)
+		{
+			auto* const row = src->pixels_line(y);
+
+			for (auto x = 0; x < 211 * 4; ++x)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				row[x] = static_cast<uint8_t>(seed >> 24);
+			}
+		}
+
+		for (const auto extent : {sizei{53, 29}, sizei{211, 12}, sizei{7, 97}, sizei{210, 96}})
+		{
+			ui::surface_ptr wide;
+			ui::surface_ptr baseline;
+			assert_equal(true, ui::area_downscale(src, wide, extent), "reduce with the selected width");
+			assert_equal(true, ui::area_downscale_baseline(src, baseline, extent), "reduce with the SSE2 baseline");
+
+			auto identical = true;
+
+			for (auto y = 0; y < extent.cy; ++y)
+			{
+				identical = identical && memcmp(wide->pixels_line(y), baseline->pixels_line(y),
+				                                static_cast<size_t>(extent.cx) * 4u) == 0;
+			}
+
+			assert_equal(true, identical, std::format("SIMD widths agree at {}x{}", extent.cx, extent.cy));
+		}
+	}
 }
 
 static void should_layout_selection_thumbnail_collage()
@@ -2623,6 +2862,55 @@ static void should_report_file_presence()
 	             "unqueried attributes are not confirmed missing");
 }
 
+static void should_map_files()
+{
+	const auto scratch = _temps.next_folder("map-file");
+	const auto path = scratch.combine_file("mapped.txt");
+
+	// Larger than one allocation granularity so a window can be placed past the first boundary.
+	std::string content;
+	content.reserve(200'000);
+	for (auto i = 0; content.size() < 200'000; ++i) content += std::format("line {}\n", i);
+	write_test_file(path, content);
+
+	const auto whole = platform::map_file(path);
+	assert_equal(true, whole != nullptr, "whole file maps");
+	assert_equal(content.size(), static_cast<size_t>(whole->file_size()), "mapped size matches the file");
+	assert_equal(content.size(), whole->data().size, "whole view covers the file");
+	assert_equal(0, memcmp(whole->data().data, content.data(), content.size()), "mapped bytes match the file");
+
+	// Trimmed pages must still read back correctly - the mapping stays valid, it just faults in.
+	whole->release_working_set();
+	assert_equal(0, memcmp(whole->data().data, content.data(), content.size()), "bytes survive a working-set release");
+
+	const auto windowed = platform::map_file(path, platform::map_mode::windowed);
+	assert_equal(true, windowed != nullptr, "windowed file maps");
+	assert_equal(true, windowed->data().empty(), "windowed mapping has no view until a window is set");
+
+	// An offset that is not a multiple of the allocation granularity must still return the exact
+	// bytes asked for, because the granularity alignment is the mapping's business, not a caller's.
+	constexpr uint64_t odd_offset = 70'001;
+	constexpr uint64_t window_len = 4'096;
+	const auto window = windowed->set_window(odd_offset, window_len);
+	assert_equal(static_cast<size_t>(window_len), window.size, "window is the requested length");
+	assert_equal(0, memcmp(window.data, content.data() + odd_offset, window_len), "window starts at the offset");
+
+	// A window running past the end is clamped rather than refused.
+	const auto tail = windowed->set_window(content.size() - 10, 4'096);
+	assert_equal(10_z, tail.size, "window past the end is clamped to the file");
+	assert_equal(0, memcmp(tail.data, content.data() + content.size() - 10, 10), "clamped window holds the tail");
+
+	assert_equal(true, windowed->set_window(content.size(), 16).empty(), "window at the end is empty");
+
+	assert_equal(true, platform::map_file(scratch.combine_file("missing.txt")) == nullptr,
+	             "a missing file does not map");
+
+	// An empty file cannot be mapped at all, which is an answer rather than a fault.
+	const auto empty_path = scratch.combine_file("empty.txt");
+	write_test_file(empty_path, {});
+	assert_equal(true, platform::map_file(empty_path) == nullptr, "an empty file does not map");
+}
+
 void register_tests2(view_state& state, test_registry& tests)
 {
 	tests.add("Should natural compare"s, should_icmp_natural);
@@ -2634,7 +2922,9 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should abort result scope during exception"s, should_abort_result_scope_during_exception);
 	tests.add("Should format audio stream names"s, should_format_audio_stream_names);
 	tests.add("Should cancel superseded tokens"s, should_cancel_superseded_tokens);
+	tests.add("Should group elements by folder"s, should_group_elements_by_folder);
 	tests.add("Should report file presence"s, should_report_file_presence);
+	tests.add("Should map files"s, should_map_files);
 	tests.add("Should intern strings"s, should_intern_strings);
 	tests.add("Should calc HMAC SHA1"s, should_calc_HMACSHA1);
 	tests.add("Should calc Hashes"s, should_calc_hashes);
@@ -2644,6 +2934,7 @@ void register_tests2(view_state& state, test_registry& tests)
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
 	tests.add("Should convert YUV surfaces for software rendering"s,
 	          should_convert_yuv_surfaces_for_software_rendering);
+	tests.add("Should area downscale packed surfaces"s, should_area_downscale_packed_surfaces);
 	tests.add("Should layout selection thumbnail collage"s, should_layout_selection_thumbnail_collage);
 	tests.add("Should convert Utf8"s, should_convert_utf8);
 	tests.add("Should split"s, should_split);

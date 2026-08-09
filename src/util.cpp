@@ -73,6 +73,9 @@ static df::folder_path resolve_log_folder()
 	return platform::is_writable(module_folder) ? module_folder : known_path(platform::known_folder::app_data);
 }
 
+// Deliberately resolved during static initialisation rather than on first use: the platform calls
+// this makes can themselves log, so resolving it from inside df::log would re-enter both the log
+// lock (an SRWLOCK, so it would deadlock) and this initialisation.
 static const df::folder_path s_log_folder = resolve_log_folder();
 df::file_path df::log_path = s_log_folder.combine_file("diffractor.log");
 df::file_path df::previous_log_path = s_log_folder.combine_file("diffractor.previous.log");
@@ -146,7 +149,9 @@ void df::log(const std::string_view context, const std::string_view message)
 
 #endif
 
-	if (!did_try_open)
+	// Not latched until there is a path to open: resolve_log_folder logs on some failure paths, and
+	// consuming the one open attempt on the empty path it sees would disable the log for the session.
+	if (!did_try_open && !log_path.is_empty())
 	{
 		did_try_open = true;
 
@@ -217,6 +222,8 @@ namespace
 {
 	constexpr size_t max_perf_queues = 32;
 	std::array<df::queue_counters, max_perf_queues> perf_queues;
+	// Publishes the slots below it: log_perf_summary reads the names without perf_queue_mutex, so the
+	// count is the only edge that orders a reader against the plain string_view write in register_queue.
 	std::atomic_size_t perf_queue_count;
 	platform::mutex perf_queue_mutex;
 	const int64_t perf_start_us = df::now_us();
@@ -250,7 +257,7 @@ df::queue_counters* df::register_queue(const std::string_view name)
 	// Runs once per worker thread at startup. Threads that share a queue share its slot, so the
 	// summary reports one row per queue rather than one per thread.
 	platform::exclusive_lock lock(perf_queue_mutex);
-	const auto count = perf_queue_count.load(std::memory_order_relaxed);
+	const auto count = perf_queue_count.load(std::memory_order_acquire);
 
 	for (size_t i = 0; i < count; ++i)
 	{
@@ -265,7 +272,7 @@ df::queue_counters* df::register_queue(const std::string_view name)
 	}
 
 	perf_queues[count].name = name;
-	perf_queue_count.store(count + 1, std::memory_order_relaxed);
+	perf_queue_count.store(count + 1, std::memory_order_release);
 	return &perf_queues[count];
 }
 
@@ -295,7 +302,7 @@ void df::log_perf_summary()
 		    format_count(load(u.paints)), format_us(load(u.paint_us)), format_us(load(u.paint_max_us)),
 		    format_count(load(u.texture_uploads))));
 
-	const auto queue_count = std::min(perf_queue_count.load(std::memory_order_relaxed), max_perf_queues);
+	const auto queue_count = std::min(perf_queue_count.load(std::memory_order_acquire), max_perf_queues);
 
 	for (size_t i = 0; i < queue_count; ++i)
 	{

@@ -17,6 +17,7 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 |---|---|
 | [design](docs/design.md) | Durable user concepts and behavior; the scope/contents/target/effect ontology; view, mode, and presentation naming |
 | [implementation](docs/implementation.md) | Architecture, data flow, threading, ownership, invalidation, index/search internals |
+| [crash investigation](docs/crash.md) | Crash report contents, symbol store and debugger setup, dump symbolization, attributing a fault to a cause |
 | [collections](docs/collections.md) | The collection: membership, what it earns, and its edge |
 | [locations](docs/locations.md) | Places, location search, distance, map-driven queries, visits |
 | [metadata](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
@@ -104,6 +105,8 @@ This is a gate. If a `User-visible behavior` change cannot map unambiguously to 
 - **Invalidation:** Paint functions never access SQLite or scan files, directly or indirectly; request Source work.
 - **Vendors:** never edit `third-party/`; use owned wrappers or build configuration.
 - **Cache keys:** a key must carry every input the cached value depends on. Invalidation is only as good as the identity it is keyed on, and a key that omits an input silently serves one caller's value to another.
+- **Absent handles:** a `ui::frame_ptr` member that can be unset is reached only through an accessor that never returns null, and callers do not test it. `view_host::frame()`, and the `frame()` accessor on any `ui::frame_host`, answer `ui::no_frame()` when there is no window; a raw `_frame->` on such a member outside that accessor is the defect. `ui::control_frame_ptr` has no stand-in, so those members are instead either guarded at every use or safe by construction. Either way, a member guarded at some call sites and dereferenced at others is this bug already, whether or not it has crashed yet.
+- **Existence is not visibility:** never bind a handle's lifetime to whether the thing is on screen. A hidden panel still populates, counts, ticks and invalidates, so attach it unconditionally and gate only the repaint. Diffractor 1.27.0 shipped a startup crash that was exactly this conflation.
 - **Animation:** alpha fades are disabled in CPU software rendering mode (`ui::animations_enabled`, mirroring `setting.can_animate`); never bypass the gate or animate alpha outside `ui::animate_alpha`.
 - **Exceptions:** every `catch` propagates, logs, returns a bounded error, or implements a documented bounded fallback; no unexplained swallowing.
 

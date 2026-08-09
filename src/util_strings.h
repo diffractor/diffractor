@@ -134,6 +134,12 @@ namespace str
 	struct chached_string_storage_t
 	{
 		uint32_t len;
+
+		// Case-insensitive hash, computed once here. Paths are interned once and then used as hash keys
+		// for the life of the process, so folding UTF-8 to lower case over the whole path on every probe
+		// was paying an O(length) cost to answer a question whose input never changes.
+		uint32_t ihash;
+
 		char sz[1];
 	};
 
@@ -142,9 +148,13 @@ namespace str
 		// Records are 4-byte aligned, so a handle counts 4-byte units and reaches 16GB of pool.
 		constexpr uint32_t intern_align_shift = 2;
 
+		// FNV-1a offset basis, which is what fnv1a_i answers for an empty string. string_index_t
+		// asserts the two agree rather than reaching into crypto from here.
+		constexpr uint32_t empty_ihash = 2166136261u;
+
 		// Resolves handle 0 before the pool exists. The pool reserves its own slot 0 so the table
 		// never hands out a zero handle for real content.
-		inline constexpr chached_string_storage_t empty_storage{0, {0}};
+		inline constexpr chached_string_storage_t empty_storage{0, empty_ihash, {0}};
 
 		// Base of the single contiguous reservation holding every interned record. Assigned once,
 		// before any non-zero handle can exist, so a reader that holds a handle already
@@ -219,6 +229,12 @@ namespace str
 		size_t size() const
 		{
 			return detail::resolve(id)->len;
+		}
+
+		// Case-insensitive, so two spellings of one path agree. Equal to crypto::fnv1a_i(sv()).
+		uint32_t ihash() const
+		{
+			return detail::resolve(id)->ihash;
 		}
 
 		std::string_view substr(const size_t sub_pos) const

@@ -3066,8 +3066,8 @@ namespace ui
 				selected(nullptr, complete_strategy_t::select_type::init);
 			}
 
-			_frame->invalidate();
-			_frame->layout();
+			frame()->invalidate();
+			frame()->layout();
 		}
 
 		void step_selection(const int i)
@@ -3118,7 +3118,7 @@ namespace ui
 					_completes->selected()->set_style_bit(view_element_style::selected, false);
 				}
 
-				_frame->invalidate();
+				frame()->invalidate();
 				_completes->selected(i, st);
 
 				if (i)
@@ -3158,43 +3158,40 @@ namespace ui
 
 		void layout(measure_context& mc)
 		{
-			if (_frame)
+			control_layouts positions;
+			const auto text_height = mc.text_line_height(style::font_face::dialog);
+			auto y = mc.padding2;
+			auto n = 0;
+
+			for (const auto& i : _results)
 			{
-				control_layouts positions;
-				const auto text_height = mc.text_line_height(style::font_face::dialog);
-				auto y = mc.padding2;
-				auto n = 0;
-
-				for (const auto& i : _results)
-				{
-					const recti bounds(0 + mc.padding2, y, _extent.cx - mc.padding2,
-					                   y + text_height + mc.padding1);
-					i->layout(mc, bounds, positions);
-					y = bounds.bottom;
-				}
-
-				const auto y_max = y + mc.padding2;
-				const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
-				const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
-				_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
-
-				if (_completes->resize_to_show_results)
-				{
-					if (_height != y_max)
-					{
-						const auto r = _frame->window_bounds();
-						_height = y_max;
-						_frame->window_bounds(recti(r.left, r.top, r.right, r.top + y_max), !_results.empty());
-					}
-				}
-				else
-				{
-					_height = _completes->max_predictions * (text_height + mc.padding1) + mc.padding2 *
-						2;
-				}
-
-				_frame->invalidate();
+				const recti bounds(0 + mc.padding2, y, _extent.cx - mc.padding2,
+				                   y + text_height + mc.padding1);
+				i->layout(mc, bounds, positions);
+				y = bounds.bottom;
 			}
+
+			const auto y_max = y + mc.padding2;
+			const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
+			const recti client_bounds{0, 0, _extent.cx - mc.scroll_width, _extent.cy};
+			_scroller.layout({client_bounds.width(), y_max}, client_bounds, scroll_bounds);
+
+			if (_completes->resize_to_show_results)
+			{
+				if (_height != y_max)
+				{
+					const auto r = frame()->window_bounds();
+					_height = y_max;
+					frame()->window_bounds(recti(r.left, r.top, r.right, r.top + y_max), !_results.empty());
+				}
+			}
+			else
+			{
+				_height = _completes->max_predictions * (text_height + mc.padding1) + mc.padding2 *
+					2;
+			}
+
+			frame()->invalidate();
 		}
 
 		void on_window_paint(draw_context& dc) override
@@ -3248,9 +3245,9 @@ namespace ui
 			update_controller(loc);
 		}
 
-		const frame_ptr frame() override
+		const frame_ptr frame() const override
 		{
-			return _frame;
+			return _frame ? _frame : no_frame();
 		}
 
 		const control_frame_ptr owner() override
@@ -3299,10 +3296,7 @@ namespace ui
 
 		void invalidate_element(const view_element_ptr& e) override
 		{
-			if (_frame)
-			{
-				_frame->invalidate();
-			}
+			frame()->invalidate();
 		}
 	};
 
@@ -3528,7 +3522,7 @@ public:
 	{
 		enable_parent();
 		_controls.clear();
-		_frame->destroy();
+		if (_frame) _frame->destroy();
 		ui::focus(_parent_focus);
 	}
 
@@ -3899,9 +3893,9 @@ public:
 	{
 	}
 
-	const ui::frame_ptr frame() override
+	const ui::frame_ptr frame() const override
 	{
-		return _frame;
+		return _frame ? _frame : ui::no_frame();
 	}
 
 	const ui::control_frame_ptr owner() override

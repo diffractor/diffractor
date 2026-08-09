@@ -905,6 +905,9 @@ public:
 
 static ui::surface_ptr decode_png_resource_to_surface(const factories_ptr& f, const uint32_t res_id)
 {
+	// WIC is optional - startup continues without it - so the shadow art simply does not load.
+	if (!f || !f->wic) return nullptr;
+
 	ComPtr<IWICStream> stream;
 	ComPtr<IWICBitmapDecoder> decoder;
 	ComPtr<IWICBitmapFrameDecode> frame;
@@ -2015,7 +2018,7 @@ public:
 	                   const ui::style::text_style style, const int width, const int height) override
 	{
 		const auto fr = _f->font_face(font, _base_font_size);
-		if (fr) return fr->measure(str::utf8_to_utf16(text), style, width, height);
+		if (fr) return fr->measure(text, style, width, height);
 		return {};
 	}
 
@@ -2074,7 +2077,7 @@ public:
 		_clr = c;
 		_highlights.clear();
 		_horizontal_mirror = horizontal_mirror;
-		_font->draw(_ctx, this, str::utf8_to_utf16(text), bounds, style, c, bg, {});
+		_font->draw(_ctx, this, text, bounds, style, c, bg);
 		_horizontal_mirror = false;
 	}
 

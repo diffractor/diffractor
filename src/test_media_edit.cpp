@@ -2131,6 +2131,127 @@ static void should_decode_opaque_lossy_webp_as_nv12()
 	             "webp downscale honors target extent");
 }
 
+// setting.use_yuv is what the Advanced option, safe start and the D3D11 driver-fault fallback
+// all turn off, so a decoder that ignores it leaves every one of them with no effect. A user on
+// a driver that faults creating NV12 textures then has no way out of the fault.
+static void should_honor_the_yuv_texture_setting()
+{
+	const auto saved = setting.use_yuv;
+	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
+
+	files ff;
+	const auto webp = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
+	const auto jpeg = ff.load(test_files_folder.combine_file("exif-rotated.jpg"), false);
+	assert_equal(true, is_valid(jpeg.i), "loaded jpeg");
+
+	setting.use_yuv = true;
+	const auto webp_on = load_webp(webp, true);
+	const auto jpeg_on = jpeg.to_surface({}, true);
+	assert_equal(true, is_valid(webp_on) && webp_on->format() == ui::texture_format::NV12, "webp nv12 while on");
+	assert_equal(true, is_valid(jpeg_on) && jpeg_on->format() == ui::texture_format::NV12, "jpeg nv12 while on");
+
+	setting.use_yuv = false;
+	const auto webp_off = load_webp(webp, true);
+	const auto jpeg_off = jpeg.to_surface({}, true);
+	assert_equal(true, is_valid(webp_off) && webp_off->format() == ui::texture_format::RGB, "webp rgb while off");
+	assert_equal(true, is_valid(jpeg_off) && jpeg_off->format() == ui::texture_format::RGB, "jpeg rgb while off");
+}
+
+// A thumbnail scaled to fit a box is regularly odd on one axis. decode_jpeg crops those to even and
+// still reaches the GPU as NV12; a webp decoder that instead falls back to RGB costs 4 bytes per
+// pixel rather than 1.5, for the majority of a collection's thumbnails.
+static void should_decode_odd_sized_webp_as_nv12()
+{
+	const auto saved = setting.use_yuv;
+	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
+	setting.use_yuv = true;
+
+	constexpr sizei odd_extent{321, 215};
+	const auto surface = std::make_shared<ui::surface>();
+	assert_equal(true, surface->alloc(odd_extent, ui::texture_format::RGB) != nullptr, "allocated odd surface");
+
+	for (auto y = 0; y < odd_extent.cy; ++y)
+	{
+		for (auto x = 0; x < odd_extent.cx; ++x)
+		{
+			surface->set_pixel(x, y, ui::rgba(x & 0xff, y & 0xff, (x + y) & 0xff));
+		}
+	}
+
+	file_encode_params params;
+	params.webp_quality = thumbnail_webp_quality;
+	params.webp_fast = true;
+
+	const auto encoded = save_webp(surface, {}, params);
+	assert_equal(true, is_valid(encoded), "encoded odd webp");
+
+	const auto decoded = load_webp(encoded->data(), true);
+	assert_equal(true, is_valid(decoded) && decoded->format() == ui::texture_format::NV12,
+	             "odd webp decodes as nv12");
+	assert_equal(320, decoded->dimensions().cx, "odd webp width cropped to even");
+	assert_equal(214, decoded->dimensions().cy, "odd webp height cropped to even");
+}
+
+// The shell returns 32-bit BGRA even for photo thumbnails, which are opaque, so a stored format
+// chosen from the surface tag sent every cloud thumbnail down the PNG branch at several times the
+// bytes. An opaque thumbnail must carry no alpha plane, or it also loses the NV12 decode path.
+static void should_keep_thumbnail_alpha_only_when_needed()
+{
+	const auto saved = setting.use_yuv;
+	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
+	setting.use_yuv = true;
+
+	files ff;
+	const auto loaded = ff.load(test_files_folder.combine_file("Test.jpg"), false);
+	const auto photo = loaded.to_surface(setting.thumbnail_max_dimension, false, {}, decode_intent::thumbnail);
+	assert_equal(true, ui::is_valid(photo), "loaded photo surface");
+
+	const auto extent = photo->dimensions();
+	const auto opaque = std::make_shared<ui::surface>();
+	const auto translucent = std::make_shared<ui::surface>();
+	assert_equal(true, opaque->alloc(extent, ui::texture_format::ARGB) != nullptr, "allocated opaque surface");
+	assert_equal(true, translucent->alloc(extent, ui::texture_format::ARGB) != nullptr,
+	             "allocated translucent surface");
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			const auto c = photo->get_pixel(x, y);
+			const auto rgb = ui::rgba(ui::get_r(c), ui::get_g(c), ui::get_b(c));
+			opaque->set_pixel(x, y, rgb);
+			translucent->set_pixel(x, y, x < extent.cx / 2 ? rgb & 0x00ffffff : rgb);
+		}
+	}
+
+	const auto opaque_thumb = ff.surface_to_thumbnail(opaque);
+	const auto translucent_thumb = ff.surface_to_thumbnail(translucent);
+
+	assert_equal(true, is_valid(opaque_thumb) && opaque_thumb->format() == ui::image_format::WEBP,
+	             "opaque thumbnail is stored as webp");
+	assert_equal(true, is_valid(translucent_thumb) && translucent_thumb->format() == ui::image_format::WEBP,
+	             "translucent thumbnail is stored as webp");
+
+	// An opaque thumbnail that still carries an alpha plane cannot take the NV12 path.
+	const auto opaque_surface = ff.image_to_surface(opaque_thumb, {}, true);
+	assert_equal(true, ui::is_valid(opaque_surface) && opaque_surface->format() == ui::texture_format::NV12,
+	             "opaque thumbnail drops its alpha plane and decodes as nv12");
+
+	const auto translucent_surface = ff.image_to_surface(translucent_thumb, {}, true);
+	assert_equal(true, ui::is_valid(translucent_surface) &&
+	             translucent_surface->format() == ui::texture_format::ARGB,
+	             "translucent thumbnail keeps its alpha plane");
+	assert_equal(true, ui::get_a(translucent_surface->get_pixel(extent.cx / 4, extent.cy / 2)) < 128,
+	             "transparent half survives the thumbnail round trip");
+	assert_equal(true, ui::get_a(translucent_surface->get_pixel(extent.cx * 3 / 4, extent.cy / 2)) > 200,
+	             "opaque half survives the thumbnail round trip");
+
+	const auto png = save_png(translucent, {});
+	assert_equal(true, is_valid(png), "encoded png reference");
+	assert_equal(true, translucent_thumb->data().size() * 2 < png->data().size(),
+	             "webp thumbnail is far smaller than the png it replaces");
+}
+
 static void should_refuse_truncated_webp_decode()
 {
 	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
@@ -2411,6 +2532,9 @@ void register_tests4(view_state& state, test_registry& tests)
 	tests.add("Should honor webp save quality"s, should_honor_webp_save_quality);
 	tests.add("Should tag webp surface alpha"s, should_tag_webp_surface_alpha);
 	tests.add("Should decode opaque lossy webp as nv12"s, should_decode_opaque_lossy_webp_as_nv12);
+	tests.add("Should honor the yuv texture setting"s, should_honor_the_yuv_texture_setting);
+	tests.add("Should decode odd sized webp as nv12"s, should_decode_odd_sized_webp_as_nv12);
+	tests.add("Should keep thumbnail alpha only when needed"s, should_keep_thumbnail_alpha_only_when_needed);
 	tests.add("Should refuse truncated webp decode"s, should_refuse_truncated_webp_decode);
 	tests.add("Should bound and time animated webp"s, should_bound_and_time_animated_webp);
 	tests.add("Should preserve webp chunks on metadata save"s, should_preserve_webp_chunks_on_metadata_save);

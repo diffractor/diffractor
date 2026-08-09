@@ -1505,6 +1505,12 @@ void app_frame::update_tooltip()
 		}
 	}
 
+	// The toolbars exist before init() creates the bubble, so a hover can arrive with no bubble yet.
+	if (!_bubble)
+	{
+		return;
+	}
+
 	if (!_hover.is_empty())
 	{
 		_bubble->show(_hover.elements, _hover.window_bounds, _hover.x_focus, _hover.preferred_size, _hover.horizontal);

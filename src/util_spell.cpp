@@ -15,7 +15,11 @@
 #define HUNSPELL_STATIC
 #include <hunspell.hxx>
 
-spell_check spell;
+spell_check& spell()
+{
+	static spell_check instance;
+	return instance;
+}
 
 spell_check::spell_check()
 {

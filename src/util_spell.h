@@ -36,4 +36,7 @@ public:
 	void add_word(std::string_view word) const;
 };
 
-extern spell_check spell;
+// Its constructor resolves known folders, probes the file system and may create the dictionaries
+// directory. As a global that would run before WinMain, where a throw ends the process with nothing
+// logged and no message box; constructed on first use instead, inside the app's error handling.
+spell_check& spell();

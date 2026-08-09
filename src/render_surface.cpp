@@ -12,7 +12,13 @@
 #include "pch.h"
 
 #include "files.h"
+#include "platform.h"
 #include "util.h"
+
+#if defined(_M_X64) || defined(_M_IX86)
+#include <immintrin.h>
+#define DF_X86_SIMD 1
+#endif
 
 void ui::surface::clear(const color32 clr) const
 {
@@ -25,6 +31,265 @@ void ui::surface::clear(const color32 clr) const
 			line[x] = clr;
 		}
 	}
+}
+
+namespace
+{
+	// Area-average reduction.
+	//
+	// swscale cannot shrink a packed RGB surface cheaply: it has no RGB->RGB scaler, so it converts
+	// to planar YUV and back, and because a BGRA source carries no chroma subsampling libswscale
+	// forces SWS_FULL_CHR_H_INT (utils.c, "input having non subsampled chroma"), whose output
+	// converter yuv2bgra32_full_X_c has no SIMD at all. Measured at ~5% of startup CPU.
+	//
+	// Weights are quantised to Q8 and each destination sample's run sums to exactly 256, so a whole
+	// reduction fits in uint16 accumulators: the largest reachable value is 255 * 256 = 65280. That
+	// is what lets both passes stay in 16 bit lanes, which is twice the throughput of 32 bit ones.
+	struct axis_weights
+	{
+		std::vector<int> first;
+		std::vector<int> count;
+		std::vector<int> offset;
+		std::vector<uint16_t> weights;
+	};
+
+	axis_weights build_axis_weights(const int src_n, const int dst_n)
+	{
+		axis_weights result;
+		result.first.resize(dst_n);
+		result.count.resize(dst_n);
+		result.offset.resize(dst_n);
+
+		const auto scale = static_cast<double>(src_n) / static_cast<double>(dst_n);
+		result.weights.reserve(static_cast<size_t>(dst_n) * (static_cast<size_t>(scale) + 2u));
+
+		for (auto i = 0; i < dst_n; ++i)
+		{
+			const auto a = i * scale;
+			const auto b = (i + 1) * scale;
+			const auto first = std::clamp(static_cast<int>(a), 0, src_n - 1);
+			const auto last = std::clamp(static_cast<int>(std::ceil(b)) - 1, first, src_n - 1);
+
+			result.first[i] = first;
+			result.count[i] = last - first + 1;
+			result.offset[i] = static_cast<int>(result.weights.size());
+
+			// Emitted as differences of a rounded cumulative coverage rather than as rounded
+			// individual weights, so the run sums to 256 by construction. Correcting a rounding
+			// error afterwards can underflow the largest weight once a run gets long.
+			auto previous = 0;
+
+			for (auto j = first; j <= last; ++j)
+			{
+				const auto edge = std::min(b, static_cast<double>(j + 1));
+				const auto covered = std::clamp((edge - a) / (b - a), 0.0, 1.0);
+				// The final edge is forced rather than rounded: when `last` was clamped to the last
+				// source sample, `b` lies beyond it and the run would otherwise sum to under 256.
+				const auto cumulative = j == last ? 256 : std::clamp(static_cast<int>(std::lround(covered * 256.0)),
+				                                                     previous, 256);
+				result.weights.emplace_back(static_cast<uint16_t>(cumulative - previous));
+				previous = cumulative;
+			}
+		}
+
+		return result;
+	}
+
+	void accumulate_row(uint16_t* acc, const uint8_t* src, const size_t n, const uint16_t weight,
+	                    [[maybe_unused]] const bool avx2)
+	{
+		size_t i = 0;
+
+#ifdef DF_X86_SIMD
+		if (avx2)
+		{
+			const auto wv = _mm256_set1_epi16(static_cast<short>(weight));
+
+			for (; i + 16 <= n; i += 16)
+			{
+				const auto s = _mm_loadu_si128(std::bit_cast<const __m128i*>(src + i));
+				const auto v = _mm256_mullo_epi16(_mm256_cvtepu8_epi16(s), wv);
+				auto* const dst = std::bit_cast<__m256i*>(acc + i);
+				_mm256_storeu_si256(dst, _mm256_add_epi16(_mm256_loadu_si256(dst), v));
+			}
+		}
+		else
+		{
+			const auto wv = _mm_set1_epi16(static_cast<short>(weight));
+			const auto zero = _mm_setzero_si128();
+
+			for (; i + 8 <= n; i += 8)
+			{
+				const auto s = _mm_loadl_epi64(std::bit_cast<const __m128i*>(src + i));
+				const auto v = _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv);
+				auto* const dst = std::bit_cast<__m128i*>(acc + i);
+				_mm_storeu_si128(dst, _mm_add_epi16(_mm_loadu_si128(dst), v));
+			}
+		}
+#endif
+
+		for (; i < n; ++i)
+		{
+			acc[i] = static_cast<uint16_t>(acc[i] + src[i] * weight);
+		}
+	}
+
+	void normalize_row(uint8_t* dst, const uint16_t* acc, const size_t n, [[maybe_unused]] const bool avx2)
+	{
+		size_t i = 0;
+
+#ifdef DF_X86_SIMD
+		if (avx2)
+		{
+			const auto half = _mm256_set1_epi16(128);
+
+			for (; i + 16 <= n; i += 16)
+			{
+				auto v = _mm256_loadu_si256(std::bit_cast<const __m256i*>(acc + i));
+				v = _mm256_srli_epi16(_mm256_add_epi16(v, half), 8);
+				_mm_storeu_si128(std::bit_cast<__m128i*>(dst + i),
+				                 _mm_packus_epi16(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1)));
+			}
+		}
+		else
+		{
+			const auto half = _mm_set1_epi16(128);
+
+			for (; i + 8 <= n; i += 8)
+			{
+				auto v = _mm_loadu_si128(std::bit_cast<const __m128i*>(acc + i));
+				v = _mm_srli_epi16(_mm_add_epi16(v, half), 8);
+				_mm_storel_epi64(std::bit_cast<__m128i*>(dst + i), _mm_packus_epi16(v, v));
+			}
+		}
+#endif
+
+		for (; i < n; ++i)
+		{
+			dst[i] = static_cast<uint8_t>((acc[i] + 128) >> 8);
+		}
+	}
+
+	// One destination pixel from a run of source pixels. The four channels ride in one register, and
+	// two source pixels are folded per step, so no channel is ever touched on its own.
+	void reduce_pixel(uint8_t* dst, const uint8_t* src, const uint16_t* weights, const int count)
+	{
+#ifdef DF_X86_SIMD
+		const auto zero = _mm_setzero_si128();
+		auto acc = _mm_setzero_si128();
+		auto k = 0;
+
+		for (; k + 2 <= count; k += 2)
+		{
+			const auto s = _mm_loadl_epi64(std::bit_cast<const __m128i*>(src + k * 4));
+			const auto w0 = static_cast<short>(weights[k]);
+			const auto w1 = static_cast<short>(weights[k + 1]);
+			const auto wv = _mm_set_epi16(w1, w1, w1, w1, w0, w0, w0, w0);
+			acc = _mm_add_epi16(acc, _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv));
+		}
+
+		if (k < count)
+		{
+			const auto s = _mm_cvtsi32_si128(*std::bit_cast<const int32_t*>(src + k * 4));
+			const auto wv = _mm_set1_epi16(static_cast<short>(weights[k]));
+			acc = _mm_add_epi16(acc, _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv));
+		}
+
+		// The two pixel slots partition the run's 256 total, so folding them cannot overflow.
+		acc = _mm_add_epi16(acc, _mm_srli_si128(acc, 8));
+		acc = _mm_srli_epi16(_mm_add_epi16(acc, _mm_set1_epi16(128)), 8);
+		*std::bit_cast<int32_t*>(dst) = _mm_cvtsi128_si32(_mm_packus_epi16(acc, acc));
+#else
+		uint32_t acc[4] = {};
+
+		for (auto k = 0; k < count; ++k)
+		{
+			const auto weight = weights[k];
+			for (auto c = 0; c < 4; ++c) acc[c] += src[k * 4 + c] * weight;
+		}
+
+		for (auto c = 0; c < 4; ++c) dst[c] = static_cast<uint8_t>((acc[c] + 128) >> 8);
+#endif
+	}
+
+	bool area_downscale_impl(const ui::const_surface_ptr& src, ui::surface_ptr& dst, const sizei dst_extent,
+	                         const bool avx2)
+	{
+		if (!is_valid(src)) return false;
+
+		const auto format = src->format();
+
+		// Packed 32 bit only. NV12 and P010 are planar and already reach a SIMD path inside swscale,
+		// because a subsampled source does not trigger the full-chroma output converter.
+		if (format != ui::texture_format::RGB && format != ui::texture_format::ARGB) return false;
+
+		const auto src_extent = src->dimensions();
+
+		// Reductions only: a box filter that enlarges is nearest neighbour.
+		if (dst_extent.cx < 1 || dst_extent.cy < 1 ||
+			dst_extent.cx > src_extent.cx || dst_extent.cy > src_extent.cy)
+		{
+			return false;
+		}
+
+		const auto horizontal = build_axis_weights(src_extent.cx, dst_extent.cx);
+		const auto vertical = build_axis_weights(src_extent.cy, dst_extent.cy);
+
+		auto result = std::make_shared<ui::surface>();
+
+		if (!result->alloc(dst_extent.cx, dst_extent.cy, format, src->orientation()))
+		{
+			return false;
+		}
+
+		result->color_space(src->color_space());
+
+		// The passes are fused per destination row, so the only buffers are one accumulator row and
+		// one reduced row. A separate full intermediate image would be tens of megabytes when the
+		// display scaler shrinks a photo to a 4K window.
+		const auto row_bytes = static_cast<size_t>(src_extent.cx) * 4u;
+		std::vector<uint16_t> acc(row_bytes);
+		std::vector<uint8_t> reduced(row_bytes);
+
+		const auto* const src_pixels = src->pixels();
+		const auto src_stride = src->stride();
+
+		for (auto y = 0; y < dst_extent.cy; ++y)
+		{
+			std::ranges::fill(acc, uint16_t{0});
+
+			const auto* const row_weights = vertical.weights.data() + vertical.offset[y];
+
+			for (auto k = 0; k < vertical.count[y]; ++k)
+			{
+				accumulate_row(acc.data(), src_pixels + (vertical.first[y] + k) * src_stride, row_bytes,
+				               row_weights[k], avx2);
+			}
+
+			normalize_row(reduced.data(), acc.data(), row_bytes, avx2);
+
+			auto* const dst_row = result->pixels_line(y);
+
+			for (auto x = 0; x < dst_extent.cx; ++x)
+			{
+				reduce_pixel(dst_row + x * 4, reduced.data() + horizontal.first[x] * 4,
+				             horizontal.weights.data() + horizontal.offset[x], horizontal.count[x]);
+			}
+		}
+
+		dst = std::move(result);
+		return true;
+	}
+}
+
+bool ui::area_downscale(const const_surface_ptr& src, surface_ptr& dst, const sizei dst_extent)
+{
+	return area_downscale_impl(src, dst, dst_extent, platform::has_avx2());
+}
+
+bool ui::area_downscale_baseline(const const_surface_ptr& src, surface_ptr& dst, const sizei dst_extent)
+{
+	return area_downscale_impl(src, dst, dst_extent, false);
 }
 
 namespace

@@ -300,7 +300,8 @@ namespace df
 
 		int compare(const folder_path other) const
 		{
-			return icmp(_s, other._s);
+			// Interned storage: one id means one string, so the fold only runs for a real difference.
+			return _s.id == other._s.id ? 0 : icmp(_s, other._s);
 		}
 
 		constexpr std::string_view::size_type find_last_slash() const
@@ -423,7 +424,8 @@ namespace df
 		int icmp(const file_path other) const
 		{
 			const auto diff = _folder.compare(other._folder);
-			return diff == 0 ? str::icmp(_name, other._name) : diff;
+			if (diff != 0) return diff;
+			return _name.id == other._name.id ? 0 : str::icmp(_name, other._name);
 		}
 
 		bool operator==(const file_path other) const

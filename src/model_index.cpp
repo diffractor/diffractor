@@ -100,6 +100,13 @@ static_assert(sizeof(search_presence_mask) == 4);
 static_assert(sizeof(df::file_path) == sizeof(str::cached) * 2);
 static_assert(sizeof(key_val) == sizeof(str::cached) * 2);
 
+// Every query walks these fields once per candidate. A type that outgrows a machine word makes
+// std::atomic fall back to a lock, which x64 hides for 16 bytes and ARM64 does not, so a widened
+// field would turn the hot index record into a contended mutex rather than fail here.
+static_assert(std::atomic<df::date_t>::is_always_lock_free);
+static_assert(std::atomic<df::duplicate_info>::is_always_lock_free);
+static_assert(std::atomic<search_presence_mask>::is_always_lock_free);
+
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -1370,7 +1377,7 @@ void index_state::update_predictions()
 					}
 				}
 
-				dups.emplace_back(crypto::fnv1a_i(file.name), file_index);
+				dups.emplace_back(file.name.ihash(), file_index);
 				dups.emplace_back(x64to32(file.file_created.to_int64()), file_index);
 
 				if (file.crc32c)
@@ -2363,8 +2370,6 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 		if (is_valid(shell_thumbnail))
 		{
 			files ff;
-			file_encode_params encode_params;
-			encode_params.jpeg_save_quality = thumbnail_quality;
 
 			thumbnail_image = shell_thumbnail;
 			const auto max_extent = setting.thumbnail_max_dimension;
@@ -2374,7 +2379,7 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 			{
 				const auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 				                                      decode_intent::thumbnail);
-				thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
+				thumbnail_image = ff.surface_to_thumbnail(surf);
 			}
 
 			if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
@@ -2495,9 +2500,6 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		write.md = metadata;
 		write.metadata_scanned = now;
 
-		file_encode_params encode_params;
-		encode_params.jpeg_save_quality = thumbnail_quality;
-
 		ui::const_image_ptr cover_art;
 		ui::const_image_ptr thumbnail_image;
 		ui::const_surface_ptr thumbnail_surface;
@@ -2515,14 +2517,12 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 			if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy)
 			{
 				auto surf = ff.image_to_surface(cover_art, max_extent, false, {}, decode_intent::thumbnail);
-				cover_art = ff.surface_to_image(surf, {}, encode_params,
-				                                ui::image_format::Unknown);
+				cover_art = ff.surface_to_thumbnail(surf);
 			}
-
-			df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
 
 			if (is_valid(cover_art))
 			{
+				df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
 				write.cover_art = cover_art;
 			}
 		}
@@ -2538,22 +2538,19 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				const auto dims = ui::scale_dimensions(thumb_extent, max_extent, true);
 				auto surf = std::make_shared<ui::surface>();
 				scaler.scale_surface(sr.thumbnail_surface, surf, dims);
-				thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-				                                      ui::image_format::Unknown);
+				thumbnail_image = ff.surface_to_thumbnail(surf);
 				thumbnail_surface = surf;
 			}
 			else
 			{
 				auto surf = sr.thumbnail_surface;
-				thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-				                                      ui::image_format::Unknown);
+				thumbnail_image = ff.surface_to_thumbnail(surf);
 				thumbnail_surface = surf;
 			}
 
-			df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-
 			if (is_valid(thumbnail_image))
 			{
+				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 				write.thumb = thumbnail_image;
 			}
 		}
@@ -2570,15 +2567,13 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				{
 					auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 					                                decode_intent::thumbnail);
-					thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-					                                      ui::image_format::Unknown);
+					thumbnail_image = ff.surface_to_thumbnail(surf);
 					thumbnail_surface = surf;
 				}
 
-				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-
 				if (is_valid(thumbnail_image))
 				{
+					df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 					write.thumb = thumbnail_image;
 				}
 			}
@@ -2706,11 +2701,11 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 
 		if (force || needs_scan_impl(folder, file, thumbnail_needed, scan_if_offline))
 		{
-			if (!crash_files.is_known_crash_file(file_path))
+			if (!crash_files().is_known_crash_file(file_path))
 			{
 				df::assert_true(ft->is_media());
 
-				record_open_path record(crash_files, file_path, str::utf8_cast(__FUNCTION__));
+				record_open_path record(crash_files(), file_path, str::utf8_cast(__FUNCTION__));
 
 				if (file.flags && df::index_item_flags::is_offline)
 				{
@@ -3261,7 +3256,6 @@ void index_state::index_folders(df::cancel_token token)
 	df::unique_folders unique_folder_paths(folders.cbegin(), folders.cend());
 
 	index_histograms histograms;
-	items_by_folder_t indexed;
 	int count = 0;
 	stats.index_folder_count = 0;
 	auto next_histogram_publish_ms = df::now_ms();
@@ -3964,7 +3958,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 					}
 				}
 
-				items_possible_hashes.emplace_back(crypto::fnv1a_i(request.path.name()), index);
+				items_possible_hashes.emplace_back(request.path.name().ihash(), index);
 			}
 		}
 
@@ -4020,7 +4014,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 						}
 
 						items_possible_hashes_contains(matches, items_possible_hashes, requests, file,
-						                               crypto::fnv1a_i(file.name));
+						                               file.name.ihash());
 					}
 				}
 			}
@@ -4148,28 +4142,25 @@ bool index_state::scan_items(const item_scan_requests& requests,
 	{
 		df::measure_ms ms(stats.scan_items_ms);
 		df::scope_locked_inc l(scanning_items);
-		df::hash_map<df::folder_path, item_scan_requests, df::ihash, df::ieq> items_by_folder;
-
-		for (const auto& request : requests)
-		{
-			if (!request.is_folder)
-			{
-				items_by_folder[request.folder].emplace_back(request);
-			}
-		}
+		df::folder_groups items_by_folder;
+		items_by_folder.build(requests,
+		                      [](const item_scan_request& r) { return r.folder; },
+		                      [](const item_scan_request& r) { return !r.is_folder; });
 
 		const auto now = platform::now();
 		db_write_batch writes(*this);
 
-		for (const auto& ff : items_by_folder)
+		for (const auto& ff : items_by_folder.groups())
 		{
 			if (token.is_cancelled()) break;
 
-			const auto node = validate_folder(ff.first, refresh_from_file_system, now);
+			const auto node = validate_folder(ff.folder, refresh_from_file_system, now);
 			if (!node.folder) continue;
 
-			for (const auto& request : ff.second)
+			for (const auto request_index : items_by_folder.elements(ff))
 			{
+				const auto& request = requests[request_index];
+
 				if (token.is_cancelled()) break;
 
 				if (!only_if_needed || request.thumbnail_needed)
@@ -4803,8 +4794,6 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 			{
 				// Downscale/re-encode to the thumbnail size budget, matching scan_offline_item.
 				files ff;
-				file_encode_params encode_params;
-				encode_params.jpeg_save_quality = thumbnail_quality;
 
 				auto thumbnail_image = shell_thumb;
 				const auto max_extent = setting.thumbnail_max_dimension;
@@ -4814,7 +4803,7 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 				{
 					auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 					                                decode_intent::thumbnail);
-					thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
+					thumbnail_image = ff.surface_to_thumbnail(surf);
 				}
 
 				if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)

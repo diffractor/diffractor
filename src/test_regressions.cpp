@@ -1100,6 +1100,50 @@ static void should_only_seed_favorite_tags_on_first_run()
 	assert_equal(false, should_seed_default_favorite_tags(false, true, false), "legacy empty list stays empty");
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// 1.27.0 - the app crashed during startup with the sidebar hidden, before the user could act.
+// A start that never reaches idle is counted; once enough consecutive starts have failed that
+// way the next one reverts presentation instead of repeating the crash. The threshold has to
+// tolerate a single unsettled start, which is also what a kill or power loss during launch
+// looks like, without needing a third crash before it helps.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_start_safe_only_after_repeated_failures()
+{
+	assert_equal(false, should_start_safe(0), "a clean history starts normally");
+	assert_equal(false, should_start_safe(1), "one unsettled start could be a kill or power loss");
+	assert_equal(true, should_start_safe(2), "two in a row is a reproducible startup crash");
+	assert_equal(true, should_start_safe(7), "and it stays safe until one start settles");
+
+	// The reset covers what the window puts on screen and turns the graphics path off, and must
+	// leave everything the user cannot re-reach from a working window alone.
+	settings_t s;
+	s.show_sidebar = false;
+	s.large_font = true;
+	s.show_debug_info = true;
+	s.sidebar.show_world_map = false;
+	s.sidebar.width = 900;
+	s.use_gpu = true;
+	s.use_d3d11va = true;
+	s.write_folder = "c:\\keep-me";
+	s.favorite_tags = "keep";
+	s.language = "de";
+
+	s.reset_presentation();
+
+	assert_equal(true, s.show_sidebar, "the sidebar comes back");
+	assert_equal(false, s.large_font, "font scale returns to default");
+	assert_equal(false, s.show_debug_info, "debug overlay off");
+	assert_equal(true, s.sidebar.show_world_map, "sidebar contents return to default");
+	assert_equal(0, s.sidebar.width, "sidebar width returns to auto");
+	assert_equal(false, s.use_gpu, "hardware acceleration off, not merely defaulted");
+	assert_equal(false, s.use_d3d11va, "hardware video decode off");
+	assert_equal(false, s.use_yuv, "hardware yuv textures off");
+	assert_equal("c:\\keep-me"s, s.write_folder, "user paths survive");
+	assert_equal("keep"s, s.favorite_tags, "favorite tags survive");
+	assert_equal("de"s, s.language, "language survives");
+}
+
 static void should_restore_history_selection()
 {
 	history_state history;
@@ -1290,5 +1334,6 @@ void register_tests1(view_state& state, test_registry& tests)
 	//
 	tests.add("Issue #227: Should only seed favorite tags on first run"s,
 	          should_only_seed_favorite_tags_on_first_run);
+	tests.add("Should start safe only after repeated failures"s, should_start_safe_only_after_repeated_failures);
 	tests.add("Should restore history selection"s, should_restore_history_selection);
 }

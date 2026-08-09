@@ -1434,6 +1434,28 @@ ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface
 	return result;
 }
 
+// Thumbnails are a rebuildable cache, so the format is chosen for bytes rather than fidelity. A
+// lossy WebP is materially smaller than the JPEG or PNG it replaces at the same measured quality,
+// and libwebp drops the alpha plane itself for a surface that turns out to be opaque.
+ui::const_image_ptr files::surface_to_thumbnail(const ui::const_surface_ptr& surface_in)
+{
+	if (!is_valid(surface_in)) return {};
+
+	file_encode_params params;
+	params.jpeg_save_quality = thumbnail_quality;
+	params.webp_quality = thumbnail_webp_quality;
+	params.webp_lossy_alpha = true;
+	params.webp_fast = true;
+
+	ui::const_image_ptr result = save_webp(surface_in, {}, params);
+
+	// save_webp accepts only RGB and ARGB, so anything else falls back to what the thumbnail store
+	// held before WebP: PNG when the surface carries alpha, JPEG otherwise.
+	if (!is_valid(result)) result = surface_to_image(surface_in, {}, params, ui::image_format::Unknown);
+
+	return result;
+}
+
 av_scaler& files::scaler()
 {
 	if (!_scaler)
@@ -1523,7 +1545,9 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// YCbCr JPEGs can be uploaded as an NV12 texture and converted on the
 		// GPU (smaller uploads, no CPU colour conversion). JPEG/JFIF is full-range
 		// BT.601, which the shader applies via the rec601_full matrix.
-		const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_nv12();
+		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
+		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
+		const auto use_yuv = can_use_yuv && setting.use_yuv && _jpeg_decoder.can_render_nv12();
 		const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
 
 		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
@@ -2168,8 +2192,7 @@ file_scan_result files::scan_file(platform::file_ptr f, const df::file_path path
 
 							if (is_valid(s))
 							{
-								file_encode_params params;
-								auto i = surface_to_image(s, {}, params, ui::image_format::Unknown);
+								auto i = surface_to_thumbnail(s);
 
 								if (is_valid(i))
 								{

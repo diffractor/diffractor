@@ -13,6 +13,7 @@
 #include "pch.h"
 #include "test_utils.h"
 #include "model_zoom.h"
+#include "view_items.h"
 #include "view_selector.h"
 
 static void assert_zoom_near(const double expected, const double actual, const std::string_view message)
@@ -28,6 +29,10 @@ static void should_select_settled_zoom_sampler()
 	             ui::texture_sampler::bicubic, "three times remains smooth");
 	assert_equal(true, calc_sampler({3001, 1500}, {1000, 500}, ui::orientation::top_left) ==
 	             ui::texture_sampler::point, "above three times keeps source pixels exact");
+	assert_equal(true, calc_sampler({3001, 1500}, {1000, 500}, ui::orientation::top_left, false, true) ==
+	             ui::texture_sampler::bicubic, "a magnified stand-in stays smooth rather than blocky");
+	assert_equal(true, calc_sampler({1000, 500}, {1000, 500}, ui::orientation::top_left, false, true) ==
+	             ui::texture_sampler::point, "a stand-in at one-to-one is still exact");
 	assert_equal(true, calc_sampler({1500, 750}, {1000, 500}, ui::orientation::top_left, true) ==
 	             ui::texture_sampler::bilinear, "interactive magnification uses fast sampler");
 	assert_equal(true, calc_sampler({1500, 750}, {1000, 500}, ui::orientation::top_left) ==
@@ -378,6 +383,233 @@ static void should_range_select_across_selector()
 	assert_equal(0_z, selector->selection_range(shown[0]).size(), "an inactive strip selects nothing");
 }
 
+// Selecting an item the browser has already drawn must fill the panel from what the item already
+// holds - its staged thumbnail surface and its indexed dimensions - rather than decoding again. No
+// draw runs here, and nothing else in the selection path produces a surface, so a panel that has
+// something to show can only have taken it from the item on the selecting thread.
+static void should_show_selected_thumbnail_without_waiting()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const view_host_base_ptr view;
+
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	s.view_mode(view_type::items);
+	s.open(view, df::search_t().add_selector(test_files_folder), {});
+	s.update_item_groups();
+	s.update_selection();
+
+	df::item_elements photos;
+
+	for (const auto& group : s.groups())
+	{
+		for (const auto& i : group->items())
+		{
+			if (!i->is_folder() && i->file_type()->has_trait(file_traits::bitmap)) photos.emplace_back(i);
+		}
+	}
+
+	assert_equal(true, photos.size() >= 2_z, "test folder has photos to step between");
+
+	// What the browser leaves on an item whose tile is on screen.
+	const auto& target = photos.front();
+	index.scan_item(target, true, false);
+	target->stage_thumbnail_surface(as);
+
+	assert_equal(true, target->has_thumb(), "the tile has its encoded thumbnail");
+	assert_equal(true, target->has_cached_surface(), "the tile has its decoded thumbnail surface");
+	assert_equal(true, target->metadata() != nullptr, "the tile has its indexed metadata");
+
+	s.select(view, target, false, false, false);
+	s.update_selection();
+
+	const auto d = s.display_state();
+
+	assert_equal(true, d && d->_selected_texture1 != nullptr, "selecting built a display texture");
+	assert_equal(true, d->_selected_texture1->has_visual(), "the panel can draw the tile's thumbnail at once");
+	assert_equal(false, d->_selected_texture1->display_dimensions().is_empty(),
+	             "the panel knows the image's shape at once");
+	assert_equal(true, d->_selected_texture1->is_provisional(), "what it draws is still marked provisional");
+}
+
+static void should_stage_neighbour_stand_ins()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const view_host_base_ptr view;
+
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	s.view_mode(view_type::media);
+	s.open(view, df::search_t().add_selector(test_files_folder), {});
+	s.update_item_groups();
+	s.update_selection();
+
+	df::item_elements ordered;
+
+	for (const auto& group : s.groups())
+	{
+		for (const auto& i : group->items()) ordered.emplace_back(i);
+	}
+
+	size_t middle = 0;
+
+	for (size_t n = 1; n + 1 < ordered.size(); ++n)
+	{
+		if (!ordered[n - 1]->is_folder() && !ordered[n]->is_folder() && !ordered[n + 1]->is_folder())
+		{
+			middle = n;
+			break;
+		}
+	}
+
+	assert_equal(true, middle != 0_z, "test folder has a file with file neighbours");
+
+	// Nothing here has a thumbnail: the browser's batched database query is what normally supplies
+	// them, and there is no browser in this view. Retiring the query leaves the display facing the
+	// case that matters - an item with no encoded thumbnail to stand in for it.
+	for (const auto& i : ordered) i->begin_db_thumbnail_query();
+
+	s.select(view, ordered[middle], false, false, false);
+	s.update_selection();
+
+	const auto previous = s.next_item(false, false);
+	const auto next = s.next_item(true, false);
+
+	assert_equal(true, previous && next, "there are items to reach either side");
+	assert_equal(true, previous->has_thumb(), "the previous item's thumbnail was requested");
+	assert_equal(true, next->has_thumb(), "the next item's thumbnail was requested");
+	assert_equal(true, previous->has_cached_surface(), "the previous item's stand-in is staged");
+	assert_equal(true, next->has_cached_surface(), "the next item's stand-in is staged");
+}
+
+// The items preview fills in as the file is read: the metadata blocks, and any property whose value
+// was not in the index, are emitted long after the panel is laid out. None of that may move or resize
+// what is already on screen. This is the shape of every jump reported against 1.27.1 - the media pane
+// was the column's shrink target, so each late row was paid for by shrinking the picture, and the
+// column centred on the total, so each late row moved everything above it.
+static void should_hold_media_column_still_as_detail_arrives()
+{
+	flex_test_measure_context mc;
+	ui::control_layouts positions;
+
+	const auto media = std::make_shared<flex_test_element>(sizei{200, 400});
+	media->flex = media->flex | flex_item::media;
+
+	const std::vector<view_element_ptr> priority{media, std::make_shared<flex_test_element>(sizei{200, 20})};
+	const auto all = priority;
+
+	constexpr recti pane{0, 0, 200, 600};
+
+	const auto arrange = [&](const std::vector<view_element_ptr>& detail)
+	{
+		const media_column_inputs in{&priority, &detail, &all, pane, true};
+		return layout_media_column(in, mc, positions);
+	};
+
+	const std::vector<view_element_ptr> no_detail;
+	arrange(no_detail);
+	const auto first_bounds = media->bounds;
+
+	assert_equal(false, first_bounds.is_empty(), "the media pane was laid out");
+
+	// One metadata block lands. It is below the primary content and it is not the media.
+	const std::vector<view_element_ptr> one_row{std::make_shared<flex_test_element>(sizei{200, 40})};
+	const auto height_with_row = arrange(one_row);
+
+	assert_equal(true, media->bounds == first_bounds, "a detail row neither moves nor resizes the media");
+
+	// Enough detail to take the column past the pane, which is where the arrangement used to change.
+	const std::vector<view_element_ptr> many_rows{
+		std::make_shared<flex_test_element>(sizei{200, 300}),
+		std::make_shared<flex_test_element>(sizei{200, 300}),
+		std::make_shared<flex_test_element>(sizei{200, 300})
+	};
+	const auto height_with_many = arrange(many_rows);
+
+	assert_equal(true, media->bounds == first_bounds, "detail past the pane height still does not move the media");
+	assert_equal(true, height_with_many > height_with_row, "detail grows the scrollable height instead");
+}
+
+// Verbose metadata closed: the media, the first information group and the toggle own the pane and
+// centre in it. The media shrinks to keep all three visible - a portrait image that took the whole
+// pane pushed the information group off the bottom, where nothing said it was there.
+static void should_fit_the_whole_primary_block_when_verbose_is_closed()
+{
+	flex_test_measure_context mc;
+	ui::control_layouts positions;
+	constexpr recti pane{0, 0, 200, 300};
+	const std::vector<view_element_ptr> no_detail;
+
+	const auto arrange = [&](const sizei media_extent, const view_element_ptr& toggle)
+	{
+		const auto media = std::make_shared<flex_test_element>(media_extent);
+		media->flex = media->flex | flex_item::media;
+		const std::vector<view_element_ptr> priority{media, std::make_shared<flex_test_element>(sizei{200, 20}), toggle};
+		const media_column_inputs in{&priority, &no_detail, &priority, pane, false};
+		layout_media_column(in, mc, positions);
+		return media;
+	};
+
+	// Portrait: taller than the pane on its own, so the media must give way.
+	auto tall_toggle = std::make_shared<flex_test_element>(sizei{200, 20});
+	const auto tall_media = arrange(sizei{200, 400}, tall_toggle);
+
+	assert_equal(true, tall_media->bounds.top >= pane.top, "a portrait image starts inside the pane");
+	assert_equal(true, tall_toggle->bounds.bottom <= pane.bottom, "the verbose toggle stays inside the pane");
+
+	// Landscape: everything fits, so the block centres rather than sitting at the top.
+	auto short_toggle = std::make_shared<flex_test_element>(sizei{200, 20});
+	const auto short_media = arrange(sizei{200, 100}, short_toggle);
+	const auto above = short_media->bounds.top - pane.top;
+	const auto below = pane.bottom - short_toggle->bounds.bottom;
+
+	assert_equal(true, above > 0, "a block that fits does not sit against the top");
+	assert_equal(true, std::abs(above - below) <= 1, "it is centred vertically");
+
+	// Shorter than the block can be made even with the media at its floor. Centring the overflow would
+	// push the top of the image above the pane, where the scroller cannot reach it.
+	constexpr recti short_pane{0, 0, 200, 150};
+	const auto squeezed = std::make_shared<flex_test_element>(sizei{200, 400});
+	squeezed->flex = squeezed->flex | flex_item::media;
+	const auto big_group = std::make_shared<flex_test_element>(sizei{200, 120});
+	const std::vector<view_element_ptr> cramped{squeezed, big_group};
+	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, false};
+	layout_media_column(cramped_in, mc, positions);
+
+	assert_equal(true, squeezed->bounds.top >= short_pane.top, "an overflowing block is never clipped off the top");
+}
+
+// Verbose metadata open: the media and the first information group are held at the top, both visible,
+// and the metadata blocks follow immediately. A centred line reports the container height rather than
+// the content height, which left a gap the size of the pane's free space between the two.
+static void should_follow_the_primary_block_when_verbose_is_open()
+{
+	flex_test_measure_context mc;
+	ui::control_layouts positions;
+	constexpr recti pane{0, 0, 200, 300};
+
+	const auto media = std::make_shared<flex_test_element>(sizei{200, 100});
+	media->flex = media->flex | flex_item::media;
+	const auto group = std::make_shared<flex_test_element>(sizei{200, 20});
+	const auto verbose = std::make_shared<flex_test_element>(sizei{200, 50});
+
+	const std::vector<view_element_ptr> priority{media, group};
+	const std::vector<view_element_ptr> detail{verbose};
+	const std::vector<view_element_ptr> all{media, group, verbose};
+
+	const media_column_inputs in{&priority, &detail, &all, pane, true};
+	const auto content_height = layout_media_column(in, mc, positions);
+
+	assert_equal(pane.top, media->bounds.top, "the block is aligned to the top");
+	assert_equal(true, group->bounds.bottom <= pane.bottom, "the information group is visible");
+	assert_equal(group->bounds.bottom, verbose->bounds.top, "verbose metadata follows with no gap");
+	assert_equal(true, content_height >= verbose->bounds.bottom - pane.top, "the scroll extent reaches it");
+}
+
 static void should_leave_full_screen_for_task_views()
 {
 	null_state_strategy ss;
@@ -491,6 +723,85 @@ static void should_close_view_scroller_bands_over_track()
 	assert_equal(track_height, bands.back().second, "bands close off the track");
 }
 
+// A host that has never been attached, or whose window has already been destroyed. Diffractor
+// 1.27.0 shipped a startup crash of exactly this shape: the sidebar borrowed the items view's
+// frame only when it was visible, but kept populating, counting and invalidating while hidden.
+class detached_test_host final : public std::enable_shared_from_this<detached_test_host>, public view_host
+{
+public:
+	int controller_requests = 0;
+	int controller_changes = 0;
+	int invalidations = 0;
+
+	// The whole point: no window, ever.
+	const ui::frame_ptr frame() const override { return ui::no_frame(); }
+	const ui::control_frame_ptr owner() override { return nullptr; }
+
+	void on_window_layout(ui::measure_context& mc, const sizei extent, bool is_minimized) override {}
+	void on_window_paint(ui::draw_context& dc) override {}
+	void tick() override {}
+	void activate(bool is_active) override {}
+	bool key_down(const int c, const ui::key_state keys) override { return false; }
+	void invoke(const commands cmd) override {}
+	bool is_command_checked(const commands cmd) override { return false; }
+	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override {}
+	void controller_changed() override { ++controller_changes; }
+	void invalidate_element(const view_element_ptr& e) override { ++invalidations; }
+	void invalidate_view(const view_invalid invalid) override { ++invalidations; }
+
+	view_controller_ptr controller_from_location(const pointi loc) override
+	{
+		++controller_requests;
+		return nullptr;
+	}
+};
+
+static void should_survive_a_host_with_no_window()
+{
+	const auto host = std::make_shared<detached_test_host>();
+	host->_extent = {200, 400};
+
+	// Every entry point view_host offers, in the order a real pointer session reaches them. Each
+	// one dereferences frame() unconditionally, so a null there is an access violation.
+	host->on_mouse_move({10, 10}, false);
+	host->on_mouse_left_button_down({10, 10}, {});
+	host->on_mouse_left_button_up({10, 10}, {});
+	host->on_mouse_middle_button_down({10, 10}, {});
+	host->on_mouse_middle_button_up({10, 10}, {});
+	host->on_mouse_left_button_double_click({10, 10}, {});
+	host->on_mouse_leave({10, 10});
+	host->update_cursor();
+	host->show_cursor(false);
+	host->invalidate_element(nullptr);
+
+	assert_equal(false, host->escape_controller(), "nothing to escape without a controller");
+	assert_equal(false, host->key_down_controller(U'a', {}), "no controller claims a key");
+	assert_equal(true, host->controller_requests > 0, "hit testing still ran");
+
+	// Scrolling asks the host for its window twice: once to shift the pixels, once to repaint.
+	view_scroller scroller;
+	scroller.layout({200, 4000}, recti(0, 0, 190, 400), recti(190, 0, 200, 400));
+	scroller.scroll_offset(host, 0, 500);
+	scroller.offset(host, 0, 120);
+	assert_equal(true, scroller.scroll_offset().y > 0, "the scroller still tracks its position");
+}
+
+static void should_answer_a_null_frame_without_side_effects()
+{
+	const auto f = ui::no_frame();
+	assert_equal(true, f != nullptr, "the stand-in is a real object");
+	assert_equal(true, f == ui::no_frame(), "one shared instance, so it costs nothing to ask");
+
+	// Answers chosen so a caller that acts on them does less, never more: an absent window is
+	// occluded (skip drawing), invisible, unfocused, and its cursor is outside every client rect.
+	assert_equal(true, f->is_occluded(), "nothing drawn into it could be seen");
+	assert_equal(false, f->is_visible(), "not visible");
+	assert_equal(false, f->has_focus(), "cannot hold focus");
+	assert_equal(false, f->is_enabled(), "cannot be interacted with");
+	assert_equal(true, f->window_bounds().is_empty(), "occupies nothing");
+	assert_equal(true, f->cursor_location() == pointi(-1, -1), "cursor is outside every client rect");
+}
+
 void register_tests7(view_state& state, test_registry& tests)
 {
 	tests.add("Should select settled zoom sampler"s, should_select_settled_zoom_sampler);
@@ -515,6 +826,13 @@ void register_tests7(view_state& state, test_registry& tests)
 	tests.add("Should map zoom navigator to source center"s, should_map_zoom_navigator_to_source_center);
 	tests.add("Should orient selector thumbnails"s, should_orient_selector_thumbnails);
 	tests.add("Should range select across selector"s, should_range_select_across_selector);
+	tests.add("Should stage neighbour stand ins"s, should_stage_neighbour_stand_ins);
+	tests.add("Should show selected thumbnail without waiting"s, should_show_selected_thumbnail_without_waiting);
+	tests.add("Should hold media column still as detail arrives"s, should_hold_media_column_still_as_detail_arrives);
+	tests.add("Should fit the whole primary block when verbose is closed"s,
+	          should_fit_the_whole_primary_block_when_verbose_is_closed);
+	tests.add("Should follow the primary block when verbose is open"s,
+	          should_follow_the_primary_block_when_verbose_is_open);
 	tests.add("Should leave full screen for task views"s, should_leave_full_screen_for_task_views);
 	tests.add("Should preserve view scroller anchor across layout"s,
 	          should_preserve_view_scroller_anchor_across_layout);
@@ -522,4 +840,6 @@ void register_tests7(view_state& state, test_registry& tests)
 	tests.add("Should drag view scroller thumb from grab point"s,
 	          should_drag_view_scroller_thumb_from_grab_point);
 	tests.add("Should close view scroller bands over track"s, should_close_view_scroller_bands_over_track);
+	tests.add("Should survive a host with no window"s, should_survive_a_host_with_no_window);
+	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);
 }

@@ -195,6 +195,54 @@ namespace platform
 
 	using file_ptr = std::shared_ptr<file>;
 
+	enum class map_mode
+	{
+		// One view over the whole file. data() is the file; touching all of it makes all of it
+		// resident, so this suits random sampling rather than a full scan.
+		whole_file,
+		// No view until set_window is called. Lets a full scan keep only a bounded window
+		// resident, which is both smaller and faster than scanning a whole-file view.
+		windowed,
+	};
+
+	// A read-only view of a file's bytes backed by the file itself rather than by heap.
+	//
+	// The pages are clean and shared, so they cost no commit charge and do not appear in the
+	// private working set that Task Manager reports as "Memory". They are also evictable without
+	// a pagefile write, because the file on disk is already their backing store. That makes this
+	// the cheapest way to read a large data file that is scanned once and then sampled at random.
+	//
+	// Only touched pages become resident, so mapping a whole file and reading a few records out of
+	// it costs a few pages rather than the file size.
+	class mapped_file : public df::no_copy
+	{
+	public:
+		virtual ~mapped_file() = default;
+
+		virtual uint64_t file_size() const = 0;
+
+		// The current view. Empty for a windowed mapping until set_window succeeds.
+		virtual df::cspan data() const = 0;
+
+		// Re-points the view at [offset, offset + len), clamped to the file. The returned span
+		// starts exactly at offset even though the underlying view is granularity-aligned. The
+		// previous view is invalidated, so callers must not retain spans across a call.
+		//
+		// Concurrency: data() and file_size() are safe to call from any number of threads, so a
+		// whole-file mapping can be shared by readers. set_window mutates the view and is not, so a
+		// shared mapping must not be re-windowed while readers hold it.
+		virtual df::cspan set_window(uint64_t offset, uint64_t len) = 0;
+
+		// Drops the mapped pages from the working set without unmapping. The data stays valid and
+		// faults back in on next touch, trading a soft fault for a smaller reported figure.
+		virtual void release_working_set() = 0;
+	};
+
+	using mapped_file_ptr = std::shared_ptr<mapped_file>;
+
+	// Null when the file is missing, empty or cannot be mapped.
+	mapped_file_ptr map_file(df::file_path path, map_mode mode = map_mode::whole_file);
+
 	enum class file_open_mode
 	{
 		read,
@@ -316,9 +364,27 @@ namespace platform
 	bool run(df::file_path exe, std::string_view cmd);
 	void show_in_file_browser(df::file_path path);
 	void show_in_file_browser(df::folder_path path);
-	bool working_set(int64_t& current, int64_t& peak);
+
+	// Total working set counts clean file-backed pages that are shared with every other process
+	// mapping the same file, so a memory-mapped data file inflates it while costing the process no
+	// private memory at all. Task Manager's Memory column reports the private working set, so that
+	// is the figure to show a user who is comparing the two.
+	struct memory_usage_t
+	{
+		int64_t private_working_set = 0;
+		int64_t shared_working_set = 0;
+		int64_t working_set = 0;
+		int64_t peak_working_set = 0;
+		int64_t commit = 0;
+	};
+
+	bool memory_usage(memory_usage_t& result);
 	df::folder_path temp_folder();
 	int display_frequency();
+
+	// The app is compiled for an SSE2 baseline, so anything wider has to be selected at run time.
+	bool has_avx2();
+
 	df::file_path resolve_link(df::file_path path);
 	bool created_date(df::file_path path, df::date_t dt);
 
@@ -374,6 +440,10 @@ namespace platform
 
 	std::string user_name();
 	std::string last_os_error();
+
+	// Last-resort feedback for a failure that happens before there is a window or a message loop to
+	// show the app's own dialog. Blocks until the user dismisses it.
+	void show_startup_failure(std::string_view message);
 
 	// Returns a human-readable reason why the file cannot currently be opened for writing
 	// (e.g. locked by another process, read-only, access denied), or an empty string if it
@@ -962,17 +1032,20 @@ namespace platform
 	{
 		mutex cs;
 		uint8_t* base = nullptr;
+		size_t reserved = 0;
 		size_t committed = 0;
 		size_t used = 0;
 
 		constexpr static size_t block_size = 1024_z * 1024_z; // commit granularity, and the largest record
 		constexpr static size_t alignment = 4;
 
-		// Address space only; pages are committed on demand. A 32-bit build cannot spare a gigabyte of
-		// its 2GB user address space, and will never index a collection that needs one.
+		// Address space only; pages are committed on demand, and alloc halves this until a reservation
+		// succeeds. A 32-bit build gets 2GB in total (the exe is not large-address-aware), so it takes a
+		// sixteenth rather than the half a gigabyte a 64-bit build can ignore; at roughly 30 bytes per
+		// interned name that still covers a collection far larger than a 32-bit process can index.
 		constexpr static size_t reserve_size = sizeof(void*) == 8
 			                                      ? 1024_z * 1024_z * 1024_z
-			                                      : 64_z * 1024_z * 1024_z;
+			                                      : 128_z * 1024_z * 1024_z;
 
 		void* alloc(size_t size);
 	};

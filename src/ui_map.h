@@ -68,7 +68,13 @@ public:
 		style.timer_milliseconds = 250;
 
 		_frame = owner->create_frame(weak_from_this(), style);
-		_engine = std::make_unique<map_engine>(_async, [this] { if (_frame) _frame->invalidate(); });
+		_engine = std::make_unique<map_engine>(_async, [this] { frame()->invalidate(); });
+	}
+
+	// Never null: the control is measured, laid out and asked to repaint before init() runs.
+	const ui::frame_ptr& frame() const
+	{
+		return _frame ? _frame : ui::no_frame();
 	}
 
 	sizei measure(ui::measure_context& mc, const int cx) const override
@@ -78,13 +84,13 @@ public:
 
 	void visit_controls(const std::function<void(const ui::control_base_ptr&)>& handler) override
 	{
-		handler(_frame);
+		handler(frame());
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
 	{
 		bounds = bounds_in;
-		positions.emplace_back(_frame, bounds, is_visible());
+		positions.emplace_back(frame(), bounds, is_visible());
 	}
 
 	void on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized) override
@@ -110,7 +116,7 @@ public:
 		if (!_hover)
 		{
 			_hover = true;
-			_frame->invalidate();
+			frame()->invalidate();
 		}
 
 		if (is_tracking && _engine)
@@ -172,7 +178,7 @@ public:
 		if (_hover)
 		{
 			_hover = false;
-			_frame->invalidate();
+			frame()->invalidate();
 		}
 	}
 
@@ -363,7 +369,7 @@ private:
 
 		// The bubble is a top-level window, so translate the anchor from map-local
 		// coordinates into screen coordinates before showing it.
-		const auto offset = _frame->window_bounds().top_left();
+		const auto offset = frame()->window_bounds().top_left();
 		_bubble->show(hover.elements, hover.window_bounds.offset(offset), hover.x_focus, hover.preferred_size,
 		              hover.horizontal);
 	}

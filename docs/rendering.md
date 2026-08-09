@@ -184,10 +184,11 @@ Why this matters, measured on an RX 7800 XT with the app's swap chain descriptio
 
 Before any `ResizeBuffers`, `handle_resize` calls
 `draw_context_device::release_back_buffer_references()` (a no-op on the software
-backend) to unbind the render target view left bound by the previous frame.
-`ResizeBuffers` fails with `DXGI_ERROR_INVALID_CALL` while any reference to a back
-buffer is outstanding, so this unbind is required, not an optimisation. `draw_scene`
-also unbinds the render target at the end of each frame for the same reason.
+backend) to unbind the render target view left bound by the previous frame and to drop
+the cached view itself. `ResizeBuffers` fails with `DXGI_ERROR_INVALID_CALL` while any
+reference to a back buffer is outstanding, so both are required, not an optimisation.
+`draw_scene` also unbinds the render target at the end of each frame for the same
+reason, and rebuilds the view on the next frame that finds it missing.
 
 The cost is video memory: the allocation is at most one quantum larger than the client
 in each dimension, or up to twice it in each dimension while the shrink threshold has
@@ -360,23 +361,42 @@ of `scene_atom`s rather than issuing an immediate draw per primitive. Each atom
 records a texture, a pixel shader, sampler/format, and a vertex/index range.
 `draw_scene` then:
 
-- clears state, binds the swap-chain back buffer as the render target
-  (`OMSetRenderTargets`), sets the viewport and scissor rect,
+- binds the swap-chain back buffer as the render target (`OMSetRenderTargets`), sets
+  the viewport and scissor rect,
 - binds the shared vertex shader, input layout, blend state, rasterizer state, and
 - walks the atoms, binding the right pixel shader + shader-resource view(s) per
   atom and issuing `DrawIndexed`,
-- unbinds the render target before returning, so nothing holds the back buffer
-  between frames.
+- unbinds the render target and the sampled textures before returning, so nothing
+  holds the back buffer between frames and no video surface is still bound as an
+  input when the next decoded frame is copied into it.
+
+There is no per-frame `ClearState`. This backend owns the device context outright -
+nothing else on it touches pipeline state - and the per-atom binding cache starts each
+frame with every slot null, so the first atom that needs a shader, sampler, constant
+buffer or vertex buffer binds it regardless of what the previous frame left behind.
+
+The render target view is built once per back buffer, not once per frame. Only
+`ResizeBuffers` replaces the underlying surface, and `release_back_buffer_references`
+runs before it.
 
 Consecutive atoms are merged when every piece of per-atom state matches (texture,
 shader, sampler, pixel format, colour space, transform and clip) and the merged
 vertex count still fits the 16-bit index range.
 
-Shader-resource views are cached in `texture_views` **for the duration of one
-`draw_scene` call**, so a texture drawn many times in a frame creates one view. The
-cache is keyed on a raw `ID3D11Texture2D*` and is cleared each frame; it is
-deliberately not persisted across frames, because a raw pointer can be reused by a
-different texture once the original is released.
+Shader-resource views are cached in `_texture_views` **across frames**, keyed on a raw
+`ID3D11Texture2D*`. Creating a view is a driver object allocation, so doing it per
+texture per frame is a cost proportional to the number of visible thumbnails.
+
+The raw key is safe because the cached value holds the view, and a view holds a
+reference to its own resource: while an entry exists its texture cannot be released,
+so its address cannot be recycled by a different texture. The only entries with a null
+view are ones whose creation failed, and those are always rebuilt rather than trusted.
+
+Lifetime is bounded by a `used` flag. `begin_draw` erases every entry the last rendered
+frame did not touch, then re-arms the flag for the frame being staged. The flag is not
+cleared per render because `redraw` replays a scene without calling `begin_draw`, so a
+video frame presented from the previous scene must not lose its views. An unused texture
+is therefore held one frame longer than the scene that last drew it.
 
 Pixel shaders cover the distinct material types:
 
@@ -515,6 +535,63 @@ Hardware-accelerated video decode is integrated in
 
 If HW decode is unavailable, video falls back to software decode + `av_scaler`.
 
+### Read-ahead and the surface pool
+
+Read-ahead is budgeted in **bytes**, not frames (`av_read_ahead_bytes` in
+[../src/av_format.h](../src/av_format.h)). Counting frames alone made read-ahead cost
+whatever the resolution cost: sixteen queued 1920x816 frames measure 63 MB, and 4K is
+four times the frame. `av_queue::should_receive` stops at the budget but never below
+`av_read_ahead_min_frames`, so a very large frame shortens the queue rather than
+emptying it, and `av_queued_payload_bytes` charges a frame what it actually occupies —
+its own buffers for software frames, the pool surface it pins for hardware ones.
+
+The D3D11VA pool is **one texture array allocated in full when the stream opens**, so
+every surface is paid for whether or not it is used. FFmpeg provisions the decoder's own
+reference frames (`ff_dxva2_common_frame_params`: one base surface plus sixteen for
+H.264/HEVC) and clamps the total to 64; `extra_hw_frames` is only what the app itself
+holds. It is therefore derived from the same budget — `av_read_ahead_frames` plus a
+margin for the frame on screen, the two `update_for_present` holds while it settles, and
+one the decoder emits after the queue stopped asking. **The queue limit and
+`extra_hw_frames` must stay in step**: hold more surfaces than the pool has and
+`d3d11va_pool_alloc` fails that frame with "Static surface pool size exceeded". Frame
+threading is off on this path because it costs one more pool surface per thread and buys
+almost nothing once the GPU is decoding. `d3d11_texture::update` logs the pool's real
+size the first time it bridges a stream.
+
+### Hover previews
+
+The scrubber tooltip and the hovered item thumbnail scrub a video through a **second decoder**,
+owned by the `media_preview` worker in [../src/app_workers.cpp](../src/app_workers.cpp) and kept
+away from playback entirely. It is software-only and video-only, one file at a time, and closes
+itself after five idle seconds. Requests coalesce: only the newest survives, because the pointer
+has usually moved on by the time one finishes.
+
+A seek lands on the key frame at or before the target, so `decode_nearest_frame` decodes forward
+to the frame the player would actually jump to. That walk is the whole cost of a preview — 30 to 50
+frames for a typical GOP — so it must stay cheap: **only a reference to the nearest frame is kept
+and exactly one scale runs**, at the end. Scaling every improving frame instead cost a bicubic pass
+and a fresh surface per frame of the GOP and threw all but the last away.
+
+Landing at or before the target is what makes the preview match where the player jumps, and it is
+also what makes the walk long: seeking to the key frame *after* the target, as the pre-1.27.0 code
+did, answered from the first frame decoded. Responsiveness is bought back by abandoning instead.
+**A walk stops as soon as a newer hover is queued behind it**, answering with the nearest frame it
+has reached — but never before it has one, so every hover still shows something. A pointer in
+motion therefore pays roughly the cost of a single frame, and the request the pointer stops on is
+the one that runs to completion and lands exactly.
+
+The decoder is reused across hovers, so **every request seeks**, including one near the start.
+Skipping the seek for a small position leaves the walk beginning wherever the previous hover
+stopped, where every frame is already past the requested time and the first one seen is returned.
+
+The two hovers do not want the same thing. The scrubber promises the frame playback will jump to,
+so it walks to the exact one. A hovered thumbnail only says what the video contains, so it passes a
+tolerance — a fraction of the duration, currently 2% — and the walk stops at the first frame inside
+it, which is normally the key frame the seek already landed on. That is one decode rather than a
+GOP. The hovered thumbnail also costs a PNG encode and a re-decode on `async_queue::render`,
+because the frame is persisted as the item's thumbnail; that is a few milliseconds of work but it
+is two hops behind whatever else that queue is carrying.
+
 ## Resilience
 
 Rendering is defended by several mechanisms, all aimed at "never leave the user
@@ -545,6 +622,15 @@ with a blank or crashing window":
   only that access violation, disables YUV textures durably (`setting.use_yuv =
   false`), and falls back to RGB video/JPEG rendering. All other exceptions
   propagate to the global handler so real bugs are not hidden.
+
+  `setting.use_yuv` is the single switch this fallback shares with the Advanced
+  option and with safe start, so it is read where the format is chosen — in
+  `files::decode_jpeg` and `load_webp`, which then decode to RGB, and in
+  `d3d11_texture::update(const_surface_ptr)`, which converts any NV12 surface
+  decoded before the fault rather than asking the driver for another YUV texture.
+  A producer that ignores the setting leaves all three with no effect and the
+  faulting driver with no way out; `Should honor the yuv texture setting`
+  (test_media_edit.cpp) is the guard.
 - **Software fallback**: any failure to build a D3D draw context downgrades that
   window to CPU rendering, and a runtime device loss downgrades the whole process
   (see Device loss above). The software backend type-checks textures handed to it,

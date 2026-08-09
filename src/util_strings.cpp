@@ -218,10 +218,13 @@ struct string_index_t
 
 	string_index_t()
 	{
+		df::assert_true(crypto::fnv1a_i({}) == str::detail::empty_ihash);
+
 		// Burn the first slot on an empty record and publish the base, so handle 0 is the empty string
 		// and every later handle resolves to real content.
 		auto* const empty = static_cast<str::chached_string_storage_t*>(_pool.alloc(entry_overhead));
 		empty->len = 0;
+		empty->ihash = str::detail::empty_ihash;
 		empty->sz[0] = 0;
 		df::assert_true(std::bit_cast<const uint8_t*>(empty) == _pool.base);
 		str::detail::intern_pool_base.store(empty, std::memory_order_release);
@@ -235,6 +238,7 @@ struct string_index_t
 		auto* const copy = static_cast<str::chached_string_storage_t*>(_pool.alloc(allocation));
 
 		copy->len = static_cast<uint32_t>(len);
+		copy->ihash = crypto::fnv1a_i(sv);
 		memcpy_s(copy->sz, allocation - offsetof(str::chached_string_storage_t, sz), sv.data(), len * sizeof(char));
 		copy->sz[len] = 0;
 

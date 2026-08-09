@@ -276,7 +276,7 @@ private:
 
 	// Item-location markers, indexed spatially so only the visible ones are
 	// projected/clustered each view change.
-	std::vector<kd_coordinates_t> _marker_coords; // x=longitude, y=latitude, offset=caller index
+	kd_points _marker_coords; // x=longitude, y=latitude, offset=caller index
 	std::vector<uint32_t> _marker_counts;
 	kd_tree _marker_tree;
 	bool _has_markers = false;
@@ -491,12 +491,9 @@ public:
 		{
 			if (markers[i].coordinate.is_valid() && markers[i].count > 0)
 			{
-				kd_coordinates_t c;
-				c.x = static_cast<float>(markers[i].coordinate.longitude());
-				c.y = static_cast<float>(markers[i].coordinate.latitude());
-				c.offset = i;
-				c.country = 0;
-				_marker_coords.push_back(c);
+				_marker_coords.emplace_back(static_cast<float>(markers[i].coordinate.longitude()),
+				                            static_cast<float>(markers[i].coordinate.latitude()),
+				                            i, 0, 0, 0.0f);
 				_marker_counts[i] = markers[i].count;
 			}
 		}

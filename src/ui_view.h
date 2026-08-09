@@ -315,7 +315,9 @@ public:
 	virtual bool is_command_checked(commands cmd) = 0;
 	virtual void track_menu(recti recti, const std::vector<ui::command_ptr>& commands) = 0;
 	virtual void controller_changed() = 0;
-	virtual const ui::frame_ptr frame() = 0;
+	// Never null: a host with no window yet, or none any more, answers ui::no_frame(). Everything
+	// below dereferences this without checking, and so may every caller.
+	virtual const ui::frame_ptr frame() const = 0;
 	virtual const ui::control_frame_ptr owner() = 0;
 	virtual view_controller_ptr controller_from_location(pointi loc) = 0;
 

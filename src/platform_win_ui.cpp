@@ -2307,7 +2307,7 @@ public:
 
 		if (_styles.spelling)
 		{
-			spell.lazy_load();
+			spell().lazy_load();
 		}
 
 		if (!_styles.cue.empty())
@@ -2618,7 +2618,7 @@ void edit_impl::update_spelling(const std::wstring& text)
 			{
 				auto word_a = str::utf16_to_utf8(word);
 
-				if (!spell.is_word_valid(word_a))
+				if (!spell().is_word_valid(word_a))
 				{
 					add_unknown_word(word_a, word_start, word_start + static_cast<int>(word.size()));
 				}
@@ -2646,7 +2646,7 @@ void edit_impl::update_spelling(const std::wstring& text)
 	{
 		const auto word_a = str::utf16_to_utf8(word);
 
-		if (!spell.is_word_valid(word_a))
+		if (!spell().is_word_valid(word_a))
 		{
 			add_unknown_word(word_a, word_start, std::min(word_start + static_cast<int>(word.size()), len - 1));
 		}
@@ -3588,7 +3588,7 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 	{
 		HRESULT hr = S_OK;
 
-		if (use_d3d && _f->d3d_device)
+		if (use_d3d && _f->d3d_device && _f->dxgi)
 		{
 			ComPtr<IDXGISwapChain> sc;
 			ComPtr<IDXGIFactory2> f2;
@@ -5607,6 +5607,7 @@ public:
 		bool visible = false;
 		bool size_changed = true;
 		bool self_painting = false;
+		bool appearing = false;
 
 		bool suppress_redraw() const noexcept
 		{
@@ -5648,13 +5649,17 @@ public:
 
 			// A child whose parent moved but whose relative bounds did not change was skipped by the
 			// nested layout, so repaint direct children without rendering the parent surface again.
+			// A window that is appearing has nothing on screen at all, and this runs once the whole
+			// batch is in place, which is the first moment it is no longer covered by a sibling.
+			if (!self_painting || appearing)
+			{
+				RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
+			}
+
 			if (self_painting)
 			{
 				EnumChildWindows(h, invalidate_direct_child, std::bit_cast<LPARAM>(h));
-				return;
 			}
-
-			RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 		}
 	};
 
@@ -5704,7 +5709,7 @@ public:
 
 			moves.push_back({
 				h, bounds, was_visible ? current_bounds : recti{}, c.visible, size_changed,
-				std::dynamic_pointer_cast<frame>(c.control) != nullptr
+				std::dynamic_pointer_cast<frame>(c.control) != nullptr, c.visible && !was_visible
 			});
 		}
 
@@ -6518,7 +6523,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 		if (popup.CreatePopupMenu())
 		{
 			// Append the suggestions, if there are any
-			auto suggestions = spell.suggest(selected_word.word);
+			auto suggestions = spell().suggest(selected_word.word);
 			if (suggestions.size() > 8) suggestions.resize(8);
 
 			uint32_t item_id = ID_SPELLCHECK_OPT0;
@@ -6569,7 +6574,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 				break;
 
 			case ID_SPELLCHECK_ADD:
-				spell.add_word(selected_word.word);
+				spell().add_word(selected_word.word);
 				InvalidateRect(m_hWnd, nullptr, TRUE);
 				break;
 
@@ -7970,13 +7975,6 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 
 				CloseHandle(dump_file);
 			}
-			else
-			{
-				// Log the error if file creation failed
-				const auto error = GetLastError();
-				// Can't use normal logging during crash handling, but store for later
-				(void)error; // Suppress unused variable warning
-			}
 		}
 	}
 
@@ -7996,11 +7994,15 @@ static LONG WINAPI exception_callback(EXCEPTION_POINTERS* pExceptionPointers)
 	if (app)
 	{
 		const auto dump_file_path = platform::temp_file();
+		const auto dump_created = create_dump(pExceptionPointers, dump_file_path);
 
-		if (create_dump(pExceptionPointers, dump_file_path))
-		{
-			app->crash(dump_file_path);
-		}
+		// A failed write still leaves the file create_dump opened.
+		if (!dump_created) platform::delete_file(dump_file_path);
+
+		// Reported even when no dump could be written: dbghelp or the temp file can fail, and that
+		// is exactly the machine whose next launch would crash again. The handler also records the
+		// crashed file in the skip list, which must not depend on the minidump.
+		app->crash(dump_created ? dump_file_path : df::file_path{});
 	}
 
 	return EXCEPTION_CONTINUE_SEARCH;
@@ -8238,6 +8240,14 @@ static void show_fatal_error(const std::string_view message)
 	::MessageBox(nullptr, s.c_str(), s_app_name_l, MB_OK | MB_ICONHAND);
 }
 
+// The app's own failure dialog needs a window and a running message loop. Startup failures happen
+// before both exist, so they come back here for a bare message box instead of being queued to a
+// loop that is never entered - a silent exit is the one outcome worth ruling out.
+void platform::show_startup_failure(const std::string_view message)
+{
+	show_fatal_error(message);
+}
+
 
 //
 //STDAPI SetProcessDpiAwareness(
@@ -8249,7 +8259,7 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 	is_current_thread_ui = true;
 
 	constexpr int result = 0;
-	const auto app_impl = std::make_shared<win32_app>();
+	std::shared_ptr<win32_app> app_impl;
 	ui::app_ptr app;
 
 	// Every startup failure below returns early, so teardown is expressed as scope guards rather
@@ -8261,6 +8271,10 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 	try
 	{
+		// Nothing above the try may allocate: a throw there escapes the handlers below and the user
+		// sees the process vanish instead of a message.
+		app_impl = std::make_shared<win32_app>();
+
 		// Done in manifest
 		//SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 
@@ -8439,6 +8453,13 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 	{
 		df::log(__FUNCTION__, e.what());
 		show_fatal_error(str::utf8_cast(e.what()));
+	}
+	catch (...)
+	{
+		// Not everything thrown through here derives from std::exception - COM wrappers and
+		// third-party code throw their own types. Without this the runtime calls terminate and the
+		// user sees the process vanish with nothing said. The detail is diagnostic, like e.what().
+		show_fatal_error("Unhandled exception");
 	}
 
 #ifdef _DEBUG

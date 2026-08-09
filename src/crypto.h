@@ -69,7 +69,6 @@ namespace crypto
 	uint32_t crc32c(std::string_view sv);
 
 	uint32_t fnv1a_i(std::string_view sv);
-	uint32_t fnv1a_i(std::string_view sv1, std::string_view sv2);
 
 	std::vector<uint8_t> encrypt(df::cspan cs, std::string_view password);
 	std::vector<uint8_t> decrypt(df::cspan cs, std::string_view password);

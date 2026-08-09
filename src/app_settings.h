@@ -132,6 +132,18 @@ constexpr bool should_seed_default_favorite_tags(const bool initialized, const b
 	return !initialized && current_is_empty && settings_root_created;
 }
 
+// A start is "settled" once the window is up and the message loop has gone idle at least once.
+// Anything that crashes before that repeats on every relaunch with no user action to blame it on,
+// and the user has nothing to click to escape it. After this many consecutive starts that never
+// settled, the next one reverts presentation to defaults and turns the graphics path off. Two,
+// because one unsettled start is also what an ordinary kill or power loss during launch looks like.
+constexpr uint32_t max_unsettled_starts = 2;
+
+constexpr bool should_start_safe(const uint32_t unsettled_starts)
+{
+	return unsettled_starts >= max_unsettled_starts;
+}
+
 
 class settings_t
 {
@@ -140,6 +152,11 @@ public:
 
 	void read();
 	void write() const;
+
+	// Restores every setting that decides what the window puts on screen, and forces the graphics
+	// path off. Used only by a safe start, so it must not touch anything the user cannot re-reach
+	// from the UI afterwards: collection roots, recent lists, copyright and task fields all stay.
+	void reset_presentation();
 
 	// Constants
 	static constexpr int item_splitter_max = 10000;

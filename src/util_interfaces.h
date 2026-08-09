@@ -81,6 +81,7 @@ enum class async_queue
 
 
 constexpr auto thumbnail_quality = 85;
+constexpr auto thumbnail_webp_quality = 80;
 
 
 struct metadata_text_detail

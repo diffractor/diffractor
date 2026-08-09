@@ -24,42 +24,6 @@
 #include "ui_elements.h"
 #include "ui_map_common.h"
 
-class flex_test_measure_context final : public ui::measure_context
-{
-public:
-	sizei measure_text(std::string_view text, ui::style::font_face font, ui::style::text_style style, int cx,
-	                   int cy = 0) override
-	{
-		return {};
-	}
-
-	int text_line_height(ui::style::font_face font) override
-	{
-		return 0;
-	}
-
-	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override
-	{
-		return {};
-	}
-};
-
-class flex_test_element final : public view_element
-{
-	sizei _desired;
-
-public:
-	explicit flex_test_element(const sizei desired) : _desired(desired)
-	{
-		padding(0);
-	}
-
-	sizei measure(ui::measure_context& mc, const int width_limit) const override
-	{
-		return {std::min(_desired.cx, width_limit), _desired.cy};
-	}
-};
-
 // Behaves like text: content that does not fit the width limit wraps onto a second line.
 class flex_wrapping_test_element final : public view_element
 {
@@ -1976,12 +1940,21 @@ static void should_record_crashes()
 		assert_equal(test_crash_files.skipped_file_count(), paths.size(), "a repeated crash adds no duplicates");
 	}
 
-	// A decoder fix ships in an update, so entries earned by an earlier build must not skip files
-	// forever - the next build retries them.
+	// A decoder fix ships in an update, so entries earned by an earlier release must not skip files
+	// forever - the next release line retries them.
 	{
 		crash_files_db next_build(db_path, "test-build-2"sv);
-		assert_equal(next_build.skipped_file_count(), 0_z, "a new build retries files an older build recorded");
+		assert_equal(next_build.skipped_file_count(), 0_z, "a new release retries files an older one recorded");
 	}
+
+	// A crash is far more costly than a missing thumbnail, so the tag is coarse: neither a rebuild nor
+	// a point release may discard what the list has earned.
+	assert_equal(crash_files_db::release_tag("127.1"), crash_files_db::release_tag("127.9"),
+	             "a point release keeps the skip list");
+	assert_equal(crash_files_db::release_tag(df::format_version(true)), crash_files_db::release_tag(s_app_version),
+	             "the tag carries no build number");
+	assert_equal(crash_files_db::release_tag("127.1") != crash_files_db::release_tag("128.0"), true,
+	             "the next release line retries");
 }
 
 static void write_binary_file(const df::file_path path, const uint8_t* const data, const int size)
@@ -2698,12 +2671,12 @@ static void should_trigger_rescan_only_after_full_metadata_load()
 	             "trigger remains one-shot after completing");
 }
 
-// A neighbour prefetch claims _photo_loaded before the load runs. If the load then fails and the
-// claim stands, the texture is retained under its path and reused when the user navigates onto it --
-// and both the paths that would load it (display_state_t::populate and texture_state::refresh) skip
-// a texture that reports itself loaded. The image would then never load and never report a problem,
-// leaving the thumbnail standing in for it for as long as the texture stayed cached.
-static void should_retry_after_failed_prefetch()
+// A load claims _photo_loaded before it runs. If the load then fails and the claim stands, the
+// texture is retained under its path and reused when the user navigates back onto it -- and both the
+// paths that would load it (display_state_t::populate and texture_state::refresh) skip a texture that
+// reports itself loaded. The image would then never load and never report a problem, leaving the
+// thumbnail standing in for it for as long as the texture stayed cached.
+static void should_retry_after_failed_load()
 {
 	const auto good_path = _temps.next_path(".jpg");
 	const auto missing_path = _temps.next_path(".jpg");
@@ -2717,33 +2690,176 @@ static void should_retry_after_failed_prefetch()
 	const auto good_item = load_item(index, good_path, true);
 	const auto missing_item = load_item(index, missing_path, true);
 
-	// Indexed while present, then removed, so the prefetch load is guaranteed to fail.
+	// Indexed while present, then removed, so the load is guaranteed to fail.
 	platform::delete_file(missing_path);
 
 	const auto failed = std::make_shared<texture_state>(as, missing_item);
-	failed->prefetch(missing_item); // synchronous under null_async_strategy
+	failed->load_image(missing_item); // synchronous under null_async_strategy
 
-	assert_equal(false, failed->_photo_loaded, "failed prefetch does not leave the image claimed as loaded");
-	assert_equal(true, failed->_load_retry_pending, "failed prefetch arms the retry that arriving on the item uses");
-	assert_equal(true, failed->_is_placeholder, "failed prefetch still shows the thumbnail standing in");
+	assert_equal(false, failed->_photo_loaded, "failed load does not leave the image claimed as loaded");
+	assert_equal(true, failed->_load_retry_pending, "failed load arms the retry that arriving on the item uses");
+	assert_equal(true, failed->_is_placeholder, "failed load still shows the thumbnail standing in");
 
 	// Arriving on the item is what must recover. refresh() is the per-tick path the display runs, and
 	// it loads only when the texture does not claim to be loaded -- so this fails if the claim stands.
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), missing_path, false, true);
 	failed->refresh(missing_item);
 
-	assert_equal(true, failed->_photo_loaded, "arriving on the item after a failed prefetch loads it");
+	assert_equal(true, failed->_photo_loaded, "arriving on the item after a failed load loads it");
 	assert_equal(false, failed->_is_placeholder, "recovered load replaces the thumbnail with the image");
 	assert_equal(false, failed->loaded().is_empty(), "recovered load holds the decoded image");
 
 	// The success path must keep working: the claim stands and the decoded image replaces the thumb.
 	const auto loaded = std::make_shared<texture_state>(as, good_item);
-	loaded->prefetch(good_item);
+	loaded->load_image(good_item);
 
-	assert_equal(true, loaded->_photo_loaded, "successful prefetch claims the image so arriving does not reload");
-	assert_equal(false, loaded->_is_placeholder, "successful prefetch replaces the thumbnail with the image");
-	assert_equal(false, loaded->loaded().is_empty(), "successful prefetch holds the decoded image");
-	assert_equal(false, loaded->_load_retry_pending, "successful prefetch arms no retry");
+	assert_equal(true, loaded->_photo_loaded, "successful load claims the image so arriving does not reload");
+	assert_equal(false, loaded->_is_placeholder, "successful load replaces the thumbnail with the image");
+	assert_equal(false, loaded->loaded().is_empty(), "successful load holds the decoded image");
+	assert_equal(false, loaded->_load_retry_pending, "successful load arms no retry");
+}
+
+// With no item-to-item fade there is no outgoing image to cover phase 1's latency, so anything the
+// display cannot draw at once is a visible flash of the shaped grey rectangle. The browser has
+// already decoded a thumbnail surface for every visible item, and adopting it is what makes phase 1
+// immediate rather than a render-worker round trip. Demotion off the display gives up every decoded
+// representation, so returning to a cached item needs the same seed or it waits out a full decode.
+static void should_seed_placeholder_from_staged_thumbnail()
+{
+	const auto file_path = _temps.next_path(".jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	const auto item = load_item(index, file_path, true);
+	assert_equal(true, item->has_cached_surface(), "fixture staged the item's thumbnail surface");
+
+	const auto tex = std::make_shared<texture_state>(as, item);
+	assert_equal(false, tex->has_visual(), "a fresh texture state has nothing to draw before it is seeded");
+
+	tex->seed_placeholder(item);
+	assert_equal(true, tex->has_visual(), "selection draws the staged thumbnail without waiting on a decode");
+	assert_equal(true, tex->is_provisional(), "the thumbnail standing in is still marked provisional");
+
+	// Seeding must never step backwards onto something better.
+	tex->load_image(item); // synchronous under null_async_strategy
+	assert_equal(false, tex->_is_placeholder, "load replaced the thumbnail with the image");
+	tex->seed_placeholder(item);
+	assert_equal(false, tex->_is_placeholder, "seeding does not reinstate the thumbnail over a loaded image");
+
+	tex->release_decoded_surfaces();
+	assert_equal(false, tex->has_visual(), "demotion gives up every representation the entry decoded");
+	assert_equal(false, tex->loaded().is_empty(), "demotion keeps the loaded image so no file is re-read");
+
+	tex->seed_placeholder(item);
+	assert_equal(true, tex->has_visual(), "returning to a demoted item draws the thumbnail at once");
+}
+
+// A thumbnail budget that evicted without re-arming the database query would leave the item blank for
+// as long as the search stayed open: update_visible_items_list only asks the database for items whose
+// query is still pending, and every other route to a thumbnail is a file scan.
+static void should_trim_thumbnail_blobs_by_distance()
+{
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	df::item_elements items;
+
+	for (auto i = 0; i < 4; ++i)
+	{
+		const auto path = _temps.next_path(".jpg");
+		platform::copy_file(test_files_folder.combine_file("Test.jpg"), path, false, true);
+		items.emplace_back(load_item(index, path, true));
+	}
+
+	// Two items on screen, one a viewport below, one far below.
+	constexpr recti viewport{0, 0, 400, 300};
+	items[0]->bounds = {0, 0, 200, 150};
+	items[1]->bounds = {200, 0, 400, 150};
+	items[2]->bounds = {0, 700, 200, 850};
+	items[3]->bounds = {0, 3000, 200, 3150};
+
+	size_t total = 0;
+
+	for (const auto& i : items)
+	{
+		assert_equal(true, i->has_thumb(), "fixture loaded a thumbnail", "trim thumbnails");
+		assert_equal(true, i->begin_db_thumbnail_query(), "database query starts pending", "trim thumbnails");
+		total += i->thumbnail_blob_bytes();
+	}
+
+	assert_equal(0, static_cast<int>(df::trim_thumbnail_blobs(items, viewport, total)),
+	             "nothing released while inside the budget", "trim thumbnails");
+	assert_equal(true, items[3]->has_thumb(), "the furthest item keeps its thumbnail inside the budget",
+	             "trim thumbnails");
+
+	// Items is not always the laid-out view, and ranking by distance from nothing would dump the set.
+	assert_equal(0, static_cast<int>(df::trim_thumbnail_blobs(items, recti{}, 1)),
+	             "an empty viewport releases nothing", "trim thumbnails");
+	assert_equal(true, items[3]->has_thumb(), "an empty viewport keeps every thumbnail", "trim thumbnails");
+
+	const auto dims_before = items[3]->layout_dims();
+
+	assert_equal(true, df::trim_thumbnail_blobs(items, viewport, 1) > 0, "over budget releases something",
+	             "trim thumbnails");
+	assert_equal(true, items[0]->has_thumb(), "an item in the viewport keeps its thumbnail", "trim thumbnails");
+	assert_equal(true, items[1]->has_thumb(), "an item in the viewport keeps its thumbnail", "trim thumbnails");
+	assert_equal(false, items[2]->has_thumb(), "an item a viewport away gives its thumbnail up", "trim thumbnails");
+	assert_equal(false, items[3]->has_thumb(), "the furthest item gives its thumbnail up", "trim thumbnails");
+
+	assert_equal(true, items[3]->begin_db_thumbnail_query(), "an evicted item re-asks the database",
+	             "trim thumbnails");
+	assert_equal(false, items[0]->begin_db_thumbnail_query(), "a retained item does not re-ask", "trim thumbnails");
+	assert_equal(dims_before.cx, items[3]->layout_dims().cx, "eviction does not reflow the row", "trim thumbnails");
+	assert_equal(dims_before.cy, items[3]->layout_dims().cy, "eviction does not reflow the row", "trim thumbnails");
+}
+
+// The recent-texture cache retains by form, not by recency. An entry that is no longer displayed
+// gives up everything it decoded, because re-decoding an encoded file at display size costs less than
+// the surface costs to hold -- but a format that decoded straight to a surface has no encoded form to
+// fall back on, and dropping its pixels would send it back to the file for a full native-size decode.
+static void should_retain_undisplayed_images_by_form()
+{
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	const auto jpeg_path = _temps.next_path(".jpg");
+	const auto heif_path = _temps.next_path(".heic");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), jpeg_path, false, true);
+	platform::copy_file(test_files_folder.combine("excluded1").combine_file("melnik-rotated.heic"), heif_path, false,
+	                    true);
+
+	const auto encoded = std::make_shared<texture_state>(as, load_item(index, jpeg_path, true));
+	const auto surface_only = std::make_shared<texture_state>(as, load_item(index, heif_path, true));
+
+	encoded->load_image(load_item(index, jpeg_path, false)); // synchronous under null_async_strategy
+	surface_only->load_image(load_item(index, heif_path, false));
+
+	assert_equal(false, encoded->loaded().is_empty(), "jpeg loaded", "retain by form");
+	assert_equal(false, surface_only->loaded().is_empty(), "heif loaded", "retain by form");
+	assert_equal(0, static_cast<int>(encoded->retained_decoded_bytes()),
+	             "a jpeg holds no decoded pixels before it is drawn", "retain by form");
+	assert_equal(true, surface_only->retained_decoded_bytes() > 0,
+	             "a heif decodes straight to a surface, so its pixels are its only representation",
+	             "retain by form");
+
+	encoded->release_decoded_surfaces();
+	surface_only->release_decoded_surfaces();
+
+	assert_equal(0, static_cast<int>(encoded->retained_decoded_bytes()), "the jpeg keeps nothing decoded",
+	             "retain by form");
+	assert_equal(true, surface_only->retained_decoded_bytes() > 0,
+	             "the heif keeps the surface it cannot cheaply rebuild", "retain by form");
+
+	// Both must still be loaded, or the next draw returns to the file and the cache achieved nothing.
+	assert_equal(false, encoded->loaded().is_empty(), "release keeps the jpeg loaded", "retain by form");
+	assert_equal(false, surface_only->loaded().is_empty(), "release keeps the heif loaded", "retain by form");
+	assert_equal(true, encoded->_photo_loaded, "release does not re-arm a file load", "retain by form");
+	assert_equal(true, surface_only->_photo_loaded, "release does not re-arm a file load", "retain by form");
 }
 
 // A reopen queued by detach_file_handles lands on the UI thread long after the teardown that queued
@@ -3160,17 +3276,13 @@ static void should_resolve_tile_cache_db_beside_index_db()
 static void should_query_kdtree_bounds()
 {
 	// A 10x10 integer grid of points; offset encodes the original index.
-	std::vector<kd_coordinates_t> pts;
+	kd_points pts;
 	for (int gx = 0; gx < 10; ++gx)
 	{
 		for (int gy = 0; gy < 10; ++gy)
 		{
-			kd_coordinates_t c;
-			c.x = static_cast<float>(gx);
-			c.y = static_cast<float>(gy);
-			c.offset = static_cast<uint32_t>(gx * 10 + gy);
-			c.country = 0;
-			pts.push_back(c);
+			pts.emplace_back(static_cast<float>(gx), static_cast<float>(gy),
+			                 static_cast<uint32_t>(gx * 10 + gy), 0, 0, 0.0f);
 		}
 	}
 
@@ -3196,6 +3308,70 @@ static void should_query_kdtree_bounds()
 	std::vector<kd_coordinates_t> all;
 	tree.find_in_bounds(pts, -1.0f, -1.0f, 100.0f, 100.0f, all);
 	assert_equal(100, static_cast<int>(all.size()), "full window", "kd bounds");
+}
+
+static void should_find_the_closest_kdtree_point()
+{
+	// Deliberately elongated (x spans 4, y spans 400): a node's bounding box prunes such a spread
+	// far more tightly than a bounding circle, so a pruning error surfaces here as a wrong answer.
+	kd_points pts;
+	std::vector<std::pair<float, float>> expected;
+	uint32_t seed = 12345;
+	const auto next_rand = [&seed]
+	{
+		seed = seed * 1664525u + 1013904223u;
+		return static_cast<float>(seed % 100000u) * 0.00001f;
+	};
+
+	for (uint32_t i = 0; i < 400; ++i)
+	{
+		const auto x = next_rand() * 4.0f;
+		const auto y = next_rand() * 400.0f;
+		pts.emplace_back(x, y, i * 3 + 1, 7, i, 0.0f);
+		expected.emplace_back(x, y);
+	}
+
+	kd_tree tree;
+	tree.build(pts);
+
+	// Query points inside, at the corners of, and far outside the data extent.
+	const std::vector<std::pair<float, float>> queries{
+		{0.0f, 0.0f}, {2.0f, 200.0f}, {3.9f, 399.0f}, {0.1f, 12.5f}, {-40.0f, -40.0f},
+		{900.0f, 900.0f}, {-1000.0f, 25.0f}, {2.0f, 100000.0f}
+	};
+
+	for (const auto& [qx, qy] : queries)
+	{
+		auto best_d2 = std::numeric_limits<double>::max();
+
+		for (const auto& [px, py] : expected)
+		{
+			const double dx = px - qx, dy = py - qy;
+			best_d2 = std::min(best_d2, dx * dx + dy * dy);
+		}
+
+		const auto found = tree.find_closest(pts, qx, qy);
+		const double fdx = found.x - qx, fdy = found.y - qy;
+		const auto found_d2 = fdx * fdx + fdy * fdy;
+
+		assert_equal(true, std::abs(found_d2 - best_d2) <= 1e-6 * std::max(1.0, best_d2),
+		             "matches the brute-force nearest", "kd closest");
+
+		// The build reorders coordinates and record fields in lockstep, so the record that comes
+		// back must still be the one that owns the coordinate it came back with.
+		assert_equal(true, found.id < expected.size(), "record identifies a point", "kd closest");
+		assert_equal(true, df::equiv(found.x, expected[found.id].first) &&
+		             df::equiv(found.y, expected[found.id].second), "record travels with its coordinate",
+		             "kd closest");
+		assert_equal(static_cast<int>(found.id * 3 + 1), static_cast<int>(found.offset),
+		             "every record field travels together", "kd closest");
+	}
+
+	// An empty set has no tree and therefore no answer.
+	kd_points none;
+	kd_tree empty;
+	empty.build(none);
+	assert_equal(true, empty.is_empty(), "an empty point set builds no nodes", "kd closest");
 }
 
 static void should_anchor_map_marker_cells_to_world()
@@ -3471,7 +3647,10 @@ void register_tests6(view_state& state, test_registry& tests)
 	tests.add("Should refresh same item metadata after hydration"s, should_refresh_same_item_metadata_after_hydration);
 	tests.add("Should trigger rescan only after full metadata load"s,
 	          should_trigger_rescan_only_after_full_metadata_load);
-	tests.add("Should retry after failed prefetch"s, should_retry_after_failed_prefetch);
+	tests.add("Should retry after failed load"s, should_retry_after_failed_load);
+	tests.add("Should seed placeholder from staged thumbnail"s, should_seed_placeholder_from_staged_thumbnail);
+	tests.add("Should trim thumbnail blobs by distance"s, should_trim_thumbnail_blobs_by_distance);
+	tests.add("Should retain undisplayed images by form"s, should_retain_undisplayed_images_by_form);
 	tests.add("Should preserve metadata when dehydrated"s, should_preserve_metadata_when_dehydrated);
 	tests.add("Should fetch shell thumbnail only for offline visible"s,
 	          should_fetch_shell_thumbnail_only_for_offline_visible);
@@ -3491,6 +3670,7 @@ void register_tests6(view_state& state, test_registry& tests)
 	tests.add("Should replace an unreadable tile cache"s, should_replace_an_unreadable_tile_cache);
 	tests.add("Should resolve tile cache db beside index db"s, should_resolve_tile_cache_db_beside_index_db);
 	tests.add("Should query kd-tree bounds"s, should_query_kdtree_bounds);
+	tests.add("Should find the closest kd-tree point"s, should_find_the_closest_kdtree_point);
 	tests.add("Should anchor map marker cells to world"s, should_anchor_map_marker_cells_to_world);
 	tests.add("Should measure distance to map cells"s, should_measure_distance_to_map_cells);
 	tests.add("Should frame map on the box that holds items"s, should_frame_map_on_the_box_that_holds_items);

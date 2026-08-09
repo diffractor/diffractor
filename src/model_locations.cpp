@@ -275,6 +275,8 @@ location_cache::location_cache() : _locations_path(df::probe_data_file(places_fi
 	static_assert(sizeof(location_ngram_and_offset) == 8);
 	static_assert(sizeof(location_id_and_offset) == 8);
 	static_assert(sizeof(kd_coordinates_t) == 24);
+	static_assert(sizeof(kd_point) == 8);
+	static_assert(sizeof(kd_payload) == 16);
 }
 
 void location_cache::set_display_language(const std::string_view code)
@@ -293,17 +295,157 @@ void location_cache::set_display_language(const std::string_view code)
 	_display_lang_bit.store(bit, std::memory_order_relaxed);
 }
 
-static void skip_bom(std::ifstream& file)
+// Iterates the lines of a mapped file without copying them and without making the whole file
+// resident. A whole-file view would be simpler, but scanning it touches every page and leaves the
+// file's full size in the working set; a window that is unmapped as it advances keeps the resident
+// cost bounded and is measurably faster besides.
+class mapped_line_reader
 {
-	const auto b0 = file.get();
-	const auto b1 = file.get();
-	const auto b2 = file.get();
+	static constexpr uint64_t default_window = 4ull * 1024 * 1024;
 
-	if (b0 != 0xEF || b1 != 0xBB || b2 != 0xBF)
+	// A record is under a hundred bytes, so a line that will not fit in a window this large is a
+	// corrupt or binary file rather than a long record. Growing without a bound would map it whole.
+	static constexpr uint64_t max_window = 64ull * 1024 * 1024;
+
+	platform::mapped_file_ptr _map;
+	df::cspan _window;
+	uint64_t _window_start = 0; // absolute file offset of _window[0]
+	uint64_t _next = 0; // absolute file offset of the next unread line
+	uint64_t _size = 0;
+	uint64_t _window_len = default_window;
+	bool _failed = false;
+
+	bool fill()
 	{
-		file.clear();
-		file.seekg(0);
+		_window = _map->set_window(_next, _window_len);
+		_window_start = _next;
+
+		if (_window.empty())
+		{
+			_failed = true;
+			return false;
+		}
+
+		return true;
 	}
+
+public:
+	explicit mapped_line_reader(const df::file_path path)
+	{
+		_map = platform::map_file(path, platform::map_mode::windowed);
+
+		if (_map)
+		{
+			_size = _map->file_size();
+
+			// A UTF-8 BOM is data to every byte-oriented reader, so it has to be stepped over
+			// before the first record rather than trimmed out of the first field later.
+			if (_size >= 3)
+			{
+				const auto head = _map->set_window(0, 3);
+
+				if (head.size == 3 && head.data[0] == 0xEF && head.data[1] == 0xBB && head.data[2] == 0xBF)
+				{
+					_next = 3;
+				}
+			}
+		}
+	}
+
+	bool is_open() const
+	{
+		return _map != nullptr && !_failed;
+	}
+
+	uint64_t size() const
+	{
+		return _size;
+	}
+
+	// Yields the next line and the absolute file offset it starts at. The line borrows the
+	// mapping, so it is only valid until the following call.
+	bool next(std::string_view& line, uint64_t& offset)
+	{
+		while (!_failed && _next < _size)
+		{
+			if (_window.empty() || _next < _window_start || _next >= _window_start + _window.size)
+			{
+				if (!fill()) break;
+			}
+
+			const auto* const begin = _window.data + (_next - _window_start);
+			const auto remaining = _window.size - static_cast<size_t>(_next - _window_start);
+			const auto* const nl = static_cast<const uint8_t*>(memchr(begin, '\n', remaining));
+			const auto at_eof = _window_start + _window.size >= _size;
+
+			if (!nl && !at_eof)
+			{
+				// The line straddles the window. Re-window from the line start, growing first if a
+				// whole window was not enough to hold one line, so this cannot spin.
+				if (_next == _window_start)
+				{
+					if (_window_len >= max_window)
+					{
+						_failed = true;
+						break;
+					}
+
+					_window_len *= 2;
+				}
+
+				if (!fill()) break;
+				continue;
+			}
+
+			const auto* const end = nl ? nl : begin + remaining;
+			offset = _next;
+			// Tolerate CRLF even though the shipped files are LF, so a hand-edited file still reads.
+			const auto len = static_cast<size_t>(end - begin);
+			const auto trimmed = (len > 0 && begin[len - 1] == '\r') ? len - 1 : len;
+			line = {std::bit_cast<const char*>(begin), trimmed};
+			_next += len + (nl ? 1 : 0);
+			return true;
+		}
+
+		return false;
+	}
+};
+
+// Counts the records a file holds so the per-record vectors can be sized exactly. Scanning for
+// newlines against a mapped window costs a few milliseconds, which is cheaper than either the
+// committed memory a generous reserve wastes or the reallocation an ungenerous one forces.
+static size_t count_records(const df::file_path path)
+{
+	const auto map = platform::map_file(path, platform::map_mode::windowed);
+	if (!map) return 0;
+
+	constexpr uint64_t window = 4ull * 1024 * 1024;
+	const auto size = map->file_size();
+	size_t count = 0;
+	auto trailing_bytes = false;
+
+	for (uint64_t at = 0; at < size;)
+	{
+		const auto span = map->set_window(at, window);
+		if (span.empty()) break;
+
+		const auto* p = span.data;
+		const auto* const end = span.data + span.size;
+
+		while (p < end)
+		{
+			const auto* const nl = static_cast<const uint8_t*>(memchr(p, '\n', end - p));
+			if (!nl) break;
+			++count;
+			p = nl + 1;
+		}
+
+		trailing_bytes = p < end;
+		at += span.size;
+	}
+
+	// A final record with no trailing newline still counts.
+	return count + (trailing_bytes ? 1 : 0);
 }
 
 static platform::mutex normalize_mutex;
@@ -620,14 +762,20 @@ void location_cache::load_countries()
 	county_normalize_map abbreviations;
 	county_normalize_map names;
 	csv_entry entries[max_location_cols];
-	std::ifstream file(platform::to_file_system_path(df::probe_data_file(countries_file_name)), std::ifstream::binary);
+	mapped_line_reader file(df::probe_data_file(countries_file_name));
+
+	// Records are assigned by code, so a reload would otherwise keep countries the new file no
+	// longer has. Cleared before the open test, not inside it, because the normalization maps
+	// below are swapped in unconditionally: a failed load has to leave all three empty together
+	// rather than a stale country table with no names to match it by.
+	_countries.clear();
 
 	if (file.is_open())
 	{
-		skip_bom(file);
+		std::string_view line;
+		uint64_t offset = 0;
 
-		std::string line;
-		while (std::getline(file, line))
+		while (file.next(line, offset))
 		{
 			const auto entry_count = scan_entries(line, entries);
 
@@ -703,13 +851,14 @@ void location_cache::load_countries()
 void location_cache::load_states()
 {
 	csv_entry entries[max_location_cols];
-	std::ifstream file(platform::to_file_system_path(df::probe_data_file(states_file_name)), std::ifstream::binary);
+	mapped_line_reader file(df::probe_data_file(states_file_name));
 
 	if (file.is_open())
 	{
-		skip_bom(file);
-		std::string line;
-		while (std::getline(file, line))
+		std::string_view line;
+		uint64_t offset = 0;
+
+		while (file.next(line, offset))
 		{
 			const auto entry_count = scan_entries(line, entries);
 			df::assert_true(entry_count == 2);
@@ -807,58 +956,32 @@ int location_cache::scan_entries(const std::string_view line, csv_entry* entries
 	return col_count;
 }
 
-int location_cache::scan_entries(std::ifstream& file, std::string& line, const std::streamoff offset,
-                                 csv_entry* entries)
+std::string_view location_cache::record_at(const uint32_t offset) const
 {
-	if (file.is_open())
-	{
-		file.clear();
-		file.seekg(offset, std::ifstream::beg);
+	if (!_places_map) return {};
 
-		if (std::getline(file, line))
-		{
-			return scan_entries(line, entries);
-		}
-	}
+	const auto span = _places_map->data();
+	if (offset >= span.size) return {};
 
-	return 0;
+	const auto* const begin = span.data + offset;
+	const auto remaining = span.size - offset;
+	const auto* const nl = static_cast<const uint8_t*>(memchr(begin, '\n', remaining));
+	auto len = nl ? static_cast<size_t>(nl - begin) : remaining;
+	if (len > 0 && begin[len - 1] == '\r') --len;
+
+	return {std::bit_cast<const char*>(begin), len};
 }
 
-std::ifstream& location_cache::record_stream() const
+location_t location_cache::build_location(const uint32_t offset) const
 {
-	// One handle per thread. scan_entries clears the stream and seeks to an absolute offset, so a
-	// reused handle needs no BOM skip and carries no state between lookups.
-	thread_local std::ifstream stream;
-	thread_local df::file_path open_path;
-	thread_local uint32_t open_generation = 0;
+	const auto line = record_at(offset);
+	if (line.empty()) return {};
 
-	const auto generation = _load_generation.load();
-
-	if (!stream.is_open() || open_path != _locations_path || open_generation != generation)
-	{
-		stream.close();
-		stream.clear();
-		stream.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
-		open_path = _locations_path;
-		open_generation = generation;
-	}
-
-	return stream;
-}
-
-location_t location_cache::build_location(std::ifstream& file, const int offset) const
-{
-	location_t result;
-	std::string line;
 	csv_entry entries[max_location_cols];
-	const auto col_count = scan_entries(file, line, offset, entries);
 
-	if (col_count > 0)
-	{
-		result = build_location(entries);
-	}
+	if (scan_entries(line, entries) <= 0) return {};
 
-	return result;
+	return build_location(entries);
 }
 
 location_t location_cache::build_location(const csv_entry* entries) const
@@ -895,33 +1018,53 @@ location_t location_cache::build_location(const csv_entry* entries) const
 void location_cache::load_index()
 {
 	platform::exclusive_lock lock(_rw);
-	constexpr auto expected_number_of_locations = 500000;
 
 	// A reload tears down what readers were gated on, so retract readiness for its duration.
 	_index_loaded.store(false, std::memory_order_release);
+	_places_map.reset();
+
+	// The load appends, so a second call has to start from empty or it would index every record
+	// twice and leave lookups resolving to whichever duplicate sorted first.
+	_coords.clear();
+	_locations_by_id.clear();
+	_locations_by_ngram.clear();
 
 	load_countries();
 	load_states();
 
-	_locations_by_id.reserve(expected_number_of_locations);
-	_locations_by_ngram.reserve(expected_number_of_locations);
-	_coords.reserve(expected_number_of_locations);
-
 	csv_entry entries[max_location_cols];
 
-	std::ifstream file;
-	file.open(platform::to_file_system_path(_locations_path), std::ifstream::binary);
+	// Created before the scan so the section exists for the whole load. A mapped file cannot be
+	// truncated or replaced underneath us, so the offsets the scan records still address the
+	// records they were taken from. An unread view costs nothing: only touched pages go resident.
+	auto places_map = platform::map_file(_locations_path);
+	mapped_line_reader file(_locations_path);
 
-	if (file.is_open())
+	// Without the read-back view every offset the scan records would be unreadable, so an index
+	// built now would answer every lookup with a blank place. No index is the honest answer.
+	if (file.is_open() && places_map)
 	{
-		skip_bom(file);
-		auto pos = file.tellg();
+		// Reserving for a guessed record count either wastes committed memory or forces the
+		// vectors to reallocate mid-load, and both show up in the figure users read as the app's
+		// memory use. Counting newlines first is a few milliseconds against a mapped file and
+		// makes the two per-record vectors exact, so neither grows nor needs shrinking after.
+		const auto record_count = count_records(_locations_path);
 
-		std::string line;
+		_coords.reserve(record_count);
+		_locations_by_id.reserve(record_count);
+
+		// Measured at 3.78 names per record across the shipped gazetteer. Rounding up buys one
+		// allocation that is a few percent large in exchange for never reallocating 8 MB. The cap
+		// stops a corrupt record count turning the hint into a huge speculative allocation.
+		constexpr size_t max_ngram_reserve = 8u * 1024 * 1024;
+		_locations_by_ngram.reserve(std::min<size_t>(record_count, max_ngram_reserve / 4) * 4);
+
+		std::string_view line;
+		uint64_t pos = 0;
 		auto first_record = true;
 		auto abandoned = false;
 
-		while (std::getline(file, line))
+		while (file.next(line, pos))
 		{
 			if (df::is_closing)
 			{
@@ -962,12 +1105,13 @@ void location_cache::load_index()
 
 			// A short, unidentified or off-globe record would still be indexed and would still be
 			// returned by find_closest, so an attribution could name a place that has no record to
-			// read back. Skip it instead; the rest of the file is still good.
+			// read back. Skip it instead; the rest of the file is still good. Offsets are stored
+			// as 32 bits, so a record past 4 GB has no addressable offset and is skipped too.
 			if (entry_count <= _place_name_col || id == 0 ||
+				pos > std::numeric_limits<uint32_t>::max() ||
 				!std::isfinite(x) || !std::isfinite(y) ||
 				std::abs(x) > 90.0f || std::abs(y) > 180.0f)
 			{
-				pos = file.tellg();
 				continue;
 			}
 
@@ -986,24 +1130,24 @@ void location_cache::load_index()
 					_locations_by_ngram.emplace_back(r, offset);
 				}
 			}
-
-			pos = file.tellg();
 		}
 
-		if (abandoned)
+		// A reader that failed mid-file has delivered part of the gazetteer, and a partial index
+		// answers lookups with wrong neighbours rather than with nothing. Treat it as abandoned.
+		if (abandoned || !file.is_open())
 		{
 			_locations_by_id.clear();
 			_locations_by_ngram.clear();
 			_coords.clear();
 		}
+		else
+		{
+			_places_map = std::move(places_map);
+		}
 	}
 
 	std::sort(_locations_by_id.begin(), _locations_by_id.end());
 	std::sort(_locations_by_ngram.begin(), _locations_by_ngram.end());
-
-	_locations_by_id.shrink_to_fit();
-	_locations_by_ngram.shrink_to_fit();
-	_coords.shrink_to_fit();
 
 	_tree.build(_coords);
 	++_load_generation;
@@ -1012,7 +1156,9 @@ void location_cache::load_index()
 
 struct location_match_possible
 {
-	std::string line;
+	// The record's file offset rather than its text: the mapping outlives the match list, so a
+	// candidate can be re-read after sorting without copying every line that was considered.
+	uint32_t offset{};
 	location_match_part city;
 	location_match_part state;
 	location_match_part country;
@@ -1153,16 +1299,12 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 		std::ranges::sort(ngram_matches);
 		ngram_matches.erase(std::ranges::unique(ngram_matches).begin(), ngram_matches.end());
 
-		auto& file = record_stream();
-
-		if (file.is_open())
+		if (_places_map)
 		{
-			std::string line;
-
 			for (const auto& line_offset : ngram_matches)
 			{
 				csv_entry entries[max_location_cols];
-				const auto entry_count = scan_entries(file, line, line_offset, entries);
+				const auto entry_count = scan_entries(record_at(line_offset), entries);
 				const auto country = find_country_locked(entries[Cols::countryCode].to_code2());
 				const auto state = country.state(entries[Cols::stateCode].to_code2());
 				const auto is_same_country = closest.country == country.code();
@@ -1266,7 +1408,7 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 						else if (str::starts(matched_name, primary)) possible.name_rank = 1;
 					}
 
-					possible.line = line;
+					possible.offset = line_offset;
 					possible_matches.emplace_back(possible);
 				}
 			}
@@ -1278,7 +1420,7 @@ location_matches location_cache::auto_complete(const std::string_view query, con
 				if (result.size() < max_results)
 				{
 					csv_entry entries[max_location_cols];
-					const auto col_count = scan_entries(possible.line, entries);
+					const auto col_count = scan_entries(record_at(possible.offset), entries);
 
 					location_match lm;
 
@@ -1339,10 +1481,7 @@ location_t location_cache::find_by_name(const std::string_view query) const
 	std::ranges::sort(ngram_matches);
 	ngram_matches.erase(std::ranges::unique(ngram_matches).begin(), ngram_matches.end());
 
-	auto& file = record_stream();
-	if (!file.is_open()) return result;
-
-	std::string line;
+	if (!_places_map) return result;
 
 	// The canonical record is the exact-name match with the largest population, so a bare
 	// name never resolves to an unrelated substring completion (locations.md defect 1).
@@ -1351,7 +1490,7 @@ location_t location_cache::find_by_name(const std::string_view query) const
 	for (const auto& line_offset : ngram_matches)
 	{
 		csv_entry entries[max_location_cols];
-		const auto entry_count = scan_entries(file, line, line_offset, entries);
+		const auto entry_count = scan_entries(record_at(line_offset), entries);
 		if (entry_count <= _place_name_col) continue;
 
 		auto name_matched = false;
@@ -1401,12 +1540,7 @@ location_t location_cache::find_by_id(const uint32_t id) const
 
 	if (found != _locations_by_id.end() && found->id == id)
 	{
-		auto& file = record_stream();
-
-		if (file.is_open())
-		{
-			result = build_location(file, found->offset);
-		}
+		result = build_location(found->offset);
 	}
 
 	return result;
@@ -1415,8 +1549,7 @@ location_t location_cache::find_by_id(const uint32_t id) const
 country_loc location_cache::find_country(const double x, const double y) const
 {
 	platform::shared_lock lock(_rw);
-	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
-	const auto closest = _tree.find_closest(_coords, xy);
+	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y));
 	const auto found = _countries.find(closest.country);
 	// NOTE: returns the canonical (English) name deliberately. This feeds the map/heat-map
 	// country grouping whose label doubles as a search term (sidebar .with(name)); the search
@@ -1439,9 +1572,7 @@ location_t location_cache::find_closest(const double x, const double y, country_
 
 location_t location_cache::find_closest_locked(const double x, const double y, country_loc* country) const
 {
-	location_t result;
-	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
-	const auto closest = _tree.find_closest(_coords, xy);
+	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y));
 
 	if (country)
 	{
@@ -1451,14 +1582,7 @@ location_t location_cache::find_closest_locked(const double x, const double y, c
 			           : country_loc{};
 	}
 
-	auto& file = record_stream();
-
-	if (file.is_open())
-	{
-		result = build_location(file, closest.offset);
-	}
-
-	return result;
+	return build_location(closest.offset);
 }
 
 void location_cache::collect_within_km(const double x, const double y, const double max_km,
@@ -1525,8 +1649,7 @@ location_t location_cache::find_largest_attributed(const double x, const double 
 
 	if (!largest) return {};
 
-	auto& file = record_stream();
-	return file.is_open() ? build_location(file, largest->offset) : location_t{};
+	return build_location(largest->offset);
 }
 
 // locations.md 2.5: the attribution ladder. Step 1 (stored text) belongs to the caller; step 4
@@ -1541,8 +1664,7 @@ located_place location_cache::find_attributed(const double x, const double y, co
 	platform::shared_lock lock(_rw);
 	if (_tree.is_empty()) return {};
 
-	const kd_coordinates_t xy = {static_cast<float>(x), static_cast<float>(y)};
-	const auto closest = _tree.find_closest(_coords, xy);
+	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y));
 	const auto closest_km = at.distance_in_kilometers(gps_coordinate(closest.x, closest.y));
 
 	auto winner = closest;
@@ -1623,17 +1745,15 @@ located_place location_cache::find_attributed(const double x, const double y, co
 		}
 	}
 
-	auto& file = record_stream();
-
-	if (file.is_open())
+	if (_places_map)
 	{
 		// locations.md 2.7 needs the nearest record even when it was too far to attribute, so a
 		// remote item can still say what it was 410 km north-west of.
-		result.nearest = build_location(file, closest.offset);
+		result.nearest = build_location(closest.offset);
 
 		if (attribution != location_attribution::remote)
 		{
-			result.place = winner.offset == closest.offset ? result.nearest : build_location(file, winner.offset);
+			result.place = winner.offset == closest.offset ? result.nearest : build_location(winner.offset);
 		}
 	}
 
@@ -1660,7 +1780,5 @@ location_t location_cache::find_largest(const double min_latitude, const double 
 
 	if (!largest) return {};
 
-	auto& file = record_stream();
-	if (!file.is_open()) return {};
-	return build_location(file, largest->offset);
+	return build_location(largest->offset);
 }

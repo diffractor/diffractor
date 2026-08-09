@@ -1379,6 +1379,10 @@ struct app_text_t
 	text_t scope_unavailable_parent = "Go to the parent folder";
 	text_t scope_busy_fmt = "{} is still running. Close it before browsing somewhere else.";
 
+	text_t safe_start_title = "Recovered from a startup problem";
+	text_t safe_start_message =
+		"Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options.";
+
 	text_t collision_policy_label = "If the destination already exists:";
 	text_t collision_replace = "Replace";
 	text_t collision_skip = "Skip";

@@ -129,6 +129,8 @@ These invariants are what make the model learnable. A behavior that breaks one i
 
 **L12 — Pixels are honest.** What is on screen is either an accurate rendering of the source or is visibly marked provisional. A user judging focus must never be misled by an interpolated placeholder.
 
+That cuts both ways in the sampler. Above the magnification threshold the source is drawn nearest-neighbour, because someone judging focus needs the source's own pixels and not a smoothed guess at them. A stand-in — the thumbnail covering an image that has not finished loading — has no source pixels to be exact about, so the same rule would only put hard blocks where the picture is about to appear. It is magnified smoothly instead, and `is_provisional()` is what separates the two cases.
+
 ## 4. Rendering Tiers
 
 A frame costs an order of magnitude less on one rendering approach than on the other, so the contract states two conformance levels rather than being unachievable on one or timid on the other. The tiers correspond to the two backends; [rendering.md](rendering.md) owns what each backend is and how it is selected, and this section owns only what zoom owes the user on each.
@@ -142,7 +144,7 @@ A frame costs an order of magnitude less on one rendering approach than on the o
 | Anchored scale change, panning, inspect zoom, region zoom | Full behavior | Full behavior |
 | Inertia continuing a touch flick | Full behavior; inertia frames replace input frames rather than adding to them | Full behavior |
 | A discontinuous change of scale or position | Instantaneous; anchoring carries the explanation | Animated over roughly 120–160 ms, ease-out |
-| Moving to the next image | Immediate swap | Immediate swap, or an optional cross-fade |
+| Moving to the next image | Immediate swap | Immediate swap |
 | Reaching a limit | Hard clamp with a brief cue on the edge reached | Elastic displacement, capped, settling critically damped |
 | Chrome entering or leaving immersive layout | Instant | Animated |
 
@@ -263,7 +265,7 @@ Responsiveness and honesty are both promises, so they are resolved by ordering r
 - An upgraded decode replaces the provisional one with no flash, no layout shift, no scroll reset, and no change of scale or center.
 - Only the visible part of the image is drawn: the renderer is given the source rectangle that is actually on screen at the destination size it will occupy, never the whole image scaled to a nominal size with the remainder clipped. Cost tracks the viewport, not the magnification, so `400%` costs about what `100%` costs.
 - Decoded size is capped, and superseded intermediate decodes are released once a larger one arrives, so a very large file does not hold several times its own size in buffers. Decoding only the visible region at native resolution is the eventual answer for the largest sources.
-- Neighbouring images are decoded ahead while a magnified view is being carried, so walking a sequence is immediate rather than a series of blur-then-sharpen events.
+- Every image is decoded on demand, at the size the display asks for, and none is read ahead. Walking a sequence is immediate because a decode at display size is cheap, not because the next file was already opened; loading images the user may never look at costs memory on every step to save time on the few that are zoomed.
 - Caches are bounded and evicted by distance from the current view and the current item, never allowed to grow with collection size.
 - Interpolation is defined and identical at both tiers: area-correct downscaling, exact one-to-one at `100%`, smooth magnification until a source pixel covers roughly three device pixels, then nearest-neighbour so pixels stay honest. A tier may not change what the settled image looks like.
 - Interactive frames may use the fast resampler and the settled frame the high-quality one, with no visible flash between them.
@@ -420,7 +422,7 @@ A candidate implementation is judged by whether a person can do each of the foll
 
 The design is arranged so that most of it is testable without a window. Scale, center, and bounds in; destination rectangle and clamped center out. That covers fit and fit-variant recalculation after resize and DPI change; limit derivation from the fit scale; ladder stepping, `Fit` snapping, and step reversibility; anchoring, including through a layout change; zoom-out recentering; all four pan edges and the limit response; center preservation across scale changes; fractional scroll accumulation producing exact pan distances; origin-based acceleration independent of event frequency; auto-pan velocity, dead zone, and cap; inspect-zoom release, commit, and capture-loss restoration; region-zoom threshold and centering; pane matching and the flip; continuity across identical and differing dimensions; and fullscreen and presentation transitions.
 
-The resampler is separately and exactly testable, being a pure function from a source buffer and rectangle to a destination buffer: one-to-one at `100%` reproduces the source bitwise; a source rectangle at the image edge does not read out of bounds; nearest-neighbour above the magnification threshold produces exact source pixels with no blending; integer downscaling averages the correct source pixels; the fast and high-quality paths agree within a stated tolerance; and every vectorised path matches the scalar reference exactly. That last one is what keeps a hand-written resampler trustworthy.
+The resampler is separately and exactly testable, being a pure function from a source buffer and rectangle to a destination buffer: one-to-one at `100%` reproduces the source bitwise; a source rectangle at the image edge does not read out of bounds; nearest-neighbour above the magnification threshold produces exact source pixels with no blending, except for a stand-in, which stays smooth; integer downscaling averages the correct source pixels; the fast and high-quality paths agree within a stated tolerance; and every vectorised path matches the scalar reference exactly. That last one is what keeps a hand-written resampler trustworthy.
 
 Both tiers run the same model tests. A behavioral test that passes on one tier and fails on the other means the tier distinction has leaked out of the renderer, which is itself the defect.
 
@@ -429,7 +431,7 @@ Both tiers run the same model tests. A behavioral test that passes on one tier a
 The shared model, fit variants, fixed ladder, pointer anchoring, carried source-space center,
 comparison pane matching and flipping, immersive layout, inspect zoom and its commit, region zoom, nonlinear pan,
 auto-pan, keyboard commands, precision wheel accumulation, touch pan/pinch/double-tap,
-bounded decoded retention, adjacent prefetch, provisional quality mark, and interactive/settled
+bounded decoded retention, on-demand decode at display size, provisional quality mark, and interactive/settled
 sampling tiers are implemented. The software backend uses the same point, bilinear, and
 Catmull-Rom sampler choices as Direct3D and samples only the clipped viewport.
 

@@ -1467,6 +1467,219 @@ static void should_extract_embedded_thumbnails_only_on_demand()
 	}
 }
 
+// Read-ahead used to be counted in frames alone, so what it cost depended entirely on the
+// resolution: sixteen queued 1920x816 frames measured 63 MB of process commit, and 4K is four
+// times the frame. The budget is stated in bytes now, and this holds the queue to it.
+static void should_bound_video_read_ahead_by_bytes()
+{
+	const auto path = test_files_folder.combine_file("indy.mp4");
+
+	av_format_decoder dec;
+	assert_equal(true, dec.open(path, media_intent::playback), "decoder opened");
+	dec.init_streams(-1, -1, false, false, true);
+	assert_equal(true, dec.has_video(), "indy.mp4 has video");
+
+	av_packet_queue packets;
+	av_frame_queue decoded;
+	av_frame_queue video;
+	auto at_end = false;
+
+	for (auto i = 0; i < 3000 && !at_end && video.should_receive(); ++i)
+	{
+		auto p = dec.read_packet();
+		if (!p) break;
+
+		packets.push(p);
+		dec.receive_frames(packets, decoded);
+
+		// The decoder queue carries both streams and the end-of-stream marker; only the video
+		// frames are under test.
+		for (av_frame_ptr f; decoded.pop(f); f.reset())
+		{
+			if (av_frame_is_eof(f)) at_end = true;
+			else if (!av_is_frame_empty(f)) video.push(f);
+		}
+	}
+
+	// Otherwise the queue stopped because the clip ran out, and the budget was never tested.
+	assert_equal(false, at_end, "the clip is long enough to fill the read-ahead budget");
+
+	size_t count = 0;
+	size_t bytes = 0;
+	size_t frame_bytes = 0;
+
+	for (av_frame_ptr f; video.pop(f); f.reset())
+	{
+		frame_bytes = av_queued_payload_bytes(f);
+		bytes += frame_bytes;
+		++count;
+	}
+
+	assert_equal(true, frame_bytes > 0, "a decoded frame charges what its buffers cost");
+	assert_equal(true, count >= av_read_ahead_min_frames, "read-ahead keeps enough frames to absorb decode jitter");
+	assert_equal(true, count < av_read_ahead_max_frames,
+	             std::format("the byte budget is reached before the frame count cap ({} frames)", count));
+
+	// The queue only stops asking once the budget is met, so it can overshoot by the frames the
+	// packet in flight produced - but by no more than that.
+	assert_equal(true, bytes <= av_read_ahead_bytes + frame_bytes,
+	             std::format("read-ahead stays inside its budget ({} frames, {} bytes)", count, bytes));
+
+	dec.close();
+}
+
+// The scrubber tooltip and the hovered item thumbnail both scrub through a video by asking the
+// preview decoder - a second FFmpeg instance, separate from playback - for the frame nearest a
+// position. Each position must answer with its own frame; a decoder that returns the same key
+// frame everywhere looks exactly like a preview that has stopped working.
+static void should_preview_video_frames_at_hover_positions()
+{
+	const auto path = test_files_folder.combine_file("indy.mp4");
+
+	media_preview_state preview;
+	assert_equal(true, preview.open1(path), "preview decoder opened");
+
+	const auto duration = preview.decoder1->end_time() - preview.decoder1->start_time();
+	assert_equal(true, duration > 1.0, "the clip is long enough to scrub");
+
+	double previous_time = -1.0;
+
+	for (const auto pos : {10, 45, 80})
+	{
+		auto surface = std::make_shared<ui::surface>();
+
+		assert_equal(true, preview.decoder1->extract_seek_frame(surface, {256, 256}, pos, 100),
+		             std::format("seek preview decoded at {}%", pos));
+		assert_equal(true, is_valid(surface), std::format("seek preview surface at {}%", pos));
+
+		const auto expected = duration * pos / 100.0;
+		assert_equal(true, std::abs(surface->time() - expected) < 2.0,
+		             std::format("preview at {}% lands near {:.2f}s, not {:.2f}s", pos, expected, surface->time()));
+		assert_equal(true, surface->time() > previous_time,
+		             std::format("preview at {}% is later than the one before it", pos));
+
+		previous_time = surface->time();
+	}
+
+	// The hovered-thumbnail path re-enters the same open decoder. Asking it for a position near the
+	// start after it has been left near the end is what proves it seeks: every frame where it was
+	// left is already past the requested time, so a decoder that walks forward without seeking
+	// answers with the frame it happens to be sitting on.
+	auto thumbnail = std::make_shared<ui::surface>();
+	assert_equal(true, preview.decoder1->extract_thumbnail(thumbnail, {256, 256}, 1, 100),
+	             "hover thumbnail decoded from the reused decoder");
+	assert_equal(true, is_valid(thumbnail), "hover thumbnail surface");
+	assert_equal(true, thumbnail->time() < previous_time,
+	             std::format("a backward hover rewinds the reused decoder ({:.2f}s, was {:.2f}s)",
+	                         thumbnail->time(), previous_time));
+
+	preview.close();
+}
+
+// The library thumbnail is the key frame at or before a tenth of the way in, decoded once rather
+// than walked to. Skipping the seek for any position under two seconds - which is every clip
+// shorter than twenty - silently thumbnailed those from frame zero instead of the tenth asked for.
+static void should_seek_short_video_thumbnails()
+{
+	const auto path = test_files_folder.combine_file("StPauls.MOV");
+
+	av_format_decoder dec;
+	assert_equal(true, dec.open(path, media_intent::thumbnail), "decoder opened");
+	dec.init_streams(-1, -1, false, true, false);
+	assert_equal(true, dec.has_video(), "StPauls.MOV has video");
+
+	const auto duration = dec.end_time() - dec.start_time();
+	assert_equal(true, duration > 2.0 && duration < 20.0, "the clip is short enough to have skipped the seek");
+
+	ui::surface_ptr thumbnail;
+	assert_equal(true, dec.extract_thumbnail(thumbnail, {256, 256}, 10, 100, false), "thumbnail decoded");
+	assert_equal(true, is_valid(thumbnail), "thumbnail surface");
+
+	const auto wanted = duration / 10.0;
+
+	assert_equal(true, thumbnail->time() > 0.0,
+	             std::format("a short clip thumbnails from {:.2f}s, not frame zero", thumbnail->time()));
+	assert_equal(true, thumbnail->time() <= wanted + 0.5,
+	             std::format("the key frame is at or before {:.2f}s (got {:.2f}s)", wanted, thumbnail->time()));
+
+	dec.close();
+}
+
+// A hover queues a preview for every pixel the pointer moves, so the decoder behind them has to
+// survive the sequence: reopening the container costs a probe that decodes frames of its own, far
+// more than the preview itself. It is also what makes an abandoned walk safe to retry.
+static void should_reuse_the_preview_decoder_across_hovers()
+{
+	const auto path = test_files_folder.combine_file("indy.mp4");
+
+	media_preview_state preview;
+	assert_equal(true, preview.open1(path), "preview decoder opened");
+
+	const auto* const first = preview.decoder1.get();
+
+	for (const auto pos : {10, 20, 30, 20, 10})
+	{
+		assert_equal(true, preview.open1(path), std::format("preview decoder available at {}%", pos));
+		assert_equal(true, first == preview.decoder1.get(),
+		             std::format("hover at {}% reused the open decoder rather than reopening", pos));
+
+		auto surface = std::make_shared<ui::surface>();
+		assert_equal(true, preview.decoder1->extract_seek_frame(surface, {256, 256}, pos, 100),
+		             std::format("preview decoded at {}%", pos));
+	}
+
+	// A newer hover is already waiting, so the walk toward the exact frame stops at the nearest
+	// frame it has reached instead of finishing a result nobody will see.
+	std::atomic_bool superseded = true;
+	preview.superseded = &superseded;
+
+	auto abandoned = std::make_shared<ui::surface>();
+	assert_equal(true,
+	             preview.decoder1->extract_seek_frame(abandoned, {256, 256}, 60, 100, preview.abandon_token()),
+	             "an abandoned walk still answers with the frame it reached");
+	assert_equal(true, is_valid(abandoned), "abandoned preview surface");
+
+	preview.close();
+}
+
+// A hovered thumbnail says what the video contains, not where in it the pointer sits, so it accepts
+// any frame within a fraction of the duration. That slack is the whole point: the key frame the
+// seek already landed on qualifies, so the walk stops there instead of decoding the rest of the GOP.
+static void should_allow_tolerance_for_hover_thumbnails()
+{
+	const auto path = test_files_folder.combine_file("indy.mp4");
+
+	av_format_decoder dec;
+	assert_equal(true, dec.open(path, media_intent::thumbnail), "decoder opened");
+	dec.init_streams(-1, -1, false, true, true);
+	assert_equal(true, dec.has_video(), "indy.mp4 has video");
+
+	const auto duration = dec.end_time() - dec.start_time();
+	constexpr auto pos = 10.0;
+	const auto wanted = duration * pos / 100.0;
+
+	ui::surface_ptr key_frame;
+	assert_equal(true, dec.extract_thumbnail(key_frame, {256, 256}, pos, 100, false), "key frame decoded");
+
+	ui::surface_ptr exact;
+	assert_equal(true, dec.extract_thumbnail(exact, {256, 256}, pos, 100, true, 0.0), "exact frame decoded");
+
+	ui::surface_ptr toleranced;
+	assert_equal(true, dec.extract_thumbnail(toleranced, {256, 256}, pos, 100, true, 0.02),
+	             "toleranced frame decoded");
+
+	// Unless the exact frame is a real walk past the key frame, the tolerance proves nothing.
+	assert_equal(true, exact->time() > key_frame->time(), "the exact frame is a walk past the key frame");
+	assert_equal(true, std::abs(key_frame->time() - wanted) <= duration * 0.02,
+	             "the key frame is inside the tolerance this test asks for");
+
+	assert_equal(true, df::equiv(toleranced->time(), key_frame->time()),
+	             std::format("the walk stopped at the key frame ({:.2f}s, key {:.2f}s, exact {:.2f}s)",
+	                         toleranced->time(), key_frame->time(), exact->time()));
+
+	dec.close();
+}
+
 void register_tests3(view_state& state, test_registry& tests)
 {
 	//
@@ -1489,6 +1702,11 @@ void register_tests3(view_state& state, test_registry& tests)
 	tests.add("Should flush decoder on thumbnail seek"s, should_flush_decoder_on_thumbnail_seek);
 	tests.add("Should seek to the frame at the requested time"s, should_seek_to_the_frame_at_the_requested_time);
 	tests.add("Should end a silent clip at the stream end"s, should_end_a_silent_clip_at_the_stream_end);
+	tests.add("Should bound video read ahead by bytes"s, should_bound_video_read_ahead_by_bytes);
+	tests.add("Should preview video frames at hover positions"s, should_preview_video_frames_at_hover_positions);
+	tests.add("Should seek short video thumbnails"s, should_seek_short_video_thumbnails);
+	tests.add("Should reuse the preview decoder across hovers"s, should_reuse_the_preview_decoder_across_hovers);
+	tests.add("Should allow tolerance for hover thumbnails"s, should_allow_tolerance_for_hover_thumbnails);
 	tests.add("Should land audio and video on the sought position"s,
 	          should_land_audio_and_video_on_the_sought_position);
 	tests.add("Issue #3: Should not resurrect container tags"s, should_not_resurrect_container_tags);

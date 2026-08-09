@@ -25,6 +25,11 @@
 
 
 static constexpr sizei video_preview_size = {256, 256};
+
+// A hovered thumbnail tells the user what the video contains, not where they are in it, so a frame
+// anywhere within this fraction of the duration answers the hover. The scrubber has no such slack:
+// it promises the frame playback will jump to.
+static constexpr double hover_thumbnail_tolerance = 0.02;
 fast_fft av_visualizer::fft;
 int av_visualizer::xscale[num_bars + 1] = {0};
 
@@ -171,7 +176,7 @@ void display_state_t::load_seek_preview(int pos_numerator, int pos_denominator, 
 					auto surface = std::make_shared<ui::surface>();
 
 					if (decoder.decoder1->extract_seek_frame(surface, video_preview_size, pos_numerator,
-					                                         pos_denominator))
+					                                        pos_denominator, decoder.abandon_token()))
 					{
 						t->_async.queue_ui([t, item, surface = std::move(surface), callback]() mutable
 						{
@@ -340,9 +345,14 @@ void view_state::load_hover_thumb(const df::item_element_ptr& item, double pos_n
 					auto surface = std::make_shared<ui::surface>();
 
 					if (decoder.decoder1->
-					            extract_thumbnail(surface, video_preview_size, pos_numerator, pos_denominator))
+					            extract_thumbnail(surface, video_preview_size, pos_numerator, pos_denominator, true,
+					                              hover_thumbnail_tolerance, decoder.abandon_token()))
 					{
-						const auto image = save_png(surface, {});
+						// The store has one encoder for every producer. Encoding a scrub frame as PNG
+						// instead ran a zlib deflate per pointer position and put a blob into the
+						// thumbnail cache several times the size the cache is designed around.
+						if (!decoder.encoder) decoder.encoder = std::make_unique<files>();
+						const auto image = decoder.encoder->surface_to_thumbnail(surface);
 
 						if (is_valid(image))
 						{
@@ -421,7 +431,7 @@ void view_state::rescan_hydrated_display_item()
 		                                                                decode_intent::thumbnail);
 		                   if (!ui::is_valid(thumb_surface)) return;
 
-		                   auto thumb_image = ff.surface_to_image(thumb_surface, {}, {}, ui::image_format::Unknown);
+		                   auto thumb_image = ff.surface_to_thumbnail(thumb_surface);
 		                   if (!ui::is_valid(thumb_image) || thumb_image->data().size() >= df::two_fifty_six_k) return;
 
 		                   queue_ui([this, lifetime, path, modified, thumb_image = std::move(thumb_image)]
@@ -461,7 +471,7 @@ struct teardown_signal
 
 detach_file_handles::detach_file_handles(view_state& s) : _state(s)
 {
-	++df::file_handles_detached;
+	df::gauge_enter(df::file_handles_detached);
 	if (++s._file_handle_detach_count > 1) return;
 	s._detached_display_item.reset();
 	s._detached_display_is_playable = false;
@@ -537,7 +547,7 @@ detach_file_handles::detach_file_handles(view_state& s) : _state(s)
 
 detach_file_handles::~detach_file_handles()
 {
-	--df::file_handles_detached;
+	df::gauge_leave(df::file_handles_detached);
 
 	// A worker can own the last reference, because the guard is handed to callers through completion
 	// callbacks. Everything the release touches is UI-owned, including the non-atomic nesting count.
@@ -654,7 +664,8 @@ bool media_preview_state::open1(const df::file_path file_path)
 
 		if (new_decoder->open(file_path, media_intent::thumbnail))
 		{
-			new_decoder->init_streams(-1, -1, false, true, false);
+			// Threaded: a hover decodes a whole GOP forward to reach the frame it was asked for.
+			new_decoder->init_streams(-1, -1, false, true, true);
 			decoder1 = new_decoder;
 		}
 		else
@@ -677,7 +688,8 @@ bool media_preview_state::open2(const df::file_path file_path)
 
 		if (new_decoder->open(file_path, media_intent::thumbnail))
 		{
-			new_decoder->init_streams(-1, -1, false, true, false);
+			// Threaded: a hover decodes a whole GOP forward to reach the frame it was asked for.
+			new_decoder->init_streams(-1, -1, false, true, true);
 			decoder2 = new_decoder;
 		}
 		else
@@ -1771,7 +1783,22 @@ static std::vector<view_element_ptr> create_location_elements(view_state& s, con
 	}
 
 	const auto* const derived = s.derived_location(md->coordinate);
-	if (!derived || !derived->is_located()) return results;
+
+	// The gazetteer read that names a coordinate finishes after the panel is on screen. The row is
+	// held open until it does: a coordinate is already proof there is a place to name, and a row that
+	// appears from nothing moves the media and every property around it. It says so rather than
+	// showing a blank, which in a location row reads as "this photo has none".
+	if (!derived)
+	{
+		if (md->coordinate.is_valid())
+		{
+			results.emplace_back(std::make_shared<text_element>(tt.loading.sv()));
+		}
+
+		return results;
+	}
+
+	if (!derived->is_located()) return results;
 
 	// locations.md 2.5: the label states how far it had to reach. `Near` is display honesty --
 	// the item still carries that place's identity, so it groups and searches as that place.
@@ -1983,13 +2010,37 @@ public:
 		return result;
 	}
 
+	// The badges draw inside the title's own bounds and render takes their width out of the text, so
+	// a measurement of the text alone hands back bounds that clip the last characters of the title.
+	sizei measure(ui::measure_context& mc, const int width_limit) const override
+	{
+		const auto& tl = text_layout(mc);
+		if (!tl) return {};
+
+		auto extent = tl->measure_text(width_limit);
+		auto width = extent.cx + mc.padding2;
+
+		for (const auto& badge : badges())
+		{
+			const auto badge_extent = mc.measure_text(badge.text, ui::style::font_face::dialog,
+			                                          ui::style::text_style::single_line_center,
+			                                          width_limit, extent.cy);
+			width += badge_extent.cx + mc.padding2;
+		}
+
+		return {std::min(width, width_limit), extent.cy};
+	}
+
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		const auto logical_bounds = bounds.offset(element_offset);
+		// Built here rather than assumed, so a layout that failed while the device was lost does not
+		// leave the title permanently blank.
+		const auto& tl = text_layout(dc);
 
-		if (_tl)
+		if (tl)
 		{
-			const auto text_extent = _tl->measure_text(logical_bounds.width() + 100);
+			const auto text_extent = tl->measure_text(logical_bounds.width() + 100);
 			const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
 			const auto bg = calc_background_color(dc);
 
@@ -2023,7 +2074,7 @@ public:
 
 			auto text_bounds = logical_bounds;
 			text_bounds.right = text_bounds.left + text_width;
-			dc.draw_text(_tl, text_bounds, text_clr, {});
+			dc.draw_text(tl, text_bounds, text_clr, {});
 
 			auto x = text_bounds.right;
 
@@ -3542,12 +3593,14 @@ static texture_state_ptr get_tex(const existing_textures_t& existing_textures, c
 {
 	const auto found = existing_textures.find(item->path());
 
-	if (found != existing_textures.end())
-	{
-		return found->second;
-	}
+	const auto result = found != existing_textures.end()
+		                    ? found->second
+		                    : std::make_shared<texture_state>(as, item);
 
-	return std::make_shared<texture_state>(as, item);
+	// Both arrivals need it: a new item has nothing decoded yet, and a cached one gave up everything it
+	// had decoded when it left the display.
+	result->seed_placeholder(item);
+	return result;
 }
 
 void view_state::load_display_state()
@@ -3560,14 +3613,6 @@ void view_state::load_display_state()
 	if (d)
 	{
 		const auto display_item = new_display->_item1;
-
-		if (d->is_one() &&
-			new_display->is_one() &&
-			d->_selected_texture1 &&
-			new_display->_selected_texture1)
-		{
-			new_display->_selected_texture1->clone_fade_out(d->_selected_texture1);
-		}
 
 		// Supersede whether or not a session exists yet: an open in flight for the outgoing display
 		// would otherwise land on it after it has been replaced, holding the file open unseen.
@@ -3723,14 +3768,22 @@ void view_state::load_display_state()
 
 	_display = new_display;
 	_play_next_on_open = false;
+
+	// Once the new display is live, whatever it did not take keeps only its loaded representation.
+	_common_display_state.release_undisplayed(new_display->_selected_texture1, new_display->_selected_texture2);
+
 	_events.display_changed();
 }
 
+
+media_preview_state::media_preview_state() = default;
+media_preview_state::~media_preview_state() = default;
 
 void media_preview_state::close()
 {
 	decoder1.reset();
 	decoder2.reset();
+	encoder.reset();
 }
 
 void view_state::close() const
@@ -3906,35 +3959,16 @@ void texture_state::load_image(const df::item_element_ptr& i)
 	}
 }
 
-void texture_state::prefetch(const df::item_element_ptr& i)
+void texture_state::seed_placeholder(const df::item_element_ptr& i)
 {
-	if (!i || !_is_photo || _photo_loaded) return;
-	_photo_loaded = true;
-	_photo_timestamp = item_version_stamp(i);
-	_path = i->path();
-	const auto generation = ++_load_generation;
-	_async.queue_async(async_queue::load,
-	                   [&as = _async, t = ui_owned(_async, shared_from_this()), path = _path, generation]
-	                   {
-		                   files loader;
-		                   auto loaded = loader.load(path, true);
-		                   auto surface = loaded.success ? loaded.to_surface({2560, 2560}, true) : nullptr;
-		                   as.queue_ui(
-			                   [t, loaded = std::move(loaded), surface = std::move(surface), generation]() mutable
-			                   {
-				                   // Completing through the shared path matters most when the load failed: it clears
-				                   // _photo_loaded so arriving at this item loads it, which returning here would not.
-				                   const auto adopted = loaded.success && generation == t->_load_generation;
-				                   t->complete_load(std::move(loaded), generation, false);
+	df::assert_true(ui::is_ui_thread());
 
-				                   // update() clears _retained_surface, so the decoded surface is adopted after it.
-				                   if (adopted && ui::is_valid(surface))
-				                   {
-					                   t->_retained_surface = surface;
-					                   t->_staged_surface = std::move(surface);
-				                   }
-			                   });
-	                   });
+	// Anything already drawn or waiting to be drawn is at least as good as the thumbnail, and
+	// replacing it would step backwards.
+	if (!i || _tex || _staged_surface) return;
+
+	const auto& s = i->thumbnail_surface();
+	if (ui::is_valid(s)) _staged_surface = s;
 }
 
 void texture_state::load_raw()
@@ -4001,6 +4035,25 @@ void texture_state::free_graphics_resources()
 	_last_draw_tex.reset();
 	_fade_out_tex.reset();
 	_tex_invalid = true;
+
+	// The texture this was dissolving from has just gone; leaving the animation part-way would fade the
+	// rebuilt one up out of the background instead.
+	_display_alpha_animation.reset(1.0f);
+}
+
+void texture_state::release_decoded_surfaces()
+{
+	// An in-flight decode would republish straight back into what is being dropped, so it is cancelled
+	// and its generation retired rather than left to land.
+	cancel_pending_decode();
+	++_decode_generation;
+
+	_staged_surface.reset();
+	_retained_surface.reset();
+	_zoom_staged_surface.reset();
+	_zoom_timestamp = {};
+
+	free_graphics_resources();
 }
 
 void texture_state::cancel_pending_decode()
@@ -4010,6 +4063,10 @@ void texture_state::cancel_pending_decode()
 
 void texture_state::refresh(const df::item_element_ptr& i)
 {
+	// A thumbnail the display had to ask for arrives long after the texture state was built, so the
+	// stand-in is adopted here rather than only when the display was assembled.
+	seed_placeholder(i);
+
 	if (_is_photo)
 	{
 		const auto item_stamp = item_version_stamp(i);
@@ -4186,7 +4243,6 @@ sizei texture_state::calc_scale_hint() const
 void texture_state::draw(ui::draw_context& rc, const pointi offset, const int compare_pos, const bool first_texture,
                          const bool interactive)
 {
-	const auto alpha = _display_alpha_animation.val();
 	const auto media_bounds = _display_bounds;
 
 	if (!media_bounds.is_empty())
@@ -4245,7 +4301,19 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 						                   // Scale changes and phase upgrades can complete out of order. Only the current
 						                   // request may publish, and a placeholder may never replace a later phase.
 						                   if (generation != t->_decode_generation || placeholder != t->_is_placeholder)
+						                   {
+							                   // Except over nothing. A placeholder that lost the race to the file load
+							                   // still beats the empty frame that would otherwise stand in for the whole
+							                   // full-size decode. It is staged alone: the retained surface and the
+							                   // navigator downsample belong to the phase that superseded it.
+							                   if (placeholder && ui::is_valid(s) && !t->_tex && !t->_staged_surface)
+							                   {
+								                   t->_staged_surface = s;
+								                   t->_async.invalidate_view(view_invalid::view_redraw);
+							                   }
+
 							                   return;
+						                   }
 
 						                   t->_staged_surface = s;
 						                   t->_zoom_staged_surface = zoom;
@@ -4283,6 +4351,11 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 		}
 	}
 
+	// After the upload above, because that is what starts the dissolve. Read before it, this is the
+	// previous fade's finished value: the incoming texture would draw opaque for one frame, the
+	// outgoing one would be released as complete, and the fade would then run against the background.
+	const auto alpha = _display_alpha_animation.val();
+
 	const auto tex = _vid_tex && _vid_tex->is_valid() ? _vid_tex : _tex;
 	if ((!tex || !tex->is_valid()) && !media_bounds.is_empty())
 	{
@@ -4290,11 +4363,34 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 		draw_display_problem(rc, media_bounds.offset(offset), _display_problem, calc_display_dimensions(), alpha);
 	}
 
+	// The outgoing resolution sits underneath at full opacity while the new one dissolves in over it,
+	// so the composite never dips toward the background mid-fade. It is drawn at the incoming image's
+	// current bounds rather than the ones it was last drawn at: a zoom moves those every frame, and a
+	// frozen copy would drift out of register for the length of the fade.
+	if (_fade_out_tex && _fade_out_tex->is_valid())
+	{
+		if (alpha < 1.0f)
+		{
+			const auto fade_orientation = _fade_out_tex->_orientation;
+			const auto fade_dst_quad = setting.show_rotated
+				                           ? quadd(media_bounds.offset(offset)).transform(
+					                           to_simple_transform(fade_orientation))
+				                           : media_bounds.offset(offset);
+
+			rc.draw_texture(_fade_out_tex, fade_dst_quad, _fade_out_source_rect, 1.0f, _fade_out_sampler);
+		}
+		else
+		{
+			_fade_out_tex.reset();
+		}
+	}
+
 	if (tex && tex->is_valid())
 	{
 		const auto tex_dims = tex->source_extent();
 		const auto orientation = tex->_orientation;
-		const auto sampler = calc_sampler(media_bounds.extent(), tex_dims, orientation, interactive);
+		const auto sampler = calc_sampler(media_bounds.extent(), tex_dims, orientation, interactive,
+		                                  tex == _tex && is_provisional());
 		auto draw_bounds = rectd(media_bounds);
 		auto tex_bounds = rectd(tex_dims);
 
@@ -4369,29 +4465,26 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 		draw_texture_info(rc, media_bounds.offset(offset), tex, orientation, sampler, alpha);
 
 		_last_draw_tex = tex;
-		_last_draw_rect = media_bounds;
 		_last_draw_source_rect = tex_bounds.round();
 		_last_drawn_sampler = sampler;
 	}
 
-	if (_fade_out_tex && _fade_out_tex->is_valid())
+	// Names the rung of the ladder on screen, so a flash can be attributed rather than guessed at.
+	if (setting.show_debug_info && media_bounds.width() > 96)
 	{
-		const auto fade_out_alpha = _fade_out_alpha_animation.val();
-		const auto fade_orientation = _fade_out_tex->_orientation;
+		const auto phase = !tex || !tex->is_valid()
+			                   ? "phase 0 empty"
+			                   : (_is_placeholder ? "phase 1 stand-in" : (_loaded.is_preview ? "phase 2 preview" : "loaded"));
 
-		const auto fade_dst_quad = setting.show_rotated
-			                           ? quadd(_fade_out_rect.offset(offset)).transform(
-				                           to_simple_transform(fade_orientation))
-			                           : _fade_out_rect.offset(offset);
+		auto r = media_bounds.offset(offset);
+		r.left += 8;
+		r.top += rc.text_line_height(ui::style::font_face::dialog) + 8;
+		r.bottom = r.top + rc.text_line_height(ui::style::font_face::dialog) + 8;
 
-		if (alpha < 1.0f)
-		{
-			rc.draw_texture(_fade_out_tex, fade_dst_quad, _fade_out_source_rect, fade_out_alpha, _fade_out_sampler);
-		}
-		else
-		{
-			_fade_out_tex.reset();
-		}
+		rc.draw_text(std::format("{} alpha {:.2f}{}{}", phase, alpha, _fade_out_tex ? " over previous" : "",
+		                         _staged_surface ? " staged" : ""),
+		             r, ui::style::font_face::dialog, ui::style::text_style::single_line,
+		             ui::color(0xFFFF00, 1.0f), {});
 	}
 }
 
@@ -4450,14 +4543,15 @@ void display_state_t::populate(const view_state& state)
 		_can_zoom = _item1->file_type()->has_trait(file_traits::zoom);
 		if (_item1->file_type()->has_trait(file_traits::bitmap) && !_selected_texture1->_photo_loaded)
 			_selected_texture1->load_image(_item1);
-		for (const auto& neighbor : {state.next_item(false, false), state.next_item(true, false)})
+
+		// The media view has no grid loading or staging thumbnails behind it, so the display supplies its
+		// own stand-in for what it can reach next. queue_load_thumbnail covers the item that has no
+		// encoded thumbnail at all, which otherwise leaves the media area empty for the whole file load.
+		for (const auto& i : {_item1, state.next_item(false, false), state.next_item(true, false)})
 		{
-			if (!neighbor || !neighbor->file_type()->has_trait(file_traits::bitmap)) continue;
-			const auto found = existing_textures.find(neighbor->path());
-			if (found != existing_textures.end()) continue;
-			auto texture = std::make_shared<texture_state>(_async, neighbor);
-			_common.retain_texture(neighbor->path(), texture);
-			texture->prefetch(neighbor);
+			if (!i) continue;
+			if (i->has_thumb()) i->stage_thumbnail_surface(_async);
+			else state.item_index.queue_load_thumbnail(i);
 		}
 	}
 	else if (_is_two)
@@ -4632,13 +4726,16 @@ texture_state::texture_state(async_strategy& async, const df::item_element_ptr& 
 	_is_raw = mt->has_trait(file_traits::raw);
 	_tex_invalid = true;
 
-	_display_alpha_animation.reset(0.0f, 1.0f);
+	// A newly displayed item is shown at once; the only dissolve is between resolutions of one item.
+	_display_alpha_animation.reset(1.0f);
 
 	if (_display_dimensions.is_empty() && ui::is_valid(_loaded.i))
 	{
+		// A stand-in, not an answer: the thumbnail carries the shape but a rounded version of it, so the
+		// geometry stays unknown and the first load replaces it. Claiming it as known froze the rounded
+		// aspect until some later refresh happened to clear the flag, and the correction landed then.
 		_display_dimensions = _loaded.i->dimensions();
 		_display_orientation = _loaded.i->orientation();
-		_display_geometry_known = true;
 	}
 }
 
@@ -4668,7 +4765,7 @@ void draw_texture_info(ui::draw_context& rc, const recti media_bounds, const ui:
 }
 
 ui::texture_sampler calc_sampler(const sizei draw_extent, const sizei texture_extent,
-                                 const ui::orientation& orientation, const bool interactive)
+                                 const ui::orientation& orientation, const bool interactive, const bool provisional)
 {
 	auto dims = texture_extent;
 
@@ -4684,10 +4781,19 @@ ui::texture_sampler calc_sampler(const sizei draw_extent, const sizei texture_ex
 	// as broken lines in screenshots, text and fine detail, so the tolerance is tight.
 	constexpr double one_to_one_tolerance = 0.002;
 
-	if (std::abs(sx - 1.0) <= one_to_one_tolerance || sx > 3.0)
+	if (std::abs(sx - 1.0) <= one_to_one_tolerance)
 	{
 		return ui::texture_sampler::point;
 	}
+
+	// Above 3x, point sampling shows the source's own pixels, which is what someone judging focus
+	// needs. A stand-in has no source pixels to be exact about, so the same rule would only put
+	// hard blocks where the image is about to appear.
+	if (sx > 3.0 && !provisional)
+	{
+		return ui::texture_sampler::point;
+	}
+
 	if (interactive) return ui::texture_sampler::bilinear;
 
 	// Catmull-Rom in both directions until a magnified source pixel covers roughly three
@@ -4714,6 +4820,7 @@ void texture_state::clear()
 	_tex.reset();
 	_last_draw_tex.reset();
 	_fade_out_tex.reset();
+	_display_alpha_animation.reset(1.0f);
 }
 
 bool texture_state::is_empty() const
@@ -4723,12 +4830,19 @@ bool texture_state::is_empty() const
 
 inline void texture_state::fade_out()
 {
+	// Nothing has been drawn yet, so there is nothing to dissolve from and the first image appears at
+	// once rather than fading up out of the background.
+	if (!_last_draw_tex)
+	{
+		_display_alpha_animation.reset(1.0f);
+		return;
+	}
+
 	_fade_out_tex = _last_draw_tex;
-	_fade_out_rect = _last_draw_rect;
 	_fade_out_source_rect = _last_draw_source_rect;
 	_fade_out_sampler = _last_drawn_sampler;
 
-	_fade_out_alpha_animation.reset(_display_alpha_animation.val(), 0.0f);
+	_display_alpha_animation.reset(0.0f, 1.0f);
 }
 
 void texture_state::display_dimensions(const sizei dims)
@@ -4737,16 +4851,6 @@ void texture_state::display_dimensions(const sizei dims)
 	{
 		_display_dimensions = dims;
 	}
-}
-
-void texture_state::clone_fade_out(const std::shared_ptr<texture_state>& other)
-{
-	_fade_out_tex = other->_last_draw_tex;
-	_fade_out_rect = other->_last_draw_rect;
-	_fade_out_source_rect = other->_last_draw_source_rect;
-	_fade_out_sampler = other->_last_drawn_sampler;
-
-	_fade_out_alpha_animation.reset(_display_alpha_animation.val(), 0.0f);
 }
 
 df::process_result view_state::can_process_selection_and_mark_errors(const view_host_base_ptr& view,

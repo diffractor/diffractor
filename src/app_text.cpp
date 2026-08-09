@@ -1513,6 +1513,8 @@ void app_text_t::calc_text_mapping()
 		scope_unavailable_retry,
 		scope_unavailable_parent,
 		scope_busy_fmt,
+		safe_start_title,
+		safe_start_message,
 		collision_policy_label,
 		collision_replace,
 		collision_skip,

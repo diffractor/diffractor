@@ -107,12 +107,34 @@ bool av_frame_is_eof(const av_frame_ptr& f);
 double av_audio_frame_duration(const av_frame_ptr& f);
 bool av_is_frame_empty(const av_frame_ptr& f);
 
-// Bytes a queued item charges against the queue's memory ceiling. Only the packet queues enforce
-// one; the frame queues are bounded by count alone.
+// Bytes a queued item charges against the queue's read-ahead budget.
 template <typename T>
 size_t av_queued_payload_bytes(const std::shared_ptr<T>&) { return 0; }
 
 size_t av_queued_payload_bytes(const av_packet_ptr& p);
+
+// A decoded frame charges what it actually occupies: its own buffers when the decoder produced
+// pixels, or the surface it pins in the hardware pool when it did not.
+size_t av_queued_payload_bytes(const av_frame_ptr& f);
+
+// Read-ahead the decoded queues may hold. A count alone made read-ahead cost whatever the
+// resolution cost - 16 queued 1920x816 frames measure 63 MB, and 4K is four times that - so the
+// budget is stated in bytes and the count is only the ceiling for frames small enough not to
+// reach it.
+inline constexpr size_t av_read_ahead_max_frames = 16;
+inline constexpr size_t av_read_ahead_bytes = 24_z * 1024 * 1024;
+
+// Below this the queue absorbs no decode jitter at all, so the byte budget never takes it lower
+// however large a single frame is.
+inline constexpr size_t av_read_ahead_min_frames = 3;
+
+// Frames of `frame_bytes` each that the read-ahead budget allows. Sizes the queue and, for
+// hardware decoding, the surface pool the queue draws from, so the two cannot disagree.
+constexpr size_t av_read_ahead_frames(const size_t frame_bytes)
+{
+	if (frame_bytes == 0) return av_read_ahead_max_frames;
+	return std::clamp(av_read_ahead_bytes / frame_bytes, av_read_ahead_min_frames, av_read_ahead_max_frames);
+}
 
 struct av_rational
 {
@@ -181,8 +203,10 @@ template <typename T>
 class av_queue final : public df::no_copy
 {
 	// Depth at which a producer stops reading ahead. Deep enough to absorb decode
-	// jitter, shallow enough that a seek discards little work.
-	static constexpr size_t max_queued = 16;
+	// jitter, shallow enough that a seek discards little work - and bounded by
+	// av_read_ahead_bytes as well, so the same depth does not cost four times as much
+	// at 4K as it does at 1080p.
+	static constexpr size_t max_queued = av_read_ahead_max_frames;
 
 	// Hard ceiling, distinct from the read-ahead target above. The read loop demuxes
 	// while *either* queue is below max_queued, so a stream whose queue never fills -
@@ -253,7 +277,8 @@ public:
 	bool should_receive() const
 	{
 		platform::shared_lock lock(_mutex);
-		return _q.size() < max_queued;
+		if (_q.size() >= max_queued) return false;
+		return _q.size() < av_read_ahead_min_frames || _bytes < av_read_ahead_bytes;
 	}
 
 	bool is_full() const
@@ -468,8 +493,11 @@ private:
 	// Decode forward from the current (freshly seeked) position to the frame
 	// nearest wanted_time, scaling that frame into dest_surface. Shared by thumbnail
 	// and scrubber-preview extraction so both land on the pointed-at frame rather
-	// than the key frame at the start of its GOP.
-	bool decode_nearest_frame(ui::surface_ptr& dest_surface, sizei max_dim, double wanted_time);
+	// than the key frame at the start of its GOP. Stops early at the first frame within
+	// `tolerance` seconds of the target, and answers with the nearest frame reached so far
+	// once `abandon` fires.
+	bool decode_nearest_frame(ui::surface_ptr& dest_surface, sizei max_dim, double wanted_time, double tolerance,
+	                          df::cancel_token abandon);
 
 	friend class av_player;
 	friend class av_session;
@@ -501,9 +529,13 @@ public:
 	audio_info_t audio_info() const;
 
 	bool extract_seek_frame(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
-	                        double pos_denominator = 100);
+	                        double pos_denominator = 100, df::cancel_token abandon = {});
+	// tolerance_fraction says how near the requested position the frame has to be, as a fraction of
+	// the duration. Zero decodes to the exact frame; a caller that only needs a sense of the content
+	// asks for slack and gets an answer a whole GOP sooner.
 	bool extract_thumbnail(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
-	                       double pos_denominator = 100, bool exact_frame = true);
+	                       double pos_denominator = 100, bool exact_frame = true,
+	                       double tolerance_fraction = 0.0, df::cancel_token abandon = {});
 	file_load_result render_frame(const av_frame_ptr& frame_in) const;
 	void receive_frames(av_packet_queue& packets, av_frame_queue& frames);
 

@@ -1927,6 +1927,34 @@ static void should_find_location()
 	assert_equal("Munich", locations.find_by_id(2867714).place, "English name");
 }
 
+// Records are read back through a mapping that load_index drops and rebuilds, and the index is
+// appended to rather than assigned, so a reload is the case where both a stale mapping and a
+// doubled index would first show up.
+static void should_reload_location_index()
+{
+	auto& locations = test_locations();
+	const df::scope_exit restore_language([&locations] { locations.set_display_language({}); });
+	const auto default_location = gps_coordinate(51.5255317687988, -0.116743430495262); // London
+
+	const auto before = locations.auto_complete("london", 8, default_location);
+	assert_equal(true, !before.empty(), "predictions before reload");
+
+	locations.load_index();
+
+	assert_equal(true, locations.is_index_loaded(), "index is loaded again after a reload");
+
+	// A record read after the reload proves the read-back mapping was re-established, not just
+	// that the offsets survived.
+	assert_equal("City of London", locations.find_by_id(2643741).place, "id lookup survives a reload");
+	assert_equal("London", locations.find_largest(51.3, -0.5, 51.7, 0.3).place, "bounds lookup survives a reload");
+	assert_equal("Boulder City", locations.find_closest(35.9786, -114.8325).place,
+	             "reverse geocode survives a reload");
+
+	const auto after = locations.auto_complete("london", 8, default_location);
+	assert_equal(before.size(), after.size(), "reload does not change the number of predictions");
+	assert_equal("London, United Kingdom", after[0].location.str(), "reload keeps the top prediction");
+}
+
 static void should_contain_map_location_cells()
 {
 	const map_location_area area{.cell = {32, 48}, .cell_span = 4};
@@ -2354,6 +2382,7 @@ void register_tests5(view_state& state, test_registry& tests)
 	tests.add("Should parent"s, should_parent);
 	tests.add("Should escape"s, should_escape);
 	tests.add("Should find Location"s, should_find_location);
+	tests.add("Should reload location index"s, should_reload_location_index);
 	tests.add("Should read place qualification level"s, should_read_place_qualification_level);
 	tests.add("Should compose qualified place name"s, should_compose_qualified_place_name);
 	tests.add("Should bound place attribution"s, should_bound_place_attribution);

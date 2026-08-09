@@ -459,10 +459,10 @@ public:
 
 void app_frame::hide_search_predictions()
 {
-	if (_search_completes && _search_predictions_frame && _search_predictions_frame->_frame)
+	if (_search_completes && _search_predictions_frame)
 	{
 		_search_completes->clear();
-		_search_predictions_frame->_frame->show(false);
+		_search_predictions_frame->frame()->show(false);
 	}
 }
 
@@ -497,7 +497,7 @@ void app_frame::focus_search(const bool has_focus)
 			});
 			_search_predictions_frame->selected(nullptr, ui::complete_strategy_t::select_type::init);
 			_search_predictions_frame->search({});
-			_search_predictions_frame->_frame->window_bounds(calc_search_popup_bounds(), true);
+			_search_predictions_frame->frame()->window_bounds(calc_search_popup_bounds(), true);
 		}
 		else
 		{

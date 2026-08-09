@@ -418,25 +418,3 @@ uint32_t crypto::fnv1a_i(const std::string_view sv)
 
 	return result;
 }
-
-uint32_t crypto::fnv1a_i(const std::string_view sv1, const std::string_view sv2)
-{
-	auto p = sv1.begin();
-	uint32_t result = OFFSET_BASIS_32;
-
-	while (p < sv1.end())
-	{
-		result ^= str::to_lower(str::pop_utf8_char(p, sv1.end()));
-		result *= FNV_PRIME_32;
-	}
-
-	p = sv2.begin();
-
-	while (p < sv2.end())
-	{
-		result ^= str::to_lower(str::pop_utf8_char(p, sv2.end()));
-		result *= FNV_PRIME_32;
-	}
-
-	return result;
-}

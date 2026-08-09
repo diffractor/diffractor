@@ -100,6 +100,11 @@ namespace df
 	constexpr uint64_t max_file_load_size = 1024ull * 1024ull * 16ull;
 	constexpr uint32_t max_thumbnails_to_display = 5u;
 
+	// Encoded thumbnails held across the whole result set. Fixed rather than scaled to the machine:
+	// what it buys is scroll-back without a database hop, and one screen of scroll-back is the same
+	// amount of work everywhere. At the 320x256 thumbnail size this is a few thousand items.
+	constexpr size_t max_thumbnail_bytes = 32ull * 1024ull * 1024ull;
+
 	class folder_path;
 	class file_path;
 	class date_t;
@@ -405,7 +410,9 @@ namespace df
 
 	// One slot per worker queue, claimed once by its worker thread at startup so the dispatch loop
 	// can account tasks without knowing which queue it is draining.
-	struct queue_counters
+	// Aligned because the slots are an array whose elements have different owners: unpadded, two
+	// queues share a line and every worker's per-task bump invalidates the other's copy.
+	struct alignas(std::hardware_destructive_interference_size) queue_counters
 	{
 		std::string_view name;
 		std::atomic_uint64_t tasks = 0;
@@ -1145,6 +1152,20 @@ namespace df
 		}
 	};
 
+	// In-flight gauges answer "is anything of this kind running". Nothing reads the count itself, so
+	// entering needs no ordering; leaving still releases, and because every leave is an RMW they form
+	// one release sequence, so a reader that sees zero has synchronized with all of them. That is the
+	// guarantee seq_cst was providing here, kept at the price ARM64 charges for it rather than double.
+	inline void gauge_enter(std::atomic_int& gauge) noexcept
+	{
+		gauge.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	inline void gauge_leave(std::atomic_int& gauge) noexcept
+	{
+		gauge.fetch_sub(1, std::memory_order_release);
+	}
+
 	class scope_locked_inc final : public no_copy
 	{
 		std::atomic_int& _i;
@@ -1152,12 +1173,12 @@ namespace df
 	public:
 		scope_locked_inc(std::atomic_int& i) : _i(i)
 		{
-			++_i;
+			gauge_enter(_i);
 		}
 
 		~scope_locked_inc() override
 		{
-			--_i;
+			gauge_leave(_i);
 		}
 	};
 

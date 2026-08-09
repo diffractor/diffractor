@@ -50,8 +50,8 @@ command_line_t command_line;
 
 auto s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
-const std::string_view s_app_version = "127.0";
-const std::string_view g_app_build = "1271";
+const std::string_view s_app_version = "127.1";
+const std::string_view g_app_build = "1272";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -165,20 +165,25 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 			});
 		}
 #endif
-		spell.lazy_download(s._async);
+		spell().lazy_download(s._async);
 	}
 }
 
-crash_files_db crash_files(df::probe_data_file("diffractor-files-that-crash.txt"), df::format_version(true));
+crash_files_db& crash_files()
+{
+	static crash_files_db instance(df::probe_data_file("diffractor-files-that-crash.txt"),
+	                               crash_files_db::release_tag(s_app_version));
+	return instance;
+}
 
 void flush_open_files_to_crash_files_list()
 {
-	crash_files.flush_open_files();
+	crash_files().flush_open_files();
 }
 
 void log_open_files_to_crash_files_list()
 {
-	crash_files.log_open_files();
+	crash_files().log_open_files();
 }
 
 std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index,
@@ -198,17 +203,22 @@ std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_
 
 	const auto seconds_running = platform::now().to_seconds() - df::start_time.to_seconds();
 
-	result.reserve(include_state ? 24_z : 18_z);
+	result.reserve(include_state ? 25_z : 19_z);
 	result.emplace_back("Version:", df::format_version(true));
 	result.emplace_back("Windows:", std::format("{} {} {}", platform::OS(), arch, config));
 	result.emplace_back("Id:", str::to_hex(crypto::crc32c(platform::user_name()), false));
 	result.emplace_back("Running:", std::format("{} seconds", seconds_running));
-	int64_t current, peak;
+	platform::memory_usage_t mem;
 
-	if (platform::working_set(current, peak))
+	if (platform::memory_usage(mem))
 	{
+		// Private working set first: it is what Task Manager's Memory column reports, so a user
+		// comparing the two sees the same number. Shared pages are mapped data files, which cost
+		// this process nothing private.
 		result.emplace_back("Memory:",
-		                    std::format("{} (peak {})", df::file_size(current), df::file_size(peak)));
+		                    std::format("{} (commit {}, shared {})", df::file_size(mem.private_working_set),
+		                                df::file_size(mem.commit), df::file_size(mem.shared_working_set)));
+		result.emplace_back("Peak memory:", df::file_size(mem.peak_working_set).str());
 	}
 
 	result.emplace_back("Static Memory:",
@@ -285,6 +295,18 @@ void app_frame::app_fail(const std::string_view message, const std::string_view 
 {
 	auto message_s = std::string(message);
 	auto more_text_s = std::string(more_text);
+
+	// A failure during startup has no window to parent a dialog and no message loop to run one:
+	// wWinMain returns as soon as init() fails, so a queued dialog would never be shown and the
+	// process would simply disappear. Say it synchronously instead. Restricted to the UI thread so
+	// a worker reporting a failure after the window has gone still just queues and is dropped.
+	if (!_app_frame && ui::is_ui_thread())
+	{
+		auto text = message_s;
+		if (!more_text_s.empty()) text += "\n\n" + more_text_s;
+		platform::show_startup_failure(text);
+		return;
+	}
 
 	queue_ui([message_s, more_text_s, parent = _app_frame]
 	{
@@ -660,6 +682,12 @@ app_frame::app_frame(ui::plat_app_ptr pa) :
 	_view_edit = std::make_shared<edit_view>(_state, _view_frame, _edit_view_state);
 	_selector_frame->view(_view_selector);
 	_view_media = std::make_shared<media_view>(_state, _view_frame);
+
+	// Both frames carry a view from construction. init() creates their windows before the first
+	// view_changed assigns one, and only some of view_frame's handlers test _view, so a paint or
+	// pointer message arriving in that window would otherwise dereference null. Items is what
+	// view_mode(view_type::items) selects moments later, and view_changed replaces it either way.
+	_view_frame->view(_view_items);
 }
 
 app_frame::~app_frame()
@@ -725,11 +753,11 @@ void app_frame::prepare_frame()
 			if (prepare_result == render_valid::invalid || is_animating)
 			{
 				invalidate_status();
-				vf->_frame->invalidate();
+				vf->frame()->invalidate();
 			}
 			else if (prepare_result == render_valid::present)
 			{
-				vf->_frame->redraw();
+				vf->frame()->redraw();
 			}
 
 			if (is_animating2 || is_animating || display->is_playing_media())
@@ -772,9 +800,9 @@ void app_frame::prepare_frame()
 
 void app_frame::invalidate_status() const
 {
-	if (setting.show_debug_info && _view_frame && _view_frame->_frame)
+	if (setting.show_debug_info && _view_frame)
 	{
-		_view_frame->_frame->invalidate();
+		_view_frame->frame()->invalidate();
 	}
 }
 
@@ -816,7 +844,7 @@ void app_frame::update_overlay()
 				return invalidate;
 			};
 
-			if (!show_overlays)
+			if (!show_overlays && _bubble)
 			{
 				_bubble->hide();
 			}
@@ -835,7 +863,9 @@ void app_frame::tick()
 		display->_session->adjust_volume();
 	}
 
-	if (_app_frame && _app_frame->is_visible())
+	// _view is assigned by the first view_changed, which init() reaches after the window - and its
+	// timer - already exist, so a tick can land in between.
+	if (_app_frame && _app_frame->is_visible() && _view)
 	{
 		const auto time_now = df::now();
 
@@ -850,9 +880,9 @@ void app_frame::tick()
 		const auto progress = _view->progress();
 		const auto animate_status = (progress.active && progress.total == 0) || setting.show_debug_info;
 
-		if (animate_status && _view_frame && _view_frame->_frame)
+		if (animate_status && _view_frame)
 		{
-			_view_frame->_frame->invalidate();
+			_view_frame->frame()->invalidate();
 		}
 
 		_search_color_lerp.target = _state.item_index.searching > 0 ? 255 : 0;
@@ -875,14 +905,15 @@ void app_frame::tick()
 		{
 			_last_texture_eviction_bounds = logical_bounds;
 			free_graphics_resources(true, true);
+			df::trim_thumbnail_blobs(_state.search_items().items(), logical_bounds, df::max_thumbnail_bytes);
 		}
 
 		update_overlay();
 	}
 
-	if (_search_predictions_frame && _search_predictions_frame->_frame)
+	if (_search_predictions_frame)
 	{
-		if (!_search_has_focus && _search_predictions_frame->_frame->is_visible())
+		if (!_search_has_focus && _search_predictions_frame->frame()->is_visible())
 		{
 			hide_search_predictions();
 		}
@@ -1010,6 +1041,7 @@ static constexpr auto s_recent_locations = "recent_locations";
 static constexpr auto s_group_order = "group_order";
 static constexpr auto s_sort_order = "sort_order";
 static constexpr auto s_media_filter = "media_filter";
+static constexpr auto s_unsettled_starts = "unsettled_starts";
 
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
@@ -1313,8 +1345,8 @@ void app_frame::layout(ui::measure_context& mc)
 		positions.emplace_back(_navigate2, nav2_bounds,
 		                       show_items_controls && nav2_bounds.right < nav3_bounds.left);
 		positions.emplace_back(_navigate3, nav3_bounds, show_items_controls);
-		positions.emplace_back(_view_frame->_frame, view_bounds, _view->_show_render_window);
-		positions.emplace_back(_selector_frame->_frame, selector_bounds, show_selector);
+		positions.emplace_back(_view_frame->frame(), view_bounds, _view->_show_render_window);
+		positions.emplace_back(_selector_frame->frame(), selector_bounds, show_selector);
 		positions.emplace_back(_media_edit_commands, media_edit_bounds, show_media_edit_commands);
 		positions.emplace_back(_tool_commands, tool_commands_bounds, show_tool_commands);
 		positions.emplace_back(_import_commands, import_commands_bounds, show_import_commands);
@@ -1332,10 +1364,9 @@ void app_frame::layout(ui::measure_context& mc)
 			positions.emplace_back(_view_controls->_dlg, view_controls_bounds, can_show_view_controls);
 		}
 
-		if (_search_predictions_frame && _search_predictions_frame->_frame &&
-			_search_predictions_frame->_frame->is_visible())
+		if (_search_predictions_frame && _search_predictions_frame->frame()->is_visible())
 		{
-			_search_predictions_frame->_frame->window_bounds(calc_search_popup_bounds(), true);
+			_search_predictions_frame->frame()->window_bounds(calc_search_popup_bounds(), true);
 		}
 
 		_view_bounds = view_bounds;
@@ -1498,7 +1529,7 @@ void app_frame::complete_pending_events()
 
 			if (pop_invalid_flag(_invalids, view_invalid::status))
 			{
-				_view_frame->_frame->invalidate();
+				_view_frame->frame()->invalidate();
 			}
 
 			if (pop_invalid_flag(_invalids, view_invalid::animations))
@@ -1511,8 +1542,8 @@ void app_frame::complete_pending_events()
 				update_command_text();
 				save_options();
 
-				_view_frame->_frame->options_changed();
-				_selector_frame->_frame->options_changed();
+				_view_frame->frame()->options_changed();
+				_selector_frame->frame()->options_changed();
 				_view_edit->options_changed();
 				_navigate1->options_changed();
 				_search_edit->options_changed();
@@ -1527,9 +1558,9 @@ void app_frame::complete_pending_events()
 
 				_state.update_search_is_favorite_or_collection_root();
 
-				if (_search_predictions_frame && _search_predictions_frame->_frame)
+				if (_search_predictions_frame)
 				{
-					_search_predictions_frame->_frame->options_changed();
+					_search_predictions_frame->frame()->options_changed();
 				}
 			}
 
@@ -1707,7 +1738,7 @@ void app_frame::complete_pending_events()
 
 			if (pop_invalid_flag(_invalids, view_invalid::view_redraw))
 			{
-				_view_frame->_frame->invalidate();
+				_view_frame->frame()->invalidate();
 			}
 
 			if (pop_invalid_flag(_invalids, view_invalid::controller))
@@ -1742,6 +1773,28 @@ void app_frame::idle()
 {
 	update_overlay();
 	complete_pending_events();
+	mark_startup_settled();
+}
+
+// Idle with the window up means the message loop drained a full cycle including the first paint,
+// which is the earliest point at which this launch can be said to have reached the user.
+void app_frame::mark_startup_settled()
+{
+	if (_startup_settled || !_app_frame || !_app_frame->is_visible()) return;
+
+	_startup_settled = true;
+	_settings->write({}, s_unsettled_starts, static_cast<uint32_t>(0));
+
+	if (_safe_start) report_safe_start();
+}
+
+void app_frame::report_safe_start()
+{
+	// On the next turn, so the idle pass that detected it finishes first.
+	queue_ui([this]
+	{
+		make_dlg(_app_frame)->show_message(icon_index::error, tt.safe_start_title, tt.safe_start_message);
+	});
 }
 
 bool app_frame::key_down(const char32_t key, const ui::key_state keys)
@@ -2144,8 +2197,8 @@ void app_frame::focus_changed(const bool has_focus, const ui::control_base_ptr& 
 		focus_search(has_focus);
 	}
 
-	_view_has_focus = _view_frame->_frame->has_focus();
-	_view_controls_have_focus = _view_controls && _view_controls->_dlg->has_focus();
+	_view_has_focus = _view_frame->frame()->has_focus();
+	_view_controls_have_focus = _view_controls && _view_controls->_dlg && _view_controls->_dlg->has_focus();
 
 	invalidate_view(view_invalid::view_redraw | view_invalid::command_state);
 }
@@ -2364,17 +2417,19 @@ void app_frame::view_changed(const view_type m)
 
 	if (vc != _view_controls)
 	{
-		if (_view_controls)
+		if (_view_controls && _view_controls->_dlg)
 		{
 			_view_controls->_dlg->show(false);
 		}
 
+		// The incoming panel is left hidden for the app layout to reveal, because that shrinks the view
+		// frame and shows the panel in one batch. Shown any earlier it is still covered by the
+		// full-width view frame, and its native controls would paint while clipped to nothing: the
+		// paint is validated and lost, leaving them blank until something dirties them again.
+		// Requested here rather than with the view change below, because a panel is also rebuilt
+		// without the view changing: a new selection in Tags or Batch, or a language change.
 		_view_controls = vc;
-
-		if (_view_controls)
-		{
-			_view_controls->_dlg->show(true);
-		}
+		invalidate_view(view_invalid::app_layout);
 	}
 
 	if (v != _view)
@@ -2387,7 +2442,9 @@ void app_frame::view_changed(const view_type m)
 		_view = v;
 		_view_frame->view(v);
 		_view->activate(_view_bounds.extent());
-		free_graphics_resources(true, false);
+		// Offscreen only. The items the user was just looking at are the ones the media view is about to
+		// step through, and their thumbnail surfaces are what stands in for each image while it loads.
+		free_graphics_resources(true, true);
 		focus_view();
 
 		invalidate_view(view_invalid::app_layout |
@@ -2437,6 +2494,8 @@ void app_frame::invoke(const command_info_ptr& command)
 void app_frame::track_menu(const ui::frame_ptr& parent, const recti bounds,
                            const std::vector<ui::command_ptr>& commands)
 {
+	if (!parent) return;
+
 	pause_media pause(_state);
 	complete_pending_events(); // process any menu updates
 	parent->track_menu(bounds, commands);
@@ -2845,9 +2904,9 @@ void app_frame::delete_items(const df::item_set& items)
 
 void app_frame::focus_view()
 {
-	if (_view_frame && _view_frame->_frame)
+	if (_view_frame)
 	{
-		_view_frame->_frame->focus();
+		_view_frame->frame()->focus();
 	}
 }
 
@@ -2881,6 +2940,10 @@ bool app_frame::pre_init()
 
 	std::setlocale(LC_ALL, "en_US.UTF-8");
 
+	// Built here so the crash handler, which flushes the open-file list, never has to construct it
+	// (and read from disk) inside a faulting process.
+	(void)crash_files();
+
 	return true;
 }
 
@@ -2900,10 +2963,10 @@ bool app_frame::init(const std::string_view command_line_text)
 
 	// These files are skipped by the indexer for the rest of the session, so they are stated once
 	// rather than left as an unexplained absence of metadata and thumbnails.
-	if (const auto skipped = crash_files.skipped_file_count(); skipped > 0)
+	if (const auto skipped = crash_files().skipped_file_count(); skipped > 0)
 	{
-		df::log(__FUNCTION__, std::format("skipping {} file(s) that crashed a previous run of this build{}",
-		                                  skipped, crash_files.is_full() ? " - the crash list is full" : ""));
+		df::log(__FUNCTION__, std::format("skipping {} file(s) that crashed a previous run of this release{}",
+		                                  skipped, crash_files().is_full() ? " - the crash list is full" : ""));
 	}
 
 
@@ -2915,6 +2978,11 @@ bool app_frame::init(const std::string_view command_line_text)
 	const auto& store = _settings;
 	load_options(store);
 	setting.instantiations++;
+
+	// load_options re-runs setting.read(), which puts the persisted values back, so the safe
+	// start decided in load_settings has to be re-applied over them. reset_presentation is
+	// idempotent, so this is the same answer, not a second decision.
+	if (_safe_start) setting.reset_presentation();
 
 	if (setting.language != "en")
 	{
@@ -3103,7 +3171,7 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 {
 	update_button_state(false);
 
-	const auto view_window_bounds = _view_frame->_frame->window_bounds();
+	const auto view_window_bounds = _view_frame->frame()->window_bounds();
 	std::span<const commands> ids = s_menu_frame;
 
 	if (view_window_bounds.contains(loc))
@@ -3240,6 +3308,13 @@ void app_frame::crash(const df::file_path dump_file_path)
 				df::log(__FUNCTION__, std::format("Rendering function: {}", str::utf8_cast(render_func)));
 			}
 
+			if (dump_file_path.is_empty())
+			{
+				// Reported anyway: the logs carry the timeline, the configuration and the last file opened,
+				// which is often enough to attribute the fault without a dump.
+				df::log(__FUNCTION__, "no minidump was written - reporting logs only");
+			}
+
 			const auto log_file_path = df::close_log();
 			const auto previous_log_path = df::previous_log_path;
 			const auto crash_zip_path = platform::temp_file();
@@ -3256,7 +3331,7 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 			if (zip.create(crash_zip_path))
 			{
-				zip.add(dump_file_path, name);
+				if (!dump_file_path.is_empty()) zip.add(dump_file_path, name);
 				if (log_file_path.exists()) zip.add(log_file_path);
 				if (previous_log_path.exists()) zip.add(previous_log_path);
 				zip.close();
@@ -3291,8 +3366,14 @@ void app_frame::crash(const df::file_path dump_file_path)
 
 			const auto con = platform::connect_to_host("diffractor.com");
 			send_request(con, req);
+
+			if (crash_zip_path.exists()) platform::delete_file(crash_zip_path);
 		}
 #endif
+
+		// Whether or not it was sent, and whether or not reporting is enabled: a repeating crash would
+		// otherwise leave a fresh multi-megabyte dump in the temp folder on every launch.
+		if (!dump_file_path.is_empty()) platform::delete_file(dump_file_path);
 	}
 }
 
@@ -3303,7 +3384,27 @@ bool app_frame::load_settings(const platform::setting_file_ptr& store)
 	// initialise rendering. The store is the single shared instance provided by the platform;
 	// it is retained for later load_options / save_options.
 	_settings = store;
+
+	// A crash before the first frame repeats on every relaunch, and nothing the user did caused
+	// it, so nothing they can stop doing avoids it. The count of starts that never settled is
+	// raised here - the earliest point that has a store - and cleared once this one settles.
+	uint32_t unsettled_starts = 0;
+	store->read({}, s_unsettled_starts, unsettled_starts);
+	_safe_start = should_start_safe(unsettled_starts);
+	store->write({}, s_unsettled_starts, unsettled_starts + 1);
+
 	setting.read();
+
+	// Must happen here rather than in init(): the caller creates the graphics factories from
+	// setting.use_gpu before init() runs, so a safe start decided later would leave the very
+	// device creation it exists to avoid already done.
+	if (_safe_start)
+	{
+		df::log(__FUNCTION__, std::format("{} starts did not settle - reverting to safe presentation",
+		                                  unsettled_starts));
+		setting.reset_presentation();
+	}
+
 	return true;
 }
 
@@ -3350,6 +3451,10 @@ void app_frame::free_graphics_resources(const bool items_only, const bool offscr
 				_player->close(d->_session, {});
 			}
 		}
+
+		// Nothing above kept these reachable, so they would otherwise hold full-size images and their
+		// textures past the device, theme or DPI change that just dropped everything on screen.
+		_state.release_retained_textures();
 
 		const view_element_event e{view_element_event_type::free_graphics_resources, nullptr};
 		element_broadcast(e);

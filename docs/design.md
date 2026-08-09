@@ -347,6 +347,8 @@ Persist durable preferences, not transient focus, selection, pin, zoom, playback
 
 A file that crashed the application is skipped only by work the user did not ask for. Indexing, scanning, and thumbnailing reach files the user never chose to touch, so repeating that crash is the application's to prevent, and a skipped file presents as a failed item rather than as one still loading. Work the user asked for is always attempted: an explicit open is a request, and refusing it silently would trade a crash the user can choose to avoid for an inaction they cannot explain. The skip lapses on the next update, so a fix reaches the file without the user knowing a list exists.
 
+A crash before the first window is the one failure the user has no mental model for, because nothing they did caused it and nothing they can stop doing avoids it. After two consecutive launches that never reach a settled window, the next one opens with the default layout and hardware acceleration off, and says so. Only presentation is reverted; files, collection, recent items, favorite tags, language and task settings are unchanged, and the user restores their own choices from Options. Opening degraded and explained is always preferred to not opening.
+
 Network features independently disclose trigger, transmitted data, recipient, purpose, and disable control. Keyboard, toolbar, menu, context-menu, and accessibility paths share availability, targeting, confirmation, and validation. Escape unwinds the most local temporary state first.
 
 ## Feature map

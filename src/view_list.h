@@ -815,16 +815,14 @@ public:
 
 	void scroll_controls() override
 	{
-		if (_frame)
-		{
-			_frame->layout();
-		}
+		frame()->layout();
 	}
 
 
 	virtual void layout_controls(ui::measure_context& mc)
 	{
-		if (!_controls.empty())
+		// _dlg is released on destroy, and a panel can still be asked to lay out after that.
+		if (!_controls.empty() && _dlg)
 		{
 			const auto layout_padding = df::round(mc.padding1 / mc.scale_factor);
 			auto avail_bounds = recti(_extent);
@@ -910,9 +908,9 @@ public:
 		return false;
 	}
 
-	const ui::frame_ptr frame() override
+	const ui::frame_ptr frame() const override
 	{
-		return _frame;
+		return _frame ? _frame : ui::no_frame();
 	}
 
 	const ui::control_frame_ptr owner() override
@@ -937,10 +935,7 @@ public:
 
 	void invalidate_element(const view_element_ptr& e) override
 	{
-		if (_frame)
-		{
-			_frame->invalidate();
-		}
+		frame()->invalidate();
 	}
 
 	view_controller_ptr controller_from_location(const pointi loc) override
@@ -980,7 +975,7 @@ public:
 
 	void focus_changed(bool has_focus, const ui::control_base_ptr& child) override
 	{
-		if (child && child->has_focus())
+		if (child && child->has_focus() && _dlg)
 		{
 			auto point_offset = _scroller.scroll_offset();
 			const auto rc = child->window_bounds().offset(point_offset - _dlg->window_bounds().top_left());
@@ -1005,7 +1000,7 @@ public:
 
 	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override
 	{
-		_state.track_menu(_dlg, bounds, commands);
+		if (_dlg) _state.track_menu(_dlg, bounds, commands);
 	}
 
 	void invalidate_view(const view_invalid invalid) override

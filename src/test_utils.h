@@ -167,6 +167,44 @@ public:
 // The one gazetteer shared by every test: loading a 24 MB index per context is not affordable.
 location_cache& test_locations();
 
+// Measures nothing, so a layout test observes only the arrangement the layout code chose rather than
+// the font metrics of whichever machine ran it.
+class flex_test_measure_context final : public ui::measure_context
+{
+public:
+	sizei measure_text(std::string_view text, ui::style::font_face font, ui::style::text_style style, int cx,
+	                   int cy = 0) override
+	{
+		return {};
+	}
+
+	int text_line_height(ui::style::font_face font) override
+	{
+		return 0;
+	}
+
+	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override
+	{
+		return {};
+	}
+};
+
+class flex_test_element final : public view_element
+{
+	sizei _desired;
+
+public:
+	explicit flex_test_element(const sizei desired) : _desired(desired)
+	{
+		padding(0);
+	}
+
+	sizei measure(ui::measure_context& mc, const int width_limit) const override
+	{
+		return {std::min(_desired.cx, width_limit), _desired.cy};
+	}
+};
+
 class null_async_strategy : public async_strategy
 {
 public:

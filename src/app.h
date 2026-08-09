@@ -100,20 +100,23 @@ public:
 		}
 	}
 
+	// Never null after construction: most handlers below dereference _view without testing it, and a
+	// frame with no view has nothing useful to become. A null assignment keeps the previous view
+	// rather than clearing it, so view_changed's default branch cannot empty a live frame.
 	void view(std::shared_ptr<view_base> v)
 	{
-		_view = std::move(v);
+		if (v) _view = std::move(v);
 	}
 
 	bool is_occluded() const
 	{
-		return _frame->is_occluded();
+		return frame()->is_occluded();
 	}
 
 	void invalidate_controller()
 	{
 		_controller_invalid = true;
-		update_controller(_frame->cursor_location());
+		update_controller(frame()->cursor_location());
 	}
 
 	int fps() const
@@ -144,11 +147,7 @@ public:
 	void on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized) override
 	{
 		_extent = extent;
-
-		if (_view)
-		{
-			_view->layout(mc, extent);
-		}
+		_view->layout(mc, extent);
 	}
 
 	void on_window_paint(ui::draw_context& dc) override
@@ -199,7 +198,7 @@ public:
 	// did not land in. A rendered edit that kept focus would swallow every keyboard command.
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
 	{
-		if (_view) _view->mouse_down(loc);
+		_view->mouse_down(loc);
 		view_host::on_mouse_left_button_down(loc, keys);
 	}
 
@@ -210,7 +209,7 @@ public:
 
 	bool is_caption_area(const pointi loc) const override
 	{
-		return _view && _view->is_caption_area(loc);
+		return _view->is_caption_area(loc);
 	}
 
 	void pan_start(const pointi start_loc) override
@@ -254,12 +253,12 @@ public:
 	{
 		df::trace(std::format("render_window::focus {}", has_focus));
 		_view->focus(has_focus);
-		_frame->invalidate();
+		frame()->invalidate();
 	}
 
-	const ui::frame_ptr frame() override
+	const ui::frame_ptr frame() const override
 	{
-		return _frame;
+		return _frame ? _frame : ui::no_frame();
 	}
 
 	const ui::control_frame_ptr owner() override
@@ -289,23 +288,18 @@ public:
 
 	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override
 	{
-		_state.track_menu(_frame, bounds.offset(_frame->window_bounds().top_left()), commands);
+		const auto f = frame();
+		_state.track_menu(f, bounds.offset(f->window_bounds().top_left()), commands);
 	}
 
 	void layout() const
 	{
-		if (_frame)
-		{
-			_frame->layout();
-		}
+		frame()->layout();
 	}
 
 	void invalidate_element(const view_element_ptr& e) override
 	{
-		if (_frame)
-		{
-			_frame->invalidate();
-		}
+		frame()->invalidate();
 	}
 
 	std::string _status_title;
@@ -316,7 +310,7 @@ public:
 	void clear_status();
 	void draw_view_status(ui::draw_context& dc) const;
 	void draw_status(ui::draw_context& dc) const;
-	void redraw_now() const { _frame->redraw_now(); }
+	void redraw_now() const { frame()->redraw_now(); }
 
 	platform::drop_effect drag_over(const platform::clipboard_data& data, const ui::key_state keys,
 	                                const pointi loc) override
@@ -603,6 +597,14 @@ public:
 	df::unique_folders _folders_changed;
 	std::string saved_current_search;
 	bool _is_active = false;
+
+	// Recovery from a crash that happened before the user could touch anything. _safe_start says
+	// this launch reverted presentation because previous ones never settled; _startup_settled
+	// latches the moment this one did, which clears the persisted count.
+	bool _safe_start = false;
+	bool _startup_settled = false;
+	void mark_startup_settled();
+	void report_safe_start();
 
 #ifdef _DEBUG
 	double _screenshot_ready_time = 0;

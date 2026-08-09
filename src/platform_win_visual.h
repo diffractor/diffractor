@@ -61,12 +61,88 @@ public:
 	uint32_t calc_base_line_height() const;
 
 	render_char_result render_glyph(uint16_t glyph_index, int spacing, const DWRITE_GLYPH_RUN* glyph_run) const;
-	sizei measure(std::wstring_view text, ui::style::text_style style, int width, int height) const;
 	void draw(ui::draw_context*, IDWriteTextRenderer*, std::wstring_view text, recti bounds,
 	          ui::style::text_style style, ui::color color, ui::color bg,
 	          const std::vector<ui::text_highlight_t>& highlights);
 	static void draw(ui::draw_context*, IDWriteTextRenderer*, IDWriteTextLayout*, recti bounds, ui::color color,
 	                 ui::color bg);
+
+	// Same two operations against the layout cache below. Callers hand over UTF-8 because the
+	// conversion to UTF-16 is itself per-call work the cache removes.
+	sizei measure(std::string_view text, ui::style::text_style style, int width, int height);
+	void draw(ui::draw_context*, IDWriteTextRenderer*, std::string_view text, recti bounds,
+	          ui::style::text_style style, ui::color color, ui::color bg);
+
+private:
+	// Creating an IDWriteTextLayout runs itemization, font fallback and shaping, and the item grid
+	// was paying that for every string of every visible tile on every frame. A layout is bound to
+	// this renderer, which already fixes the family and em size, and the only other thing baked into
+	// it is the style, so one layout per (text, style) is reusable; the destination rectangle is
+	// applied per draw. Draw and measure configure a layout differently, so they do not share one.
+	struct layout_key
+	{
+		std::string text;
+		ui::style::text_style style = ui::style::text_style::none;
+		bool for_draw = false;
+	};
+
+	struct layout_key_view
+	{
+		std::string_view text;
+		ui::style::text_style style = ui::style::text_style::none;
+		bool for_draw = false;
+	};
+
+	static size_t hash_layout_key(const std::string_view text, const ui::style::text_style style, const bool for_draw)
+	{
+		auto h = std::hash<std::string_view>{}(text);
+		h ^= (static_cast<size_t>(style) * 2 + (for_draw ? 1u : 0u)) * 0x9e3779b97f4a7c15ull;
+		return h;
+	}
+
+	// Transparent so a lookup can be made from a string_view; copying the caller's text into a key
+	// on every hit would put back a per-draw allocation this cache exists to remove.
+	struct layout_key_hash
+	{
+		using is_transparent = void;
+
+		size_t operator()(const layout_key& k) const { return hash_layout_key(k.text, k.style, k.for_draw); }
+		size_t operator()(const layout_key_view& k) const { return hash_layout_key(k.text, k.style, k.for_draw); }
+	};
+
+	struct layout_key_eq
+	{
+		using is_transparent = void;
+
+		bool operator()(const layout_key& a, const layout_key& b) const
+		{
+			return a.for_draw == b.for_draw && a.style == b.style && a.text == b.text;
+		}
+
+		bool operator()(const layout_key& a, const layout_key_view& b) const
+		{
+			return a.for_draw == b.for_draw && a.style == b.style && a.text == b.text;
+		}
+
+		bool operator()(const layout_key_view& a, const layout_key& b) const
+		{
+			return a.for_draw == b.for_draw && a.style == b.style && a.text == b.text;
+		}
+	};
+
+	struct layout_entry
+	{
+		ComPtr<IDWriteTextLayout> layout;
+		uint64_t used = 0;
+	};
+
+	static constexpr size_t max_cached_layouts = 768;
+
+	std::unordered_map<layout_key, layout_entry, layout_key_hash, layout_key_eq> _layouts;
+	uint64_t _layout_clock = 0;
+
+	IDWriteTextLayout* cached_layout(std::string_view text, ui::style::text_style style, bool for_draw);
+	void trim_layout_cache();
 };
 
 using font_renderer_ptr = std::shared_ptr<font_renderer>;

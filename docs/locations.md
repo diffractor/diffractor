@@ -107,6 +107,8 @@ Resolution then follows one ladder, first match wins:
 
 An item that reaches steps 3–5 is still located. It never appears in `without:location`, which means *no coordinates and no text* and nothing else.
 
+The ladder needs the gazetteer file, so it never runs on the UI thread: `view_state::derived_location` memoizes per attribution cell, queues the read on first ask, and lets the published result invalidate the panel. That answer therefore arrives after the panel is already on screen, and a location row that appeared from nothing at that moment would move the media and every property around it. The row is held open with `Loading...` while the read is in flight — the coordinate is already proof there is a place to name, so the only thing unknown is the text, and a blank in a location row reads as "this photo has none". [selection-controls](selection-controls.md) owns why nothing arriving late may move what is above it.
+
 ### 2.6 Water bodies, offshore, and in flight
 
 **Deferred, and step 4 of the §2.5 ladder is currently unreachable.** This section originally specified a `location-waters.txt` of roughly eighty bounding boxes for oceans, seas, gulfs, bays, straits, and channels, so that a mid-Adriatic photo would read `Adriatic Sea`. It is not implemented, and it is recorded here as deferred rather than pending because the reason is a data problem rather than a scheduling one.

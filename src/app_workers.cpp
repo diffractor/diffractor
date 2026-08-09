@@ -49,6 +49,10 @@ static platform::mutex media_preview_mutex;
 static _Guarded_by_(media_preview_mutex) std::function<void(media_preview_state&)> next_media_preview;
 static _Guarded_by_(media_preview_mutex) std::deque<std::function<void(media_preview_state&)>> media_preview_must_run;
 
+// True while a newer speculative preview waits behind the one running. Set and cleared under
+// media_preview_mutex so the running task cannot miss a request queued after it started.
+static std::atomic_bool media_preview_superseded = false;
+
 df::index_roots index_folders()
 {
 	df::index_roots result;
@@ -98,6 +102,10 @@ void app_frame::queue_media_preview(std::function<void(media_preview_state&)> f,
 
 		if (must_run) media_preview_must_run.emplace_back(std::move(f));
 		else next_media_preview = std::move(f);
+
+		// Teardown counts too: a caller waiting to rename or delete should not queue behind the rest
+		// of a preview walk whose answer is already stale.
+		media_preview_superseded.store(true, std::memory_order_relaxed);
 	}
 
 	media_preview_event.set();
@@ -436,6 +444,7 @@ static void start_media_preview()
 			media_preview_event, platform::event_exit
 		};
 		media_preview_state preview_decoder;
+		preview_decoder.superseded = &media_preview_superseded;
 
 		while (!df::is_closing)
 		{
@@ -454,6 +463,7 @@ static void start_media_preview()
 					platform::exclusive_lock media_lock(media_preview_mutex);
 					std::swap(media_preview_must_run, must_run);
 					std::swap(next_media_preview, f);
+					media_preview_superseded.store(false, std::memory_order_relaxed);
 				}
 
 				// Teardown first: it releases the file handles a waiting caller needs before it can

@@ -125,46 +125,59 @@ bool factories::init(const bool use_gpu)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 
+	// DirectWrite is the only hard requirement here: every backend, the CPU software one included,
+	// rasterises text through it, so there is no rendering path left if it is missing. DXGI and WIC
+	// are not needed to put a window on screen, so each degrades on its own rather than stopping the
+	// app - the whole point of this function is that it either starts something or says why.
 	auto hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(dwrite),
 	                              std::bit_cast<IUnknown**>(dwrite.GetAddressOf()));
 
 	if (FAILED(hr))
 	{
 		df::log(__FUNCTION__, std::format("Failed to create IDWriteFactory {:x}", static_cast<uint32_t>(hr)));
+		return false;
 	}
 
-	if (SUCCEEDED(hr))
 	{
+		HRESULT dxgi_hr;
 #ifdef _DEBUG
 		// The DXGI debug layer ships in the optional "Graphics Tools" feature. Without it the call
 		// fails with DXGI_ERROR_SDK_COMPONENT_MISSING, so fall back to a plain factory instead of
 		// treating a missing developer component as a fatal startup error.
-		hr = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, __uuidof(dxgi),
-		                        std::bit_cast<void**>(dxgi.GetAddressOf()));
+		dxgi_hr = CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, __uuidof(dxgi),
+		                             std::bit_cast<void**>(dxgi.GetAddressOf()));
 
-		if (FAILED(hr))
+		if (FAILED(dxgi_hr))
 		{
 			df::log(__FUNCTION__, "DXGI debug layer unavailable - creating factory without it");
-			hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
+			dxgi_hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
 		}
 #else
-		hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
+		dxgi_hr = CreateDXGIFactory1(__uuidof(dxgi), std::bit_cast<void**>(dxgi.GetAddressOf()));
 #endif
 
-		if (FAILED(hr))
+		if (FAILED(dxgi_hr))
 		{
-			df::log(__FUNCTION__, std::format("Failed to create IDXGIFactory {:x}", static_cast<uint32_t>(hr)));
+			// No DXGI means no swap chain, so the Direct3D path is unreachable anyway; the CPU
+			// backend presents through GDI and never touches it.
+			df::log(__FUNCTION__, std::format("Failed to create IDXGIFactory {:x} - using CPU software rendering",
+			                                  static_cast<uint32_t>(dxgi_hr)));
+			dxgi.Reset();
 		}
 	}
 
-	if (SUCCEEDED(hr))
 	{
-		hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory),
-		                      std::bit_cast<void**>(wic.GetAddressOf()));
+		const auto wic_hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+		                                     __uuidof(IWICImagingFactory),
+		                                     std::bit_cast<void**>(wic.GetAddressOf()));
 
-		if (FAILED(hr))
+		if (FAILED(wic_hr))
 		{
-			df::log(__FUNCTION__, std::format("Failed to create IWICImagingFactory {:x}", static_cast<uint32_t>(hr)));
+			// WIC decodes shell thumbnails, clipboard bitmaps and the shadow art. Losing it costs
+			// those, not the window, so callers test factories::wic instead of the app refusing to run.
+			df::log(__FUNCTION__, std::format("Failed to create IWICImagingFactory {:x} - image decoding degraded",
+			                                  static_cast<uint32_t>(wic_hr)));
+			wic.Reset();
 		}
 	}
 
@@ -174,7 +187,6 @@ bool factories::init(const bool use_gpu)
 	ComPtr<ID3D11DeviceContext> context;
 	D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
 
-	if (SUCCEEDED(hr))
 	{
 		uint32_t create_device_flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 
@@ -200,7 +212,9 @@ bool factories::init(const bool use_gpu)
 
 		constexpr auto driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
-		if (use_gpu)
+		// Without a DXGI factory there is nothing to create a swap chain from, so a device would
+		// have no way to reach the screen.
+		if (use_gpu && dxgi)
 		{
 			// Mark GPU rendering as active before creating the device so a crash during
 			// device creation or subsequent rendering is attributed to the GPU on the next
@@ -645,8 +659,7 @@ public:
 	{
 		df::scope_rendering_func rf(__FUNCTION__);
 		if (!_font) return {};
-		const auto text16 = str::utf8_to_utf16(text);
-		return _font->measure(text16, style, avail.cx, avail.cy);
+		return _font->measure(text, style, avail.cx, avail.cy);
 	}
 
 	int line_height() const { return _line_height; }
@@ -802,6 +815,19 @@ df_assert_movable(scene_atom);
 
 using texture_d3d11_ptr = std::shared_ptr<d3d11_texture>;
 
+// Shader resource views for one texture, kept alive across frames. Creating a view is a driver
+// object allocation, so it must not happen once per texture per frame. The views hold a
+// reference to their resource, which is what bounds the lifetime of an unused entry.
+struct cached_texture_views
+{
+	ComPtr<ID3D11ShaderResourceView> y;
+	ComPtr<ID3D11ShaderResourceView> uv; // chroma plane; null for everything but NV12/P010
+	ui::texture_format format = ui::texture_format::None;
+	bool used = false;
+};
+
+using texture_view_cache = df::hash_map<ID3D11Texture2D*, cached_texture_views>;
+
 class d3d11_vertices final : public std::enable_shared_from_this<d3d11_vertices>, public ui::vertices
 {
 public:
@@ -852,7 +878,18 @@ public:
 	ComPtr<ID3D11RasterizerState> _rasterizer_state;
 	ComPtr<ID3D11SamplerState> _sampler_point;
 	ComPtr<ID3D11SamplerState> _sampler_bilinear;
-	std::set<ComPtr<ID3D11Texture2D>> _scene_textures;
+	// Built once per back buffer, not once per frame. Dropped by release_back_buffer_references
+	// before ResizeBuffers, which is the only thing that replaces the underlying surface.
+	ComPtr<ID3D11RenderTargetView> _back_buffer_rtv;
+	texture_view_cache _texture_views;
+	// Keeps every texture the staged scene points at alive until the scene is rendered. Atoms hold
+	// raw pointers, and the owner may drop its reference between staging and render. Consecutive
+	// atoms share a texture, so only a repeat of the last one is filtered; a duplicate entry costs
+	// one reference and nothing else.
+	std::vector<ComPtr<ID3D11Texture2D>> _scene_textures;
+	// The edit preview rebuilds an identical transform every paint. Holding the last one lets the
+	// atom reuse it instead of allocating a 1KB curve per frame.
+	std::shared_ptr<const ui::texture_transform> _last_transform;
 
 
 	int _adapters_count = 0;
@@ -887,7 +924,7 @@ public:
 	void update_font_size(int base_font_size) override;
 
 	void build_index_and_vertex_buffers();
-	HRESULT draw_scene(const ComPtr<ID3D11DeviceContext>& context) const;
+	HRESULT draw_scene(const ComPtr<ID3D11DeviceContext>& context);
 
 
 	sizei measure_string(std::string_view text, sizei size_avail, ui::style::font_face, ui::style::text_style);
@@ -989,10 +1026,13 @@ void d3d11_draw_context_impl::destroy()
 	_inverse_shadow.reset();
 	_scene_atoms.clear();
 	_scene_textures.clear();
+	_texture_views.clear();
+	_last_transform.reset();
 	_font.clear();
 	_vertex_buffer_staging.clear();
 	_index_buffer_staging.clear();
 
+	_back_buffer_rtv.Reset();
 	_swap_chain.Reset();
 	_vertex_shader.Reset();
 	_pixel_shader_solid.Reset();
@@ -1052,6 +1092,7 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 	_f = f;
+	_back_buffer_rtv.Reset();
 	_swap_chain = swap_chain;
 
 	auto hr = swap_chain && f && f->d3d_device ? S_OK : E_FAIL;
@@ -1310,6 +1351,16 @@ void d3d11_draw_context_impl::begin_draw(const sizei client_extent, int base_fon
 	_scene_atoms.clear();
 	_scene_textures.clear();
 
+	// Drop views for textures the last rendered frame did not touch, then arm the flag for this
+	// one. A redraw replays without calling begin_draw, so the flag must survive until the next
+	// scene is staged rather than being cleared per render.
+	std::erase_if(_texture_views, [](const auto& entry) { return !entry.second.used; });
+
+	for (auto& entry : _texture_views)
+	{
+		entry.second.used = false;
+	}
+
 	_vertex_buffer_staging.clear();
 	_index_buffer_staging.clear();
 
@@ -1433,15 +1484,67 @@ struct context_state final
 	const ui::texture_transform* uploaded_transform = nullptr;
 	bool identity_transform_uploaded = false;
 
-	df::hash_map<ID3D11Texture2D*, ComPtr<ID3D11ShaderResourceView>> texture_views;
+	texture_view_cache* views = nullptr;
 
 	ID3D11DeviceContext* context;
 	ID3D11Device* device;
 	D3D11_RECT client_clip = {};
 
-	context_state(ID3D11Device* d, ID3D11DeviceContext* c, const sizei client_extent) : context(c), device(d)
+	context_state(ID3D11Device* d, ID3D11DeviceContext* c, const sizei client_extent, texture_view_cache& tv) :
+		views(&tv), context(c), device(d)
 	{
 		client_clip = {0, 0, client_extent.cx, client_extent.cy};
+	}
+
+	// Returns the cached views for a texture, creating them on first use. A null result means the
+	// views could not be built; nothing is cached in that case, so the next atom retries.
+	const cached_texture_views* acquire_views(ID3D11Texture2D* t, const ui::texture_format fmt)
+	{
+		auto& entry = (*views)[t];
+		entry.used = true;
+
+		if (entry.y && entry.format == fmt)
+		{
+			return &entry;
+		}
+
+		entry = {};
+
+		D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
+		srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+		srv.Texture2D.MipLevels = 1;
+		srv.Texture2D.MostDetailedMip = 0;
+
+		if (fmt == ui::texture_format::NV12 || fmt == ui::texture_format::P010)
+		{
+			const auto is_p010 = fmt == ui::texture_format::P010;
+			srv.Format = is_p010 ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
+
+			if (FAILED(device->CreateShaderResourceView(t, &srv, &entry.y)))
+			{
+				entry = {};
+				return nullptr;
+			}
+
+			srv.Format = is_p010 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
+
+			// A luma view without its chroma view would sample the wrong image with no error path,
+			// so a partial failure discards both.
+			if (FAILED(device->CreateShaderResourceView(t, &srv, &entry.uv)))
+			{
+				entry = {};
+				return nullptr;
+			}
+		}
+		else if (FAILED(device->CreateShaderResourceView(t, nullptr, &entry.y)))
+		{
+			entry = {};
+			return nullptr;
+		}
+
+		entry.format = fmt;
+		entry.used = true;
+		return &entry;
 	}
 
 	// clip_source lets a replayed vertices atom take the clip that was active when draw_vertices
@@ -1568,128 +1671,54 @@ struct context_state final
 			// The cache is only updated once a view is actually bound. Recording the texture
 			// before the bind succeeds leaves the previous atom's views selected while this
 			// atom's draw runs, which samples the wrong image with no error path.
-			auto bound = false;
+			const auto* const v = acquire_views(t, tx_fmt);
 
-			if (tx_fmt == ui::texture_format::NV12)
-			{
-				ComPtr<ID3D11ShaderResourceView> texture_view_y;
-				ComPtr<ID3D11ShaderResourceView> texture_view_uv;
-
-				D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
-				srv.Format = DXGI_FORMAT_R8_UNORM;
-				srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-				srv.Texture2D.MipLevels = 1;
-				srv.Texture2D.MostDetailedMip = 0;
-				auto hr = device->CreateShaderResourceView(t, &srv, &texture_view_y);
-
-				if (SUCCEEDED(hr))
-				{
-					srv.Format = DXGI_FORMAT_R8G8_UNORM;
-					hr = device->CreateShaderResourceView(t, &srv, &texture_view_uv);
-
-					if (SUCCEEDED(hr))
-					{
-						ID3D11ShaderResourceView* views[] = {texture_view_y.Get(), texture_view_uv.Get()};
-						context->PSSetShaderResources(0, 2, views);
-						bound = true;
-					}
-				}
-			}
-			else if (tx_fmt == ui::texture_format::P010)
-			{
-				ComPtr<ID3D11ShaderResourceView> texture_view_y;
-				ComPtr<ID3D11ShaderResourceView> texture_view_uv;
-
-				D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
-				srv.Format = DXGI_FORMAT_R16_UNORM;
-				srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-				srv.Texture2D.MipLevels = 1;
-				srv.Texture2D.MostDetailedMip = 0;
-				HRESULT hr = device->CreateShaderResourceView(t, &srv, &texture_view_y);
-
-				if (SUCCEEDED(hr))
-				{
-					srv.Format = DXGI_FORMAT_R16G16_UNORM;
-					hr = device->CreateShaderResourceView(t, &srv, &texture_view_uv);
-
-					if (SUCCEEDED(hr))
-					{
-						ID3D11ShaderResourceView* views[] = {texture_view_y.Get(), texture_view_uv.Get()};
-						context->PSSetShaderResources(0, 2, views);
-						bound = true;
-					}
-				}
-			}
-			else
-			{
-				ComPtr<ID3D11ShaderResourceView> view;
-
-				auto found = texture_views.find(t);
-
-				if (found == texture_views.end())
-				{
-					if (SUCCEEDED(device->CreateShaderResourceView(t, nullptr, &view)))
-					{
-						texture_views[t] = view;
-					}
-				}
-				else
-				{
-					view = found->second;
-				}
-
-				// Bind both slots so a shader resource view left over from a previous YUV atom
-				// does not stay bound to slot 1 - a stale binding keeps the video texture
-				// referenced and forces the runtime to unbind it on the next copy.
-				ID3D11ShaderResourceView* views[] = {view.Get(), nullptr};
-				context->PSSetShaderResources(0, 2, views);
-				bound = view != nullptr;
-			}
-
-			if (bound)
-			{
-				texture = t;
-			}
-			else
-			{
-				// Nothing is bound, so both slots are cleared rather than left pointing at the
-				// previous atom, and the cache records that so the next atom retries.
-				ID3D11ShaderResourceView* views[] = {nullptr, nullptr};
-				context->PSSetShaderResources(0, 2, views);
-				texture = nullptr;
-			}
+			// Both slots are bound together so a chroma view left over from a previous YUV atom
+			// does not stay bound to slot 1 - a stale binding keeps the video texture referenced
+			// and forces the runtime to unbind it on the next copy. On failure both are cleared
+			// rather than left pointing at the previous atom, and the cache records that so the
+			// next atom retries.
+			ID3D11ShaderResourceView* views_to_bind[] = {
+				v ? v->y.Get() : nullptr, v ? v->uv.Get() : nullptr
+			};
+			context->PSSetShaderResources(0, 2, views_to_bind);
+			texture = v ? t : nullptr;
 		}
 
 		context->DrawIndexed(a.index_count, a.start_index, a.start_vertex);
 	}
 };
 
-HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context) const
+HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	ComPtr<ID3D11RenderTargetView> rtv;
-	ComPtr<ID3D11Texture2D> back_buffer;
 
-	context->ClearState();
-
-	auto hr = _swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), std::bit_cast<void**>(back_buffer.GetAddressOf()));
-
-	if (FAILED(hr))
+	// The flip model rotates the surface behind buffer 0, but the object and its view stay valid
+	// until ResizeBuffers replaces them, so this is built once rather than once per frame.
+	if (!_back_buffer_rtv)
 	{
-		df::log(__FUNCTION__, std::format("IDXGISwapChain::GetBuffer failed {:x}", static_cast<uint32_t>(hr)));
-		return hr;
+		ComPtr<ID3D11Texture2D> back_buffer;
+		auto hr = _swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D),
+		                                 std::bit_cast<void**>(back_buffer.GetAddressOf()));
+
+		if (FAILED(hr))
+		{
+			df::log(__FUNCTION__, std::format("IDXGISwapChain::GetBuffer failed {:x}", static_cast<uint32_t>(hr)));
+			return hr;
+		}
+
+		hr = _f->d3d_device->CreateRenderTargetView(back_buffer.Get(), nullptr, &_back_buffer_rtv);
+
+		if (FAILED(hr))
+		{
+			df::log(__FUNCTION__, std::format("CreateRenderTargetView failed {:x}", static_cast<uint32_t>(hr)));
+			_back_buffer_rtv.Reset();
+			return hr;
+		}
 	}
 
-	hr = _f->d3d_device->CreateRenderTargetView(back_buffer.Get(), nullptr, &rtv);
-
-	if (FAILED(hr))
 	{
-		df::log(__FUNCTION__, std::format("CreateRenderTargetView failed {:x}", static_cast<uint32_t>(hr)));
-		return hr;
-	}
-
-	{
-		ID3D11RenderTargetView* views[] = {rtv.Get()};
+		ID3D11RenderTargetView* views[] = {_back_buffer_rtv.Get()};
 		context->OMSetRenderTargets(1, views, nullptr);
 
 		const D3D11_VIEWPORT viewport = {
@@ -1724,9 +1753,12 @@ HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& c
 		constexpr DirectX::XMVECTORF32 bg_color = {
 			{scene_clear_shade, scene_clear_shade, scene_clear_shade, 1.0f}
 		};
-		context->ClearRenderTargetView(rtv.Get(), bg_color);
+		context->ClearRenderTargetView(_back_buffer_rtv.Get(), bg_color);
 
-		context_state state(_f->d3d_device.Get(), context.Get(), _client_extent);
+		// Starts with every cached binding null, so the first atom that needs one sets it. That is
+		// what makes a per-frame ClearState unnecessary: this backend owns the context outright and
+		// nothing else on it touches pipeline state.
+		context_state state(_f->d3d_device.Get(), context.Get(), _client_extent, _texture_views);
 		state.yuv_cbuffer = _yuv_cbuffer.Get();
 		state.texture_transform_cbuffer = _texture_transform_cbuffer.Get();
 
@@ -1753,9 +1785,13 @@ HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& c
 		}
 	}
 
-	// Drop every reference to the back buffer before returning. IDXGISwapChain::ResizeBuffers
-	// fails with DXGI_ERROR_INVALID_CALL while a render target view of a back buffer is still
-	// bound to the device context, which would leave the window rendering at a stale size.
+	// Unbind the back buffer before returning: the flip model requires it before Present, and
+	// IDXGISwapChain::ResizeBuffers fails with DXGI_ERROR_INVALID_CALL while a render target view
+	// of a back buffer is still bound, which would leave the window rendering at a stale size.
+	// The sampled textures go with it so a video surface is not still bound as an input when the
+	// next decoded frame is copied into it.
+	ID3D11ShaderResourceView* const no_views[] = {nullptr, nullptr};
+	context->PSSetShaderResources(0, 2, no_views);
 	context->OMSetRenderTargets(0, nullptr, nullptr);
 
 	return S_OK;
@@ -1767,6 +1803,10 @@ void d3d11_draw_context_impl::release_back_buffer_references()
 	{
 		_f->d3d_context->OMSetRenderTargets(0, nullptr, nullptr);
 	}
+
+	// The cached view holds a reference of its own, so unbinding alone would not let
+	// ResizeBuffers through.
+	_back_buffer_rtv.Reset();
 }
 
 HRESULT d3d11_draw_context_impl::render()
@@ -1850,9 +1890,9 @@ void d3d11_draw_context_impl::add_scene_atom(const ComPtr<ID3D11Texture2D>& text
 		sa.has_clip = !_clip_stack.empty();
 		_scene_atoms.emplace_back(sa);
 
-		if (!_scene_textures.contains(texture))
+		if (texture && (_scene_textures.empty() || _scene_textures.back() != texture))
 		{
-			_scene_textures.emplace(texture);
+			_scene_textures.emplace_back(texture);
 		}
 	}
 }
@@ -2394,6 +2434,18 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 				_shared_texture_format = video_tex_format;
 				_shared_texture_device = video_device;
 				_texture.Reset(); // force the render-side SRV texture to be recreated below
+
+				// The decoder's surface pool is one texture array allocated in full when the stream
+				// opens, and it is the largest single allocation playback makes. Reported here
+				// because this is the only point that can see how many surfaces it really has.
+				const int64_t bytes_per_sample = video_tex_format == ui::texture_format::P010 ? 2 : 1;
+				const auto surface_bytes = static_cast<int64_t>(tex_desc_src.Width) * tex_desc_src.Height *
+					3 * bytes_per_sample / 2;
+
+				df::log(__FUNCTION__,
+				        std::format("Video decode pool {} x {} x {} surfaces = {}", tex_desc_src.Width,
+				                    tex_desc_src.Height, tex_desc_src.ArraySize,
+				                    df::file_size(surface_bytes * tex_desc_src.ArraySize).str()));
 			}
 		}
 
@@ -2735,6 +2787,24 @@ ui::texture_update_result d3d11_texture::update(const ui::const_surface_ptr& s)
 	{
 		const auto fmt = s->format();
 		_cs = s->color_space();
+
+		// Surfaces decoded before setting.use_yuv was turned off are still cached, so convert
+		// them here rather than ask a driver that has already faulted for another YUV texture.
+		if (!setting.use_yuv && (fmt == ui::texture_format::NV12 || fmt == ui::texture_format::P010))
+		{
+			if (!_scaler) _scaler = std::make_unique<av_scaler>();
+
+			const auto converted = std::make_shared<ui::surface>();
+
+			if (!_scaler->convert_yuv_surface(*s, converted))
+			{
+				return ui::texture_update_result::failed;
+			}
+
+			return update(converted->dimensions(), converted->format(), converted->orientation(),
+			              converted->pixels(), converted->stride(), converted->size());
+		}
+
 		return update(s->dimensions(), fmt, s->orientation(), s->pixels(), s->stride(), s->size());
 	}
 
@@ -2940,8 +3010,7 @@ void d3d11_text_renderer::draw_text(const std::string_view text, const recti bou
 
 	if (_font)
 	{
-		_font->draw(_canvas.get(), this, str::utf8_to_utf16(text), bounds, style, c,
-		            bg, {});
+		_font->draw(_canvas.get(), this, text, bounds, style, c, bg);
 	}
 	_horizontal_mirror = false;
 }
@@ -3501,8 +3570,14 @@ void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd
 	};
 	constexpr WORD indexes[] = {0, 1, 2, 3, 0, 2};
 	const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tt->_format);
+
+	if (!_last_transform || *_last_transform != transform)
+	{
+		_last_transform = std::make_shared<ui::texture_transform>(transform);
+	}
+
 	add_scene_atom(tt->_texture, shader, tt->_format, sampler, vertices, std::size(vertices), indexes,
-	               std::size(indexes), tt->_cs, std::make_shared<ui::texture_transform>(transform));
+	               std::size(indexes), tt->_cs, _last_transform);
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const recti src,

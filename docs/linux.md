@@ -146,7 +146,7 @@ define what recovery means.
 - **Segoe MDL2 icons.** `create_segoe_md2_icon` renders from a Windows-only font. Linux
   needs a bundled icon font or vector icon set, which is a visual-design decision.
 - **Packaging.** The MSIX/WinStore configuration and the NSIS installer have no Linux
-  counterpart; Flatpak or AppImage is a separate piece of work.
+  counterpart; see [Distributions and delivery](#distributions-and-delivery).
 
 ## Build system
 
@@ -171,6 +171,124 @@ Compiler portability is a smaller but real cost: the code is C++20 on MSVC and u
 intrinsics directly in [util_simd.h](../src/util_simd.h) (already guarded, with an ARM NEON
 path), MSVC-specific SAL annotations (`_Guarded_by_`, `_Acquires_exclusive_lock_`) that
 need no-op definitions, and `#pragma`s that Clang and GCC will not recognise.
+
+## Distributions and delivery
+
+The distribution is not the variable it appears to be. Building from source removes the
+packaging difference and almost none of the real ones, because what varies between two
+Linux machines is not the compiler or the package manager — it is the set of runtime
+services the platform layer will newly depend on, and those cut across distributions rather
+than along them.
+
+Everything in `third-party/` is already built from source and pinned by the superproject, so
+the 27 vendored libraries are distribution-invariant by construction; that is exactly the
+property the [third-party policy](third-party.md) exists to protect. The variance is in the
+*new* system dependencies the port acquires: SDL3, FreeType, HarfBuzz, fontconfig, libcurl,
+an audio server, a GPU driver stack, and an XDG portal implementation.
+
+### The axes that actually vary
+
+| Axis | Values | What it decides |
+|---|---|---|
+| Display server | X11, Wayland | Clipboard, drag and drop, DPI and fractional scaling, and whether a window may restore its own position at all |
+| Portal backend | `xdg-desktop-portal-gtk`, `-kde`, `-wlr`, none | Which [shell verbs](#features-with-no-linux-equivalent) exist: file chooser, trash, open-with, wallpaper, show-in-file-browser |
+| Audio server | PipeWire, PulseAudio, bare ALSA | The replacement for `platform_win_sound.cpp`, and whether low-latency exclusive output exists |
+| GPU stack | Mesa, NVIDIA proprietary | Vulkan/GL level, and VAAPI versus NVDEC for the hardware-decode descriptor that replaces the D3D11VA selection in [av_format.cpp](../src/av_format.cpp) |
+| libc | glibc, musl | Locale and `iconv` behavior, backtrace capture for crash reports, `dlopen` semantics |
+| C++ runtime | libstdc++, libc++ | The ABI of a shipped binary; irrelevant to a source build, decisive for a distributed one |
+| Dependency age | rolling, frozen stable | Whether the minimum version of each system dependency is met at all |
+| Filesystem | ext4/btrfs/xfs, case-folded ext4, mounted NTFS/exFAT, SMB/NFS | Case sensitivity, and therefore index identity |
+
+Only two of those rows correlate with the distribution family: libc (musl means Alpine,
+Void, Chimera) and dependency age (Debian stable and RHEL freeze; Arch and Fedora do not).
+Display server, portal backend, audio server and GPU stack are choices a user makes *inside*
+any distribution, and each can differ between two machines running the same release of the
+same distribution. So "Debian-based versus Arch-based" is the wrong partition: specify the
+port against these axes, and verify it on a small matrix that covers them, rather than
+enumerating distributions.
+
+Two of the axes are sharper than the table suggests:
+
+- **Case sensitivity is per-mount, not per-system.** The
+  [case-insensitivity problem](#windows-assumptions-still-in-portable-code) does not become a
+  per-distribution constant on Linux; a single collection can span a case-sensitive ext4
+  home, a case-folded directory, and a mounted NTFS volume. That rules out a build-time
+  answer in [util_path.h](../src/util_path.h) — the comparison rule has to be a property of
+  the path's location, or the index will disagree with the filesystem on one of them.
+- **Feature availability is a runtime query.** Whether trash, wallpaper or show-in-file-browser
+  works depends on the portal backend present at run time, not on what was linked. The
+  `can_recycle`-style capability queries the app already has are the right shape for this;
+  the answers just stop being compile-time.
+
+### Delivery decides everything the source build does not
+
+**Distribution packages** (`.deb`, `.rpm`, a PKGBUILD) hand the build to each distribution's
+toolchain and policy. Nearly all of those policies forbid vendored copies of libraries the
+distribution already ships, and will unbundle `third-party/` on sight. That is fatal rather
+than inconvenient here: `diffractor/FFmpeg` and `diffractor/XMP-Toolkit-SDK` are forks whose
+entire value is Diffractor-specific patches, and unbundling silently discards them. Per-distribution
+packaging also multiplies every axis above by the number of targets.
+
+**Flatpak** pins a Freedesktop SDK runtime, which collapses the libc, C++ runtime, ABI and
+dependency-age rows to one known set and keeps `third-party/` vendored as-is. It also makes
+portals the only interface to the host — which is already what the
+[toolkit recommendation](#toolkit-choice) assumes, so the sandbox enforces a constraint the
+port wants rather than adding one. Display server and GPU stack remain host-supplied, as they
+must.
+
+**AppImage** is weaker: it inherits the build machine's glibc floor, has no portal contract,
+and pushes the ABI problem onto whoever built it.
+
+### The recommendation
+
+- **Ship one artifact: a Flatpak on Flathub**, built against `org.freedesktop.Platform`
+  rather than the GNOME or KDE runtime. The app draws its own UI, so it needs the base
+  runtime's glibc, libstdc++, FreeType, HarfBuzz, fontconfig, libcurl, SDL3, PipeWire client
+  and Mesa userspace, and nothing above them. That single choice pins six of the eight rows
+  in the table above.
+- **Develop on Fedora Workstation.** It defaults to Wayland, PipeWire, Mesa and
+  `xdg-desktop-portal-gtk`, and its toolchain and library versions track close enough to the
+  Freedesktop runtime that a host build and a Flatpak build fail in the same places. Arch is
+  an equally good development host; the point is a current stack, not a specific distribution.
+- **Cover the axes in CI, not the distributions.** Four configurations are enough:
+  Fedora/Wayland/GNOME portal/Mesa as primary; Ubuntu LTS/X11/Mesa for the X11 path and the
+  version floor; a KDE image for `xdg-desktop-portal-kde`; and one NVIDIA-proprietary machine
+  for the GPU backend and hardware decode. Adding more distributions to that list adds cost
+  without adding coverage.
+- **Record a minimum version per system dependency** and let the Ubuntu LTS leg enforce it.
+  Without a stated floor the requirement silently becomes "whatever the developer's machine
+  had".
+- **Do not produce `.deb`, `.rpm` or AUR packages ourselves.** They cannot be maintained
+  without either abandoning the vendored forks or fighting every distribution's unbundling
+  policy. If maintainers package it downstream, the fork question above is the first thing to
+  answer for them.
+
+### WSL as the early development target
+
+WSL2 is a real Linux kernel with a real glibc userspace, so it covers the first and largest
+part of the port at zero setup cost — and the part it covers is precisely the part that is
+cheapest to get wrong on Windows. Use it, but know where its answers stop being true.
+
+| Covered by WSL | Not covered by WSL |
+|---|---|
+| Building `src/` and `third-party/` with GCC and Clang, which is where the MSVC-isms surface: SAL annotations, unrecognised `#pragma`s, `__declspec(selectany)` | GPU backend validation — Mesa's D3D12 driver over `/dev/dxg` means any Vulkan or GL result is about that driver, not about Mesa or NVIDIA |
+| Running the existing suite headless (`/test`), which is the single highest-value early milestone: a passing portable core before any window exists | Hardware decode — VAAPI is absent or unrepresentative, so the D3D11VA replacement cannot be judged here |
+| `wchar_t` being 32-bit, which makes the [UTF-16 assumptions](#windows-assumptions-still-in-portable-code) fail loudly instead of silently | XDG portals — there is no desktop session and no portal backend by default, so trash, open-with, wallpaper and file chooser cannot be exercised |
+| Case sensitivity from both sides at once: the ext4 root is case-sensitive while `/mnt/c` is not, which is the per-mount problem reproduced on one machine | Drag and drop — WSLg does not bridge it |
+| The software renderer and a Wayland or X11 window through WSLg, plus clipboard, which WSLg does bridge | DPI, fractional scaling and multi-monitor — WSLg presents one virtual output |
+| Audio through the PulseAudio server WSLg provides, enough to prove the output path | Audio latency and exclusive output, and PipeWire's native API |
+| Crash capture via core dumps, POSIX I/O, threading, locale, libcurl | Any performance number, GPU or CPU — it is a VM |
+
+The practical division is that WSL proves *correctness of the portable core and the build*,
+and proves nothing about *integration with a desktop*. That maps almost exactly onto the two
+halves of this document: everything in
+[Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code) and
+most of the [build system](#build-system) work can be done and validated in WSL, while
+everything in [features with no Linux equivalent](#features-with-no-linux-equivalent) needs a
+real session on real hardware.
+
+Install Ubuntu LTS there rather than a rolling distribution: it is the version-floor leg of
+the CI matrix anyway, so the development machine enforces the floor for free.
 
 ## Toolkit choice
 
