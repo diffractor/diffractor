@@ -29,6 +29,9 @@ private:
 		// device resource may only be made on the UI thread.
 		ui::surface_ptr surface;
 		bool decode_pending = false;
+		// Terminal: a decode that returned nothing will return nothing again for the same image, and
+		// paint is what asks. Without this the strip re-requests on every frame it repaints.
+		bool decode_failed = false;
 	};
 
 	view_state& _state;

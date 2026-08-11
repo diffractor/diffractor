@@ -6,17 +6,14 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Media modification tests. Verifies metadata updates, ratings, tags, locations and
-// image transformations (rotate, resize, convert, ICC/XMP round-trip).
+// Purpose: Media metadata write tests and the image editing model. Verifies metadata, rating, label,
+// tag and location updates across containers and sidecars, Windows shell tag interop, and the edit
+// operations (perspective, document detection, crop, temperature, preview, ICC/XMP round-trip).
 
 #include "pch.h"
-#include "test_utils.h"
+#include "test_fixtures.h"
 #include "metadata_xmp.h"
 #include "view_edit.h"
-
-#include "webp/decode.h"
-#include "webp/encode.h"
-#include "webp/mux.h"
 
 
 static uint32_t read_be32(const uint8_t* p)
@@ -50,27 +47,6 @@ static str::cached make_unique_tags(tag_set tags1, const tag_set& tags2)
 	tags1.add(tags2);
 	tags1.make_unique();
 	return str::cache(tags1.to_string());
-}
-
-static void should_save(const std::string_view ext, const bool should_support_metadata)
-{
-	const auto save_path = _temps.next_path(ext);
-	const auto load_path = test_files_folder.combine_file("Test.jpg");
-
-	files ff;
-	constexpr image_edits color;
-	ff.update(load_path, save_path, {}, color, {}, false, {});
-
-	const auto expected = extract_properties(load_path);
-	const auto actual = extract_properties(save_path);
-
-	assert_equal(expected->width, actual->width);
-	assert_equal(expected->height, actual->height);
-
-	if (should_support_metadata)
-	{
-		assert_metadata(*expected, *actual, save_path.name());
-	}
 }
 
 static void should_apply_perspective_correction()
@@ -1171,95 +1147,6 @@ static void should_stage_metadata_edit(const std::string_view name)
 	assert_equal(5, sr.to_props()->rating, "rating round trips");
 }
 
-// The three readers of what a write produced are all served from one scan taken behind the write.
-// This is the display's share of it: the bytes come back as an image, so nothing reads the file
-// again to draw what was just saved.
-static void should_return_written_image()
-{
-	const auto path = _temps.next_path(".jpg");
-	platform::copy_file(test_files_folder.combine_file("Test.jpg"), path, false, false);
-
-	files ff;
-	const auto before = ff.load(path, false);
-
-	rescan_spec rescan;
-	rescan.wanted = true;
-	rescan.load_thumbnail = true;
-	rescan.want_image = true;
-	rescan.file_type = files::file_type_from_name(path);
-
-	metadata_edits edits;
-	edits.rating = 3;
-	const auto result = ff.update(path, edits, {}, {}, false, {}, rescan);
-
-	assert_equal(true, result.success(), std::format("rating saved ({})", result.format_error()));
-	assert_equal(true, result.scanned, "write scanned what it wrote");
-	assert_equal(true, result.loaded.success, "write returned the image it wrote");
-	assert_equal(before.i->width(), result.loaded.i->width(), "written image width");
-	assert_equal(before.i->height(), result.loaded.i->height(), "written image height");
-
-	// The scan only wraps the written bytes when a caller asked for them, and asking for a thumbnail
-	// is a separate request. Without this the assertions above pass on the thumbnail's half of the
-	// gate and say nothing about want_image.
-	rescan_spec image_only;
-	image_only.wanted = true;
-	image_only.load_thumbnail = false;
-	image_only.want_image = true;
-	image_only.file_type = files::file_type_from_name(path);
-
-	metadata_edits more_edits;
-	more_edits.rating = 4;
-	const auto image_only_result = ff.update(path, more_edits, {}, {}, false, {}, image_only);
-
-	assert_equal(true, image_only_result.success(),
-	             std::format("rating saved ({})", image_only_result.format_error()));
-	assert_equal(true, image_only_result.loaded.success, "want_image alone returns the written image");
-	assert_equal(before.i->width(), image_only_result.loaded.i->width(), "image-only written width");
-	assert_equal(before.i->height(), image_only_result.loaded.i->height(), "image-only written height");
-}
-
-// The AV display's share. A container can be gigabytes, so it takes the handle rather than the
-// bytes; reading it back is what proves the handle refers to the swapped-in file and not the stage.
-static void should_hand_over_written_handle()
-{
-	const auto path = _temps.next_path(".mp3");
-	platform::copy_file(test_files_folder.combine_file("Colorblind.mp3"), path, false, false);
-
-	files ff;
-
-	rescan_spec rescan;
-	rescan.want_handle = true;
-
-	metadata_edits edits;
-	edits.rating = 3;
-	const auto result = ff.update(path, edits, {}, {}, false, {}, rescan);
-
-	assert_equal(true, result.success(), std::format("rating saved ({})", result.format_error()));
-	assert_equal(true, result.staged, "edit staged and swapped");
-	assert_equal(true, result.display_handle != nullptr, "write handed over its open handle");
-
-	const auto expected = df::blob_from_file(path);
-	df::blob actual;
-	actual.resize(expected.size());
-	result.display_handle->seek(0, platform::file::whence::begin);
-	actual.resize(static_cast<size_t>(result.display_handle->read(actual.data(), actual.size())));
-
-	assert_equal(true, expected == actual, "handle reads back the written bytes");
-}
-
-static void should_not_rewrite_unchanged_file()
-{
-	const auto path = _temps.next_path(".jpg");
-	platform::copy_file(test_files_folder.combine_file("Test.jpg"), path, false, false);
-	const auto modified_before = platform::file_attributes(path).modified;
-
-	files ff;
-	const auto result = ff.update(path, {}, {}, {}, false, {});
-
-	assert_equal(true, result.success(), "unchanged save succeeds");
-	assert_equal(modified_before, platform::file_attributes(path).modified, "unchanged save preserves modified time");
-}
-
 // A raw file's metadata lives in its sidecar, so rating one must not cost the size of the raw.
 // The media file is the assertion: an untouched size, modified time and byte count prove no copy
 // or swap ran, and a sidecar-only write proves replace_file never saw the raw at all.
@@ -1297,6 +1184,52 @@ static void should_edit_raw_sidecar_only()
 	assert_equal(5, sr.to_props()->rating, "rating round trips");
 }
 
+// A sidecar that exists but cannot be read is unknown, not empty. Applying the edits to a default
+// packet and swapping it over the file would replace every property the sidecar already holds, so
+// the write has to fail instead. Asserted against the staged packet rather than the swap, because a
+// swap over a locked file fails on its own account and would pass either way.
+static void should_refuse_to_write_an_unreadable_sidecar()
+{
+	const auto path = _temps.next_path(".CR2");
+	const auto path_xmp = path.extension(".xmp");
+	const auto staged_path = _temps.next_path(".xmp");
+	const auto raw_folder = test_files_folder.combine("raw");
+
+	platform::copy_file(raw_folder.combine_file("Screws.CR2"), path, false, false);
+	platform::copy_file(raw_folder.combine_file("Screws.xmp"), path_xmp, false, false);
+
+	metadata_edits edits;
+	edits.rating = 5;
+
+	{
+		// read_write opens with no sharing, which is how a sidecar held by another application reads.
+		const auto lock = platform::open_file(path_xmp, platform::file_open_mode::read_write);
+		assert_equal(true, static_cast<bool>(lock), "sidecar locked");
+
+		auto refused = false;
+
+		try
+		{
+			metadata_xmp::update(path, path, edits, {}, staged_path);
+		}
+		catch (const std::exception&)
+		{
+			refused = true;
+		}
+
+		assert_equal(true, refused, "an unreadable sidecar is refused, not rebuilt from the edits alone");
+		assert_equal(false, staged_path.exists(), "and nothing is staged to swap over it");
+	}
+
+	const auto result = metadata_xmp::update(path, path, edits, {}, staged_path);
+	assert_equal(true, result.success, "staged once the sidecar can be read");
+
+	prop::item_metadata staged;
+	metadata_xmp::parse(staged, staged_path);
+	assert_equal(5, staged.rating, "the edit is applied");
+	assert_equal(false, staged.title.is_empty(), "the properties already in the sidecar survive");
+}
+
 static void should_save_as_with_distinct_xmp_sidecar()
 {
 	const auto source_path = _temps.next_path(".CR2");
@@ -1321,176 +1254,6 @@ static void should_save_as_with_distinct_xmp_sidecar()
 	prop::item_metadata destination_xmp;
 	metadata_xmp::parse(destination_xmp, destination_xmp_path);
 	assert_equal("Saved as copy", destination_xmp.title, "destination sidecar metadata");
-}
-
-static void should_convert_raw_to_jpeg()
-{
-	const auto load_path = test_files_folder.combine("raw").combine_file("Screws.CR2");
-	const auto save_path = _temps.next_path(".jpg");
-
-	files ff;
-	ff.update(load_path, save_path, {}, {}, {}, false, {});
-
-	const auto sr_expected = ff_scan_file(ff, load_path, detect_xmp_sidecar(load_path));
-	const auto sr_actual = ff_scan_file(ff, save_path);
-
-	const auto expected = sr_expected.to_props();
-	const auto actual = sr_actual.to_props();
-
-	assert_equal(expected->tags, actual->tags, "tags");
-	assert_equal(expected->title, actual->title, "title");
-	assert_equal(expected->description, actual->description, "description");
-	assert_equal(expected->width, actual->width, "width");
-	assert_equal(expected->height, actual->height, "height");
-}
-
-// Issue #102 - Rotating an image (the transform behind the [ and ] shortcuts and
-// the rotate_clockwise/anticlockwise commands). These tests validate the 90-degree
-// rotation pipeline across JPEG (incl. lossless + EXIF-oriented), PNG and WebP;
-// the keyboard-shortcut dispatch reported in #102 is a UI-level concern.
-static void should_rotate()
-{
-	files ff;
-
-	{
-		const auto save_path = _temps.next_path();
-		const auto load_path = test_files_folder.combine_file("Test.jpg");
-		const auto loaded = ff.load(load_path, false);
-
-		image_edits edits;
-		const quadd crop(loaded.i->dimensions());
-		edits.crop_bounds(crop.transform(simple_transform::rot_90));
-
-		metadata_edits md_edits;
-		md_edits.orientation = ui::orientation::top_left;
-
-		ff.update(load_path, save_path, md_edits, edits, {}, false, {});
-
-		const auto expected = extract_properties(test_files_folder.combine_file("Test90.jpg"));
-		const auto actual = extract_properties(save_path);
-
-		// Test.jpg is 683 pixels tall, which is not a whole number of MCUs, so the lossless path
-		// declines it. The rotate must still keep every row rather than trimming to the MCU grid,
-		// which the Test90.jpg fixture does not - it was captured from the old trimming path.
-		expected->width = static_cast<int>(loaded.i->height());
-		expected->height = static_cast<int>(loaded.i->width());
-
-		assert_metadata(*expected, *actual);
-	}
-
-	{
-		const auto save_path = _temps.next_path();
-		const auto load_path = test_files_folder.combine_file("exif-rotated.jpg");
-		const auto loaded = ff.load(load_path, false);
-
-		image_edits edits;
-		const quadd crop(loaded.i->dimensions());
-		edits.crop_bounds(crop.transform(simple_transform::rot_90));
-
-		metadata_edits md_edits;
-		md_edits.orientation = ui::orientation::top_left;
-
-		ff.update(load_path, save_path, md_edits, edits, {}, false, {});
-
-		const auto actual_exif = extract_properties(save_path, metadata_type::EXIF);
-		assert_equal(ui::orientation::top_left, actual_exif->orientation, "orientation");
-	}
-
-	{
-		// PNG
-		const auto save_path = _temps.next_path(".png");
-		const auto load_path = test_files_folder.combine_file("engine.png");
-		const auto loaded = ff.load(load_path, false);
-
-		image_edits edits;
-		const quadd crop(loaded.i->dimensions());
-		edits.crop_bounds(crop.transform(simple_transform::rot_90));
-		ff.update(load_path, save_path, {}, edits, {}, false, {});
-
-		const auto updated = ff.load(save_path, false);
-		assert_equal(loaded.i->height(), updated.i->width(), "png width");
-		assert_equal(loaded.i->width(), updated.i->height(), "png height");
-	}
-
-	{
-		// WEBP
-		const auto save_path = _temps.next_path(".webp");
-		const auto load_path = test_files_folder.combine_file("lake.webp");
-		const auto loaded = ff.load(load_path, false);
-
-		image_edits edits;
-		const quadd crop(loaded.i->dimensions());
-		edits.crop_bounds(crop.transform(simple_transform::rot_90));
-		ff.update(load_path, save_path, {}, edits, {}, false, {});
-
-		const auto updated = ff.load(save_path, false);
-		assert_equal(false, updated.is_empty(), "webp result empty");
-		assert_equal(loaded.i->height(), updated.i->width(), "webp width");
-		assert_equal(loaded.i->width(), updated.i->height(), "webp height");
-	}
-}
-
-static void should_rotate133()
-{
-	const auto save_path = _temps.next_path();
-	const auto load_path = test_files_folder.combine_file("Test.jpg");
-
-	files ff;
-	const auto loaded = ff.load(load_path, false);
-
-	const quadd crop(loaded.i->dimensions());
-	image_edits edits;
-	edits.crop_bounds(crop.rotate(133, crop.center_point()));
-
-	ff.update(load_path, save_path, {}, edits, {}, false, {});
-
-	const auto actual = extract_properties(save_path);
-	const auto expected = expected_test_jpg();
-	expected->width = 576;
-	expected->height = 384;
-	assert_metadata(*expected, *actual);
-}
-
-static void should_rotate_lossless()
-{
-	const auto save_path = _temps.next_path();
-	const auto load_path = test_files_folder.combine_file("Lossless0.jpg");
-
-	image_edits edits;
-	const quadd crop(sizei(640, 480));
-	edits.crop_bounds(crop.transform(simple_transform::rot_90));
-
-	files ff;
-	ff.update(load_path, save_path, {}, edits, {}, false, {});
-
-	const auto expected = extract_properties(test_files_folder.combine_file("Lossless90.jpg"));
-	const auto actual = extract_properties(save_path);
-
-	assert_equal(expected->width, actual->width);
-	assert_equal(expected->height, actual->height);
-}
-
-static void should_resize()
-{
-	const auto save_path = _temps.next_path();
-	const auto load_path = test_files_folder.combine_file("Test.jpg");
-
-	image_edits edits;
-	edits.scale(sizei(200, 150));
-
-	files ff;
-	ff.update(load_path, save_path, {}, edits, {}, false, {});
-
-	const auto actual = extract_properties(save_path);
-
-	if (!actual)
-	{
-		throw test_assert_exception(std::format("Should resize: could not extract properties from {}",
-		                                        save_path.str()));
-	}
-
-	assert_equal(200, actual->width);
-	assert_equal(133, actual->height);
 }
 
 static void should_preserve_orientation()
@@ -1647,758 +1410,7 @@ static void should_report_oversized_xmp()
 	assert_equal(true, writable.xmp == scanned.metadata.xmp, "next file keeps its xmp");
 }
 
-// Regression: the JPEG decoder must call jpeg_save_markers so read_header can
-// recover the embedded EXIF orientation from the APP1 marker.
-static void should_read_jpeg_orientation()
-{
-	const auto load_path = test_files_folder.combine_file("exif-rotated.jpg");
-	const auto data = df::blob_from_file(load_path);
-
-	jpeg_decoder_x decoder;
-	assert_equal(true, decoder.read_header(data), "read jpeg header");
-	assert_equal(ui::orientation::right_top, decoder._orientation_out, "decoder recovers EXIF orientation");
-}
-
-// The payload of the first DQT segment, which is the table the encoder quantized with.
-static df::blob first_dqt(const df::cspan jpeg)
-{
-	for (size_t i = 2; i + 4 < jpeg.size;)
-	{
-		if (jpeg.data[i] != 0xFF) break;
-
-		const auto marker = jpeg.data[i + 1];
-
-		if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
-		{
-			i += 2;
-			continue;
-		}
-
-		const size_t len = (static_cast<size_t>(jpeg.data[i + 2]) << 8) | jpeg.data[i + 3];
-		if (marker == 0xDB) return {jpeg.data + i + 4, jpeg.data + i + 2 + len};
-		if (marker == 0xDA) break; // start of scan - no table declarations follow
-		i += 2 + len;
-	}
-
-	return {};
-}
-
-static ui::surface_ptr make_gradient_surface(const int cx, const int cy)
-{
-	auto surface = std::make_shared<ui::surface>();
-	surface->alloc(cx, cy, ui::texture_format::RGB);
-
-	for (auto y = 0; y < cy; ++y)
-		for (auto x = 0; x < cx; ++x)
-			surface->set_pixel(x, y, ui::rgba((x * 4) & 0xFF, (y * 4) & 0xFF, ((x ^ y) * 4) & 0xFF));
-
-	return surface;
-}
-
-// Editing a JPEG must re-encode against the source's own quantization tables, so an untouched block
-// quantizes back to itself instead of being re-quantized to whatever the quality slider says.
-static void should_reuse_source_jpeg_tables()
-{
-	files ff;
-	const auto surface = make_gradient_surface(64, 64);
-
-	file_encode_params coarse;
-	coarse.jpeg_save_quality = 40;
-	const auto source = ff.surface_to_image(surface, {}, coarse, ui::image_format::JPEG);
-	const auto source_dqt = first_dqt(source->data());
-	assert_equal(false, source_dqt.empty(), "source declares a quantization table");
-
-	file_encode_params matched;
-	matched.jpeg_save_quality = 95;
-	matched.jpeg_source = source->data();
-	const auto re_encoded = ff.surface_to_image(surface, {}, matched, ui::image_format::JPEG);
-	assert_equal(true, first_dqt(re_encoded->data()) == source_dqt, "re-encode adopts the source tables");
-
-	file_encode_params unmatched;
-	unmatched.jpeg_save_quality = 95;
-	const auto control = ff.surface_to_image(surface, {}, unmatched, ui::image_format::JPEG);
-	assert_equal(false, first_dqt(control->data()) == source_dqt, "quality still applies without a source");
-}
-
-// Lossless rotation must refuse rather than trim. Trimming silently drops up to a whole MCU of edge
-// pixels the user saw in the preview; refusing sends the save down the re-encode path instead.
-static void should_refuse_imperfect_lossless_rotate()
-{
-	files ff;
-
-	// 4:2:0 chroma puts the MCU grid on 16 pixels, so 20 rows cannot rotate losslessly.
-	const auto aligned = ff.surface_to_image(make_gradient_surface(32, 32), {}, {}, ui::image_format::JPEG);
-	const auto unaligned = ff.surface_to_image(make_gradient_surface(32, 20), {}, {}, ui::image_format::JPEG);
-
-	jpeg_encoder aligned_encoder;
-	const jpeg_decoder_x aligned_decoder;
-	assert_equal(false, aligned_decoder.transform(aligned->data(), aligned_encoder, simple_transform::rot_90).empty(),
-	             "aligned rotate stays lossless");
-
-	jpeg_encoder unaligned_encoder;
-	const jpeg_decoder_x unaligned_decoder;
-	assert_equal(true,
-	             unaligned_decoder.transform(unaligned->data(), unaligned_encoder, simple_transform::rot_90).empty(),
-	             "unaligned rotate refuses rather than trimming");
-}
-
-// Offset of the start-of-scan marker, or 0 when there is none.
-static size_t sos_offset(const df::cspan jpeg)
-{
-	for (size_t i = 2; i + 4 < jpeg.size;)
-	{
-		if (jpeg.data[i] != 0xFF) break;
-
-		const auto marker = jpeg.data[i + 1];
-
-		if (marker == 0xD8 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
-		{
-			i += 2;
-			continue;
-		}
-
-		if (marker == 0xDA) return i;
-
-		i += 2 + ((static_cast<size_t>(jpeg.data[i + 2]) << 8) | jpeg.data[i + 3]);
-	}
-
-	return 0;
-}
-
-// A JPEG that ends inside its entropy data makes jpeg_read_coefficients suspend and hand back a
-// null coefficient array, which transupp indexes straight into a crash. The rotate must refuse -
-// and leave both codecs usable, because files holds one decoder and one encoder for every file.
-static void should_survive_truncated_lossless_rotate()
-{
-	files ff;
-
-	const auto whole = ff.surface_to_image(make_gradient_surface(256, 256), {}, {}, ui::image_format::JPEG);
-	const auto& data = whole->data();
-	const auto sos = sos_offset(data);
-
-	assert_equal(true, sos > 0 && sos + 64 < data.size(), "test image has scan data to truncate");
-
-	const std::vector<uint8_t> truncated(data.data(), data.data() + sos + 64);
-
-	jpeg_encoder encoder;
-	const jpeg_decoder_x decoder;
-
-	assert_equal(true,
-	             decoder.transform({truncated.data(), truncated.size()}, encoder, simple_transform::rot_90).empty(),
-	             "truncated rotate refuses");
-
-	assert_equal(false, decoder.transform(data, encoder, simple_transform::rot_90).empty(),
-	             "decoder and encoder stay usable after the refusal");
-}
-
-// Every 8-bit YCbCr JPEG belongs on the GPU NV12 path; read_nv12 averages whatever chroma the
-// source carries down to one pair per 2x2 block. Only formats it cannot pack take the RGB path.
-static bool jpeg_uses_nv12(files& ff, const char* const name)
-{
-	const auto loaded = ff.load(test_files_folder.combine_file(name), false);
-	assert_equal(true, is_valid(loaded.i), "loaded jpeg");
-
-	jpeg_decoder_x decoder;
-	assert_equal(true, decoder.read_header(loaded.i->data()), "read jpeg header");
-
-	const auto result = decoder.can_render_nv12();
-	decoder.start_decompress(1, result, true);
-	decoder.close();
-
-	return result;
-}
-
-static void should_render_ycbcr_jpeg_as_nv12()
-{
-	files ff;
-
-	assert_equal(true, jpeg_uses_nv12(ff, "exif-rotated.jpg"), "4:2:0 renders as nv12");
-	assert_equal(true, jpeg_uses_nv12(ff, "Small.jpg"), "4:2:2 renders as nv12");
-	assert_equal(false, jpeg_uses_nv12(ff, "cmyk.jpg"), "cmyk avoids nv12");
-}
-
-// Fixtures for the deep-precision and transfer-function paths are four flat horizontal bands, so a
-// correct decode lands on known 8-bit values and a truncating or unconverted one visibly does not.
-static void should_decode_bands(const char* const name, const std::initializer_list<int> expected, const int tolerance)
-{
-	// The fixtures live in excluded1 so that adding them does not change the indexed item counts.
-	files ff;
-	const auto loaded = ff.load(test_files_folder.combine("excluded1").combine_file(name), false);
-	assert_equal(true, is_valid(loaded.i), std::format("loaded {}", name));
-
-	const auto surface = loaded.to_surface();
-	assert_equal(true, is_valid(surface), std::format("decoded {}", name));
-
-	const auto cy = surface->height();
-	auto band = 0;
-
-	for (const auto want : expected)
-	{
-		const auto* const row = surface->pixels_line(cy * band / 4 + cy / 8);
-		const auto message = std::format("{} band {}: wanted {}, got {},{},{},{}", name, band, want,
-		                                 row[0], row[1], row[2], row[3]);
-
-		for (auto c = 0; c < 3; c++)
-		{
-			assert_equal(true, std::abs(static_cast<int>(row[c]) - want) <= tolerance, message);
-		}
-
-		++band;
-	}
-}
-
-// 12-bit lossy and 16-bit lossless JPEGs used to fail to load outright.
-static void should_decode_deep_precision_jpeg(const char* const name)
-{
-	should_decode_bands(name, {0, 85, 170, 255}, 2);
-}
-
-// Scaling 16-bit samples gives 1, 33, 65, 97 where the old truncation gave 0, 32, 64, 96, so this
-// only tells the two apart if it demands the exact value.
-static void should_scale_16bit_png()
-{
-	should_decode_bands("deep16.png", {1, 33, 65, 97}, 0);
-}
-
-// gamma.png declares gAMA 1.0, so its linear samples need an ~1/2.2 encode for an sRGB display.
-static void should_apply_png_gamma()
-{
-	should_decode_bands("gamma.png", {0, 136, 186, 224}, 2);
-}
-
-static void should_decode_12bit_gray_jpeg()
-{
-	should_decode_deep_precision_jpeg("deep12gray.jpg");
-}
-
-static void should_decode_12bit_colour_jpeg()
-{
-	should_decode_deep_precision_jpeg("deep12.jpg");
-}
-
-static void should_decode_16bit_gray_jpeg()
-{
-	should_decode_deep_precision_jpeg("deep16gray.jpg");
-}
-
-static void should_decode_16bit_colour_jpeg()
-{
-	should_decode_deep_precision_jpeg("deep16.jpg");
-}
-
-// The pixel format is what the properties panel and list rows show, and it is indexed for search.
-// Chroma subsampling is a headline property of a JPEG, so it belongs in that name - and it has to
-// use the same words HEIF, WebP and video already use or a search for one finds only some of them.
-static void should_report_jpeg_chroma_subsampling()
-{
-	files ff;
-
-	const auto reported = [&ff](const char* const name)
-	{
-		return ff_scan_file(ff, test_files_folder.combine_file(name)).pixel_format;
-	};
-
-	assert_equal("yuv420", reported("exif-rotated.jpg").sv(), "4:2:0 jpeg");
-	assert_equal("yuv422", reported("Small.jpg").sv(), "4:2:2 jpeg");
-	assert_equal("ycck", reported("cmyk.jpg").sv(), "adobe ycck jpeg");
-}
-
-struct webp_chunk
-{
-	std::string tag;
-	df::blob data;
-};
-
-static std::vector<webp_chunk> read_webp_chunks(const df::file_path path)
-{
-	file_read_stream fs;
-	assert_equal(true, fs.open(path), "open webp");
-
-	const auto bytes = fs.read_all();
-	assert_equal(true, bytes.size() > 12u, "webp larger than the RIFF header");
-
-	std::vector<webp_chunk> result;
-
-	for (auto pos = size_t{12}; pos + 8 <= bytes.size();)
-	{
-		uint32_t len = 0;
-		memcpy(&len, bytes.data() + pos + 4, 4);
-
-		const auto payload = pos + 8;
-		if (len > bytes.size() - payload) break; // subtract, so a 32-bit size_t cannot wrap
-
-		result.emplace_back(std::string(reinterpret_cast<const char*>(bytes.data() + pos), 4),
-		                    df::blob(bytes.begin() + payload, bytes.begin() + payload + len));
-		pos = payload + len + (len & 1);
-	}
-
-	return result;
-}
-
-// Regression guard for the WebP metadata rewrite. The XMP handler used to re-emit
-// chunks grouped by category and then truncate the file, so a save could move the
-// XMP packet on top of image or alpha data and destroy the picture. Saving metadata
-// must leave every non-XMP chunk byte-identical and in its original position, and
-// the image must still decode unchanged.
-static void should_preserve_webp_chunks_on_metadata_save()
-{
-	files ff;
-	const auto load_path = test_files_folder.combine_file("lake.webp");
-	const auto save_path = _temps.next_path(".webp");
-
-	const auto original = ff.load(load_path, false);
-	assert_equal(false, original.is_empty(), "original webp loaded");
-
-	metadata_edits first;
-	first.rating = 3;
-	ff.update(load_path, save_path, first, {}, {}, false, {});
-	const auto after_first = read_webp_chunks(save_path);
-
-	metadata_edits second;
-	second.rating = 5;
-	ff.update(save_path, second, {}, {}, false, {});
-	const auto after_second = read_webp_chunks(save_path);
-
-	assert_equal(after_first.size(), after_second.size(), "chunk count unchanged");
-	assert_equal(true, after_first.size() >= 3u, "extended webp has image and metadata chunks");
-	assert_equal(true, std::ranges::any_of(after_first, [](const webp_chunk& c) { return c.tag == "XMP "; }),
-	             "xmp chunk written");
-
-	for (auto i = size_t{0}; i < after_first.size() && i < after_second.size(); ++i)
-	{
-		assert_equal(after_first[i].tag, after_second[i].tag, std::format("chunk {} tag", i));
-
-		if (after_first[i].tag != "XMP ")
-		{
-			assert_equal(true, after_first[i].data == after_second[i].data,
-			             std::format("chunk {} {} bytes unchanged", i, after_first[i].tag));
-		}
-	}
-
-	const auto reloaded = ff.load(save_path, false);
-	assert_equal(false, reloaded.is_empty(), "webp still decodes");
-	assert_equal(original.i->width(), reloaded.i->width(), "width preserved");
-	assert_equal(original.i->height(), reloaded.i->height(), "height preserved");
-
-	const auto scanned = ff_scan_file(ff, save_path);
-	assert_equal(5, scanned.to_props()->rating, "rating written");
-}
-
-// Regression guard for the WebP save-quality path. The editor maps the user's
-// save settings (setting.webp_lossless / setting.webp_quality) onto
-// file_encode_params before writing; a swapped or ignored knob would silently
-// bloat or degrade the images users save. Verify the encoder honours both:
-// lossless produces a substantially larger file than a heavily compressed lossy
-// encode of the same pixels, and a higher quality produces a larger file than
-// the lowest quality - proving each parameter actually takes effect.
-static void should_honor_webp_save_quality()
-{
-	files ff;
-	const auto load_path = test_files_folder.combine_file("Test.jpg");
-	const auto source = ff.load(load_path, false);
-	assert_equal(false, source.is_empty(), "source loaded");
-
-	const auto lossless_path = _temps.next_path(".webp");
-	{
-		file_encode_params params;
-		params.webp_lossless = true;
-		ff.update(load_path, lossless_path, {}, {}, params, false, {});
-	}
-
-	const auto low_quality_path = _temps.next_path(".webp");
-	{
-		file_encode_params params;
-		params.webp_lossless = false;
-		params.webp_quality = 1;
-		ff.update(load_path, low_quality_path, {}, {}, params, false, {});
-	}
-
-	const auto high_quality_path = _temps.next_path(".webp");
-	{
-		file_encode_params params;
-		params.webp_lossless = false;
-		params.webp_quality = 95;
-		ff.update(load_path, high_quality_path, {}, {}, params, false, {});
-	}
-
-	const auto lossless_size = platform::file_attributes(lossless_path).size;
-	const auto low_quality_size = platform::file_attributes(low_quality_path).size;
-	const auto high_quality_size = platform::file_attributes(high_quality_path).size;
-
-	assert_equal(true, lossless_size > 0 && low_quality_size > 0 && high_quality_size > 0, "webp files written");
-
-	// Lossless keeps every detail, so it must be much larger than a heavily
-	// compressed lossy encode of the same pixels.
-	assert_equal(true, lossless_size > low_quality_size, "webp lossless larger than low quality");
-
-	// Higher quality retains more detail, so it must be larger than the lowest
-	// quality - this proves webp_quality is applied (and not treated as a bool).
-	assert_equal(true, high_quality_size > low_quality_size, "webp high quality larger than low quality");
-}
-
-// The WebP loader used to tag every surface ARGB, which forces the renderer down
-// the alpha-blended path for images that are entirely opaque. Verify the decoded
-// format follows the bitstream: opaque in, RGB out; alpha in, ARGB out.
-static void should_tag_webp_surface_alpha()
-{
-	const auto opaque_path = test_files_folder.combine_file("lake.webp");
-	const auto opaque_data = df::blob_from_file(opaque_path);
-	assert_equal(false, opaque_data.empty(), "opaque webp read");
-
-	const auto opaque_surface = load_webp(opaque_data);
-	assert_equal(true, is_valid(opaque_surface), "opaque webp decoded");
-	assert_equal(true, opaque_surface->format() == ui::texture_format::RGB, "opaque webp surface is RGB");
-
-	const auto opaque_scan = scan_webp(opaque_data, true);
-	assert_equal(1u, static_cast<uint32_t>(opaque_scan.frames.size()), "opaque webp frame count");
-	assert_equal(true, opaque_scan.frames[0]->format() == ui::texture_format::RGB, "opaque webp scan is RGB");
-
-	const auto transparent = std::make_shared<ui::surface>();
-	const auto* const pixels = transparent->alloc(16, 16, ui::texture_format::ARGB);
-	assert_equal(true, pixels != nullptr, "alpha surface allocated");
-
-	for (auto y = 0; y < 16; ++y)
-	{
-		auto* const line = std::bit_cast<ui::color32*>(transparent->pixels_line(y));
-
-		for (auto x = 0; x < 16; ++x)
-		{
-			// BGRA in memory: alpha ramps across the row so the encode keeps an alpha plane.
-			line[x] = (static_cast<ui::color32>(x * 16) << 24) | 0x00FF8040u;
-		}
-	}
-
-	file_encode_params params;
-	params.webp_lossless = true;
-	const auto encoded = save_webp(transparent, {}, params);
-	assert_equal(true, is_valid(encoded), "alpha webp encoded");
-
-	const auto decoded = load_webp(encoded->data());
-	assert_equal(true, is_valid(decoded), "alpha webp decoded");
-	assert_equal(true, decoded->format() == ui::texture_format::ARGB, "alpha webp surface is ARGB");
-}
-
-static void should_decode_opaque_lossy_webp_as_nv12()
-{
-	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
-	const auto rgb = load_webp(data, false);
-	const auto nv12 = load_webp(data, true);
-
-	assert_equal(true, is_valid(rgb) && rgb->format() == ui::texture_format::RGB, "webp RGB fallback decoded");
-	assert_equal(true, is_valid(nv12) && nv12->format() == ui::texture_format::NV12, "webp NV12 decoded");
-	assert_equal(true, nv12->size() * 2 < rgb->size(), "webp NV12 uses less than half the RGB surface memory");
-	assert_equal(true, nv12->color_space() == ui::color_space::rec601_limited, "webp NV12 color space");
-
-	const auto converted = std::make_shared<ui::surface>();
-	av_scaler scaler;
-	assert_equal(true, scaler.convert_yuv_surface(*nv12, converted), "webp NV12 converts for comparison");
-
-	uint64_t total_difference = 0;
-	const auto dimensions = rgb->dimensions();
-
-	for (auto y = 0; y < dimensions.cy; ++y)
-	{
-		const auto* const expected = rgb->pixels_line(y);
-		const auto* const actual = converted->pixels_line(y);
-
-		for (auto x = 0; x < dimensions.cx * 4; x += 4)
-		{
-			for (auto channel = 0; channel < 3; ++channel)
-			{
-				total_difference += std::abs(static_cast<int>(expected[x + channel]) - actual[x + channel]);
-			}
-		}
-	}
-
-	const auto average_difference = static_cast<double>(total_difference) / (dimensions.cx * dimensions.cy * 3);
-	assert_equal(true, average_difference < 3.0,
-	             std::format("webp NV12 average RGB difference: {}", average_difference));
-
-	assert_equal(true, !is_valid(save_webp(nv12, {}, {})), "webp encoder rejects NV12 rather than reading it as BGRX");
-
-	files ff;
-	const auto image = std::make_shared<ui::image>(df::cspan(data), dimensions, ui::image_format::WEBP,
-	                                              ui::orientation::top_left);
-	const auto dispatched = ff.image_to_surface(image, {}, true);
-	assert_equal(true, is_valid(dispatched) && dispatched->format() == ui::texture_format::NV12,
-	             "webp image dispatch preserves NV12");
-
-	const auto target_extent = sizei{32, 32};
-	const auto scaled = ff.image_to_surface(image, target_extent, true);
-	assert_equal(true, is_valid(scaled) && scaled->format() == ui::texture_format::RGB,
-	             "webp NV12 downscale produces target RGB");
-	assert_equal(true, ui::scale_dimensions(dimensions, target_extent) == scaled->dimensions(),
-	             "webp downscale honors target extent");
-}
-
-// setting.use_yuv is what the Advanced option, safe start and the D3D11 driver-fault fallback
-// all turn off, so a decoder that ignores it leaves every one of them with no effect. A user on
-// a driver that faults creating NV12 textures then has no way out of the fault.
-static void should_honor_the_yuv_texture_setting()
-{
-	const auto saved = setting.use_yuv;
-	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
-
-	files ff;
-	const auto webp = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
-	const auto jpeg = ff.load(test_files_folder.combine_file("exif-rotated.jpg"), false);
-	assert_equal(true, is_valid(jpeg.i), "loaded jpeg");
-
-	setting.use_yuv = true;
-	const auto webp_on = load_webp(webp, true);
-	const auto jpeg_on = jpeg.to_surface({}, true);
-	assert_equal(true, is_valid(webp_on) && webp_on->format() == ui::texture_format::NV12, "webp nv12 while on");
-	assert_equal(true, is_valid(jpeg_on) && jpeg_on->format() == ui::texture_format::NV12, "jpeg nv12 while on");
-
-	setting.use_yuv = false;
-	const auto webp_off = load_webp(webp, true);
-	const auto jpeg_off = jpeg.to_surface({}, true);
-	assert_equal(true, is_valid(webp_off) && webp_off->format() == ui::texture_format::RGB, "webp rgb while off");
-	assert_equal(true, is_valid(jpeg_off) && jpeg_off->format() == ui::texture_format::RGB, "jpeg rgb while off");
-}
-
-// A thumbnail scaled to fit a box is regularly odd on one axis. decode_jpeg crops those to even and
-// still reaches the GPU as NV12; a webp decoder that instead falls back to RGB costs 4 bytes per
-// pixel rather than 1.5, for the majority of a collection's thumbnails.
-static void should_decode_odd_sized_webp_as_nv12()
-{
-	const auto saved = setting.use_yuv;
-	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
-	setting.use_yuv = true;
-
-	constexpr sizei odd_extent{321, 215};
-	const auto surface = std::make_shared<ui::surface>();
-	assert_equal(true, surface->alloc(odd_extent, ui::texture_format::RGB) != nullptr, "allocated odd surface");
-
-	for (auto y = 0; y < odd_extent.cy; ++y)
-	{
-		for (auto x = 0; x < odd_extent.cx; ++x)
-		{
-			surface->set_pixel(x, y, ui::rgba(x & 0xff, y & 0xff, (x + y) & 0xff));
-		}
-	}
-
-	file_encode_params params;
-	params.webp_quality = thumbnail_webp_quality;
-	params.webp_fast = true;
-
-	const auto encoded = save_webp(surface, {}, params);
-	assert_equal(true, is_valid(encoded), "encoded odd webp");
-
-	const auto decoded = load_webp(encoded->data(), true);
-	assert_equal(true, is_valid(decoded) && decoded->format() == ui::texture_format::NV12,
-	             "odd webp decodes as nv12");
-	assert_equal(320, decoded->dimensions().cx, "odd webp width cropped to even");
-	assert_equal(214, decoded->dimensions().cy, "odd webp height cropped to even");
-}
-
-// The shell returns 32-bit BGRA even for photo thumbnails, which are opaque, so a stored format
-// chosen from the surface tag sent every cloud thumbnail down the PNG branch at several times the
-// bytes. An opaque thumbnail must carry no alpha plane, or it also loses the NV12 decode path.
-static void should_keep_thumbnail_alpha_only_when_needed()
-{
-	const auto saved = setting.use_yuv;
-	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
-	setting.use_yuv = true;
-
-	files ff;
-	const auto loaded = ff.load(test_files_folder.combine_file("Test.jpg"), false);
-	const auto photo = loaded.to_surface(setting.thumbnail_max_dimension, false, {}, decode_intent::thumbnail);
-	assert_equal(true, ui::is_valid(photo), "loaded photo surface");
-
-	const auto extent = photo->dimensions();
-	const auto opaque = std::make_shared<ui::surface>();
-	const auto translucent = std::make_shared<ui::surface>();
-	assert_equal(true, opaque->alloc(extent, ui::texture_format::ARGB) != nullptr, "allocated opaque surface");
-	assert_equal(true, translucent->alloc(extent, ui::texture_format::ARGB) != nullptr,
-	             "allocated translucent surface");
-
-	for (auto y = 0; y < extent.cy; ++y)
-	{
-		for (auto x = 0; x < extent.cx; ++x)
-		{
-			const auto c = photo->get_pixel(x, y);
-			const auto rgb = ui::rgba(ui::get_r(c), ui::get_g(c), ui::get_b(c));
-			opaque->set_pixel(x, y, rgb);
-			translucent->set_pixel(x, y, x < extent.cx / 2 ? rgb & 0x00ffffff : rgb);
-		}
-	}
-
-	const auto opaque_thumb = ff.surface_to_thumbnail(opaque);
-	const auto translucent_thumb = ff.surface_to_thumbnail(translucent);
-
-	assert_equal(true, is_valid(opaque_thumb) && opaque_thumb->format() == ui::image_format::WEBP,
-	             "opaque thumbnail is stored as webp");
-	assert_equal(true, is_valid(translucent_thumb) && translucent_thumb->format() == ui::image_format::WEBP,
-	             "translucent thumbnail is stored as webp");
-
-	// An opaque thumbnail that still carries an alpha plane cannot take the NV12 path.
-	const auto opaque_surface = ff.image_to_surface(opaque_thumb, {}, true);
-	assert_equal(true, ui::is_valid(opaque_surface) && opaque_surface->format() == ui::texture_format::NV12,
-	             "opaque thumbnail drops its alpha plane and decodes as nv12");
-
-	const auto translucent_surface = ff.image_to_surface(translucent_thumb, {}, true);
-	assert_equal(true, ui::is_valid(translucent_surface) &&
-	             translucent_surface->format() == ui::texture_format::ARGB,
-	             "translucent thumbnail keeps its alpha plane");
-	assert_equal(true, ui::get_a(translucent_surface->get_pixel(extent.cx / 4, extent.cy / 2)) < 128,
-	             "transparent half survives the thumbnail round trip");
-	assert_equal(true, ui::get_a(translucent_surface->get_pixel(extent.cx * 3 / 4, extent.cy / 2)) > 200,
-	             "opaque half survives the thumbnail round trip");
-
-	const auto png = save_png(translucent, {});
-	assert_equal(true, is_valid(png), "encoded png reference");
-	assert_equal(true, translucent_thumb->data().size() * 2 < png->data().size(),
-	             "webp thumbnail is far smaller than the png it replaces");
-}
-
-static void should_refuse_truncated_webp_decode()
-{
-	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
-	auto truncated_size = 0_z;
-
-	for (auto size = 12_z; size < data.size(); ++size)
-	{
-		WebPBitstreamFeatures features;
-		if (WebPGetFeatures(data.data(), size, &features) == VP8_STATUS_OK)
-		{
-			truncated_size = size;
-			break;
-		}
-	}
-
-	assert_equal(true, truncated_size > 0, "truncated webp retains a readable header");
-	assert_equal(true, !is_valid(load_webp({data.data(), truncated_size})),
-	             "truncated webp does not return an allocated partial surface");
-}
-
-static df::blob make_test_animated_webp()
-{
-	constexpr auto width = 16;
-	constexpr auto height = 16;
-	WebPAnimEncoderOptions options;
-	if (!WebPAnimEncoderOptionsInit(&options)) return {};
-
-	auto* const encoder = WebPAnimEncoderNew(width, height, &options);
-	if (!encoder) return {};
-	const df::releaser<WebPAnimEncoder> encoder_releaser(encoder, [](auto* i) { WebPAnimEncoderDelete(i); });
-
-	WebPConfig config;
-	if (!WebPConfigInit(&config)) return {};
-	config.lossless = 1;
-	config.quality = 100;
-
-	std::array<uint32_t, width * height> pixels;
-	const auto add_frame = [&](const uint32_t color, const int timestamp)
-	{
-		pixels.fill(color);
-		WebPPicture picture;
-		if (!WebPPictureInit(&picture)) return false;
-		const df::scope_exit free_picture([&picture] { WebPPictureFree(&picture); });
-		picture.width = width;
-		picture.height = height;
-		picture.use_argb = true;
-		return WebPPictureImportBGRA(&picture, std::bit_cast<const uint8_t*>(pixels.data()), width * 4) &&
-			WebPAnimEncoderAdd(encoder, &picture, timestamp, &config);
-	};
-
-	if (!add_frame(0xff102040, 0) || !add_frame(0xffc08020, 100) ||
-		!WebPAnimEncoderAdd(encoder, nullptr, 350, nullptr))
-	{
-		return {};
-	}
-
-	WebPData encoded;
-	WebPDataInit(&encoded);
-	if (!WebPAnimEncoderAssemble(encoder, &encoded)) return {};
-	const df::scope_exit clear_encoded([&encoded] { WebPDataClear(&encoded); });
-	return {encoded.bytes, encoded.bytes + encoded.size};
-}
-
-static void should_bound_and_time_animated_webp()
-{
-	const auto data = make_test_animated_webp();
-	assert_equal(true, !data.empty(), "animated webp encoded");
-
-	const auto decoded = scan_webp(data, true);
-	assert_equal(2u, static_cast<uint32_t>(decoded.frames.size()), "animated webp frame count");
-	assert_equal(true, std::abs(decoded.frames[0]->time() - 0.1) < 0.001, "animated webp first timestamp");
-	assert_equal(true, std::abs(decoded.frames[1]->time() - 0.35) < 0.001, "animated webp second timestamp");
-
-	const auto restore_budget = df::max_decode_bytes;
-	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
-	const auto frame_bytes = 16ll * 16ll * 4ll;
-	df::max_decode_bytes = frame_bytes * 3;
-	const auto bounded = scan_webp(data, true);
-	assert_equal(1u, static_cast<uint32_t>(bounded.frames.size()),
-	             "animated webp budget includes two decoder canvases");
-
-	auto corrupt = data.clone();
-	auto frame = 0;
-	for (auto offset = 12_z; offset + 32 < corrupt.size();)
-	{
-		const auto chunk_size = static_cast<size_t>(corrupt[offset + 4]) |
-			(static_cast<size_t>(corrupt[offset + 5]) << 8) |
-			(static_cast<size_t>(corrupt[offset + 6]) << 16) |
-			(static_cast<size_t>(corrupt[offset + 7]) << 24);
-
-		if (memcmp(corrupt.data() + offset, "ANMF", 4) == 0 && ++frame == 2)
-		{
-			corrupt[offset + 32] ^= 0xff;
-			break;
-		}
-
-		offset += 8 + chunk_size + (chunk_size & 1);
-	}
-
-	df::max_decode_bytes = restore_budget;
-	const auto malformed = scan_webp(corrupt, true);
-	assert_equal(true, malformed.frames.size() < 2, "malformed animated webp terminates on decode failure");
-}
-
-// Guards the drawn mark against silent drift. The same artwork is drawn independently by
-// tools/generate_store_assets.py for app.ico and the Store assets.
-static void should_draw_the_logo()
-{
-	for (const auto size : {16, 32, 44, 150, 256})
-	{
-		const auto s = std::make_shared<ui::surface>();
-		assert_equal(true, s->alloc(size, size, ui::texture_format::ARGB), "logo surface allocated");
-		s->fill_logo();
-
-		const auto last = size - 1;
-		assert_equal(0u, s->get_pixel(0, 0), "logo corner is transparent");
-		assert_equal(0u, s->get_pixel(last, last), "logo opposite corner is transparent");
-
-		// The four squares sit on the vertical and horizontal axes through the centre.
-		const auto mid = size / 2;
-		const auto near_edge = std::max(1, size / 8);
-		const auto top = s->get_pixel(mid, near_edge);
-		const auto bottom = s->get_pixel(mid, last - near_edge);
-		const auto left = s->get_pixel(near_edge, mid);
-		const auto right = s->get_pixel(last - near_edge, mid);
-
-		// Surface pixels are stored blue first, so ui::get_r reads the blue channel here.
-		const auto red_of = [](const ui::color32 c) { return ui::get_b(c); };
-		const auto green_of = [](const ui::color32 c) { return ui::get_g(c); };
-		const auto blue_of = [](const ui::color32 c) { return ui::get_r(c); };
-
-		assert_equal(true, green_of(top) > red_of(top) && green_of(top) > blue_of(top), "logo top is green");
-		assert_equal(true, red_of(bottom) > green_of(bottom) && red_of(bottom) > blue_of(bottom),
-		             "logo bottom is red");
-		assert_equal(true, red_of(left) > 0x80 && green_of(left) > 0x60 && blue_of(left) < 0x40,
-		             "logo left is yellow");
-		assert_equal(true, blue_of(right) > red_of(right) && blue_of(right) > green_of(right),
-		             "logo right is blue");
-
-		for (const auto c : {top, bottom, left, right})
-		{
-			assert_equal(255u, ui::get_a(c), "logo square centres are opaque");
-		}
-	}
-}
-
-void register_tests4(view_state& state, test_registry& tests)
+void register_media_edit_tests(view_state& state, test_registry& tests)
 {
 	//
 	// Modify media
@@ -2435,11 +1447,11 @@ void register_tests4(view_state& state, test_registry& tests)
 	}
 
 	tests.add("Should update gps in exif"s, should_update_gps_in_exif);
-	tests.add("Issue #134: Should update rating and label for emoji filename"s,
+	// Issue #134 - emoji filenames
+	tests.add("Should update rating and label for emoji filename"s,
 	          should_update_rating_and_label_for_emoji_filename);
 	tests.add("Should handle international characters"s, should_handle_international_characters);
 	tests.add("Should handle korean characters"s, should_handle_korean_characters);
-	tests.add("Should not rewrite unchanged file"s, should_not_rewrite_unchanged_file);
 	tests.add("Should edit video metadata in place gizmo.mp4"s,
 	          [] { should_edit_video_metadata_in_place("gizmo.mp4"); });
 	tests.add("Should edit video metadata in place ipod.mov"s,
@@ -2459,8 +1471,7 @@ void register_tests4(view_state& state, test_registry& tests)
 	          [] { should_stage_metadata_edit("Byzantium.avi"); });
 	tests.add("Should stage metadata edit Test.jpg"s, [] { should_stage_metadata_edit("Test.jpg"); });
 	tests.add("Should edit raw sidecar only"s, should_edit_raw_sidecar_only);
-	tests.add("Should return written image"s, should_return_written_image);
-	tests.add("Should hand over written handle"s, should_hand_over_written_handle);
+	tests.add("Should refuse to write an unreadable sidecar"s, should_refuse_to_write_an_unreadable_sidecar);
 	tests.add("Should save as with distinct xmp sidecar"s, should_save_as_with_distinct_xmp_sidecar);
 	tests.add("Should update exif rating"s, should_update_exif_rating);
 	tests.add("Should update formatted description"s, should_update_formatted_text);
@@ -2510,34 +1521,4 @@ void register_tests4(view_state& state, test_registry& tests)
 	tests.add("Should round-trip large ICC"s, should_roundtrip_large_icc);
 	tests.add("Should round-trip largest XMP"s, should_roundtrip_largest_xmp);
 	tests.add("Should report oversized XMP"s, should_report_oversized_xmp);
-	tests.add("Should read jpeg orientation"s, should_read_jpeg_orientation);
-	tests.add("Should reuse source jpeg tables"s, should_reuse_source_jpeg_tables);
-	tests.add("Should refuse imperfect lossless rotate"s, should_refuse_imperfect_lossless_rotate);
-	tests.add("Should survive truncated lossless rotate"s, should_survive_truncated_lossless_rotate);
-	tests.add("Should render ycbcr jpeg as nv12"s, should_render_ycbcr_jpeg_as_nv12);
-	tests.add("Should report jpeg chroma subsampling"s, should_report_jpeg_chroma_subsampling);
-	tests.add("Should decode 12bit gray jpeg"s, should_decode_12bit_gray_jpeg);
-	tests.add("Should decode 12bit colour jpeg"s, should_decode_12bit_colour_jpeg);
-	tests.add("Should decode 16bit gray jpeg"s, should_decode_16bit_gray_jpeg);
-	tests.add("Should decode 16bit colour jpeg"s, should_decode_16bit_colour_jpeg);
-	tests.add("Should scale 16bit png"s, should_scale_16bit_png);
-	tests.add("Should apply png gamma"s, should_apply_png_gamma);
-	tests.add("Should resize"s, should_resize);
-	tests.add("Should rotate"s, should_rotate);
-	tests.add("Should rotate 133"s, should_rotate133);
-	tests.add("Should rotate lossless"s, should_rotate_lossless);
-	tests.add("Should save .png"s, [] { should_save(".png", true); });
-	tests.add("Should save .jpg"s, [] { should_save(".jpg", true); });
-	tests.add("Should save .webp"s, [] { should_save(".webp", true); });
-	tests.add("Should honor webp save quality"s, should_honor_webp_save_quality);
-	tests.add("Should tag webp surface alpha"s, should_tag_webp_surface_alpha);
-	tests.add("Should decode opaque lossy webp as nv12"s, should_decode_opaque_lossy_webp_as_nv12);
-	tests.add("Should honor the yuv texture setting"s, should_honor_the_yuv_texture_setting);
-	tests.add("Should decode odd sized webp as nv12"s, should_decode_odd_sized_webp_as_nv12);
-	tests.add("Should keep thumbnail alpha only when needed"s, should_keep_thumbnail_alpha_only_when_needed);
-	tests.add("Should refuse truncated webp decode"s, should_refuse_truncated_webp_decode);
-	tests.add("Should bound and time animated webp"s, should_bound_and_time_animated_webp);
-	tests.add("Should preserve webp chunks on metadata save"s, should_preserve_webp_chunks_on_metadata_save);
-	tests.add("Should convert raw to jpeg"s, should_convert_raw_to_jpeg);
-	tests.add("Should draw the logo"s, should_draw_the_logo);
 }

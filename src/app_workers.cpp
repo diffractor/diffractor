@@ -783,12 +783,17 @@ static void start_tile_db_worker(tile_cache_db& db, platform::task_queue& queue)
 
 void app_frame::start_workers()
 {
+	// Runs on the work queue, so exit() can latch the thread list underneath it. start_if_running is
+	// what makes that safe - an unchecked start here appends workers to a list that has already been
+	// joined, and they then outlive COM and the graphics factories.
+	if (df::is_closing) return;
+
 	auto app = shared_from_this();
 	async_strategy& async = *this;
 
-	_threads.start([&player = _player] { start_media_decode_video(player); });
-	_threads.start([&player = _player] { start_media_decode_audio(player); });
-	_threads.start([&player = _player] { start_media_reading(player); });
+	_threads.start_if_running([&player = _player] { start_media_decode_video(player); });
+	_threads.start_if_running([&player = _player] { start_media_decode_audio(player); });
+	_threads.start_if_running([&player = _player] { start_media_reading(player); });
 
 	auto scan_uncached_func = [this]
 	{
@@ -815,10 +820,16 @@ void app_frame::start_workers()
 					view_invalid::index_summary);
 			});
 
-			_threads.start([&q = crc_task_queue] { start_worker(q, "crc"); });
-			_threads.start([&q = scan_folder_task_queue] { start_worker(q, "scan_folder"); });
-			_threads.start([&q = scan_modified_items_task_queue] { start_worker(q, "scan_modified_items"); });
-			_threads.start([&q = scan_displayed_items_task_queue] { start_worker(q, "scan_displayed_items"); });
+			_threads.start_if_running([&q = crc_task_queue] { start_worker(q, "crc"); });
+			_threads.start_if_running([&q = scan_folder_task_queue] { start_worker(q, "scan_folder"); });
+			_threads.start_if_running([&q = scan_modified_items_task_queue]
+			{
+				start_worker(q, "scan_modified_items");
+			});
+			_threads.start_if_running([&q = scan_displayed_items_task_queue]
+			{
+				start_worker(q, "scan_displayed_items");
+			});
 		}
 
 		invalidate_view(view_invalid::sidebar |
@@ -836,24 +847,24 @@ void app_frame::start_workers()
 		}
 	};
 
-	_threads.start([&db = _db, &q = database_task_queue, &async, app, index_loaded_func]
+	_threads.start_if_running([&db = _db, &q = database_task_queue, &async, app, index_loaded_func]
 	{
 		start_database(db, q, async, app, index_loaded_func);
 	});
 
-	_threads.start([&q = load_task_queue] { start_worker(q, "load"); });
-	_threads.start([&q = load_raw_task_queue] { start_worker(q, "load_raw"); });
-	_threads.start([&q = render_task_queue] { start_worker(q, "render"); });
-	_threads.start([&q = render_display_task_queue] { start_worker(q, "render_display"); });
-	_threads.start([&q = query_task_queue] { start_worker(q, "query"); });
-	_threads.start([&q = location_task_queue] { start_worker(q, "locations"); });
-	_threads.start([&q = index_task_queue] { start_worker(q, "index"); });
+	_threads.start_if_running([&q = load_task_queue] { start_worker(q, "load"); });
+	_threads.start_if_running([&q = load_raw_task_queue] { start_worker(q, "load_raw"); });
+	_threads.start_if_running([&q = render_task_queue] { start_worker(q, "render"); });
+	_threads.start_if_running([&q = render_display_task_queue] { start_worker(q, "render_display"); });
+	_threads.start_if_running([&q = query_task_queue] { start_worker(q, "query"); });
+	_threads.start_if_running([&q = location_task_queue] { start_worker(q, "locations"); });
+	_threads.start_if_running([&q = index_task_queue] { start_worker(q, "index"); });
 
 	// One thread for the four passes that read the index and publish to the sidebar. None of them holds
 	// the thread while idle any more - the debounce lives in the queue - so sharing costs only the
 	// serialisation of work that totals a couple of seconds across a whole session. Ordered by how
 	// directly each feeds something on screen.
-	_threads.start([this]
+	_threads.start_if_running([this]
 	{
 		start_worker_group({
 			                   {&presence_task_queue, "presence"},

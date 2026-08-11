@@ -1008,7 +1008,7 @@ msgid "Favorites are listed in the sidebar for quick access."
 msgstr "즐겨찾기는 빠른 액세스를 위해 사이드바에 나열됩니다."
 
 msgid "These items are in your collection."
-msgstr "이 항목은 컬렉션에 있습니다."
+msgstr "이 항목들은 컬렉션에 있습니다."
 
 msgid "These items are outside your collection, so search and duplicate detection do not cover them. Add this folder to your collection to include them."
 msgstr "이 항목은 컬렉션 밖에 있으므로 검색과 중복 감지의 대상이 아닙니다. 포함하려면 이 폴더를 컬렉션에 추가하세요."

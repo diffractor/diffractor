@@ -11,10 +11,16 @@
 // database access, so these run in microseconds and stay apart from the media-edit tests.
 
 #include "pch.h"
-#include "test_utils.h"
+#include "test_fixtures.h"
+#include "test_runner.h"
+#include "files.h"
 #include "model_zoom.h"
+#include "ui_elements.h"
+#include "ui_text_edit.h"
 #include "view_items.h"
+#include "view_list.h"
 #include "view_selector.h"
+#include "view_tags.h"
 
 static void assert_zoom_near(const double expected, const double actual, const std::string_view message)
 {
@@ -506,7 +512,7 @@ static void should_hold_media_column_still_as_detail_arrives()
 
 	const auto arrange = [&](const std::vector<view_element_ptr>& detail)
 	{
-		const media_column_inputs in{&priority, &detail, &all, pane, true};
+		const media_column_inputs in{&priority, &detail, &all, pane, true, true};
 		return layout_media_column(in, mc, positions);
 	};
 
@@ -549,7 +555,7 @@ static void should_fit_the_whole_primary_block_when_verbose_is_closed()
 		const auto media = std::make_shared<flex_test_element>(media_extent);
 		media->flex = media->flex | flex_item::media;
 		const std::vector<view_element_ptr> priority{media, std::make_shared<flex_test_element>(sizei{200, 20}), toggle};
-		const media_column_inputs in{&priority, &no_detail, &priority, pane, false};
+		const media_column_inputs in{&priority, &no_detail, &priority, pane, false, true};
 		layout_media_column(in, mc, positions);
 		return media;
 	};
@@ -577,7 +583,7 @@ static void should_fit_the_whole_primary_block_when_verbose_is_closed()
 	squeezed->flex = squeezed->flex | flex_item::media;
 	const auto big_group = std::make_shared<flex_test_element>(sizei{200, 120});
 	const std::vector<view_element_ptr> cramped{squeezed, big_group};
-	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, false};
+	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, false, true};
 	layout_media_column(cramped_in, mc, positions);
 
 	assert_equal(true, squeezed->bounds.top >= short_pane.top, "an overflowing block is never clipped off the top");
@@ -601,13 +607,38 @@ static void should_follow_the_primary_block_when_verbose_is_open()
 	const std::vector<view_element_ptr> detail{verbose};
 	const std::vector<view_element_ptr> all{media, group, verbose};
 
-	const media_column_inputs in{&priority, &detail, &all, pane, true};
+	const media_column_inputs in{&priority, &detail, &all, pane, true, true};
 	const auto content_height = layout_media_column(in, mc, positions);
 
 	assert_equal(pane.top, media->bounds.top, "the block is aligned to the top");
 	assert_equal(true, group->bounds.bottom <= pane.bottom, "the information group is visible");
 	assert_equal(group->bounds.bottom, verbose->bounds.top, "verbose metadata follows with no gap");
 	assert_equal(true, content_height >= verbose->bounds.bottom - pane.top, "the scroll extent reaches it");
+}
+
+// Verbose metadata is one global setting, but a multiple selection has no metadata blocks to open, so
+// its panel has nothing below it to be held clear of. It centres like a single item rather than
+// sitting against the top for a reason that does not apply to it.
+static void should_centre_a_block_with_no_detail_whatever_verbose_is()
+{
+	flex_test_measure_context mc;
+	ui::control_layouts positions;
+	constexpr recti pane{0, 0, 200, 300};
+
+	const auto collage = std::make_shared<flex_test_element>(sizei{200, 100});
+	const auto controls = std::make_shared<flex_test_element>(sizei{200, 40});
+
+	const std::vector<view_element_ptr> priority{collage, controls};
+	const std::vector<view_element_ptr> no_detail;
+
+	const media_column_inputs in{&priority, &no_detail, &priority, pane, true, false};
+	layout_media_column(in, mc, positions);
+
+	const auto above = collage->bounds.top - pane.top;
+	const auto below = pane.bottom - controls->bounds.bottom;
+
+	assert_equal(true, above > 0, "a selection panel with no detail does not sit against the top");
+	assert_equal(true, std::abs(above - below) <= 1, "it is centred vertically");
 }
 
 static void should_leave_full_screen_for_task_views()
@@ -786,6 +817,96 @@ static void should_survive_a_host_with_no_window()
 	assert_equal(true, scroller.scroll_offset().y > 0, "the scroller still tracks its position");
 }
 
+// The list view's chrome is measured in text lines, so unlike the flex stub this one has to report a
+// height. Only the vertical arrangement is under test, so the column widths are nominal.
+class list_test_measure_context final : public ui::measure_context
+{
+public:
+	static constexpr int line_height = 20;
+
+	sizei measure_text(const std::string_view text, ui::style::font_face font, ui::style::text_style style,
+	                   const int cx, int cy = 0) override
+	{
+		return {std::min(cx, static_cast<int>(text.size()) * 8), line_height};
+	}
+
+	int text_line_height(ui::style::font_face font) override { return line_height; }
+	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override { return {}; }
+};
+
+class processing_test_view final : public list_view
+{
+public:
+	std::string _text;
+
+	processing_test_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
+	{
+	}
+
+	std::string_view status() override { return _text; }
+
+	void refresh() override
+	{
+	}
+
+	void add_rows(const int count)
+	{
+		for (auto i = 0; i < count; ++i)
+		{
+			auto row = std::make_shared<row_element>(*this);
+			row->_order = i;
+			row->_work_index = i;
+			_rows.emplace_back(std::move(row));
+		}
+	}
+
+	int active_device_top() const { return _active_row->bounds.top - _scroller.scroll_offset().y; }
+	int active_device_bottom() const { return _active_row->bounds.bottom - _scroller.scroll_offset().y; }
+};
+
+// A run keeps the row it is working on visible, and visible means clear of the chrome painted over
+// the list rather than merely inside the scrolling area: the column headers are drawn across the top
+// of it and view_frame::draw_view_status paints the status band across its base. Scrolling the row to
+// the very edge left the highlight under one or the other for the whole of a long run.
+static void should_keep_the_processing_row_clear_of_the_view_chrome()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	const auto host = std::make_shared<detached_test_host>();
+	const auto view = std::make_shared<processing_test_view>(s, host);
+
+	constexpr sizei extent{400, 300};
+	constexpr auto band = list_test_measure_context::line_height + 8 * 2;
+	constexpr auto margin = list_test_measure_context::line_height;
+
+	list_test_measure_context mc;
+	view->add_rows(100);
+	view->_text = "Processing";
+	view->begin_processing(100);
+	view->layout(mc, extent);
+
+	// Far enough down that the list has to scroll to reach it, which is where the row used to come to
+	// rest against the bottom edge with the status band drawn over it.
+	view->processing_work_item(60);
+
+	assert_equal(true, view->active_device_bottom() <= extent.cy - band - margin,
+	             "the row stops clear of the status band");
+	assert_equal(true, view->active_device_top() >= 0, "and is still inside the view");
+
+	// Back up the list: the same rule applies to the column headers above it.
+	view->processing_work_item(5);
+
+	assert_equal(true, view->active_device_top() >= band + margin,
+	             "the row stops clear of the column headers");
+	assert_equal(true, view->active_device_bottom() <= extent.cy, "and is still inside the view");
+
+	view->end_processing();
+}
+
 static void should_answer_a_null_frame_without_side_effects()
 {
 	const auto f = ui::no_frame();
@@ -802,8 +923,594 @@ static void should_answer_a_null_frame_without_side_effects()
 	assert_equal(true, f->cursor_location() == pointi(-1, -1), "cursor is outside every client rect");
 }
 
-void register_tests7(view_state& state, test_registry& tests)
+static void should_layout_selection_thumbnail_collage()
 {
+	const auto check = [](const recti draw_bounds, const std::vector<sizei>& dimensions, const size_t expected_count)
+	{
+		const auto bounds = ui::layout_collage(draw_bounds, dimensions);
+		assert_equal(expected_count, bounds.size(), "collage bounds count");
+
+		for (auto index = 0u; index < bounds.size(); ++index)
+		{
+			const auto& bound = bounds[index];
+			assert_equal(true, bound.area() > 0, "collage cell has area");
+			assert_equal(true, draw_bounds.contains(bound.top_left()), "collage cell top-left contained");
+			assert_equal(true, draw_bounds.contains({bound.right - 1, bound.bottom - 1}),
+			             "collage cell bottom-right contained");
+
+			for (auto other = index + 1; other < bounds.size(); ++other)
+			{
+				const auto& other_bound = bounds[other];
+				const auto overlaps = bound.left < other_bound.right && bound.right > other_bound.left &&
+					bound.top < other_bound.bottom && bound.bottom > other_bound.top;
+				assert_equal(false, overlaps, "collage cells do not overlap");
+			}
+		}
+	};
+
+	check({0, 0, 1200, 800}, std::vector<sizei>(9, sizei(256, 256)), 9);
+	check({0, 0, 1600, 900}, {
+		      {1200, 200}, {180, 900}, {400, 400}, {300, 800}, {1400, 350}, {640, 480},
+		      {200, 1000}, {1600, 300}, {500, 500}, {900, 1600}, {1000, 250}, {300, 300}
+	      }, 12);
+	check({0, 0, 1920, 1080}, std::vector<sizei>(24, sizei(320, 240)), 24);
+	check({0, 0, 1920, 1080}, std::vector<sizei>(30, sizei(320, 240)), 24);
+
+	const auto aesthetic_bounds = ui::layout_collage({0, 0, 1200, 800}, std::vector<sizei>(9, sizei(256, 256)));
+	const auto first_row_top = aesthetic_bounds.front().top;
+	assert_equal(true, std::any_of(aesthetic_bounds.begin(), aesthetic_bounds.end(),
+	                               [first_row_top](const recti& bounds) { return bounds.top != first_row_top; }),
+	             "collage uses multiple rows");
+	const auto [smallest, largest] = std::minmax_element(aesthetic_bounds.begin(), aesthetic_bounds.end(),
+	                                                     [](const recti& left, const recti& right)
+	                                                     {
+		                                                     return left.area() < right.area();
+	                                                     });
+	assert_equal(true, largest->area() > smallest->area() * 3 / 2, "collage varies cell sizes");
+	assert_equal(800, std::max_element(aesthetic_bounds.begin(), aesthetic_bounds.end(),
+	                                   [](const recti& left, const recti& right)
+	                                   {
+		                                   return left.bottom < right.bottom;
+	                                   })->bottom,
+	             "collage fills available height");
+
+	const auto portrait_bounds = ui::layout_collage({0, 0, 600, 1200}, std::vector<sizei>(9, sizei(256, 256)));
+	assert_equal(1200, std::max_element(portrait_bounds.begin(), portrait_bounds.end(),
+	                                    [](const recti& left, const recti& right)
+	                                    {
+		                                    return left.bottom < right.bottom;
+	                                    })->bottom,
+	             "portrait collage fills available height");
+	assert_equal(true, std::any_of(portrait_bounds.begin(), portrait_bounds.end(),
+	                               [](const recti& bounds) { return bounds.height() > bounds.width(); }),
+	             "portrait collage has vertical cells");
+}
+
+static void should_edit_single_line_text()
+{
+	ui::single_line_edit_model edit;
+	edit.text("Hello world");
+	edit.select(6, 11);
+	edit.insert("Diffractor");
+	assert_equal_strict("Hello Diffractor", edit.text(), "replace selection");
+
+	edit.move_left(true);
+	assert_equal(true, edit.has_selection(), "shift-left selects");
+	edit.move_left();
+	assert_equal(false, edit.has_selection(), "left collapses selection");
+	assert_equal(15_z, edit.caret(), "left collapses to selection start");
+
+	edit.text("A\u00e9B");
+	edit.move_left();
+	edit.backspace();
+	assert_equal_strict("AB", edit.text(), "backspace removes one UTF-8 code point");
+	assert_equal(1_z, edit.caret(), "caret remains on UTF-8 boundary");
+
+	edit.select_all();
+	edit.insert("one\r\ntwo\nthree");
+	assert_equal_strict("one two three", edit.text(), "paste is normalized to one line");
+
+	edit.text("one two three");
+	edit.move_word_left();
+	assert_equal(8_z, edit.caret(), "control-left moves to previous word");
+	edit.backspace_word();
+	assert_equal_strict("one three", edit.text(), "control-backspace removes previous word");
+	edit.undo();
+	assert_equal_strict("one two three", edit.text(), "undo restores word deletion");
+	edit.redo();
+	assert_equal_strict("one three", edit.text(), "redo reapplies word deletion");
+
+	edit.text("alpha beta");
+	edit.select_word(7);
+	assert_equal_strict("beta", edit.selected_text(), "double-click model selects a word");
+	edit.erase_selection();
+	assert_equal_strict("alpha ", edit.text(), "cut removes selected word");
+	edit.undo();
+	assert_equal_strict("alpha beta", edit.text(), "undo restores cut text");
+
+	edit.begin_edit();
+	edit.select_all();
+	edit.insert("changed");
+	edit.cancel_edit();
+	assert_equal_strict("alpha beta", edit.text(), "cancel restores edit-start value");
+
+	filter_t filter;
+	filter.wildcard("cat");
+	assert_equal_strict("cat", filter.text(), "filter preserves user input");
+	assert_equal(true, filter.match_text(str::cache("bobcatfish")), "filter applies contains matching");
+}
+
+static void should_clear_detail_row_layout_metrics()
+{
+	df::item_row_draw_info info;
+	info.title.extent = 400;
+	info.title.width = 300;
+	info.file_size.extent = 100;
+	info.file_size.width = 80;
+	info.file_size.val_min = 10;
+	info.file_size.val_max = 1000;
+	info.presence.extent = 40;
+	info.presence.width = 40;
+
+	info.clear_for_layout();
+
+	assert_equal(0, info.title.extent, "title extent reset");
+	assert_equal(0, info.title.width, "title width reset");
+	assert_equal(0, info.file_size.extent, "size extent reset");
+	assert_equal(0, info.file_size.width, "size width reset");
+	assert_equal(static_cast<double>(INT64_MAX), info.file_size.val_min, "size minimum reset");
+	assert_equal(static_cast<double>(INT64_MIN), info.file_size.val_max, "size maximum reset");
+	assert_equal(0, info.presence.extent, "presence extent reset");
+	assert_equal(0, info.presence.width, "presence width reset");
+}
+
+static void should_classify_aspect_ratio_groups()
+{
+	const auto assert_group = [](const sizei dimensions, const aspect_ratio_bucket expected_bucket,
+	                             const bool expected_portrait, const std::string_view name)
+	{
+		const auto actual = calc_aspect_ratio_group(dimensions);
+		assert_equal(static_cast<int>(expected_bucket), static_cast<int>(actual.bucket), name, "aspect ratio bucket");
+		assert_equal(expected_portrait, actual.is_portrait, name, "aspect ratio orientation");
+	};
+
+	assert_group({1000, 1000}, aspect_ratio_bucket::square, false, "square");
+	assert_group({1280, 1024}, aspect_ratio_bucket::five_four, false, "5:4");
+	assert_group({4000, 3000}, aspect_ratio_bucket::four_three, false, "4:3");
+	assert_group({6000, 4000}, aspect_ratio_bucket::three_two, false, "3:2");
+	assert_group({1920, 1200}, aspect_ratio_bucket::sixteen_ten, false, "16:10");
+	assert_group({1920, 1080}, aspect_ratio_bucket::sixteen_nine, false, "16:9");
+	assert_group({2520, 1080}, aspect_ratio_bucket::twenty_one_nine, false, "21:9");
+	assert_group({1080, 1920}, aspect_ratio_bucket::sixteen_nine, true, "9:16 portrait");
+	assert_group({4032, 3024}, aspect_ratio_bucket::four_three, false, "cropped within tolerance");
+	assert_group({1000, 700}, aspect_ratio_bucket::other, false, "other landscape");
+	assert_group({700, 1000}, aspect_ratio_bucket::other, true, "other portrait");
+	assert_group({}, aspect_ratio_bucket::other, false, "invalid dimensions");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Flex layout
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Behaves like text: content that does not fit the width limit wraps onto a second line.
+class flex_wrapping_test_element final : public view_element
+{
+	sizei _desired;
+
+public:
+	explicit flex_wrapping_test_element(const sizei desired) : _desired(desired)
+	{
+		padding(0);
+	}
+
+	sizei measure(ui::measure_context& mc, const int width_limit) const override
+	{
+		if (width_limit >= _desired.cx) return _desired;
+		return {width_limit, _desired.cy * 2};
+	}
+};
+
+static void should_layout_flex_elements()
+{
+	flex_test_measure_context mc;
+	auto first = std::make_shared<flex_test_element>(sizei{40, 10});
+	auto second = std::make_shared<flex_test_element>(sizei{40, 20});
+	auto third = std::make_shared<flex_test_element>(sizei{40, 15});
+	const std::vector<view_element_ptr> wrapping{first, second, third};
+	const auto wrapped = calc_flex_layout(wrapping, mc, {100, 0}, {});
+	assert_equal(5, wrapped.layout_bounds[0].top, "short item is centered on first flex line");
+	assert_equal(0, wrapped.layout_bounds[1].top, "second item remains on first flex line");
+	assert_equal(20, wrapped.layout_bounds[2].top, "third item wraps to second flex line");
+	assert_equal(35, wrapped.extent.cy, "wrapped flex extent");
+
+	first->flex.grow = 1.0f;
+	second->flex.grow = 1.0f;
+	const std::vector<view_element_ptr> growing{first, second};
+	const auto grown = calc_flex_layout(growing, mc, {100, 0}, {});
+	assert_equal(50, grown.layout_bounds[0].width(), "first flex item shares free space");
+	assert_equal(50, grown.layout_bounds[1].width(), "second flex item shares free space");
+
+	first->flex.grow = 0.0f;
+	second->flex.grow = 0.0f;
+	second->flex.main_start_auto = true;
+	const auto justified = calc_flex_layout(growing, mc, {100, 0}, {});
+	assert_equal(60, justified.layout_bounds[1].left, "auto margin right aligns trailing flex item");
+
+	second->is_visible(false);
+	const auto hidden = calc_flex_layout(growing, mc, {100, 0}, {});
+	assert_equal(40, hidden.extent.cx, "hidden flex item consumes no space");
+	assert_equal(true, hidden.layout_bounds[1] == recti{}, "hidden flex item has empty bounds");
+
+	second->is_visible(true);
+	first->flex.shrink = 1.0f;
+	second->flex.shrink = 1.0f;
+	first->flex.basis = 60;
+	second->flex.basis = 60;
+	first->flex.min_size.cx = 55;
+	second->flex.min_size.cx = 40;
+	flex_container_layout no_wrap;
+	no_wrap.wrap = flex_wrap::no_wrap;
+	const auto shrunk = calc_flex_layout(growing, mc, {100, 0}, no_wrap);
+	assert_equal(55, shrunk.layout_bounds[0].width(), "flex shrink respects first minimum");
+	assert_equal(45, shrunk.layout_bounds[1].width(), "flex shrink redistributes after minimum");
+
+	auto column_first = std::make_shared<flex_test_element>(sizei{30, 10});
+	auto column_second = std::make_shared<flex_test_element>(sizei{40, 20});
+	const std::vector<view_element_ptr> column_elements{column_first, column_second};
+	flex_container_layout column;
+	column.direction = flex_direction::column;
+	column.wrap = flex_wrap::no_wrap;
+	const auto measured_column = calc_flex_layout(column_elements, mc, {100, -1}, column);
+	assert_equal(30, measured_column.extent.cy, "unconstrained flex column measures intrinsic height");
+	assert_equal(10, measured_column.layout_bounds[1].top, "unconstrained flex column stacks items");
+
+	mc.padding2 = 8;
+	auto divider = std::make_shared<divider_element>();
+	divider->padding(0);
+	const std::vector<view_element_ptr> divided_column{divider, column_second};
+	const auto fixed_height_divider = calc_flex_layout(divided_column, mc, {100, 100}, column);
+	assert_equal(8, fixed_height_divider.layout_bounds[0].height(),
+	             "column divider keeps its intrinsic height instead of consuming free space");
+	assert_equal(8, fixed_height_divider.layout_bounds[1].top,
+	             "control after a column divider remains adjacent and visible");
+	mc.padding2 = 0;
+
+	column_first->flex.break_after = true;
+	const auto broken_column = calc_flex_layout(column_elements, mc, {100, -1}, column);
+	assert_equal(30, broken_column.layout_bounds[1].left,
+	             "explicit break creates a new column when automatic wrapping is disabled");
+
+	column_first->flex.break_after = false;
+	column_first->flex.align_self = flex_align::stretch;
+	column.padding = {5, 7};
+	const auto padded_column = calc_flex_layout(column_elements, mc, {100, -1}, column);
+	assert_equal(5, padded_column.layout_bounds[0].left, "column padding offsets the first item");
+	assert_equal(90, padded_column.layout_bounds[0].width(), "explicit stretch fills the column cross axis");
+	assert_equal(44, padded_column.extent.cy, "column padding contributes to intrinsic extent");
+
+	mc.scale_factor = 2.0;
+	const auto scaled_padded_column = calc_flex_layout(column_elements, mc, {200, -1}, column);
+	assert_equal(10, scaled_padded_column.layout_bounds[0].left, "flex padding scales from logical units");
+	assert_equal(58, scaled_padded_column.extent.cy, "scaled flex padding contributes once to intrinsic extent");
+	mc.scale_factor = 1.0;
+
+	ui::control_layouts positions;
+	const auto applied_extent = layout_flex_elements(column_elements, mc, positions, {10, 20, 110, 80}, column);
+	assert_equal(15, column_first->bounds.left, "applied flex layout offsets child bounds");
+	assert_equal(padded_column.extent.cy, applied_extent.cy, "applied flex layout returns content extent");
+
+	column.padding = {};
+	column.justify = flex_justify::center;
+	const auto centered_column = calc_flex_layout(column_elements, mc, {100, 100}, column);
+	assert_equal(35, centered_column.layout_bounds[0].top, "flex column centers intrinsic content vertically");
+
+	column.justify = flex_justify::start;
+	column_first->flex.align_self = flex_align::automatic;
+	column_first->flex = column_first->flex | flex_item::media;
+	column_first->flex.basis = 100;
+	const auto shrunk_column = calc_flex_layout(column_elements, mc, {100, 100}, column);
+	assert_equal(80, shrunk_column.layout_bounds[0].height(), "flex column shrinks media to fit trailing controls");
+	assert_equal(80, shrunk_column.layout_bounds[1].top, "trailing control remains visible after media shrink");
+
+	auto fixed = std::make_shared<flex_test_element>(sizei{30, 10});
+	auto flexible_first = std::make_shared<flex_test_element>(sizei{40, 10});
+	auto flexible_second = std::make_shared<flex_test_element>(sizei{40, 10});
+	fixed->flex.basis = 30;
+	fixed->flex.shrink = 1.0f;
+	flexible_first->flex.basis = 0;
+	flexible_first->flex.grow = 1.0f;
+	flexible_second->flex.basis = 0;
+	flexible_second->flex.grow = 1.0f;
+	flex_container_layout columns;
+	columns.wrap = flex_wrap::no_wrap;
+	columns.gap.cx = 5;
+	const auto column_row = calc_flex_layout(
+		std::vector<view_element_ptr>{fixed, flexible_first, flexible_second}, mc, {100, -1}, columns);
+	assert_equal(30, column_row.layout_bounds[0].width(), "fixed flex column keeps its basis");
+	assert_equal(30, column_row.layout_bounds[1].width(), "first flexible column shares remaining width");
+	assert_equal(30, column_row.layout_bounds[2].width(), "second flexible column shares remaining width");
+
+	auto capped = std::make_shared<flex_wrapping_test_element>(sizei{40, 10});
+	capped->flex.max_size.cx = 25;
+	capped->flex.align_self = flex_align::center;
+	const std::vector<view_element_ptr> capped_elements{capped};
+	const auto capped_column = calc_flex_layout(capped_elements, mc, {100, -1}, column);
+	assert_equal(25, capped_column.layout_bounds[0].width(), "column item is capped by its maximum width");
+	assert_equal(20, capped_column.extent.cy, "column item measures inside its maximum width");
+
+	const auto capped_row = calc_flex_layout(capped_elements, mc, {100, -1}, {});
+	assert_equal(25, capped_row.layout_bounds[0].width(), "row item is capped by its maximum width");
+	assert_equal(20, capped_row.extent.cy, "row item measures inside its maximum width");
+
+	auto padded_first = std::make_shared<flex_test_element>(sizei{20, 10});
+	auto padded_second = std::make_shared<flex_test_element>(sizei{20, 10});
+	flex_container_layout centered_row;
+	centered_row.wrap = flex_wrap::no_wrap;
+	centered_row.justify = flex_justify::center;
+	centered_row.padding = {10, 0};
+	const auto centered = calc_flex_layout(std::vector<view_element_ptr>{padded_first, padded_second}, mc,
+	                                       {100, -1}, centered_row);
+	assert_equal(30, centered.layout_bounds[0].left, "centred line keeps the container's leading padding");
+	assert_equal(100, centered.extent.cx, "a justified line reports the whole main axis it positions within");
+
+	auto capped_cross = std::make_shared<flex_test_element>(sizei{20, 10});
+	capped_cross->flex.align_self = flex_align::stretch;
+	capped_cross->flex.max_size.cy = 12;
+	auto tall = std::make_shared<flex_test_element>(sizei{20, 40});
+	flex_container_layout stretch_row;
+	stretch_row.wrap = flex_wrap::no_wrap;
+	const auto stretched = calc_flex_layout(std::vector<view_element_ptr>{capped_cross, tall}, mc, {100, -1},
+	                                        stretch_row);
+	assert_equal(12, stretched.layout_bounds[0].height(), "stretch respects the item's maximum cross size");
+
+	auto only_child = std::make_shared<flex_test_element>(sizei{20, 10});
+	only_child->is_visible(false);
+	flex_container_layout hidden_column;
+	hidden_column.direction = flex_direction::column;
+	hidden_column.padding = {10, 10};
+	const auto nothing_visible = calc_flex_layout(std::vector<view_element_ptr>{only_child}, mc, {100, -1},
+	                                              hidden_column);
+	assert_equal(0, nothing_visible.extent.cx, "a container with nothing visible occupies no width");
+	assert_equal(0, nothing_visible.extent.cy, "a container with nothing visible occupies no height");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Item tile geometry
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// selection-controls.md: comparison is like with like, decided from stable traits alone.
+static void should_limit_comparison_to_like_pairs()
+{
+	const auto jpg = files::file_type_from_name("a.jpg");
+	const auto png = files::file_type_from_name("b.png");
+	const auto mp4 = files::file_type_from_name("a.mp4");
+	const auto mp3 = files::file_type_from_name("a.mp3");
+	const auto txt = files::file_type_from_name("a.txt");
+
+	assert_equal(true, can_compare_file_types(jpg, png), "two images compare");
+	assert_equal(true, can_compare_file_types(mp4, mp4), "two previewable videos compare");
+	assert_equal(false, can_compare_file_types(jpg, mp4), "image and video do not compare");
+	assert_equal(false, can_compare_file_types(mp3, mp3), "two audio files do not compare");
+	assert_equal(false, can_compare_file_types(txt, txt), "two documents do not compare");
+	assert_equal(false, can_compare_file_types(&file_type::folder, &file_type::folder),
+	             "two folders do not compare");
+	assert_equal(false, can_compare_file_types(nullptr, jpg), "an unknown type does not compare");
+}
+
+// A video with embedded cover art draws the cover art on its tile, so the tile has to be the shape
+// of the art. Sizing it from the video's own dimensions letterboxed the art inside a frame-shaped
+// tile, and the republish that follows every scan pass used to revert it to the video shape.
+static void should_shape_the_tile_by_what_it_draws()
+{
+	df::index_file_item indexed;
+	indexed.name = str::cache("clip.mp4");
+	indexed.ft = files::file_type_from_name(indexed.name);
+
+	const auto md = std::make_shared<prop::item_metadata>();
+	md->width = 1920;
+	md->height = 1080;
+	indexed.metadata.store(md);
+
+	const auto path = df::file_path("c:\\clip.mp4");
+	const auto item = std::make_shared<df::item_element>(path, indexed);
+
+	assert_equal(1920, item->layout_dims().cx, "video width shapes the tile before cover art arrives");
+	assert_equal(1080, item->layout_dims().cy, "video height shapes the tile before cover art arrives");
+	assert_equal(true, item->layout_aspect_known(), "indexed dimensions are an exact aspect");
+
+	const auto cover_art = std::make_shared<ui::image>(df::blob(16), sizei(600, 600),
+	                                                   ui::image_format::JPEG, ui::orientation::top_left);
+	item->thumbnail({}, cover_art, {});
+
+	assert_equal(600, item->layout_dims().cx, "cover art width shapes the tile that draws it");
+	assert_equal(600, item->layout_dims().cy, "cover art height shapes the tile that draws it");
+	assert_equal(true, item->layout_aspect_known(), "a cover art aspect is exact, so the tile may justify");
+
+	// scan_items republishes every displayed item on every pass.
+	const auto republished = item->update(path, indexed);
+
+	assert_equal(600, item->layout_dims().cx, "a republish does not revert the tile to the video shape");
+	assert_equal(false, republished, "an unchanged republish asks for no layout pass");
+}
+
+// A thumbnail is a downscaled stand-in, so it may shape a tile whose real aspect is unknown but must
+// never earn the row justification that a known aspect does.
+static void should_not_justify_a_tile_shaped_by_a_thumbnail()
+{
+	df::index_file_item indexed;
+	indexed.name = str::cache("unscanned.jpg");
+	indexed.ft = files::file_type_from_name(indexed.name);
+
+	const auto path = df::file_path("c:\\unscanned.jpg");
+	const auto item = std::make_shared<df::item_element>(path, indexed);
+
+	assert_equal(false, item->layout_aspect_known(), "nothing known before a scan");
+
+	const auto thumb = std::make_shared<ui::image>(df::blob(16), sizei(160, 120),
+	                                               ui::image_format::JPEG, ui::orientation::top_left);
+	item->thumbnail(thumb, {}, {});
+
+	assert_equal(160, item->layout_dims().cx, "the thumbnail stands in for an unknown aspect");
+	assert_equal(false, item->layout_aspect_known(), "a stand-in aspect is never justified");
+
+	// The scan lands and the index now knows the real size, which outranks the thumbnail.
+	const auto md = std::make_shared<prop::item_metadata>();
+	md->width = 4000;
+	md->height = 3000;
+	indexed.metadata.store(md);
+
+	assert_equal(true, item->update(path, indexed), "a newly scanned size asks for a layout pass");
+	assert_equal(4000, item->layout_dims().cx, "the indexed size outranks the thumbnail");
+	assert_equal(true, item->layout_aspect_known(), "the real aspect is now known");
+}
+
+// A tile fills its cell by cropping, so every difference between the cell's shape and the image's
+// shape is hidden pixels. The row solves one height and takes each width from it, which is what stops
+// a row holding one or two portraits from cutting the top and bottom off them.
+static void should_keep_tile_aspect_when_laying_out_a_row()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	flex_test_measure_context mc;
+	constexpr auto width_limit = 1200;
+	constexpr auto crop_tolerance = 0.05;
+	auto next_name = 0;
+
+	const auto make_item = [&next_name](const int cx, const int cy)
+	{
+		const auto name = "item" + std::to_string(++next_name) + ".jpg";
+
+		df::index_file_item indexed;
+		indexed.name = str::cache(name);
+		indexed.ft = files::file_type_from_name(indexed.name);
+
+		const auto md = std::make_shared<prop::item_metadata>();
+		md->width = static_cast<uint16_t>(cx);
+		md->height = static_cast<uint16_t>(cy);
+		indexed.metadata.store(md);
+
+		return std::make_shared<df::item_element>(df::file_path("c:\\" + name), indexed);
+	};
+
+	const auto assert_row_aspects = [&](df::item_elements items, const std::string_view name)
+	{
+		const auto group = std::make_shared<df::item_group>(s, std::move(items), df::item_group_display::icons,
+		                                                    df::group_key{});
+		group->measure(mc, width_limit);
+
+		const auto& layout_bounds = group->_layout_bounds;
+		assert_equal(group->items().size(), layout_bounds.size(), name, "a cell for every item");
+
+		for (auto i = 0u; i < layout_bounds.size(); ++i)
+		{
+			const auto dims = group->items()[i]->layout_dims();
+			const auto image_aspect = static_cast<double>(dims.cx) / dims.cy;
+			const auto cell_aspect = static_cast<double>(layout_bounds[i].width()) / layout_bounds[i].height();
+			const auto hidden = 1.0 - std::min(image_aspect, cell_aspect) / std::max(image_aspect, cell_aspect);
+
+			assert_equal(true, hidden <= crop_tolerance + 0.01, name, "tile keeps its aspect");
+			assert_equal(true, layout_bounds[i].right <= width_limit, name, "tile stays inside the row");
+		}
+	};
+
+	assert_row_aspects({make_item(2000, 3000)}, "one portrait"sv);
+	assert_row_aspects({make_item(2000, 3000), make_item(2000, 3000)}, "two portraits"sv);
+	assert_row_aspects({make_item(3000, 2000), make_item(2000, 3000), make_item(4000, 3000)}, "mixed row"sv);
+	assert_row_aspects({make_item(400, 400), make_item(64, 64)}, "small squares"sv);
+	assert_row_aspects({make_item(12000, 1000)}, "panorama"sv);
+}
+
+// A header sort reorders the reviewed rows while the run stays in plan order, so progress and
+// results must resolve a work index by identity. Indexing by display position reports one file's
+// outcome against another.
+static void should_resolve_list_rows_by_work_index()
+{
+	const auto resolve = [](const std::vector<int>& rows, const size_t work_index)
+	{
+		return list_view::row_for_work_index(rows.size(), work_index, [&rows](const size_t i) { return rows[i]; });
+	};
+
+	// Unsorted, which is the common case and the one the fast path answers without scanning.
+	const std::vector<int> in_order{0, 1, 2, 3};
+	assert_equal(0, resolve(in_order, 0), "in order work 0"sv);
+	assert_equal(2, resolve(in_order, 2), "in order work 2"sv);
+	assert_equal(3, resolve(in_order, 3), "in order work 3"sv);
+	assert_equal(-1, resolve(in_order, 4), "in order beyond the run"sv);
+
+	// Plan order 0,1,2,3 shown after a sort as 2,0,3,1.
+	const std::vector<int> sorted{2, 0, 3, 1};
+	assert_equal(1, resolve(sorted, 0), "sorted work 0"sv);
+	assert_equal(3, resolve(sorted, 1), "sorted work 1"sv);
+	assert_equal(0, resolve(sorted, 2), "sorted work 2"sv);
+	assert_equal(2, resolve(sorted, 3), "sorted work 3"sv);
+
+	// Rows the run skips carry -1, so they must never be selected - including for work index 0,
+	// which a position-based lookup would hand to the first row.
+	const std::vector<int> with_skipped{-1, -1, 0, -1, 1};
+	assert_equal(2, resolve(with_skipped, 0), "first acting row"sv);
+	assert_equal(4, resolve(with_skipped, 1), "second acting row"sv);
+
+	// No row means no highlight, rather than the nearest one.
+	assert_equal(-1, resolve(with_skipped, 2), "work index beyond the run"sv);
+	assert_equal(-1, resolve({}, 0), "no rows"sv);
+}
+
+// The row being processed is held, not indexed. Reordering the reviewed list mid-run used to clear
+// whichever row had since moved into the stored slot, leaving the real one highlighted for good.
+static void should_track_the_active_row_across_a_reorder()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const view_host_base_ptr view;
+
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	s.view_mode(view_type::items);
+	s.open(view, df::search_t().add_selector(test_files_folder), {});
+	s.update_item_groups();
+	s.update_selection();
+	s.select_all(view);
+	s.update_selection();
+
+	assert_equal(true, s.selected_items().size() > 2, "test folder has a selection to review");
+
+	const auto tags = std::make_shared<tags_view>(s, nullptr);
+	tags->activate({100, 100});
+
+	assert_equal(true, tags->_rows.size() > 2, "test folder fills the reviewed list");
+
+	const auto highlighted = [&tags]
+	{
+		return std::ranges::count_if(tags->_rows, [](const auto& row) { return row->_bg_color.a > 0.0f; });
+	};
+
+	tags->begin_processing(tags->_rows.size());
+	tags->processing_item(0, 1);
+
+	const auto first = tags->_rows.front();
+	assert_equal(1, static_cast<int>(highlighted()), "one row is marked in progress");
+	assert_equal(true, first->_bg_color.a > 0.0f, "the row the run named is the marked one");
+
+	// Any reorder will do; a header click during review is the reachable one.
+	std::ranges::reverse(tags->_rows);
+	tags->processing_item(0, 2);
+
+	assert_equal(1, static_cast<int>(highlighted()), "the previous row is cleared even though it moved");
+	assert_equal(true, tags->_rows.front()->_bg_color.a > 0.0f, "the newly named row is the marked one");
+
+	tags->end_processing();
+	assert_equal(0, static_cast<int>(highlighted()), "no row stays marked once the run ends");
+}
+
+void register_view_tests(view_state& state, test_registry& tests)
+{
+	tests.add("Should track the active row across a reorder"s, should_track_the_active_row_across_a_reorder);
+	tests.add("Should resolve list rows by work index"s, should_resolve_list_rows_by_work_index);
 	tests.add("Should select settled zoom sampler"s, should_select_settled_zoom_sampler);
 	tests.add("Should accumulate precision zoom wheel deltas"s, should_accumulate_precision_zoom_wheel_deltas);
 	tests.add("Should validate zoom navigator mode"s, should_validate_zoom_navigator_mode);
@@ -833,6 +1540,8 @@ void register_tests7(view_state& state, test_registry& tests)
 	          should_fit_the_whole_primary_block_when_verbose_is_closed);
 	tests.add("Should follow the primary block when verbose is open"s,
 	          should_follow_the_primary_block_when_verbose_is_open);
+	tests.add("Should centre a block with no detail whatever verbose is"s,
+	          should_centre_a_block_with_no_detail_whatever_verbose_is);
 	tests.add("Should leave full screen for task views"s, should_leave_full_screen_for_task_views);
 	tests.add("Should preserve view scroller anchor across layout"s,
 	          should_preserve_view_scroller_anchor_across_layout);
@@ -841,5 +1550,24 @@ void register_tests7(view_state& state, test_registry& tests)
 	          should_drag_view_scroller_thumb_from_grab_point);
 	tests.add("Should close view scroller bands over track"s, should_close_view_scroller_bands_over_track);
 	tests.add("Should survive a host with no window"s, should_survive_a_host_with_no_window);
+	tests.add("Should keep the processing row clear of the view chrome"s,
+	          should_keep_the_processing_row_clear_of_the_view_chrome);
 	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);
+	tests.add("Should layout selection thumbnail collage"s, should_layout_selection_thumbnail_collage);
+	tests.add("Should edit single-line text"s, should_edit_single_line_text);
+	tests.add("Should clear detail row layout metrics"s, should_clear_detail_row_layout_metrics);
+	tests.add("Should classify aspect ratio groups"s, should_classify_aspect_ratio_groups);
+
+	//
+	// Flex layout
+	//
+	tests.add("Should layout flex elements"s, should_layout_flex_elements);
+
+	//
+	// Item tile geometry
+	//
+	tests.add("Should limit comparison to like pairs"s, should_limit_comparison_to_like_pairs);
+	tests.add("Should shape the tile by what it draws"s, should_shape_the_tile_by_what_it_draws);
+	tests.add("Should not justify a tile shaped by a thumbnail"s, should_not_justify_a_tile_shaped_by_a_thumbnail);
+	tests.add("Should keep tile aspect when laying out a row"s, should_keep_tile_aspect_when_laying_out_a_row);
 }

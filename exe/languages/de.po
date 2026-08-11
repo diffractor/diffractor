@@ -2355,10 +2355,10 @@ msgid "Rendering RAW photo..."
 msgstr "Rendering des RAW-Fotos ..."
 
 msgid "Show RAW preview if available (faster)"
-msgstr "RAW-Preview zeigen, falls verfügbar (schneller)"
+msgstr "RAW-Vorschau zeigen, falls verfügbar (schneller)"
 
 msgid "Showing a RAW photo preview."
-msgstr "Anzeigen einer RAW-Foto-Preview."
+msgstr "Anzeigen einer RAW-Foto-Vorschau."
 
 msgid "Processing..."
 msgstr "Verarbeitung ..."
@@ -3151,8 +3151,8 @@ msgstr[1] "{count} Items hier"
 
 msgid "Set rating to 1 star"
 msgid_plural "Set rating to {count} stars"
-msgstr[0] "Bewertung auf 1 Stern setzen"
-msgstr[1] "Bewertung auf {count} Sterne setzen"
+msgstr[0] "Rating auf 1 Stern setzen"
+msgstr[1] "Rating auf {count} Sterne setzen"
 
 msgid "Cannot process {first-name}."
 msgid_plural "Cannot process {first-name} and {other} other items."
@@ -3370,7 +3370,7 @@ msgid "Keep running"
 msgstr "Weiterlaufen lassen"
 
 msgid "Location unavailable"
-msgstr "Ort nicht verfügbar"
+msgstr "Standort nicht verfügbar"
 
 msgid "{} could not be opened. It may be disconnected, renamed or removed."
 msgstr "{} konnte nicht geöffnet werden. Möglicherweise ist es getrennt, umbenannt oder entfernt worden."
@@ -3472,7 +3472,7 @@ msgid "Search all places named {}"
 msgstr "Alle Orte namens {} suchen"
 
 msgid "Show items with no location"
-msgstr "Items ohne Ort zeigen"
+msgstr "Items ohne Standort zeigen"
 
 msgid "Search within {} of {}"
 msgstr "Im Umkreis von {} um {} suchen"

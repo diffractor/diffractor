@@ -1101,6 +1101,15 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					info.crc32c = old_first->crc32c.load();
 					info.phash = old_first->phash.load();
 
+					if (old_first->file_modified != df::date_t(file_first->attributes.modified) ||
+						old_first->size.to_int64() != static_cast<int64_t>(file_first->attributes.size))
+					{
+						// The bytes changed, so a hash of the previous bytes is no longer a description of
+						// this file. Clearing it is what asks the displayed-item worker to compute it again;
+						// carrying it forward would report an edited file and an untouched copy as identical.
+						info.crc32c = 0;
+					}
+
 					const auto was_offline = old_first->flags && df::index_item_flags::is_offline;
 					populate_file_info(info, *file_first, _cache_items_loaded);
 					const auto now_offline = info.flags && df::index_item_flags::is_offline;
@@ -2620,7 +2629,14 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		metadata->file_name = file_path.name();
 		found_file->metadata_scanned = now;
 		found_file->metadata.store(metadata);
-		found_file->crc32c = sr.crc32c;
+
+		// Same guard as the database write above: scan_file only computes a CRC when it read the whole
+		// file, so an ordinary thumbnail scan of a video answers zero. Storing that would clear a value
+		// the database still holds and silently drop the item out of duplicate detection.
+		if (sr.crc32c)
+		{
+			found_file->crc32c = sr.crc32c;
+		}
 
 		// search_presence is a hard rejection filter, so it must be refreshed with every
 		// published metadata snapshot or a newly matching item stays invisible to search

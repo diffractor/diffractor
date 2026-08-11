@@ -337,6 +337,8 @@ Surfaces distinguish Loading, Searching, Empty Folder, No Results, Filtered Resu
 
 Long work shows operation, current item, completed and total counts, and Cancel. Results and actionable errors remain afterward. Indexing progressively improves results while browsing remains usable and discloses when results may be incomplete.
 
+A task view that lists what a run will do keeps the row it is working on visible while it runs. Visible means clear of the chrome painted over the list — the column headers above it and the status band below it — with a line of text of margin, not merely inside the scrolling area.
+
 Visible state converges automatically after its source changes. Results, filters, groups, selection, focus, command availability, address, sidebar summaries, presence, previews, layout, and paint must not remain stale until unrelated navigation or input. Progressive background results apply only to the scope and generation that requested them; superseded work must not overwrite newer state.
 
 Changes refresh the smallest sufficient surface while preserving every dependent invariant. Paint-only changes must not restart searches or scans, while data changes must refresh all affected derived state before it is presented as current. The implementation-level invalidation contract is defined in [implementation.md](implementation.md#view-invalidation).

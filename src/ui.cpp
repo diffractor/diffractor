@@ -25,6 +25,8 @@
 
 std::unordered_map<void*, std::function<bool()>> ui::animations;
 bool ui::animations_enabled = true;
+// Matches alpha_fade_rate at 60Hz until the first frame recomputes it.
+float ui::animation_step_factor = 0.333f;
 
 std::vector<recti> ui::layout_collage(const recti draw_bounds, const std::vector<sizei>& dimensions)
 {

@@ -71,7 +71,7 @@ msgid "Add folder"
 msgstr "Aggiungi cartella"
 
 msgid "Capture metadata and the Windows file created time will be shifted to start at a new local date and time."
-msgstr "I metadati di acquisizione e l’ora di creazione del file di Windows verranno spostati in modo da iniziare da una nuova data e ora locali."
+msgstr "I metadati di acquisizione e l'ora di creazione del file di Windows verranno spostati in modo da iniziare da una nuova data e ora locali."
 
 msgid "Time gaps between dated items are preserved. Items without a known date receive the new starting date."
 msgstr "Gli intervalli di tempo tra gli elementi datati vengono mantenuti. Agli elementi senza una data nota viene assegnata la nuova data iniziale."
@@ -426,7 +426,7 @@ msgid "Add location"
 msgstr "Aggiungi posizione"
 
 msgid "Maximize"
-msgstr "Ingrandisci"
+msgstr "Massimizza"
 
 msgid "Group or Sort"
 msgstr "Raggruppa o Ordina"
@@ -2030,7 +2030,7 @@ msgid "Location"
 msgstr "Posizione"
 
 msgid "Maximize image"
-msgstr "Ingrandisci immagine"
+msgstr "Massimizza immagine"
 
 msgid "Media"
 msgstr "Media"
@@ -3284,7 +3284,7 @@ msgid "&Stage files"
 msgstr "&Prepara i file"
 
 msgid "Email draft was canceled."
-msgstr "La bozza dell’e-mail è stata annullata."
+msgstr "La bozza dell'e-mail è stata annullata."
 
 msgid "Maximum dimension must be at least 1 pixel."
 msgstr "La dimensione massima deve essere di almeno 1 pixel."
@@ -3294,8 +3294,8 @@ msgstr "Seleziona almeno un campo di metadati da aggiornare. I campi vuoti selez
 
 msgid "{first-name} was canceled."
 msgid_plural "{count} items were canceled."
-msgstr[0] "L’operazione per {first-name} è stata annullata."
-msgstr[1] "L’operazione per {count} elementi è stata annullata."
+msgstr[0] "L'operazione per {first-name} è stata annullata."
+msgstr[1] "L'operazione per {count} elementi è stata annullata."
 
 msgid "{first-name} will be staged for disc burning."
 msgid_plural "{count} selected items ({size}) will be staged for disc burning."
@@ -3481,7 +3481,7 @@ msgid "High altitude"
 msgstr "Alta quota"
 
 msgid "Timeline"
-msgstr "Cronologia"
+msgstr "Linea temporale"
 
 msgid "Places"
 msgstr "Luoghi"

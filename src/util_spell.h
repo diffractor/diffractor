@@ -19,7 +19,15 @@ class spell_check
 
 	_Guarded_by_(_rw) std::unique_ptr<Hunspell> _hunspell;
 	df::file_path _custom_dic_path;
-	df::folder_path _dictionaries_folder;
+
+	// Dictionaries ship beside the executable, but that folder is read-only in a Store install and
+	// in any per-machine install, so reads come from either folder and every write goes to the
+	// per-user one.
+	df::folder_path _shipped_folder;
+	df::folder_path _user_folder;
+
+	df::file_path find_dictionary(std::string_view name, std::string_view ext) const;
+	bool ensure_user_folder() const;
 
 public:
 	spell_check();
@@ -34,6 +42,10 @@ public:
 	bool is_word_valid(std::string_view word) const;
 	std::vector<std::string> suggest(std::string_view word) const;
 	void add_word(std::string_view word) const;
+
+	// The file "Add to dictionary" appends to. Exposed so a test can prove it is somewhere the user
+	// can write, without writing there.
+	df::file_path custom_dictionary_path() const { return _custom_dic_path; }
 };
 
 // Its constructor resolves known folders, probes the file system and may create the dictionaries

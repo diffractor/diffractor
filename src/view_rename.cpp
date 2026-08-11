@@ -74,7 +74,7 @@ void rename_view::run()
 	                                                           {
 		                                                           if (view->is_processing_generation(
 			                                                           processing_generation)) view->
-			                                                           processing_exact_order_item(index, 1);
+				                                                           processing_work_item(index);
 	                                                           },
 	                                                           [view, processing_generation, detach](
 	                                                           std::string message,
@@ -166,6 +166,10 @@ void rename_view::run()
 
 void rename_view::refresh()
 {
+	// The worker reports against the reviewed rows, so re-analysing under it would repoint the run
+	// at a different set of names.
+	if (progress().active) return;
+
 	const auto& items = _state.selected_items();
 	const auto sources = snapshot_rename_sources(items);
 	const auto name_template = setting.rename.name_template;
@@ -203,6 +207,7 @@ void rename_view::refresh()
 				                   row->_text_color[2] = rename.valid ? rename_text_color : error_text_color;
 				                   if (rename.valid && !rename.noop) row->_icons[1] = icon_index::next;
 				                   row->_order = count++;
+				                   row->_work_index = row->_order;
 				                   rows.emplace_back(std::move(row));
 			                   }
 

@@ -89,10 +89,10 @@ msgid "Analyzing..."
 msgstr "Analisando..."
 
 msgid "archive"
-msgstr "arquivo"
+msgstr "arquivo compactado"
 
 msgid "archives"
-msgstr "arquivos"
+msgstr "arquivos compactados"
 
 msgid "audio"
 msgstr "áudio"
@@ -381,7 +381,7 @@ msgid "Group by Collection presence"
 msgstr "Agrupar por presença na coleção"
 
 msgid "Group by Rating/Label"
-msgstr "Agrupar por classificação/rótulo"
+msgstr "Agrupar por avaliação/rótulo"
 
 msgid "Show items in random order"
 msgstr "Mostrar itens em ordem aleatória"
@@ -1722,7 +1722,7 @@ msgid "No resolution"
 msgstr "Sem resolução"
 
 msgid "No rating"
-msgstr "Sem classificação"
+msgstr "Sem avaliação"
 
 msgid "No value"
 msgstr "Sem valor"
@@ -2539,7 +2539,7 @@ msgid "Synopsis"
 msgstr "Sinopse"
 
 msgid "Tag"
-msgstr "Marcação"
+msgstr "Tag"
 
 msgid "Title"
 msgstr "Título"
@@ -2593,7 +2593,7 @@ msgid "Number keys 0-5"
 msgstr "Teclas numéricas 0-5"
 
 msgid "Click {} to remove rating"
-msgstr "Clique em {} para remover a classificação"
+msgstr "Clique em {} para remover a avaliação"
 
 msgid "Raw"
 msgstr "RAW"
@@ -2746,7 +2746,7 @@ msgid "Resolution"
 msgstr "Resolução"
 
 msgid "Rating-Label"
-msgstr "Etiqueta de classificação"
+msgstr "Avaliação-Rótulo"
 
 msgid "Staring"
 msgstr "Elenco"
@@ -2884,10 +2884,10 @@ msgid "Common Tags"
 msgstr "Tags comuns"
 
 msgid "Removable Tags"
-msgstr "Etiquetas removíveis"
+msgstr "Tags removíveis"
 
 msgid "Tags"
-msgstr "Etiquetas"
+msgstr "Tags"
 
 msgid "false"
 msgstr "falso"

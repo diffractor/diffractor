@@ -104,7 +104,6 @@ protected:
 
 	bool _rows_clickable = false;
 	progress_state _progress;
-	int _active_row = -1;
 	bool _showing_results = false;
 	size_t _processing_generation = 0;
 	std::shared_ptr<std::atomic_int> _processing_cancel;
@@ -120,6 +119,20 @@ protected:
 	bool _header_tracking = false;
 	int _header_active_num = 0;
 
+	// The column headers are painted over the top of the scroller and the status band over its base,
+	// so the rows they cover are inside the scroller but not visible. Text metrics are only available
+	// during layout, so the band height is held here for the scroll that has to clear them.
+	int _band_height = 0;
+	int _band_margin = 0;
+
+	// Mirrors view_frame::draw_view_status: an indeterminate run draws a centred pill rather than the
+	// band across the base of the view. Asked at the moment it matters, because a run raises the status
+	// without resizing the view, so a layout need not have followed it.
+	bool shows_status_band()
+	{
+		return !status().empty() && !(_progress.active && _progress.total == 0);
+	}
+
 	friend class scroll_controller;
 	friend class clickable_controller;
 	friend class header_controller;
@@ -133,6 +146,11 @@ public:
 		ui::color _bg_row;
 		ui::color32 _text_color[max_col_count] = {0, 0, 0, 0};
 		int _order = 0;
+		// This row's index into whatever vector the run reports against - the plan for the batch views,
+		// the dense work list for the others - or -1 when the run never reports this row at all. The
+		// header sort reorders _rows while the run stays in plan order, so display position is not an
+		// identity and nothing may index the run by it.
+		int _work_index = -1;
 
 		row_element(list_view& view) noexcept
 			: view_element(view_element_style::can_invoke), _view(view)
@@ -193,6 +211,11 @@ public:
 	using row_element_ptr = std::shared_ptr<row_element>;
 	std::vector<row_element_ptr> _rows;
 
+	// The row currently being processed, held rather than indexed: sort() reorders _rows and a
+	// refresh replaces them, either of which would leave a stored position pointing at another row
+	// and strand the highlight on the one it left behind.
+	row_element_ptr _active_row;
+
 
 	list_view(view_state& state, view_host_ptr host) : _state(state), _host(std::move(host))
 	{
@@ -213,7 +236,7 @@ public:
 		++_processing_generation;
 		_processing_cancel = std::make_shared<std::atomic_int>();
 		_progress = {true, 0, static_cast<int64_t>(total)};
-		_active_row = -1;
+		_active_row.reset();
 		_showing_results = false;
 		_state.invalidate_view(view_invalid::view_redraw | view_invalid::status | view_invalid::command_state |
 			view_invalid::app_layout);
@@ -227,77 +250,81 @@ public:
 	{
 		if (!_progress.active || row_index >= _rows.size()) return;
 
-		if (_active_row >= 0 && _active_row < static_cast<int>(_rows.size()))
-		{
-			_rows[_active_row]->_bg_color = {};
-		}
+		if (_active_row) _active_row->_bg_color = {};
 
-		_active_row = static_cast<int>(row_index);
+		const auto& row = _rows[row_index];
+		_active_row = row;
 		_progress.position = static_cast<int64_t>(work_position);
-		const auto& row = _rows[_active_row];
 		row->_bg_color = ui::color(ui::style::color::important_background, 1.0f);
 
-		const auto visible_top = _scroller.scroll_offset().y;
-		const auto visible_bottom = visible_top + _scroller.client_bounds().height();
+		const auto client_height = _scroller.client_bounds().height();
+		auto reserve_top = _band_height + _band_margin;
+		auto reserve_bottom = shows_status_band() ? _band_height + _band_margin : 0;
+
+		// A view too short to hold the row and both reserves has no range left to place it in, so it
+		// falls back to the whole client rather than refusing to move.
+		if (reserve_top + reserve_bottom + row->bounds.height() > client_height)
+		{
+			reserve_top = 0;
+			reserve_bottom = 0;
+		}
+
+		const auto visible_top = _scroller.scroll_offset().y + reserve_top;
+		const auto visible_bottom = _scroller.scroll_offset().y + client_height - reserve_bottom;
+
 		if (row->bounds.top < visible_top)
 		{
-			_scroller.scroll_offset(_host, 0, row->bounds.top);
+			_scroller.scroll_offset(_host, 0, row->bounds.top - reserve_top);
 		}
 		else if (row->bounds.bottom > visible_bottom)
 		{
-			_scroller.scroll_offset(_host, 0, row->bounds.bottom - _scroller.client_bounds().height());
+			_scroller.scroll_offset(_host, 0, row->bounds.bottom + reserve_bottom - client_height);
 		}
 
 		_state.invalidate_view(view_invalid::view_redraw | view_invalid::status);
 	}
 
-	void processing_item(const size_t row_index)
+	// Resolving a work index against the rows rather than indexing them: the header sort is offered
+	// throughout the review, so by the time the run reports progress the display order and the plan
+	// order need not agree. Takes a projection so the rows are scanned in place.
+	template <typename work_index_at>
+	static int row_for_work_index(const size_t row_count, const size_t work_index, work_index_at&& at)
 	{
-		processing_item(row_index, row_index + 1);
+		if (work_index > static_cast<size_t>(std::numeric_limits<int>::max())) return -1;
+		const auto wanted = static_cast<int>(work_index);
+
+		// Every view builds its rows in work order, so until the user sorts, the row is where the
+		// index says. Without this the batch views scan the whole list once per item, and they queue
+		// a progress callback per item rather than coalescing - quadratic on a large selection.
+		if (work_index < row_count && at(work_index) == wanted) return static_cast<int>(work_index);
+
+		for (size_t row_index = 0; row_index < row_count; ++row_index)
+		{
+			if (at(row_index) == wanted) return static_cast<int>(row_index);
+		}
+
+		return -1;
 	}
 
-	void processing_order_item(const size_t work_index, const int ignored_order)
+	void processing_work_item(const size_t work_index, const size_t work_position)
 	{
-		size_t current = 0;
-		for (size_t row_index = 0; row_index < _rows.size(); ++row_index)
-		{
-			if (_rows[row_index]->_order != ignored_order)
-			{
-				if (current == work_index)
-				{
-					processing_item(row_index, work_index + 1);
-					return;
-				}
-				++current;
-			}
-		}
+		const auto row_index = row_for_work_index(_rows.size(), work_index,
+		                                          [this](const size_t i) { return _rows[i]->_work_index; });
+		if (row_index < 0) return;
+
+		processing_item(static_cast<size_t>(row_index), work_position);
 	}
 
-	void processing_exact_order_item(const size_t work_index, const int active_order)
+	void processing_work_item(const size_t work_index)
 	{
-		size_t current = 0;
-		for (size_t row_index = 0; row_index < _rows.size(); ++row_index)
-		{
-			if (_rows[row_index]->_order == active_order)
-			{
-				if (current == work_index)
-				{
-					processing_item(row_index, work_index + 1);
-					return;
-				}
-				++current;
-			}
-		}
+		processing_work_item(work_index, work_index + 1);
 	}
 
 	void end_processing()
 	{
-		if (_active_row >= 0 && _active_row < static_cast<int>(_rows.size()))
-		{
-			_rows[_active_row]->_bg_color = {};
-		}
+		if (_active_row) _active_row->_bg_color = {};
 
-		_active_row = -1;
+		_active_row.reset();
 		_progress = {};
 		_state.invalidate_view(view_invalid::view_redraw | view_invalid::status | view_invalid::command_state |
 			view_invalid::app_layout);
@@ -470,6 +497,10 @@ public:
 		const recti scroll_bounds{_extent.cx - mc.scroll_width, 0, _extent.cx, _extent.cy};
 		const recti client_bounds{0, 0, std::max(0, _extent.cx - mc.scroll_width), _extent.cy};
 
+		const auto line_height = mc.text_line_height(ui::style::font_face::dialog);
+		_band_margin = line_height;
+		_band_height = line_height + mc.padding2 * 2;
+
 		auto y_max = 0;
 		std::string_view longest_text[max_col_count];
 		bool has_icon[max_col_count] = {};
@@ -502,11 +533,10 @@ public:
 				odd_row = !odd_row;
 			}
 
+			// The last row has to be able to clear the status band and the margin held below it, so the
+			// scrollable height carries both rather than ending at the final row.
 			y_max = y + mc.padding2;
-			if (!status().empty() && !(_progress.active && _progress.total == 0))
-			{
-				y_max += mc.text_line_height(ui::style::font_face::dialog) + mc.padding2 * 2;
-			}
+			if (shows_status_band()) y_max += _band_height + _band_margin;
 		}
 
 		auto x_max = 0;

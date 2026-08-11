@@ -854,10 +854,24 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 		else
 		{
 			const auto path_xmp = probe_xmp_path(src_path, src_xmp_name);
+			const auto attributes = platform::file_attributes(path_xmp);
 
-			if (path_xmp.exists())
+			// Only not_found proves there is no sidecar. Denied, offline, or an unreachable share all
+			// answer unknown, and treating those as "no sidecar" is the data loss this guard exists to
+			// stop, moved one step earlier.
+			if (!attributes.confirmed_missing())
 			{
 				auto f = blob_from_file(path_xmp);
+
+				// Same rule as the embedded branch: a sidecar that cannot be read is unknown, not empty.
+				// Applying the edits to a default packet and swapping it over the file would write away
+				// every property the sidecar already holds. An empty read is only believable when the file
+				// is known to be zero length - and that has to be known, not merely reported by an
+				// attribute query that may itself have failed.
+				if (f.empty() && !(attributes.exists() && attributes.size == 0))
+				{
+					throw app_exception("the existing metadata could not be read");
+				}
 
 				if (!f.empty())
 				{

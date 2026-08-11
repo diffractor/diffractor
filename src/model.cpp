@@ -3815,8 +3815,6 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 			const auto is_photo = display_type && display_type->has_trait(file_traits::bitmap);
 			const auto is_av = display_type && display_type->has_trait(file_traits::av);
 
-			// A slideshow that has landed on something that can neither play nor time out would
-			// stall forever, so it ends instead.
 			if (is_slideshow && !is_photo && !is_av)
 			{
 				stop();
@@ -3858,55 +3856,57 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 				if (is_media_end || is_photo_end)
 				{
 					const auto mode_can_play = view_mode() == view_type::items || view_mode() == view_type::media;
-					const auto can_next = df::command_active == 0 && display_item && mode_can_play &&
-						has_display_items();
-					auto can_continue = false;
 
-					if (can_next && setting.repeat == repeat_mode::repeat_one)
+					playback_tick t;
+					t.is_slideshow = is_slideshow;
+					t.is_photo = is_photo;
+					t.is_av = is_av;
+					t.media_ended = is_media_end;
+					t.photo_delay_elapsed = is_photo_end;
+					t.can_next = df::command_active == 0 && display_item && mode_can_play && has_display_items();
+					t.repeat = setting.repeat;
+					t.auto_advance = setting.auto_advance;
+
+					df::item_element_ptr next;
+
+					if (t.can_next && t.repeat != repeat_mode::repeat_one && (is_slideshow || setting.auto_advance))
 					{
-						// Hold on this item. Photos simply restart their delay.
-						can_continue = true;
+						next = next_media_item(true, false);
+						t.has_next = next != nullptr;
+						t.next_is_current = next == display_item;
 
+						if (!next && t.repeat == repeat_mode::repeat_all)
+						{
+							next = next_media_item(true, true);
+							t.has_wrapped_next = next != nullptr;
+							t.wrapped_is_current = next == display_item;
+						}
+					}
+
+					switch (calc_playback_advance(t))
+					{
+					case playback_advance::hold:
+						// Wrapping onto the only displayed item. select() is a no-op for the item
+						// already displayed, which would leave the player paused at the first frame
+						// and _play_next_on_open armed, so restart in place instead.
 						if (is_media_end && d->_session)
 						{
 							_player->play(d->_session);
 						}
-					}
-					else if (can_next && (is_slideshow || setting.auto_advance))
-					{
-						auto next = next_media_item(true, false);
+						break;
 
-						if (!next && setting.repeat == repeat_mode::repeat_all)
-						{
-							next = next_media_item(true, true);
-						}
+					case playback_advance::advance:
+						_play_next_on_open = true;
+						select(view, next, false, false, true);
+						break;
 
-						if (next == display_item)
-						{
-							// Wrapping onto the only displayed item. select() is a no-op for the item
-							// already displayed, which would leave the player paused at the first frame
-							// and _play_next_on_open armed, so restart in place instead.
-							can_continue = true;
-
-							if (is_media_end && d->_session)
-							{
-								_player->play(d->_session);
-							}
-						}
-						else if (next)
-						{
-							_play_next_on_open = true;
-							select(view, next, false, false, true);
-							can_continue = true;
-						}
+					case playback_advance::stop:
+					case playback_advance::none:
+						stop();
+						break;
 					}
 
 					d->_next_photo_tick = 0;
-
-					if (!can_continue)
-					{
-						stop();
-					}
 				}
 
 				d->update_scrubber();

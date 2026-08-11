@@ -1130,12 +1130,18 @@ public:
 
 		_display_valid = false; // new frame - drop the display-scaled cache
 
+		// The first frame must report tex_created like the two overloads above: tex_updated maps to a
+		// redraw, which replays the scene recorded before this texture existed, so the video would never
+		// be drawn at all.
+		const auto was_empty = _surface->empty();
+
 		if (_scaler->scale_surface(frame, _surface))
 		{
+			const auto created = was_empty || _dimensions != _surface->dimensions();
 			_dimensions = _surface->dimensions();
 			_format = _surface->format();
 			_orientation = _surface->orientation();
-			return ui::texture_update_result::tex_updated;
+			return created ? ui::texture_update_result::tex_created : ui::texture_update_result::tex_updated;
 		}
 
 		return ui::texture_update_result::failed;

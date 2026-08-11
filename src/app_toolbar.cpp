@@ -208,8 +208,8 @@ void app_frame::create_toolbars()
 // locations.md 7.1, baseline defect 5: this button now reads only what the grouping and sorting
 // are, because that is the menu it opens. The totals moved to their own affordance next to it,
 // which has no menu, so a user reaching for the count is no longer offered a grouping menu.
-static std::string format_items_summary(const group_by grouping, const sort_by order,
-                                        const df::file_group_histogram& summary, const bool is_init_complete)
+std::string format_items_summary(const group_by grouping, const sort_by order,
+                                 const df::file_group_histogram& summary, const bool is_init_complete)
 {
 	std::string_view group_text;
 	std::string_view sort_text;
@@ -390,7 +390,8 @@ void app_frame::update_button_state(const bool resize)
 	// Not cached: the update snooze is measured in days, so a session left open overnight has to
 	// see the new day arrive.
 	const auto now_days = platform::now().to_days();
-	const auto has_burner = platform::has_burner();
+	if (!_has_burner) _has_burner = platform::has_burner();
+	const auto has_burner = *_has_burner;
 
 	const auto view_mode = _state.view_mode();
 	const auto view_processing = _view && _view->progress().active;
@@ -753,6 +754,13 @@ void app_frame::update_button_state(const bool resize)
 		                                                 ? _view_batch->run_blocked_reason()
 		                                                 : std::string{};
 
+	// Tags refuses a run over its own results for the same reason, and has no Refresh button, so the
+	// reason is the only thing pointing at the edit that puts the view back into review.
+	_commands[commands::tags_run]->disabled_reason = view_mode == view_type::tags && _view_tags && !
+	                                                 view_processing && _view_tags->showing_results()
+		                                                 ? std::string(tt.run_needs_refresh.sv())
+		                                                 : std::string{};
+
 
 	_commands[commands::playback_auto_play]->checked = setting.auto_play;
 	_commands[commands::playback_auto_advance]->checked = setting.auto_advance;
@@ -863,6 +871,110 @@ recti app_frame::calc_search_popup_bounds() const
 	return {edit_bounds.left + 8, edit_bounds.bottom, edit_bounds.right - 8, edit_bounds.bottom + height};
 }
 
+
+// The `keys::` values are runtime globals filled in by the platform layer, so this is a function
+// rather than a constant table.
+std::vector<command_accelerator> default_keyboard_accelerators()
+{
+	constexpr auto control = keyboard_accelerator_t::control;
+	constexpr auto shift = keyboard_accelerator_t::shift;
+	constexpr auto alt = keyboard_accelerator_t::alt;
+
+	return {
+		{commands::rate_none, {'0'}},
+		{commands::rate_1, {'1'}},
+		{commands::rate_2, {'2'}},
+		{commands::rate_3, {'3'}},
+		{commands::rate_4, {'4'}},
+		{commands::rate_5, {'5'}},
+		{commands::rate_rejected, {keys::DEL, alt}},
+		{commands::label_select, {'6'}},
+		{commands::label_second, {'7'}},
+		{commands::label_approved, {'8'}},
+		{commands::label_review, {'9'}},
+
+		{commands::pin_item, {'A'}},
+		{commands::select_all, {'A', control}},
+		{commands::tool_edit_metadata, {'E', control}},
+		{commands::tool_copy_to_folder, {'C', shift | control}},
+		{commands::edit_copy, {'C', control}},
+		{commands::select_invert, {'D', control}},
+		{commands::tool_adjust_date, {'D', shift | control}},
+		{commands::tool_edit, {'E'}},
+		{commands::tool_eject, {'E', shift | control}},
+		{commands::browse_search, {'F', control}},
+		{commands::option_toggle_details, {'K'}},
+		{commands::tool_locate, {'L'}},
+		{commands::repeat_toggle, {'L', control}},
+		{commands::rate_rejected, {'M'}},
+		{commands::tool_new_folder, {'N', control}},
+		{commands::view_items, {'N', shift | control}},
+		{commands::browse_open_containingfolder, {'O', shift | control}},
+		{commands::label_to_do, {'P'}},
+		{commands::search_related, {'R'}},
+		{commands::tool_tag, {'T'}},
+		{commands::tool_save_current_video_frame, {'S', control}},
+		{commands::select_nothing, {'U', control}},
+		{commands::edit_paste, {'V', control}},
+		{commands::edit_cut, {'X', control}},
+		{commands::tool_move_to_folder, {'X', shift | control}},
+		{commands::browse_back, {keys::BACK}},
+		{commands::tool_delete, {keys::DEL}},
+		{commands::edit_cut, {keys::DEL, shift}},
+		{commands::group_toggle, {keys::DOWN, alt}},
+		{commands::group_file_type, {'K', control}},
+		{commands::group_created, {'K', control | shift}},
+
+		{commands::view_help, {keys::F1}},
+		{commands::keyboard, {keys::F1, control}},
+		{commands::tool_rename, {keys::F2}},
+		{commands::browse_search, {keys::F3}},
+		{commands::browse_search, {keys::BROWSER_SEARCH}},
+		{commands::filter_items, {keys::F3, control}},
+		{commands::view_show_sidebar, {keys::F4}},
+		{commands::view_show_sidebar, {keys::BROWSER_FAVORITES}},
+		{commands::refresh, {keys::F5}},
+		{commands::options_general, {keys::F6}},
+		{commands::options_sidebar, {keys::F6, shift | control}},
+		{commands::options_collection, {keys::F6, control}},
+		{commands::playback_auto_play, {keys::F7, control}},
+		{commands::playback_volume_toggle, {keys::F7}},
+		{commands::tool_convert, {keys::F8}},
+		{commands::tool_import, {keys::F9}},
+		{commands::browse_recursive, {keys::F9, control}},
+		{commands::tool_sync, {keys::F9, shift | control}},
+		{commands::tool_email, {keys::F10}},
+		{commands::option_scale_up, {keys::F11, shift | control}},
+		{commands::view_fullscreen, {keys::F11}},
+		{commands::view_fullscreen, {keys::SPACE, shift | control}},
+		{commands::edit_copy, {keys::INSERT, control}},
+		{commands::edit_paste, {keys::INSERT, shift}},
+		{commands::browse_back, {keys::LEFT, alt}},
+		{commands::browse_previous_folder, {keys::LEFT, alt | control}},
+		{commands::browse_previous_item_extend, {keys::LEFT, control}},
+		{commands::tool_rotate_anticlockwise, {keys::OEM_4}},
+		{commands::tool_rotate_clockwise, {keys::OEM_6}},
+		{commands::tool_file_properties, {keys::RETURN, shift | control}},
+		{commands::browse_open_in_file_browser, {keys::RETURN, shift}},
+		{commands::tool_open_with, {keys::RETURN, control}},
+		{commands::view_zoom, {keys::SPACE, control}},
+		{commands::view_zoom_pane_flip, {keys::TAB}},
+		{commands::play, {keys::SPACE}},
+		{commands::slideshow, {keys::SPACE, shift}},
+		{commands::browse_forward, {keys::RIGHT, alt}},
+		{commands::browse_next_folder, {keys::RIGHT, alt | control}},
+		{commands::browse_next_item_extend, {keys::RIGHT, control}},
+		{commands::browse_parent, {keys::UP, alt}},
+		{commands::browse_previous_group, {keys::PRIOR}},
+		{commands::browse_next_group, {keys::NEXT}},
+
+		// Only reachable while the edit view is open, which is why these repeat Alt+Left/Alt+Right.
+		{commands::edit_item_save_and_prev, {keys::LEFT, alt}},
+		{commands::edit_item_save_and_next, {keys::RIGHT, alt}},
+		{commands::edit_item_save, {keys::RETURN, alt}},
+		{commands::view_close, {keys::ESCAPE}},
+	};
+}
 
 void app_frame::update_command_text()
 {
@@ -1106,101 +1218,10 @@ void app_frame::update_command_text()
 	def_command(commands::import_run, command_group::none, icon_index::play, tt.command_import);
 	def_command(commands::locate_run, command_group::none, icon_index::play, tt.command_locate);
 
-	constexpr auto control = keyboard_accelerator_t::control;
-	constexpr auto shift = keyboard_accelerator_t::shift;
-	constexpr auto alt = keyboard_accelerator_t::alt;
-
-	_commands[commands::rate_none]->kba.emplace_back('0');
-	_commands[commands::rate_1]->kba.emplace_back('1');
-	_commands[commands::rate_2]->kba.emplace_back('2');
-	_commands[commands::rate_3]->kba.emplace_back('3');
-	_commands[commands::rate_4]->kba.emplace_back('4');
-	_commands[commands::rate_5]->kba.emplace_back('5');
-	_commands[commands::rate_rejected]->kba.emplace_back(keys::DEL, alt);
-	_commands[commands::label_select]->kba.emplace_back('6');
-	_commands[commands::label_second]->kba.emplace_back('7');
-	_commands[commands::label_approved]->kba.emplace_back('8');
-	_commands[commands::label_review]->kba.emplace_back('9');
-
-	_commands[commands::pin_item]->kba.emplace_back('A');
-	_commands[commands::select_all]->kba.emplace_back('A', control);
-	_commands[commands::tool_edit_metadata]->kba.emplace_back('E', control);
-	_commands[commands::tool_copy_to_folder]->kba.emplace_back('C', shift | control);
-	_commands[commands::edit_copy]->kba.emplace_back('C', control);
-	_commands[commands::select_invert]->kba.emplace_back('D', control);
-	_commands[commands::tool_adjust_date]->kba.emplace_back('D', shift | control);
-	_commands[commands::tool_edit]->kba.emplace_back('E');
-	_commands[commands::tool_eject]->kba.emplace_back('E', shift | control);
-	_commands[commands::browse_search]->kba.emplace_back('F', control);
-	_commands[commands::option_toggle_details]->kba.emplace_back('K');
-	_commands[commands::tool_locate]->kba.emplace_back('L');
-	_commands[commands::repeat_toggle]->kba.emplace_back('L', control);
-	_commands[commands::rate_rejected]->kba.emplace_back('M');
-	_commands[commands::tool_new_folder]->kba.emplace_back('N', control);
-	_commands[commands::view_items]->kba.emplace_back('N', shift | control);
-	_commands[commands::browse_open_containingfolder]->kba.emplace_back('O', shift | control);
-	_commands[commands::label_to_do]->kba.emplace_back('P');
-	_commands[commands::search_related]->kba.emplace_back('R');
-	_commands[commands::tool_tag]->kba.emplace_back('T');
-	_commands[commands::tool_save_current_video_frame]->kba.emplace_back('S', control);
-	_commands[commands::select_nothing]->kba.emplace_back('U', control);
-	_commands[commands::edit_paste]->kba.emplace_back('V', control);
-	_commands[commands::edit_cut]->kba.emplace_back('X', control);
-	_commands[commands::tool_move_to_folder]->kba.emplace_back('X', shift | control);
-	_commands[commands::browse_back]->kba.emplace_back(keys::BACK);
-	_commands[commands::tool_delete]->kba.emplace_back(keys::DEL);
-	_commands[commands::edit_cut]->kba.emplace_back(keys::DEL, shift);
-	_commands[commands::group_toggle]->kba.emplace_back(keys::DOWN, alt);
-	_commands[commands::group_file_type]->kba.emplace_back('K', control);
-	_commands[commands::group_created]->kba.emplace_back('K', control | shift);
-
-	_commands[commands::view_help]->kba.emplace_back(keys::F1);
-	_commands[commands::keyboard]->kba.emplace_back(keys::F1, control);
-	_commands[commands::tool_rename]->kba.emplace_back(keys::F2);
-	_commands[commands::browse_search]->kba.emplace_back(keys::F3);
-	_commands[commands::browse_search]->kba.emplace_back(keys::BROWSER_SEARCH);
-	_commands[commands::filter_items]->kba.emplace_back(keys::F3, control);
-	_commands[commands::view_show_sidebar]->kba.emplace_back(keys::F4);
-	_commands[commands::view_show_sidebar]->kba.emplace_back(keys::BROWSER_FAVORITES);
-	_commands[commands::refresh]->kba.emplace_back(keys::F5);
-	_commands[commands::options_general]->kba.emplace_back(keys::F6);
-	_commands[commands::options_sidebar]->kba.emplace_back(keys::F6, shift | control);
-	_commands[commands::options_collection]->kba.emplace_back(keys::F6, control);
-	_commands[commands::playback_auto_play]->kba.emplace_back(keys::F7, control);
-	_commands[commands::playback_volume_toggle]->kba.emplace_back(keys::F7);
-	_commands[commands::tool_convert]->kba.emplace_back(keys::F8);
-	_commands[commands::tool_import]->kba.emplace_back(keys::F9);
-	_commands[commands::browse_recursive]->kba.emplace_back(keys::F9, control);
-	_commands[commands::tool_sync]->kba.emplace_back(keys::F9, shift | control);
-	_commands[commands::tool_email]->kba.emplace_back(keys::F10);
-	_commands[commands::option_scale_up]->kba.emplace_back(keys::F11, shift | control);
-	_commands[commands::view_fullscreen]->kba.emplace_back(keys::F11);
-	_commands[commands::view_fullscreen]->kba.emplace_back(keys::SPACE, shift | control);
-	_commands[commands::edit_copy]->kba.emplace_back(keys::INSERT, control);
-	_commands[commands::edit_paste]->kba.emplace_back(keys::INSERT, shift);
-	_commands[commands::browse_back]->kba.emplace_back(keys::LEFT, alt);
-	_commands[commands::browse_previous_folder]->kba.emplace_back(keys::LEFT, alt | control);
-	_commands[commands::browse_previous_item_extend]->kba.emplace_back(keys::LEFT, control);
-	_commands[commands::tool_rotate_anticlockwise]->kba.emplace_back(keys::OEM_4);
-	_commands[commands::tool_rotate_clockwise]->kba.emplace_back(keys::OEM_6);
-	_commands[commands::tool_file_properties]->kba.emplace_back(keys::RETURN, shift | control);
-	_commands[commands::browse_open_in_file_browser]->kba.emplace_back(keys::RETURN, shift);
-	_commands[commands::tool_open_with]->kba.emplace_back(keys::RETURN, control);
-	_commands[commands::view_zoom]->kba.emplace_back(keys::SPACE, control);
-	_commands[commands::view_zoom_pane_flip]->kba.emplace_back(keys::TAB);
-	_commands[commands::play]->kba.emplace_back(keys::SPACE);
-	_commands[commands::slideshow]->kba.emplace_back(keys::SPACE, shift);
-	_commands[commands::browse_forward]->kba.emplace_back(keys::RIGHT, alt);
-	_commands[commands::browse_next_folder]->kba.emplace_back(keys::RIGHT, alt | control);
-	_commands[commands::browse_next_item_extend]->kba.emplace_back(keys::RIGHT, control);
-	_commands[commands::browse_parent]->kba.emplace_back(keys::UP, alt);
-	_commands[commands::browse_previous_group]->kba.emplace_back(keys::PRIOR);
-	_commands[commands::browse_next_group]->kba.emplace_back(keys::NEXT);
-
-	_commands[commands::edit_item_save_and_prev]->kba.emplace_back(keys::LEFT, alt);
-	_commands[commands::edit_item_save_and_next]->kba.emplace_back(keys::RIGHT, alt);
-	_commands[commands::edit_item_save]->kba.emplace_back(keys::RETURN, alt);
-	_commands[commands::view_close]->kba.emplace_back(keys::ESCAPE);
+	for (const auto& [id, key] : default_keyboard_accelerators())
+	{
+		_commands[id]->kba.emplace_back(key);
+	}
 
 	for (const auto& c : _commands)
 	{

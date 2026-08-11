@@ -304,7 +304,60 @@ namespace df
 		std::atomic_uint64_t paints = 0;
 		std::atomic_uint64_t paint_us = 0;
 		std::atomic_uint32_t paint_max_us = 0;
+		// on_render only: walking the view tree and issuing draw calls, with no GPU work in it. Paint
+		// time is this plus submit plus present, so measuring it directly says which of the three to
+		// attack rather than leaving it to subtraction.
+		std::atomic_uint64_t scene_build_us = 0;
+		std::atomic_uint32_t scene_build_max_us = 0;
 		std::atomic_uint64_t texture_uploads = 0;
+		// What asked for a frame. prepares is the display-frequency timer, invalidates is anything
+		// that dirtied a window and so will rebuild the scene, and redraws is the re-present path that
+		// replays the last scene instead. Paints far above prepares means frames are being driven by
+		// something other than the pacing.
+		std::atomic_uint64_t frame_prepares = 0;
+		std::atomic_uint64_t invalidates = 0;
+		std::atomic_uint64_t redraws = 0;
+		// Which source kept asking for the next frame. An idle app should leave all three at zero;
+		// anything else is an animation that never settles.
+		std::atomic_uint64_t prepares_registered_anim = 0;
+		std::atomic_uint64_t prepares_display_anim = 0;
+		std::atomic_uint64_t prepares_display_invalid = 0;
+		std::atomic_uint32_t animations_peak = 0;
+	};
+
+	// Direct3D frame cost, all bumped from the UI thread by the hardware backend. A user's log is
+	// the only place this is ever observable - a profiler cannot be attached to their machine - so
+	// it records what a frame cost, how well it batched, and what it had to build to draw it.
+	struct gpu_counters
+	{
+		std::atomic_uint64_t frames = 0; // draw_scene calls; a redraw replays a scene without a paint
+		std::atomic_uint64_t submit_us = 0;
+		std::atomic_uint32_t submit_max_us = 0;
+		std::atomic_uint64_t present_us = 0;
+		std::atomic_uint32_t present_max_us = 0;
+
+		// draws vs merged is the batching ratio: every merge is a draw call and a state block that
+		// building the scene managed to avoid.
+		std::atomic_uint64_t draws = 0;
+		std::atomic_uint64_t merged = 0;
+		std::atomic_uint32_t draws_peak = 0;
+		std::atomic_uint64_t geometry_bytes = 0;
+
+		std::atomic_uint64_t shader_binds = 0;
+		std::atomic_uint64_t view_binds = 0;
+		std::atomic_uint64_t sampler_binds = 0;
+		std::atomic_uint64_t cbuffer_uploads = 0;
+
+		// Driver object creation. These should flatten out early in a session; totals that keep pace
+		// with the frame count are the signature of something being rebuilt every frame.
+		std::atomic_uint64_t views_created = 0;
+		std::atomic_uint64_t targets_created = 0;
+		std::atomic_uint64_t textures_created = 0;
+		std::atomic_uint64_t buffers_created = 0;
+
+		// Gauge, sampled periodically: what the adapter reports this process is using locally.
+		std::atomic_uint32_t vram_mb = 0;
+		std::atomic_uint32_t vram_peak_mb = 0;
 	};
 
 	struct db_counters
@@ -428,6 +481,7 @@ namespace df
 
 	extern thumbnail_counters thumbnail_perf;
 	extern ui_counters ui_perf;
+	extern gpu_counters gpu_perf;
 	extern db_counters db_perf;
 	extern query_counters query_perf;
 	extern file_counters file_perf;
@@ -739,9 +793,11 @@ namespace df
 
 		cspan sub(const size_t pos) const
 		{
+			// Clamped: an over-long pos would otherwise wrap size and answer a span past the end.
+			const auto n = pos < size ? pos : size;
 			cspan result;
-			result.data = data + pos;
-			result.size = size - pos;
+			result.data = data + n;
+			result.size = size - n;
 			return result;
 		}
 
@@ -786,9 +842,11 @@ namespace df
 
 		span sub(const size_t pos) const
 		{
+			// Clamped: an over-long pos would otherwise wrap size and answer a span past the end.
+			const auto n = pos < size ? pos : size;
 			span result;
-			result.data = data + pos;
-			result.size = size - pos;
+			result.data = data + n;
+			result.size = size - n;
 			return result;
 		}
 

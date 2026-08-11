@@ -949,16 +949,9 @@ namespace platform
 			clear();
 		}
 
-		template <typename F>
-		void start(F&& f)
-		{
-			exclusive_lock lock_dec(_rw);
-			_threads.emplace_back(std::thread(f));
-		}
-
 		// Refuses to start once clear() has run. That refusal is what makes an on-demand start safe from
 		// any thread: the caller learns no worker will service its queue, rather than leaking a thread
-		// that outlives the objects it captured.
+		// that outlives the objects it captured. There is deliberately no unchecked form.
 		template <typename F>
 		bool start_if_running(F&& f)
 		{
@@ -1024,6 +1017,11 @@ namespace platform
 	uint32_t caret_blink_time();
 	uint32_t current_thread_id();
 	extern thread_event event_exit;
+
+	// Claimed while this launch has not yet reached the user, and released once it has. Answers false
+	// when another instance already holds it, which is a concurrent launch rather than a repeat of one.
+	bool claim_startup_scope();
+	void release_startup_scope();
 
 	// Append-only arena for the interned string records. One reservation of virtual address space is
 	// committed a block at a time, so every record keeps a stable offset from a base that never moves -

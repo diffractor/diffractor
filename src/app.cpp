@@ -51,7 +51,7 @@ command_line_t command_line;
 auto s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.1";
-const std::string_view g_app_build = "1272";
+const std::string_view g_app_build = "1273";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -706,6 +706,7 @@ app_frame::~app_frame()
 void app_frame::prepare_frame()
 {
 	df::assert_true(ui::is_ui_thread());
+	df::bump(df::ui_perf.frame_prepares);
 	const auto vf = _view_frame;
 
 	// _view is only assigned by view_changed, which init() reaches after the frame exists.
@@ -715,6 +716,15 @@ void app_frame::prepare_frame()
 		const auto display_frequency = platform::display_frequency();
 		const auto animation_delay_ms = 1000 / display_frequency;
 		constexpr auto idle_delay_ms = 1000 / ui::default_ticks_per_second;
+
+		// Clamped so a stall, a breakpoint, or a first frame cannot snap every fade to its target.
+		const auto prepare_us = df::now_us();
+		const auto elapsed_s = _last_prepare_us == 0
+			                       ? 1.0 / display_frequency
+			                       : std::clamp((prepare_us - _last_prepare_us) / 1'000'000.0, 1.0 / 240.0,
+			                                    1.0 / 15.0);
+		_last_prepare_us = prepare_us;
+		ui::animation_step_factor = static_cast<float>(1.0 - std::exp(-ui::alpha_fade_rate * elapsed_s));
 
 		std::vector<void*> removals;
 		auto is_animating = false;
@@ -737,12 +747,16 @@ void app_frame::prepare_frame()
 			ui::animations.erase(i);
 		}
 
+		df::record_peak(df::ui_perf.animations_peak, static_cast<uint32_t>(ui::animations.size()));
+		if (is_animating2) df::bump(df::ui_perf.prepares_registered_anim);
+
 		const auto display = _state.display_state();
 		auto frame_delay = idle_delay_ms;
 
 		if (display)
 		{
 			is_animating |= display->step();
+			if (is_animating) df::bump(df::ui_perf.prepares_display_anim);
 
 			// If a cloud-only item was hydrated by viewing it, rescan so its items-view
 			// thumbnail and index state refresh.
@@ -752,6 +766,7 @@ void app_frame::prepare_frame()
 
 			if (prepare_result == render_valid::invalid || is_animating)
 			{
+				if (prepare_result == render_valid::invalid) df::bump(df::ui_perf.prepares_display_invalid);
 				invalidate_status();
 				vf->frame()->invalidate();
 			}
@@ -1783,7 +1798,17 @@ void app_frame::mark_startup_settled()
 	if (_startup_settled || !_app_frame || !_app_frame->is_visible()) return;
 
 	_startup_settled = true;
+
+	// Cleared by any launch that reached the user, not only by the one that recorded an attempt: a
+	// count left raised by a concurrent launch would eventually reset a working install's settings,
+	// which is the failure this backstop must not cause. The scope is released either way.
 	_settings->write({}, s_unsettled_starts, static_cast<uint32_t>(0));
+
+	if (_owns_startup_scope)
+	{
+		platform::release_startup_scope();
+		_owns_startup_scope = false;
+	}
 
 	if (_safe_start) report_safe_start();
 }
@@ -2322,13 +2347,16 @@ void app_frame::reload()
 	_view->reload();
 
 	// Refresh is the user's recovery from anything stale, so it re-reads what is otherwise only
-	// refreshed by an event: volume free space and labels change without notifying us at all.
+	// refreshed by an event: volume free space and labels change without notifying us at all, and
+	// the cached optical-drive answer is refreshed on the same grounds.
+	_has_burner.reset();
 	invalidate_view(view_invalid::view_layout |
 		view_invalid::group_layout |
 		view_invalid::index |
 		view_invalid::refresh_items |
 		view_invalid::item_scan |
-		view_invalid::sidebar_drives);
+		view_invalid::sidebar_drives |
+		view_invalid::command_state);
 }
 
 void app_frame::view_changed(const view_type m)
@@ -2793,8 +2821,7 @@ void app_frame::search_text_changed(const std::string_view text)
 {
 	if (!_search_setting_text && _search_predictions_frame && _search_has_focus)
 	{
-		_search_previewing_prediction = false;
-		_search_typed_text = text;
+		_search_session.typed(text);
 		_search_predictions_frame->selected(nullptr, ui::complete_strategy_t::select_type::init);
 		_search_predictions_frame->search(std::string(text));
 	}
@@ -3022,7 +3049,7 @@ bool app_frame::init(const std::string_view command_line_text)
 
 	_bubble = _app_frame->create_bubble();
 	_state.view_mode(view_type::items);
-	_threads.start([&q = work_task_queue] { start_worker(q, "work"); });
+	_threads.start_if_running([&q = work_task_queue] { start_worker(q, "work"); });
 
 	open_default_folder();
 	invalidate_view(view_invalid::address | view_invalid::sidebar_drives);
@@ -3214,6 +3241,7 @@ void app_frame::system_event(const ui::os_event_type ost)
 
 	if (ost == ui::os_event_type::system_device_change)
 	{
+		_has_burner.reset();
 		invalidate_view(
 			view_invalid::app_layout | view_invalid::view_layout | view_invalid::sidebar_drives |
 			view_invalid::index);
@@ -3388,10 +3416,13 @@ bool app_frame::load_settings(const platform::setting_file_ptr& store)
 	// A crash before the first frame repeats on every relaunch, and nothing the user did caused
 	// it, so nothing they can stop doing avoids it. The count of starts that never settled is
 	// raised here - the earliest point that has a store - and cleared once this one settles.
+	_owns_startup_scope = platform::claim_startup_scope();
+
 	uint32_t unsettled_starts = 0;
 	store->read({}, s_unsettled_starts, unsettled_starts);
-	_safe_start = should_start_safe(unsettled_starts);
-	store->write({}, s_unsettled_starts, unsettled_starts + 1);
+	const auto history = decide_startup(_owns_startup_scope, unsettled_starts);
+	_safe_start = history.safe_start;
+	if (history.record) store->write({}, s_unsettled_starts, history.next_unsettled);
 
 	setting.read();
 

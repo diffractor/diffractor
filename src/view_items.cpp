@@ -2041,7 +2041,12 @@ int layout_media_column(const media_column_inputs& in, ui::measure_context& mc, 
 		return layout_detail(0);
 	}
 
-	if (!in.verbose_metadata)
+	// Holding the block at the top only earns its place when something can follow it. Verbose metadata
+	// is one global setting, so a selection with no detail form at all - every multiple selection, and
+	// a comparison - would otherwise sit against the top for a reason that does not apply to it. The
+	// test is what the selection can produce, not what has arrived: detail lands late, and keying on
+	// the current list would move the media the moment it did.
+	if (!in.verbose_metadata || !in.detail_possible)
 	{
 		// The media, the first information group and the verbose toggle own the pane and centre in it.
 		// The media shrinks so all three stay visible; anything else starts past the bottom edge.
@@ -2128,7 +2133,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	{
 		const media_column_inputs media_inputs{
 			&_media_priority_elements, &_media_detail_elements, &_media_elements,
-			avail_media_bounds, setting.verbose_metadata
+			avail_media_bounds, setting.verbose_metadata, _display && _display->is_one()
 		};
 		const auto media_height = layout_media_column(media_inputs, mc, positions);
 

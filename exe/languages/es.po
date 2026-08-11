@@ -89,10 +89,10 @@ msgid "Analyzing..."
 msgstr "Analizando..."
 
 msgid "archive"
-msgstr "archivo"
+msgstr "archivo comprimido"
 
 msgid "archives"
-msgstr "archivos"
+msgstr "archivos comprimidos"
 
 msgid "audio"
 msgstr "audio"
@@ -3027,19 +3027,19 @@ msgid "Value"
 msgstr "Valor"
 
 msgid "Volume 200%"
-msgstr "Volumen 200%"
+msgstr "Volumen 200 %"
 
 msgid "Volume 100%"
-msgstr "Volumen 100%"
+msgstr "Volumen 100 %"
 
 msgid "Volume 75%"
-msgstr "Volumen 75%"
+msgstr "Volumen 75 %"
 
 msgid "Volume 50%"
-msgstr "Volumen 50%"
+msgstr "Volumen 50 %"
 
 msgid "Volume 25%"
-msgstr "Volumen 25%"
+msgstr "Volumen 25 %"
 
 msgid "Mute"
 msgstr "Silenciar"

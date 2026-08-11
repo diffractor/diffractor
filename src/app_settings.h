@@ -144,6 +144,22 @@ constexpr bool should_start_safe(const uint32_t unsettled_starts)
 	return unsettled_starts >= max_unsettled_starts;
 }
 
+struct startup_history
+{
+	bool safe_start = false;
+	bool record = false;
+	uint32_t next_unsettled = 0;
+};
+
+// The count is shared by every Diffractor process, and launches routinely overlap - Explorer starts
+// one process per selected file. Only the process holding the startup scope counts its attempt, so
+// several at once cannot add up to a crash history that never happened.
+constexpr startup_history decide_startup(const bool owns_startup_scope, const uint32_t unsettled_starts)
+{
+	if (!owns_startup_scope) return {false, false, unsettled_starts};
+	return {should_start_safe(unsettled_starts), true, unsettled_starts + 1};
+}
+
 
 class settings_t
 {

@@ -215,6 +215,7 @@ void batch_tool_view::describe_convert_plan()
 		}
 
 		row->_order = order++;
+		row->_work_index = row->_order;
 		rows.emplace_back(row);
 		_row_names.emplace_back(entry.destination.name());
 	}
@@ -295,6 +296,7 @@ void batch_tool_view::refresh_metadata()
 			                : std::string(tt.update.sv());
 		if (overwrites) row->_text_color[2] = warning_color;
 		row->_order = order++;
+		row->_work_index = row->_order;
 		rows.emplace_back(row);
 		_row_names.emplace_back(item->path().name());
 	}
@@ -338,6 +340,7 @@ void batch_tool_view::refresh_dates()
 		row->_text[1] = platform::format_date_time(original);
 		row->_text[2] = platform::format_date_time(adjusted_item_date(original, _new_start, _original_start));
 		row->_order = order++;
+		row->_work_index = row->_order;
 		rows.emplace_back(row);
 		_row_names.emplace_back(item->path().name());
 	}
@@ -396,8 +399,9 @@ void batch_tool_view::refresh_encode_settings()
 	describe_convert_plan();
 }
 
-// The reviewed rows stay in place and only their last column changes, so a finished run is read
-// against exactly the list that was approved.
+// Each row is read against the plan entry it was built from, not against its position: the header
+// sort is offered throughout the review, so a sorted list would otherwise report every row's
+// outcome against a different file.
 void batch_tool_view::show_run_results(const std::vector<item_status>& statuses, const std::string_view error)
 {
 	const auto success_color = ui::lighten(ui::style::color::success_background, 0.55f);
@@ -407,10 +411,10 @@ void batch_tool_view::show_run_results(const std::vector<item_status>& statuses,
 	std::vector<view_operation_result> outcomes;
 	outcomes.reserve(_rows.size());
 
-	for (size_t index = 0; index < _rows.size(); ++index)
+	for (const auto& row : _rows)
 	{
-		const auto status = index < statuses.size() ? statuses[index] : item_status::cancel;
-		const auto& row = _rows[index];
+		const auto work_index = row->_work_index >= 0 ? static_cast<size_t>(row->_work_index) : statuses.size();
+		const auto status = work_index < statuses.size() ? statuses[work_index] : item_status::cancel;
 		row->_text_color[1] = 0;
 
 		switch (status)
@@ -435,7 +439,7 @@ void batch_tool_view::show_run_results(const std::vector<item_status>& statuses,
 			break;
 		}
 
-		outcomes.emplace_back(index < _row_names.size() ? _row_names[index] : row->_text[0], status);
+		outcomes.emplace_back(work_index < _row_names.size() ? _row_names[work_index] : row->_text[0], status);
 	}
 
 	_showing_results = true;
@@ -539,6 +543,9 @@ void batch_tool_view::run_convert()
 		df::file_path source;
 		df::file_path destination;
 		str::cached xmp;
+		// The review found this destination occupied and the policy said to replace it. Every other row
+		// was reviewed as free, so anything now in its way is a file the user never saw.
+		bool replaces_existing = false;
 	};
 	std::vector<convert_request> requests;
 	requests.reserve(_convert_plan.size());
@@ -551,7 +558,8 @@ void batch_tool_view::run_convert()
 		if (entry.skipped) continue;
 		// Nothing has been attempted yet, so a row the run never reaches reports itself as not run.
 		statuses[index] = item_status::cancel;
-		requests.emplace_back(index, entry.source.path, entry.destination, entry.source.xmp);
+		requests.emplace_back(index, entry.source.path, entry.destination, entry.source.xmp,
+		                      entry.collides && !entry.renamed_to_avoid_collision);
 	}
 	const auto title = std::string(tt.command_convert_or_resize.sv());
 	const auto max_side = setting.convert.limit_dimension ? setting.convert.max_side : 0;
@@ -594,12 +602,22 @@ void batch_tool_view::run_convert()
 					                   s.queue_ui([view, generation, plan_index, index]
 					                   {
 						                   if (view->is_processing_generation(generation))
-							                   view->processing_item(plan_index, index + 1);
+							                   view->processing_work_item(plan_index, index + 1);
 					                   });
 					                   file_encode_params params;
 					                   params.jpeg_save_quality = jpeg_quality;
 					                   params.webp_quality = webp_quality;
 					                   params.webp_lossless = webp_lossless;
+
+					                   // The review is a snapshot, and the write itself cannot refuse an existing
+					                   // file. A destination that filled up in between belongs to something the user
+					                   // never reviewed, so the row is left alone rather than written over.
+					                   if (!request.replaces_existing && request.destination.exists())
+					                   {
+						                   statuses[plan_index] = item_status::ignore;
+						                   continue;
+					                   }
+
 					                   const auto result = ff.update(request.source, request.destination, {},
 					                                                 max_side > 0
 						                                                 ? image_edits(max_side)
@@ -672,6 +690,7 @@ void batch_tool_view::run_metadata()
 		                   std::vector<item_status> statuses(requests.size(), item_status::cancel);
 		                   std::string fatal;
 		                   std::string first_error;
+		                   df::unique_folders written;
 		                   try
 		                   {
 			                   files ff;
@@ -681,21 +700,39 @@ void batch_tool_view::run_metadata()
 				                   s.queue_ui([view, generation, index]
 				                   {
 					                   if (view->is_processing_generation(generation))
-						                   view->processing_item(index, index + 1);
+						                   view->processing_work_item(index, index + 1);
 				                   });
 				                   const auto& request = requests[index];
-				                   const auto result = ff.update(request.path, edits, {}, file_encode_params{}, false,
-				                                                 request.xmp);
 
 				                   // One file that cannot be written must not decide the fate of the rest.
-				                   // The row records the failure and the run carries on.
-				                   statuses[index] = result.success() ? item_status::success : item_status::fail;
-				                   if (result.failed() && first_error.empty()) first_error = result.format_error();
+				                   // The row records the failure and the run carries on - including when the
+				                   // write throws, which a refused sidecar or a codec error does.
+				                   try
+				                   {
+					                   const auto result = ff.update(request.path, edits, {}, file_encode_params{},
+					                                                 false, request.xmp);
+					                   statuses[index] = result.success() ? item_status::success : item_status::fail;
+
+					                   if (result.success()) written.emplace(request.path.folder());
+					                   else if (first_error.empty()) first_error = result.format_error();
+				                   }
+				                   catch (const std::exception& e)
+				                   {
+					                   statuses[index] = item_status::fail;
+					                   if (first_error.empty()) first_error = str::utf8_cast(e.what());
+				                   }
 			                   }
 		                   }
 		                   catch (const std::exception& e)
 		                   {
 			                   fatal = str::utf8_cast(e.what());
+		                   }
+
+		                   // Outside the try: the write is invisible to the index until the folder is validated,
+		                   // and a run that ended early still wrote everything it reported as written.
+		                   if (!written.empty())
+		                   {
+			                   s.item_index.queue_validate_changed_folders(std::move(written));
 		                   }
 
 		                   queue_run_results(s, view, generation, std::move(statuses), std::move(fatal),
@@ -738,6 +775,7 @@ void batch_tool_view::run_dates()
 		                   std::vector<item_status> statuses(requests.size(), item_status::cancel);
 		                   std::string fatal;
 		                   std::string first_error;
+		                   df::unique_folders written;
 		                   try
 		                   {
 			                   files ff;
@@ -747,33 +785,51 @@ void batch_tool_view::run_dates()
 				                   s.queue_ui([view, generation, index]
 				                   {
 					                   if (view->is_processing_generation(generation))
-						                   view->processing_item(index, index + 1);
+						                   view->processing_work_item(index, index + 1);
 				                   });
 				                   const auto& request = requests[index];
 				                   const auto date = adjusted_item_date(request.media_created, new_start,
 				                                                        original_start);
 				                   metadata_edits edits;
 				                   edits.created = date;
-				                   const auto result = ff.update(request.path, edits, {}, file_encode_params{}, false,
-				                                                 request.xmp);
 
 				                   // One file that cannot be written must not decide the fate of the rest.
-				                   // The row records the failure and the run carries on.
-				                   if (result.success())
+				                   // The row records the failure and the run carries on - including when the
+				                   // write throws, which a refused sidecar or a codec error does.
+				                   try
 				                   {
-					                   platform::created_date(request.path, date.local_to_system());
-					                   statuses[index] = item_status::success;
+					                   const auto result = ff.update(request.path, edits, {}, file_encode_params{},
+					                                                 false, request.xmp);
+
+					                   if (result.success())
+					                   {
+						                   platform::created_date(request.path, date.local_to_system());
+						                   statuses[index] = item_status::success;
+						                   written.emplace(request.path.folder());
+					                   }
+					                   else
+					                   {
+						                   statuses[index] = item_status::fail;
+						                   if (first_error.empty()) first_error = result.format_error();
+					                   }
 				                   }
-				                   else
+				                   catch (const std::exception& e)
 				                   {
 					                   statuses[index] = item_status::fail;
-					                   if (first_error.empty()) first_error = result.format_error();
+					                   if (first_error.empty()) first_error = str::utf8_cast(e.what());
 				                   }
 			                   }
 		                   }
 		                   catch (const std::exception& e)
 		                   {
 			                   fatal = str::utf8_cast(e.what());
+		                   }
+
+		                   // Outside the try: the write is invisible to the index until the folder is validated,
+		                   // and a run that ended early still wrote everything it reported as written.
+		                   if (!written.empty())
+		                   {
+			                   s.item_index.queue_validate_changed_folders(std::move(written));
 		                   }
 
 		                   queue_run_results(s, view, generation, std::move(statuses), std::move(fatal),

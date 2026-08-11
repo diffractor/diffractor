@@ -213,6 +213,7 @@ void df::log_once(const std::string_view context, const std::string_view message
 
 df::thumbnail_counters df::thumbnail_perf;
 df::ui_counters df::ui_perf;
+df::gpu_counters df::gpu_perf;
 df::db_counters df::db_perf;
 df::query_counters df::query_perf;
 df::file_counters df::file_perf;
@@ -280,6 +281,7 @@ void df::log_perf_summary()
 {
 	const auto& t = thumbnail_perf;
 	const auto& u = ui_perf;
+	const auto& g = gpu_perf;
 	const auto& d = db_perf;
 	const auto& q = query_perf;
 	const auto& f = file_perf;
@@ -301,6 +303,62 @@ void df::log_perf_summary()
 		    format_us(load(u.idle_us)), format_us(load(u.idle_max_us)), load(u.idle_batch_peak),
 		    format_count(load(u.paints)), format_us(load(u.paint_us)), format_us(load(u.paint_max_us)),
 		    format_count(load(u.texture_uploads))));
+
+	if (load(u.paints) != 0)
+	{
+		// The three parts of a paint, so the biggest one is visible rather than inferred.
+		const auto paints = load(u.paints);
+		log("perf ui", std::format("paint scene-build={} max={} avg={}us | of paint {}%",
+		                           format_us(load(u.scene_build_us)), format_us(load(u.scene_build_max_us)),
+		                           load(u.scene_build_us) / paints,
+		                           load(u.paint_us) ? load(u.scene_build_us) * 100 / load(u.paint_us) : 0));
+	}
+
+	log("perf ui", std::format("frame prepares={} invalidates={} redraws={} | paints per prepare={:.1f}",
+	                           format_count(load(u.frame_prepares)), format_count(load(u.invalidates)),
+	                           format_count(load(u.redraws)),
+	                           load(u.frame_prepares) == 0
+		                           ? 0.0
+		                           : static_cast<double>(load(u.paints)) / static_cast<double>(load(u.frame_prepares))));
+
+	log("perf ui", std::format("animating prepares registered={} display={} display-invalid={} | live animations peak={}",
+	                           format_count(load(u.prepares_registered_anim)),
+	                           format_count(load(u.prepares_display_anim)),
+	                           format_count(load(u.prepares_display_invalid)),
+	                           load(u.animations_peak)));
+
+	if (load(g.frames) != 0)
+	{
+		const auto frames = load(g.frames);
+
+		log("perf gpu", std::format(
+			    "frames={} submit={} max={} avg={}us | present={} max={} avg={}us",
+			    format_count(frames), format_us(load(g.submit_us)), format_us(load(g.submit_max_us)),
+			    load(g.submit_us) / frames,
+			    format_us(load(g.present_us)), format_us(load(g.present_max_us)),
+			    load(g.present_us) / frames));
+
+		// Per frame rather than per session: the absolute totals scale with how long the app was
+		// left open, but the per-frame figures are what a change to the batching has to move.
+		log("perf gpu", std::format(
+			    "draws={} merged={} per-frame={} peak={} | geometry={} per-frame={}",
+			    format_count(load(g.draws)), format_count(load(g.merged)),
+			    load(g.draws) / frames, load(g.draws_peak),
+			    format_count(load(g.geometry_bytes)), format_count(load(g.geometry_bytes) / frames)));
+
+		log("perf gpu", std::format(
+			    "binds shader={} view={} sampler={} cbuffer-uploads={} | per-frame {}/{}/{}/{}",
+			    format_count(load(g.shader_binds)), format_count(load(g.view_binds)),
+			    format_count(load(g.sampler_binds)), format_count(load(g.cbuffer_uploads)),
+			    load(g.shader_binds) / frames, load(g.view_binds) / frames,
+			    load(g.sampler_binds) / frames, load(g.cbuffer_uploads) / frames));
+
+		log("perf gpu", std::format(
+			    "created views={} targets={} textures={} buffers={} | vram={}MB peak={}MB",
+			    format_count(load(g.views_created)), format_count(load(g.targets_created)),
+			    format_count(load(g.textures_created)), format_count(load(g.buffers_created)),
+			    load(g.vram_mb), load(g.vram_peak_mb)));
+	}
 
 	const auto queue_count = std::min(perf_queue_count.load(std::memory_order_acquire), max_perf_queues);
 

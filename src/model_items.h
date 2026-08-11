@@ -2240,3 +2240,5 @@ namespace df
 // locations.md 7.1: the totals affordance text. Defined next to the grouping label it was split
 // away from, so the two can never drift into saying the same thing twice.
 std::string format_items_totals(const df::file_group_histogram& summary, bool is_init_complete);
+std::string format_items_summary(group_by grouping, sort_by order, const df::file_group_histogram& summary,
+                                 bool is_init_complete);

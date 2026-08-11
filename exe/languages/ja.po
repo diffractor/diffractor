@@ -522,7 +522,7 @@ msgid "Toggle repeat play"
 msgstr "リピート再生を切り替え"
 
 msgid "Restore"
-msgstr "元に戻す"
+msgstr "元のサイズに戻す"
 
 msgid "Rotate anticlockwise"
 msgstr "反時計回りに回転"

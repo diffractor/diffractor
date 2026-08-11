@@ -501,4 +501,4 @@ Deferred to a future release, with their sections: §2.4, §2.6, §3.4 and the c
 - Timeline node derivation is deterministic for a fixed result set, suppresses a residence-scale cluster, reveals it when the query names it, caps at ten nodes, and produces for each node a query that reproduces exactly that node's items.
 - No location resolution, gazetteer read, or node computation runs on the UI thread, and none runs inside a paint path.
 
-Regression coverage extends the existing location tests in `src/test_search.cpp` (`should_find_location`, the map-area tests) and the map regression in `src/test_regressions.cpp`.
+Regression coverage lives with the subject in `src/test_locations.cpp` (`should_find_location`, the map-area tests, the sidebar map grouping); see [testing](testing.md) for the taxonomy.

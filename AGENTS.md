@@ -18,6 +18,7 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [design](docs/design.md) | Durable user concepts and behavior; the scope/contents/target/effect ontology; view, mode, and presentation naming |
 | [implementation](docs/implementation.md) | Architecture, data flow, threading, ownership, invalidation, index/search internals |
 | [crash investigation](docs/crash.md) | Crash report contents, symbol store and debugger setup, dump symbolization, attributing a fault to a cause |
+| [testing](docs/testing.md) | The test taxonomy: which subject file owns which test, what the runner enforces, what a test must not do, fixtures and known gaps |
 | [collections](docs/collections.md) | The collection: membership, what it earns, and its edge |
 | [locations](docs/locations.md) | Places, location search, distance, map-driven queries, visits |
 | [metadata](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
@@ -28,7 +29,7 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
 | [Linux port](docs/linux.md) | Portability assessment, platform-boundary debt, staging and open decisions for a Linux build |
 | [README](README.md) | Product overview, build prerequisites, command line |
-| [release notes](docs/v-1.27.0.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
+| [release notes](docs/v-1.27.1.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
 | [post-release context](docs/v-next.md) | Deferred work and why, validation not run, open issues, and invariants that must survive a re-sync or refactor |
 
 Move information to its owner; link rather than duplicate volatile detail.

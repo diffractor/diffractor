@@ -15,7 +15,7 @@
 #include "pch.h"
 #include "platform_win.h"
 #include "platform_win_visual.h"
-#include "test_utils.h"
+#include "test_fixtures.h"
 
 static void should_convert_extended_file_system_paths()
 {
@@ -26,6 +26,42 @@ static void should_convert_extended_file_system_paths()
 
 	const auto extended = std::wstring(L"\\\\?\\C:\\") + std::wstring(MAX_PATH, L'x');
 	assert_equal(extended, platform::to_file_system_path(df::folder_path(extended)), "extended path unchanged");
+}
+
+// Undocking or unplugging a second display leaves a saved rect that intersects no monitor at all.
+static void should_restore_a_window_onto_a_display()
+{
+	constexpr recti work(0, 0, 1920, 1040);
+
+	const auto from_a_missing_display = platform::fit_window_to_work_area({2200, 300, 3000, 900}, work);
+	assert_equal(800, from_a_missing_display.width(), "width is preserved");
+	assert_equal(600, from_a_missing_display.height(), "height is preserved");
+	assert_equal(true, work.intersects(from_a_missing_display), "and the window lands on the display");
+	assert_equal(1120, from_a_missing_display.left, "pushed just inside the right edge");
+	assert_equal(300, from_a_missing_display.top, "the axis that already fitted is left alone");
+
+	const auto from_the_left = platform::fit_window_to_work_area({-3000, -400, -2600, -100}, work);
+	assert_equal(0, from_the_left.left, "a negative origin comes back to the work area");
+	assert_equal(0, from_the_left.top, "on both axes");
+
+	const auto too_large = platform::fit_window_to_work_area({4000, 0, 8000, 3000}, work);
+	assert_equal(1920, too_large.width(), "a window larger than the display is clamped to it");
+	assert_equal(1040, too_large.height(), "on both axes");
+	assert_equal(0, too_large.left, "and positioned at the origin rather than hanging off");
+
+	// Which saved rects are corrected at all. Reaching a display is not on its own enough to be usable.
+	assert_equal(true, platform::window_needs_refit({2200, 300, 3000, 900}, work, false),
+	             "a rect saved on a display that is gone");
+	assert_equal(false, platform::window_needs_refit({100, 100, 900, 700}, work, true),
+	             "an ordinary rect is restored exactly as it was saved");
+	assert_equal(false, platform::window_needs_refit({1500, 100, 2400, 700}, work, true),
+	             "and so is one deliberately straddling two displays");
+	assert_equal(true, platform::window_needs_refit({0, 0, 3840, 2160}, work, true),
+	             "a window saved on a larger display is clamped to this one");
+	assert_equal(true, platform::window_needs_refit({1900, 100, 2700, 700}, work, true),
+	             "a sliver at the edge leaves nothing to grab");
+	assert_equal(true, platform::window_needs_refit({100, 1030, 900, 1630}, work, true),
+	             "and neither has one pushed off the bottom");
 }
 
 static void should_classify_dxgi_device_loss()
@@ -317,9 +353,10 @@ static void should_rasterise_tiles_identically_to_the_whole_surface()
 	             "a grown client is writable to its new edges without reallocating the tile");
 }
 
-void register_tests8(view_state& state, test_registry& tests)
+void register_platform_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should convert extended file system paths"s, should_convert_extended_file_system_paths);
+	tests.add("Should restore a window onto a display that still exists"s, should_restore_a_window_onto_a_display);
 	tests.add("Should classify DXGI device loss"s, should_classify_dxgi_device_loss);
 	tests.add("Should suppress GPU for one recovery session"s, should_suppress_gpu_for_recovery_session);
 	tests.add("Issue #219: Should fall back for missing glyphs"s, should_fall_back_for_missing_glyphs);

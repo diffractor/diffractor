@@ -4,7 +4,7 @@
 !define PRODUCT32_EXE "diffractor32.exe"
 !define PRODUCT64_EXE "diffractor64.exe"
 !define PRODUCT_PUBLISHER "Diffractor"
-!define BUILD_NUM "1272"
+!define BUILD_NUM "1273"
 !define PRODUCT_VERSION "127.1"
 !define FILE_VERSION "1.27.1.${BUILD_NUM}"
 !define PRODUCT_WEB_SITE "http://www.Diffractor.com/"
@@ -421,7 +421,10 @@ Section "Uninstall"
 
 	; remove registry keys
 	DeleteRegKey SHCTX "${PRODUCT_UNINST_KEY}"
-	DeleteRegKey SHCTX "${PRODUCT_SETTINGS_KEY}"
+	; PRODUCT_SETTINGS_KEY is NOT removed. SHCTX is HKCU here (RequestExecutionLevel user), and
+	; HKCU\Software\Diffractor is where the app actually keeps every setting on a desktop install -
+	; collection roots, favourite searches and tags, copyright fields, import and sync paths, panel
+	; layout. Deleting it is the registry half of the same data loss the file list below avoids.
 	DeleteRegKey SHCTX "Software\Classes\Directory\shell\diffractor"
 	; Also remove the legacy "Folder\shell" entry written by older versions, which
 	; hijacked the default folder double-click action (see install section for details).
@@ -456,12 +459,32 @@ Section "Uninstall"
 
 	!insertmacro UPDATEFILEASSOC
 	
+	; $INSTDIR is $LOCALAPPDATA\Diffractor, which is also where the app keeps the index database,
+	; the settings file, the map tile cache and any dictionary the user downloaded. A recursive
+	; delete of the whole folder therefore destroys the user's data along with the program, with no
+	; prompt and no way back. Only what the installer wrote is removed, plus the app's own logs, and
+	; the folders go only if they are empty afterwards.
 	Delete /REBOOTOK "$INSTDIR\${PRODUCT32_EXE}"
 	Delete /REBOOTOK "$INSTDIR\${PRODUCT64_EXE}"
+	Delete "$INSTDIR\location-countries.txt"
+	Delete "$INSTDIR\location-places.txt"
+	Delete "$INSTDIR\location-states.txt"
+	Delete "$INSTDIR\diffractor-tools.json"
+	Delete "$INSTDIR\diffractor.log"
+	Delete "$INSTDIR\diffractor.previous.log"
+	Delete "$INSTDIR\languages\*.po"
+	RMDir "$INSTDIR\languages"
+	; Only the two shipped dictionary files: any other file here was downloaded by the user.
+	Delete "$INSTDIR\dictionaries\en_US.aff"
+	Delete "$INSTDIR\dictionaries\en_US.dic"
+	RMDir "$INSTDIR\dictionaries"
 	Delete $INSTDIR\uninstall.exe
 	Delete "$STARTMENU\Programs\Diffractor.lnk"
 	Delete "$DESKTOP\Diffractor.lnk"
 
-	RMDir /r /REBOOTOK "$INSTDIR"
+	; Expected to fail while the user's data is still here, which is the point. /REBOOTOK must not be
+	; used: this folder is not empty by design, and the flag would both schedule it for deletion on
+	; reboot and end every uninstall on the "restart required" page.
+	RMDir "$INSTDIR"
 
 SectionEnd  

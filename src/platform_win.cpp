@@ -1828,6 +1828,39 @@ uint32_t platform::current_thread_id()
 	return GetCurrentThreadId();
 }
 
+static HANDLE g_startup_scope = nullptr;
+
+bool platform::claim_startup_scope()
+{
+	if (g_startup_scope) return true;
+
+	// Names the window between this process starting and its first idle frame, per user session. Only
+	// one process holds it at a time, so overlapping launches can tell themselves apart from a repeat
+	// of a launch that failed. A crash releases it with the process, which is the case that matters.
+	g_startup_scope = ::CreateMutexW(nullptr, TRUE, L"Local\\DiffractorStartupScope");
+
+	if (!g_startup_scope) return false;
+
+	if (::GetLastError() == ERROR_ALREADY_EXISTS)
+	{
+		::CloseHandle(g_startup_scope);
+		g_startup_scope = nullptr;
+		return false;
+	}
+
+	return true;
+}
+
+void platform::release_startup_scope()
+{
+	if (g_startup_scope)
+	{
+		::ReleaseMutex(g_startup_scope);
+		::CloseHandle(g_startup_scope);
+		g_startup_scope = nullptr;
+	}
+}
+
 platform::thread_init::thread_init()
 {
 	// https://support.microsoft.com/en-us/help/287087/info-calling-shell-functions-and-interfaces-from-a-multithreaded-apart

@@ -1941,6 +1941,17 @@ namespace ui
 	// animation. animate_alpha then jumps straight to its target instead of fading.
 	extern bool animations_enabled;
 
+	// Exponential decay rate for alpha fades, per second. Chosen as -ln(1 - 0.333) * 60 so that a
+	// 60Hz frame reproduces exactly the fixed 0.333 per frame this replaced.
+	constexpr float alpha_fade_rate = 24.33f;
+
+	// Fraction of the remaining distance a fade closes this frame, recomputed once per frame from
+	// real elapsed time. Without it a fade advances per frame, so its duration is set by how fast
+	// the machine renders - the same fade runs twice as fast on a 120Hz display as on a 60Hz one.
+	// Written by prepare_frame and read by every step() it drives, so it is UI-thread-owned like
+	// animations_enabled and the animations map beside it.
+	extern float animation_step_factor;
+
 	class animate_alpha
 	{
 		float _val = 0.0f;
@@ -1998,7 +2009,7 @@ namespace ui
 				return changed;
 			}
 
-			_val += dd * 0.333f;
+			_val += dd * animation_step_factor;
 			return true;
 		}
 	};

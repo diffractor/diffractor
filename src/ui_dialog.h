@@ -71,6 +71,11 @@ namespace ui
 		virtual auto_complete_match_ptr selected() const = 0;
 		virtual void search(const std::string& query, std::function<void(const auto_complete_results&)> complete) = 0;
 		virtual void initialise(std::function<void(const auto_complete_results&)> complete) = 0;
+
+		// Drop any cached vocabulary and selection. Not every strategy holds either.
+		virtual void clear()
+		{
+		}
 	};
 
 	using complete_strategy_ptr = std::shared_ptr<complete_strategy_t>;

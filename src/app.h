@@ -12,10 +12,10 @@
 #pragma once
 
 #include "model_tile_cache.h"
+#include "app_search.h"
 
 class sidebar_host;
 class app_logo_element;
-class search_auto_complete;
 class view_state;
 class edit_view_controls;
 class items_view;
@@ -529,14 +529,12 @@ public:
 
 	std::string _last_favorite_tags;
 
-	std::shared_ptr<search_auto_complete> _search_completes;
+	std::shared_ptr<ui::complete_strategy_t> _search_completes;
 	ui::list_window_ptr _search_predictions_frame;
 
 	bool _search_has_focus = false;
-	std::string _search_original_text;
-	std::string _search_typed_text;
+	search_edit_session _search_session;
 	bool _search_setting_text = false;
-	bool _search_previewing_prediction = false;
 	bool _app_logo_hover = false;
 
 	// The item full screen selected on the user's behalf, so leaving full screen can undo it.
@@ -564,6 +562,8 @@ public:
 	ui::bubble_window_ptr _bubble;
 
 	int _frame_delay = 0;
+	// Previous prepare_frame timestamp, for the elapsed time alpha fades advance by.
+	int64_t _last_prepare_us = 0;
 	lerp_animate _search_color_lerp;
 	group_by _starting_group_order = group_by::file_type;
 	sort_by _starting_sort_order = sort_by::def;
@@ -598,11 +598,16 @@ public:
 	std::string saved_current_search;
 	bool _is_active = false;
 
+	// Machine-scoped and only changed by a device arriving, which system_device_change reports, so it
+	// is answered once rather than by instantiating a shell COM object on every command-state update.
+	std::optional<bool> _has_burner;
+
 	// Recovery from a crash that happened before the user could touch anything. _safe_start says
 	// this launch reverted presentation because previous ones never settled; _startup_settled
 	// latches the moment this one did, which clears the persisted count.
 	bool _safe_start = false;
 	bool _startup_settled = false;
+	bool _owns_startup_scope = false;
 	void mark_startup_settled();
 	void report_safe_start();
 

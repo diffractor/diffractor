@@ -108,6 +108,20 @@ void view_state::modify_items(const df::results_ptr& results, const df::item_ele
 			            std::string message;
 			            files ff;
 
+			            // Only the UI hop at the end releases the claim, and drain_queue swallows an
+			            // exception before it is ever posted - which parks these items with no thumbnail and
+			            // no metadata refresh for the rest of the session. The release is therefore owned by
+			            // a guard rather than by the success path. The guard keeps its own copy of the paths
+			            // because the success path moves the originals into the UI callback.
+			            auto claim_handed_over = false;
+			            df::scope_exit release_claim([this, &claim_handed_over, claimed]
+			            {
+				            if (!claim_handed_over)
+				            {
+					            _async.queue_ui([this, claimed] { item_index.release_write_claim(claimed); });
+				            }
+			            });
+
 			            // Items the write already re-scanned for us vs. those whose scan failed and still need a
 			            // forced background rescan.
 			            std::vector<index_state::item_scan_request> immediate_done;
@@ -210,6 +224,8 @@ void view_state::modify_items(const df::results_ptr& results, const df::item_ele
 					            if (!immediate_items.empty()) item_index.queue_scan_modified_items(
 						            std::move(immediate_items), false);
 				            });
+
+			            claim_handed_over = true;
 
 			            rr.complete(message);
 		            });

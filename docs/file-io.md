@@ -1145,7 +1145,7 @@ Write behaviour is covered by `src/test_media_edit.cpp`. The load-bearing cases:
   and bytes are all asserted unchanged, and `staged` is false. Size alone would not catch a
   same-size copy-and-swap, which is exactly what the §5.2 branch exists to remove.
 - A staged replace returns a coherent handle and reading it back yields the bytes just written
-  (`src/test_utils.cpp`).
+  (`src/test_files.cpp`).
 - WebP chunk order survives a metadata save.
 - Sidecar collision handling under the guided-operation grammar.
 
@@ -1154,14 +1154,15 @@ the write staged and swapped — not merely that the value round-trips. Round-tr
 every strategy and so proves nothing about which one ran.
 
 A test that reads back what a write produced must take the write's own scan, via `ff_scan_after_update`
-and `ff_inspect_rescan` in `src/test_utils.cpp`. Re-opening the destination by name is the stale read
+and `ff_inspect_rescan` in `src/test_fixtures.cpp`. Re-opening the destination by name is the stale read
 §6 exists to remove, so a test that does it is not testing what the app does — and over SMB it fails
 intermittently, which reads as a lost edit rather than as a test that asked the wrong question.
 
 The detach/reopen currency rule in §3.5 is covered separately by `Should reject superseded av
-session` in `src/test_index.cpp`, against `display_state_t` rather than the player: `av_player` has
+session` in `src/test_av.cpp`, against `display_state_t` rather than the player: `av_player` has
 no thread of its own, so a test that drove `open`/`close` could only wait on an unpumped queue. The
-shared detachment window is covered by `Should keep file handles detached until last operation`.
+shared detachment window is covered by `Should keep file handles detached until last operation`
+(`src/test_files.cpp`).
 
 A per-run summary of file operations is logged at exit, broken down by file type and by operation —
 reads, in-place patches, replaces, sidecar writes and write failures. It is the cheapest way to

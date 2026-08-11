@@ -381,7 +381,7 @@ msgid "Group by Collection presence"
 msgstr "Групувати за наявністю в колекції"
 
 msgid "Group by Rating/Label"
-msgstr "Групувати за рейтингом/міткою"
+msgstr "Групувати за оцінкою/міткою"
 
 msgid "Show items in random order"
 msgstr "Показувати елементи в довільному порядку"
@@ -723,7 +723,7 @@ msgid "Show labels"
 msgstr "Показати мітки"
 
 msgid "Show ratings"
-msgstr "Показати рейтинги"
+msgstr "Показати оцінки"
 
 msgid "Show drives"
 msgstr "Показати диски"
@@ -867,7 +867,7 @@ msgid "Could not connect to scanner"
 msgstr "Не вдалося підключитися до сканера"
 
 msgid "The destination file '{}' cannot be opened or created."
-msgstr "Файл призначення \"{}\" неможливо відкрити або створити."
+msgstr "Файл призначення «{}» неможливо відкрити або створити."
 
 msgid "The destination folder '{}' cannot be opened or created."
 msgstr "Неможливо відкрити або створити папку призначення «{}»."
@@ -915,7 +915,7 @@ msgid "The path in the source or destination or both was invalid."
 msgstr "Шлях у джерелі чи призначенні або в обох недійсний."
 
 msgid "The file name you have chosen '{}' is invalid."
-msgstr "Вибране вами ім'я файлу \"{}\" недійсне."
+msgstr "Вибране вами ім'я файлу «{}» недійсне."
 
 msgid "File names cannot contain the following characters:"
 msgstr "Імена файлів не можуть містити такі символи:"
@@ -1716,13 +1716,13 @@ msgid "No extension"
 msgstr "Без розширення"
 
 msgid "No location"
-msgstr "Немає місцезнаходження"
+msgstr "Немає розташування"
 
 msgid "No resolution"
 msgstr "Немає роздільної здатності"
 
 msgid "No rating"
-msgstr "Без рейтингу"
+msgstr "Без оцінки"
 
 msgid "No value"
 msgstr "Жодного значення"
@@ -1758,7 +1758,7 @@ msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "Відокремте кожен тег пробілом: кемпінг для відпочинку в Австралії."
 
 msgid "Join 2 words together in one tag using quotes: \"national park\"."
-msgstr "З’єднайте 2 слова в один тег, використовуючи лапки: «національний парк»."
+msgstr "З'єднайте 2 слова в один тег, використовуючи лапки: \"національний парк\"."
 
 msgid "Hide verbose metadata"
 msgstr "Приховати детальні метадані"
@@ -1806,7 +1806,7 @@ msgid "IPTC"
 msgstr "IPTC"
 
 msgid "'{}' is not a valid folder."
-msgstr "\"{}\" не є дійсною папкою."
+msgstr "«{}» не є дійсною папкою."
 
 msgid "Show items rotated"
 msgstr "Показати повернуті елементи"
@@ -2021,10 +2021,10 @@ msgid "Loading..."
 msgstr "Завантаження..."
 
 msgid "No location selected."
-msgstr "Місцезнаходження не вибрано."
+msgstr "Розташування не вибрано."
 
 msgid "Overwrite GPS coordinates when setting a location."
-msgstr "Перезаписати координати GPS під час встановлення місцезнаходження."
+msgstr "Перезаписати координати GPS під час встановлення розташування."
 
 msgid "Location"
 msgstr "Розташування"
@@ -2594,7 +2594,7 @@ msgid "Number keys 0-5"
 msgstr "Цифрові клавіші 0-5"
 
 msgid "Click {} to remove rating"
-msgstr "Натисніть {}, щоб видалити рейтинг"
+msgstr "Натисніть {}, щоб видалити оцінку"
 
 msgid "Raw"
 msgstr "Raw"
@@ -2612,7 +2612,7 @@ msgid "Use '#' to specify position of the numeric sequence"
 msgstr "Використовуйте '#', щоб указати позицію числової послідовності"
 
 msgid "Use metadata templates '{property-name}' to include file properties in the name."
-msgstr "Використовуйте шаблони метаданих \"{property-name}\", щоб включити властивості файлу в назву."
+msgstr "Використовуйте шаблони метаданих «{property-name}», щоб включити властивості файлу в назву."
 
 msgid "For example:"
 msgstr "Наприклад:"
@@ -2708,7 +2708,7 @@ msgid "Select Folder..."
 msgstr "Виберіть папку..."
 
 msgid "Select a location"
-msgstr "Виберіть місце"
+msgstr "Виберіть розташування"
 
 msgid "Selected items are in the date range:"
 msgstr "Вибрані елементи знаходяться в діапазоні дат:"
@@ -2747,7 +2747,7 @@ msgid "Resolution"
 msgstr "Роздільна здатність"
 
 msgid "Rating-Label"
-msgstr "Рейтинг-Ярлик"
+msgstr "Оцінка-мітка"
 
 msgid "Staring"
 msgstr "У ролях"
@@ -3435,7 +3435,7 @@ msgid "Try again"
 msgstr "Спробувати ще раз"
 
 msgid "Go to the parent folder"
-msgstr "Перейти до батьківської теки"
+msgstr "Перейти до батьківської папки"
 
 msgid "{} is still running. Close it before browsing somewhere else."
 msgstr "{} ще виконується. Закрийте, перш ніж переходити в інше місце."
@@ -3528,7 +3528,7 @@ msgid "Search all places named {}"
 msgstr "Шукати всі місця з назвою {}"
 
 msgid "Show items with no location"
-msgstr "Показати об'єкти без місцезнаходження"
+msgstr "Показати об'єкти без розташування"
 
 msgid "Search within {} of {}"
 msgstr "Шукати в радіусі {} від {}"

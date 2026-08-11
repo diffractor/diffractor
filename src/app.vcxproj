@@ -1684,18 +1684,24 @@
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
-    <ClCompile Include="test_utils.cpp" />
+    <ClCompile Include="test_fixtures.cpp" />
     <ClCompile Include="test_runner.cpp" />
-    <ClCompile Include="test_metadata.cpp" />
-    <ClCompile Include="test_media_edit.cpp" />
-    <ClCompile Include="test_search.cpp" />
+    <ClCompile Include="test_app.cpp" />
+    <ClCompile Include="test_av.cpp" />
+    <ClCompile Include="test_files.cpp" />
     <ClCompile Include="test_index.cpp" />
-    <ClCompile Include="test_regressions.cpp" />
-    <ClCompile Include="test_view.cpp" />
+    <ClCompile Include="test_locations.cpp" />
+    <ClCompile Include="test_media_edit.cpp" />
+    <ClCompile Include="test_metadata.cpp" />
     <ClCompile Include="test_platform_win.cpp" />
+    <ClCompile Include="test_render.cpp" />
+    <ClCompile Include="test_search.cpp" />
+    <ClCompile Include="test_text.cpp" />
+    <ClCompile Include="test_util.cpp" />
+    <ClCompile Include="test_view.cpp" />
     <ClCompile Include="ui_flex.cpp" />
     <ClInclude Include="test.h" />
-    <ClInclude Include="test_utils.h" />
+    <ClInclude Include="test_fixtures.h" />
     <ClInclude Include="ui_map.h" />
     <ClInclude Include="ui_map_common.h" />
     <ClCompile Include="util_base64.cpp">
@@ -2154,6 +2160,7 @@
     <ClInclude Include="app_commands.h" />
     <ClInclude Include="app_command_line.h" />
     <ClInclude Include="app_match.h" />
+    <ClInclude Include="app_search.h" />
     <ClInclude Include="app_sidebar.h" />
     <ClInclude Include="app_text.h" />
     <ClInclude Include="files_structs.h" />

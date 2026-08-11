@@ -454,6 +454,11 @@ static bool copy_source_encode_params(const j_compress_ptr cinfo, const df::cspa
 
 void jpeg_encoder::setup(const uint32_t cx, const uint32_t cy, const file_encode_params& params)
 {
+	// The encoder is a long-lived object reused for every image, and handle_error_exit throws out of
+	// libjpeg. A compress abandoned mid-scan leaves global_state at CSTATE_SCANNING, which makes the
+	// jpeg_set_defaults below ERREXIT for the rest of the session. Safe to call in any state.
+	jpeg_abort_compress(&_impl->cinfo);
+
 	_result.clear();
 
 	_impl->cinfo.image_width = cx;

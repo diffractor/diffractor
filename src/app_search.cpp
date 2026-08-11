@@ -44,7 +44,7 @@ public:
 		return std::string(tt.type_to_search);
 	}
 
-	void clear()
+	void clear() override
 	{
 		++_search_generation;
 		_known.clear();
@@ -457,6 +457,12 @@ public:
 	}
 };
 
+std::shared_ptr<ui::complete_strategy_t> make_search_auto_complete(view_state& state,
+                                                                   std::function<void(std::string)> set_text)
+{
+	return std::make_shared<search_auto_complete>(state, std::move(set_text));
+}
+
 void app_frame::hide_search_predictions()
 {
 	if (_search_completes && _search_predictions_frame)
@@ -488,9 +494,7 @@ void app_frame::focus_search(const bool has_focus)
 
 		if (_search_has_focus)
 		{
-			_search_original_text = _search_edit->window_text();
-			_search_typed_text = _search_original_text;
-			_search_previewing_prediction = false;
+			_search_session.begin(_search_edit->window_text());
 			_search_completes->initialise([&p = _search_predictions_frame](const ui::auto_complete_results& results)
 			{
 				p->show_results(results);
@@ -501,7 +505,7 @@ void app_frame::focus_search(const bool has_focus)
 		}
 		else
 		{
-			_search_previewing_prediction = false;
+			_search_session.end();
 			hide_search_predictions();
 		}
 	}
@@ -510,31 +514,27 @@ void app_frame::focus_search(const bool has_focus)
 void app_frame::search_enter()
 {
 	const auto selected = _search_completes ? _search_completes->selected() : nullptr;
-	const auto text = selected ? selected->edit_text() : _search_edit->window_text();
+	const auto text = _search_session.commit(selected != nullptr, selected ? selected->edit_text() : std::string_view{},
+	                                         _search_edit->window_text());
 	_state.open(_view_frame, text);
 	focus_view();
 }
 
 void app_frame::cancel_search_edit()
 {
-	if (_search_previewing_prediction)
+	const auto outcome = _search_session.escape();
+
+	if (outcome.set_edit_text) set_search_edit_text(outcome.edit_text);
+
+	if (outcome.select_first_completion && _search_predictions_frame)
 	{
-		_search_previewing_prediction = false;
-		set_search_edit_text(_search_typed_text);
-
-		if (_search_predictions_frame)
-		{
-			const auto& results = _search_predictions_frame->_results;
-			_search_predictions_frame->selected(
-				results.empty() ? nullptr : results.front(), ui::complete_strategy_t::select_type::init);
-		}
-
-		return;
+		const auto& results = _search_predictions_frame->_results;
+		_search_predictions_frame->selected(
+			results.empty() ? nullptr : results.front(), ui::complete_strategy_t::select_type::init);
 	}
 
-	set_search_edit_text(_search_original_text);
-	hide_search_predictions();
-	focus_view();
+	if (outcome.close_popup) hide_search_predictions();
+	if (outcome.focus_view) focus_view();
 }
 
 bool app_frame::search_accept_selected()
@@ -542,15 +542,12 @@ bool app_frame::search_accept_selected()
 	// Tab-completion: fill the address bar with the highlighted suggestion (without running
 	// the search) and refresh predictions so the completed token can be extended further.
 	const auto sel = _search_completes ? _search_completes->selected() : nullptr;
+	const auto outcome = _search_session.accept(sel != nullptr, sel ? sel->edit_text() : std::string_view{});
 
-	if (!sel) return false;
+	if (!outcome.handled) return false;
 
-	const auto text = sel->edit_text();
-	_search_previewing_prediction = false;
-	_search_typed_text = text;
-	set_search_edit_text(text);
-
-	if (_search_predictions_frame) _search_predictions_frame->search(text);
+	if (outcome.set_edit_text) set_search_edit_text(outcome.edit_text);
+	if (outcome.refresh_completions && _search_predictions_frame) _search_predictions_frame->search(outcome.edit_text);
 	return true;
 }
 
@@ -563,13 +560,13 @@ void app_frame::set_search_edit_text(const std::string_view text)
 
 void app_frame::preview_search_prediction(const std::string& text)
 {
-	_search_previewing_prediction = true;
+	_search_session.preview(text);
 	set_search_edit_text(text);
 }
 
 void app_frame::init_search()
 {
-	_search_completes = std::make_shared<search_auto_complete>(_state, [this](std::string text)
+	_search_completes = make_search_auto_complete(_state, [this](std::string text)
 	{
 		preview_search_prediction(std::move(text));
 	});

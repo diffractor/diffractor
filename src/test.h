@@ -2,6 +2,9 @@
 
 #include <source_location>
 
+// assert_equal for images decodes through `files`, so every test translation unit needs it.
+#include "files.h"
+
 struct shared_test_context;
 
 class test_assert_exception final : public std::exception

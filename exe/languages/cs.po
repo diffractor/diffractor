@@ -62,10 +62,10 @@ msgid "Releases - Diffractor"
 msgstr "Vydání - Diffractor"
 
 msgid "Workflow Tags"
-msgstr "Značky pracovního postupu"
+msgstr "Štítky pracovního postupu"
 
 msgid "Configure favorite tags."
-msgstr "Nastavit oblíbené značky."
+msgstr "Nastavit oblíbené štítky."
 
 msgid "Add folder"
 msgstr "Přidat složku"
@@ -131,7 +131,7 @@ msgid "&Cancel"
 msgstr "&Zrušit"
 
 msgid "Change..."
-msgstr "Změnit…"
+msgstr "Změnit..."
 
 msgid "&Close"
 msgstr "&Zavřít"
@@ -403,7 +403,7 @@ msgid "Group by Collection presence"
 msgstr "Seskupit podle přítomnosti sbírky"
 
 msgid "Group by Rating/Label"
-msgstr "Seskupit podle hodnocení/štítku"
+msgstr "Seskupit podle hodnocení/označení"
 
 msgid "Show items in random order"
 msgstr "Zamíchat"
@@ -427,7 +427,7 @@ msgid "Approved"
 msgstr "Schválený"
 
 msgid "No Label"
-msgstr "Žádný štítek"
+msgstr "Bez označení"
 
 msgid "Review"
 msgstr "Recenze"
@@ -741,10 +741,10 @@ msgstr ""
 "označování."
 
 msgid "Favorite Tags"
-msgstr "Oblíbené značky"
+msgstr "Oblíbené štítky"
 
 msgid "Show labels"
-msgstr "Zobrazit štítky"
+msgstr "Zobrazit označení"
 
 msgid "Show ratings"
 msgstr "Zobrazit hodnocení"
@@ -765,7 +765,7 @@ msgid "Show favorite searches"
 msgstr "Zobrazit oblíbená vyhledávání"
 
 msgid "Show tags"
-msgstr "Zobrazit značky"
+msgstr "Zobrazit štítky"
 
 msgid "Show total items pie chart"
 msgstr "Zobrazit koláčový graf celkového počtu položek"
@@ -1814,7 +1814,7 @@ msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "Každý štítek oddělte mezerou: Austrálie prázdninové kempování."
 
 msgid "Join 2 words together in one tag using quotes: \"national park\"."
-msgstr "Spojte 2 slova do jednoho tagu pomocí uvozovek: \"národní park\"."
+msgstr "Spojte 2 slova do jednoho štítku pomocí uvozovek: \"národní park\"."
 
 msgid "Hide verbose metadata"
 msgstr "Skrýt podrobná metadata"
@@ -2848,7 +2848,7 @@ msgid "Resolution"
 msgstr "Rozlišení"
 
 msgid "Rating-Label"
-msgstr "Hodnocení-štítek"
+msgstr "Hodnocení-označení"
 
 msgid "Staring"
 msgstr "Obsazení"
@@ -3193,7 +3193,7 @@ msgid "The collection contains {} items created on {}."
 msgstr "Sbírka obsahuje {} položek vytvořených dne {}."
 
 msgid "Show all tags"
-msgstr "Zobrazit všechny značky"
+msgstr "Zobrazit všechny štítky"
 
 msgid "Show only favorite tags"
 msgstr "Zobrazit pouze oblíbené štítky"
@@ -3500,13 +3500,13 @@ msgid "Cancel was pressed after {}"
 msgstr "Zrušení bylo stisknuto po {}"
 
 msgid "Apply tags"
-msgstr "Použít značky"
+msgstr "Použít štítky"
 
 msgid "Item"
 msgstr "Položka"
 
 msgid "Tags after run"
-msgstr "Značky po spuštění"
+msgstr "Štítky po spuštění"
 
 msgid "Enter one or more tags to add or remove."
 msgstr "Zadejte jednu nebo více značek k přidání nebo odebrání."

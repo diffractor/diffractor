@@ -23,24 +23,23 @@ spell_check& spell()
 
 spell_check::spell_check()
 {
-	const auto module_folder = known_path(platform::known_folder::running_app_folder).combine("dictionaries");
-	const auto app_data_folder = known_path(platform::known_folder::app_data).combine("dictionaries");
+	_shipped_folder = known_path(platform::known_folder::running_app_folder).combine("dictionaries");
+	_user_folder = known_path(platform::known_folder::app_data).combine("dictionaries");
+	_custom_dic_path = _user_folder.combine_file("custom.dic");
+}
 
-	if (module_folder.exists())
-	{
-		_dictionaries_folder = module_folder;
-	}
-	else
-	{
-		_dictionaries_folder = app_data_folder;
+// The per-user copy wins, so a downloaded dictionary supersedes a shipped one of the same name.
+df::file_path spell_check::find_dictionary(const std::string_view name, const std::string_view ext) const
+{
+	const auto user_path = _user_folder.combine_file_ext(name, ext);
+	return user_path.exists() ? user_path : _shipped_folder.combine_file_ext(name, ext);
+}
 
-		if (!_dictionaries_folder.exists())
-		{
-			platform::create_folder(_dictionaries_folder);
-		}
-	}
-
-	_custom_dic_path = _dictionaries_folder.combine_file("custom.dic");
+// Created on demand rather than at construction, so a user who never adds a word or downloads a
+// dictionary gets no empty folder.
+bool spell_check::ensure_user_folder() const
+{
+	return _user_folder.exists() || platform::create_folder(_user_folder).success();
 }
 
 spell_check::~spell_check()
@@ -119,17 +118,13 @@ void spell_check::lazy_download(df::async_i& async) const
 
 	if (known_dics.contains(language))
 	{
-		const auto aff_path = _dictionaries_folder.combine_file_ext(language, ".aff"s);
-		const auto dic_path = _dictionaries_folder.combine_file_ext(language, ".dic"s);
+		const auto aff = find_dictionary(language, ".aff");
+		const auto dic = find_dictionary(language, ".dic");
 
-		if (!aff_path.exists())
+		if ((!aff.exists() || !dic.exists()) && ensure_user_folder())
 		{
-			download_dic(async, aff_path);
-		}
-
-		if (!dic_path.exists())
-		{
-			download_dic(async, dic_path);
+			if (!aff.exists()) download_dic(async, _user_folder.combine_file_ext(language, ".aff"s));
+			if (!dic.exists()) download_dic(async, _user_folder.combine_file_ext(language, ".dic"s));
 		}
 	}
 }
@@ -144,14 +139,14 @@ void spell_check::lazy_load()
 		try
 		{
 			const auto language = platform::user_language();
-			auto aff_path = _dictionaries_folder.combine_file_ext(language, ".aff");
-			auto dic_path = _dictionaries_folder.combine_file_ext(language, ".dic");
-			const auto custom_path = _dictionaries_folder.combine_file("custom.dic");
+			auto aff_path = find_dictionary(language, ".aff");
+			auto dic_path = find_dictionary(language, ".dic");
+			const auto custom_path = _custom_dic_path;
 
 			if (!aff_path.exists())
 			{
-				aff_path = _dictionaries_folder.combine_file("en_US.aff");
-				dic_path = _dictionaries_folder.combine_file("en_US.dic");
+				aff_path = find_dictionary("en_US", ".aff");
+				dic_path = find_dictionary("en_US", ".dic");
 			}
 
 			if (aff_path.exists())
@@ -233,6 +228,12 @@ void spell_check::add_word(const std::string_view word) const
 		// Improved file writing with better error handling and RAII
 		try
 		{
+			if (!ensure_user_folder())
+			{
+				df::log(__FUNCTION__, std::format("could not create {}", _user_folder));
+				return;
+			}
+
 			std::ofstream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
 			if (f.is_open())
 			{

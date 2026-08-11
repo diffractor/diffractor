@@ -199,7 +199,13 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 					// Parse the form index N from msgstr[N]. Forms 0 and 1 map to
 					// str/str_plural; forms >= 2 (Slavic "many" etc.) go to str_extra.
 					const auto open = line.find('[');
-					const int form = (open != std::string::npos) ? std::atoi(line.c_str() + open + 1) : -1;
+					int form = -1;
+
+					if (open != std::string::npos)
+					{
+						const auto* const first = line.data() + open + 1;
+						if (std::from_chars(first, line.data() + line.size(), form).ec != std::errc{}) form = -1;
+					}
 
 					if (form == 0) parse_state = parse_po_state::str;
 					else if (form == 1) parse_state = parse_po_state::str1;

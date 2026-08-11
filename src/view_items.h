@@ -45,6 +45,10 @@ struct media_column_inputs
 	const std::vector<view_element_ptr>* all = nullptr;
 	recti bounds;
 	bool verbose_metadata = false;
+	// Whether this selection can ever put detail below the block. A single item can, and its detail
+	// arrives late, so the arrangement must not depend on whether it has arrived yet. Every other
+	// selection has no detail form at all.
+	bool detail_possible = false;
 };
 
 // Returns the scrollable content height.

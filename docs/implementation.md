@@ -118,9 +118,11 @@ Adding a type to this registry requires documenting its owning threads, the prot
 
 ### Session diagnostics
 
-The counters in `src/util.h` (`df::ui_perf`, `df::db_perf`, `df::query_perf`, `df::file_perf`, `df::thumbnail_perf`, and one `df::queue_counters` slot per worker queue) aggregate where a session spent its time. They are a deliberate exception to single-context ownership and a deliberate non-exception to the synchronized-type registry: nothing branches on a counter, nothing is published through one, and increments are `memory_order_relaxed`, so they are write-only totals rather than shared state. They are read once, from `app_frame::final_exit`, after the worker queues have drained.
+The counters in `src/util.h` (`df::ui_perf`, `df::gpu_perf`, `df::db_perf`, `df::query_perf`, `df::file_perf`, `df::thumbnail_perf`, and one `df::queue_counters` slot per worker queue) aggregate where a session spent its time. They are a deliberate exception to single-context ownership and a deliberate non-exception to the synchronized-type registry: nothing branches on a counter, nothing is published through one, and increments are `memory_order_relaxed`, so they are write-only totals rather than shared state. They are read once, from `app_frame::final_exit`, after the worker queues have drained.
 
 Instrumentation sits at choke points that already cross a boundary, so the added cost is a relaxed add and a performance-counter read against work that was already going to queue, decode, or hit SQLite. The generic worker loop accounts every queue through `df::register_queue`, which returns one slot per queue name rather than per thread, so queues drained by several workers still report a single row. Each timed area records a total and a maximum, because an average hides the single long occurrence that produces a visible stall.
+
+`df::gpu_perf` is the hardware backend's equivalent, and exists because a profiler cannot be attached to the machine a log came from. It records frame submit and `Present` cost, the batching ratio (`draws` against `merged`) with the per-frame draw count and its peak, the state changes a frame issued, and the driver objects a session had to build. The creation totals are the ones to read first: views, targets, textures and buffers should flatten early, and any of them keeping pace with the frame count means something is being rebuilt per frame rather than cached. Video memory is a sampled gauge rather than a total, taken every 256 frames because it is a driver call on the frame path. The `perf gpu` block is only written when a session drew at least one frame, so a software-backend run adds no rows. See [rendering](rendering.md).
 
 The summary is one grouped block of `perf ...` lines, suppressed entirely when the app did no measurable work. Counts are printed exactly, with digit grouping rather than rounding, because cross-checking one counter against another is how a measurement defect gets caught - two were caught that way while this instrumentation was being built.
 
@@ -251,6 +253,6 @@ For a focused run:
 diffractor64-d.exe /test:*search* | Out-Host
 ```
 
-Add regression tests for search semantics, navigation restoration, operation targets, snapshot revalidation, partial failure, and cancellation. Performance changes validate throughput and UI latency under concurrent indexing and navigation.
+Add regression tests for search semantics, navigation restoration, operation targets, snapshot revalidation, partial failure, and cancellation. Where a test belongs, what the runner enforces, and what a test must not do are owned by [testing](testing.md). Performance changes validate throughput and UI latency under concurrent indexing and navigation.
 
 Desktop and Store packages share the codebase; Store builds omit application-owned updates. Packaging, signing, dependencies, and prerequisites are maintained in [README.md](../README.md) and build scripts. Do not edit vendored `third-party/` source.

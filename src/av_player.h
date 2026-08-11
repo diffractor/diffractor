@@ -41,6 +41,25 @@ public:
 	virtual void queue_ui(std::function<void()> f) = 0;
 };
 
+// design.md: resume "applies to media longer than ten seconds only when the saved position is more
+// than two seconds from the start and five seconds from the end, avoiding a surprising resume for
+// barely started or effectively completed media".
+inline bool should_resume_at(const double start_time, const double end_time, const double saved_position)
+{
+	return end_time - start_time > 10.0 &&
+		saved_position > start_time + 2.0 &&
+		saved_position < end_time - 5.0;
+}
+
+
+// design.md: closing "saves the last presented position ...; if a seek or resume is still
+// synchronizing, it saves the accepted target instead, so closing before the first resumed frame
+// arrives does not replace that position with zero".
+inline double position_to_save(const bool is_synchronizing, const double accepted_seek,
+                               const double last_frame_time)
+{
+	return is_synchronizing ? accepted_seek : last_frame_time;
+}
 
 class av_session final : public std::enable_shared_from_this<av_session>
 {
@@ -285,7 +304,6 @@ public:
 
 			const auto start_time = _decoder.start_time();
 			const auto end_time = _decoder.end_time();
-			const auto duration = end_time - start_time;
 
 			_audio_buffer_time = 0;
 			_end_time = end_time;
@@ -318,7 +336,7 @@ public:
 
 			if (use_last_played_pos)
 			{
-				if (starting_position > start_time + 2.0 && starting_position < end_time - 5.0 && duration > 10.0)
+				if (should_resume_at(start_time, end_time, starting_position))
 				{
 					_decoder.seek(starting_position);
 					_last_seek = starting_position;
@@ -336,7 +354,8 @@ public:
 
 	void close(const bool save_position = true)
 	{
-		const auto position = _scrubbing || _pending_time_sync ? _last_seek.load() : _last_frame_time.load();
+		const auto position = position_to_save(_scrubbing || _pending_time_sync, _last_seek.load(),
+		                                       _last_frame_time.load());
 
 		// Single-shot. A queued close and the destructor can both reach here, so the exchange -
 		// not a separate load - is what makes the position save and the decoder teardown happen

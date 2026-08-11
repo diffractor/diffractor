@@ -97,6 +97,15 @@ once in [../src/platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp):
   its target, so thumbnail fade-in, photo cross-fade, loading fade and the edit-view
   grid fade do not play. This also keeps CPU frames on the opaque blit fast paths,
   which mid-fade alpha would otherwise defeat.
+- When the gate is on, a fade closes a fraction of its remaining distance each frame,
+  and that fraction is recomputed once per `prepare_frame` from the real elapsed time
+  (`ui::animation_step_factor`, decaying at `ui::alpha_fade_rate`). It is a rate rather
+  than a fixed step because frames are paced to the display: a fixed step made a fade
+  last a fixed number of frames, so the same fade ran at twice the speed on a 120Hz
+  display as on a 60Hz one. The rate is chosen to reproduce the previous fixed step
+  exactly at 60Hz, so the feel is unchanged on the refresh rate almost every display
+  reports. The delta is clamped, so a stall or a breakpoint cannot snap a fade to its
+  target.
 - `IDXGIDevice1::SetMaximumFrameLatency(1)` keeps latency low.
 - **Multithread protection** is enabled via `ID3D10Multithread::SetMultithreadProtected(TRUE)`.
   This matters because video decode touches D3D resources from a worker thread
@@ -358,7 +367,7 @@ the tree rather than assumed:
 
 The D3D draw context (`d3d11_draw_context_impl`) accumulates geometry into a list
 of `scene_atom`s rather than issuing an immediate draw per primitive. Each atom
-records a texture, a pixel shader, sampler/format, and a vertex/index range.
+records a texture binding, a pixel shader, sampler/format, and a vertex/index range.
 `draw_scene` then:
 
 - binds the swap-chain back buffer as the render target (`OMSetRenderTargets`), sets
@@ -383,20 +392,29 @@ Consecutive atoms are merged when every piece of per-atom state matches (texture
 shader, sampler, pixel format, colour space, transform and clip) and the merged
 vertex count still fits the 16-bit index range.
 
-Shader-resource views are cached in `_texture_views` **across frames**, keyed on a raw
-`ID3D11Texture2D*`. Creating a view is a driver object allocation, so doing it per
-texture per frame is a cost proportional to the number of visible thumbnails.
+### Texture bindings
 
-The raw key is safe because the cached value holds the view, and a view holds a
-reference to its own resource: while an entry exists its texture cannot be released,
-so its address cannot be recycled by a different texture. The only entries with a null
-view are ones whose creation failed, and those are always rebuilt rather than trusted.
+Creating a shader-resource view is a driver object allocation, so it must not happen
+per texture per frame. Rather than cache views in a side table keyed by texture, each
+texture **owns** the views it is sampled through, as a `texture_binding`, and an atom
+carries that binding instead of a pointer to look one up.
 
-Lifetime is bounded by a `used` flag. `begin_draw` erases every entry the last rendered
-frame did not touch, then re-arms the flag for the frame being staged. The flag is not
-cleared per render because `redraw` replays a scene without calling `begin_draw`, so a
-video frame presented from the previous scene must not lose its views. An unused texture
-is therefore held one frame longer than the scene that last drew it.
+This is what makes the lifetime rules disappear rather than needing to be enforced:
+
+- A view holds a reference to its own resource, so an atom that carries a binding keeps
+  its texture alive from the moment it is staged until the scene is rendered. There is
+  no separate keep-alive list.
+- There is no key, so there is no question of a raw `ID3D11Texture2D*` being recycled by
+  a different texture once the original is released.
+- There is no cache to prune, so a texture is released as soon as the scene that drew it
+  is, rather than lingering for an extra frame.
+
+`d3d11_texture::binding()` and `d3d11_text_renderer::atlas_binding()` build on demand and
+rebuild when the texture behind them is replaced. Both detect replacement by comparing the
+current texture against the one the binding was built from — safe for the same reason as
+above, since the binding holds that texture and its address therefore cannot be reused.
+No call site has to remember to invalidate anything. A failed build leaves the binding
+empty and is retried on the next use.
 
 Pixel shaders cover the distinct material types:
 
@@ -630,7 +648,7 @@ with a blank or crashing window":
   decoded before the fault rather than asking the driver for another YUV texture.
   A producer that ignores the setting leaves all three with no effect and the
   faulting driver with no way out; `Should honor the yuv texture setting`
-  (test_media_edit.cpp) is the guard.
+  (test_files.cpp) is the guard.
 - **Software fallback**: any failure to build a D3D draw context downgrades that
   window to CPU rendering, and a runtime device loss downgrades the whole process
   (see Device loss above). The software backend type-checks textures handed to it,

@@ -1943,6 +1943,8 @@ public:
 
 	void redraw() override
 	{
+		// Accounted as an invalidate, not a redraw: this one goes on to rebuild the scene.
+		df::bump(df::ui_perf.invalidates);
 		InvalidateRect(hwnd(), nullptr, 0);
 	}
 
@@ -1953,6 +1955,8 @@ public:
 
 	void invalidate(const recti bounds, const bool erase) override
 	{
+		df::bump(df::ui_perf.invalidates);
+
 		if (bounds.is_empty())
 		{
 			InvalidateRect(hwnd(), nullptr, erase);
@@ -3821,7 +3825,14 @@ void frame_base::present() const
 {
 	if (_swap_chain)
 	{
-		const auto hr = _swap_chain->Present(0, 0);
+		// Timed because this is where the GPU applies backpressure: with a frame latency of 1, a
+		// scene the GPU cannot keep up with shows here rather than in draw_scene.
+		HRESULT hr;
+		{
+			df::perf_timer timer(df::gpu_perf.present_us, &df::gpu_perf.present_max_us);
+			hr = _swap_chain->Present(0, 0);
+		}
+
 		if (FAILED(hr))
 		{
 			handle_device_loss(hr, "Present");
@@ -3848,7 +3859,11 @@ void frame_base::handle_render(const recti damage)
 	if (ctx)
 	{
 		ctx->begin_draw(_extent, _gdi_ctx->calc_base_font_size(), damage);
-		on_render(ctx);
+
+		{
+			df::perf_timer build(df::ui_perf.scene_build_us, &df::ui_perf.scene_build_max_us);
+			on_render(ctx);
+		}
 
 		const auto hr = ctx->render();
 
@@ -4357,6 +4372,8 @@ public:
 
 	void redraw() override
 	{
+		df::bump(df::ui_perf.redraws);
+
 		if (is_valid_device())
 		{
 			// No begin_draw runs here, so any damage limit from the last paint is stale - the
@@ -5584,6 +5601,8 @@ public:
 
 	void invalidate(const recti bounds, const bool erase) override
 	{
+		df::bump(df::ui_perf.invalidates);
+
 		if (bounds.is_empty())
 		{
 			InvalidateRect(m_hWnd, nullptr, erase);
@@ -9004,6 +9023,29 @@ void win32_app::set_font_base_size(const int i)
 	}
 }
 
+recti platform::fit_window_to_work_area(const recti saved, const recti work_area)
+{
+	const auto width = std::min(saved.width(), work_area.width());
+	const auto height = std::min(saved.height(), work_area.height());
+	const auto x = std::clamp(saved.left, work_area.left, std::max(work_area.left, work_area.right - width));
+	const auto y = std::clamp(saved.top, work_area.top, std::max(work_area.top, work_area.bottom - height));
+	return {x, y, x + width, y + height};
+}
+
+bool platform::window_needs_refit(const recti saved, const recti work_area, const bool reaches_a_display)
+{
+	if (!reaches_a_display) return true;
+	if (saved.width() > work_area.width() || saved.height() > work_area.height()) return true;
+
+	// Enough left to see and to grab. A window dragged almost off the edge of a display that is still
+	// attached does reach it, and restoring it there leaves nothing to click.
+	constexpr auto min_visible_cx = 96;
+	constexpr auto min_visible_cy = 32;
+	const auto overlap_cx = std::min(saved.right, work_area.right) - std::max(saved.left, work_area.left);
+	const auto overlap_cy = std::min(saved.bottom, work_area.bottom) - std::max(saved.top, work_area.top);
+	return overlap_cx < min_visible_cx || overlap_cy < min_visible_cy;
+}
+
 ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_ptr& store,
                                                   const ui::frame_host_weak_ptr& host)
 {
@@ -9028,20 +9070,26 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 				wp.showCmd = SW_SHOW;
 			}
 
-			const HDC hdc_screen = CreateDC(L"DISPLAY", nullptr, nullptr, nullptr);
-
-			if (hdc_screen)
+			// Validated against the display the rect is actually on, not the primary one. A window saved
+			// on a second display does not intersect the primary at all, so clipping to it either started
+			// the app off-screen or silently shrank a window that merely straddled two displays.
+			if (!IsRectEmpty(&wp.rcNormalPosition))
 			{
-				const win_rect screenRect(0, 0, GetDeviceCaps(hdc_screen, HORZRES),
-				                          GetDeviceCaps(hdc_screen, VERTRES));
+				const auto reaches_a_display = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONULL) != nullptr;
+				const auto nearest = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
+				MONITORINFO info = {sizeof(MONITORINFO)};
 
-				// Never start bigger than the screen?
-				if (screenRect.intersects(wp.rcNormalPosition))
+				if (nearest && GetMonitorInfo(nearest, &info))
 				{
-					wp.rcNormalPosition = screenRect.intersection(wp.rcNormalPosition);
-				}
+					const recti saved(wp.rcNormalPosition.left, wp.rcNormalPosition.top, wp.rcNormalPosition.right,
+					                  wp.rcNormalPosition.bottom);
+					const recti work(info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom);
 
-				DeleteDC(hdc_screen);
+					if (platform::window_needs_refit(saved, work, reaches_a_display))
+					{
+						wp.rcNormalPosition = win_rect(platform::fit_window_to_work_area(saved, work));
+					}
+				}
 			}
 		}
 	}

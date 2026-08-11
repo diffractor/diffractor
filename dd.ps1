@@ -987,8 +987,18 @@ function New-GitHubRelease {
     
     # Create release with assets, generate notes automatically
     # Note: gh release create will create the tag automatically
+    # --target pins the tag to the commit that produced these artifacts. Without it gh tags the
+    # repository default branch, so releasing from a branch not yet merged to master would publish
+    # a tag and source archives for a tree the uploaded installer was never built from.
+    $releaseTarget = & git rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Could not resolve HEAD for the release tag" -ForegroundColor Red
+        exit 1
+    }
+
     & gh release create $tagName `
         --title $releaseName `
+        --target $releaseTarget `
         --generate-notes `
         $installer `
         $zipFile

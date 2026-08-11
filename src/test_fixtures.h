@@ -7,7 +7,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Shared test infrastructure, helper classes, and utility functions
-// used across multiple test files (tests1-6).
+// used across every test file. The taxonomy is documented in docs/testing.md.
 
 #pragma once
 
@@ -483,6 +483,18 @@ std::shared_ptr<av_session> make_test_session();
 // The gazetteer costs seconds to load, so every test that needs real place data shares one
 // loaded instance. A test that mutates it (set_display_language) must restore it before returning.
 location_cache& test_locations();
+
+inline void write_test_file(const df::file_path path, const std::string_view text)
+{
+	std::ofstream fs(platform::to_file_system_path(path), std::ios::binary | std::ios::trunc);
+	fs << text;
+}
+
+inline std::string read_test_file(const df::file_path path)
+{
+	const auto data = df::blob_from_file(path);
+	return {std::bit_cast<const char*>(data.data()), data.size()};
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shared prop_test helper for search matching tests
