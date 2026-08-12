@@ -522,7 +522,7 @@ msgid "Toggle repeat play"
 msgstr "リピート再生を切り替え"
 
 msgid "Restore"
-msgstr "元に戻す"
+msgstr "元のサイズに戻す"
 
 msgid "Rotate anticlockwise"
 msgstr "反時計回りに回転"
@@ -3631,3 +3631,9 @@ msgstr "同じ時間に撮影"
 
 msgid "Taken in the same place"
 msgstr "同じ場所で撮影"
+
+msgid "Recovered from a startup problem"
+msgstr "起動時の問題から復帰しました"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor は起動を完了する前に予期せず終了したため、今回はハードウェアアクセラレーションを無効にした既定のレイアウトで実行しています。ファイル、コレクション、最近使用した項目は変更されていません。設定はオプションから復元できます。"

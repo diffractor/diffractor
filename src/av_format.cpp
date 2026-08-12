@@ -26,6 +26,7 @@ extern "C" {
 #include "libavutil/display.h"
 #include "libavutil/opt.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/pixdesc.h"
 #include "libswscale/swscale.h"
 #include "libswresample/swresample.h"
 #include "libavcodec/avcodec.h"
@@ -598,6 +599,37 @@ public:
 size_t av_queued_payload_bytes(const av_packet_ptr& p)
 {
 	return p && p->pkt && p->pkt->size > 0 ? static_cast<size_t>(p->pkt->size) : 0;
+}
+
+size_t av_queued_payload_bytes(const av_frame_ptr& f)
+{
+	if (!f) return 0;
+
+	const auto& frm = f->frm;
+
+	// A hardware frame's own buffer is a handle, not pixels. What it costs is the pool surface it
+	// keeps checked out, and that pool is allocated in full when the stream opens, so charging the
+	// surface is what makes one read-ahead budget size both the queue and the pool.
+	if (frm.format == AV_PIX_FMT_D3D11 && frm.hw_frames_ctx)
+	{
+		const auto* const ctx = std::bit_cast<const AVHWFramesContext*>(frm.hw_frames_ctx->data);
+		const auto bytes = av_image_get_buffer_size(ctx->sw_format, ctx->width, ctx->height, 1);
+		return bytes > 0 ? static_cast<size_t>(bytes) : 0;
+	}
+
+	size_t result = 0;
+
+	for (const auto* const buf : frm.buf)
+	{
+		if (buf) result += buf->size;
+	}
+
+	for (auto i = 0; i < frm.nb_extended_buf; ++i)
+	{
+		if (frm.extended_buf[i]) result += frm.extended_buf[i]->size;
+	}
+
+	return result;
 }
 
 
@@ -1437,6 +1469,26 @@ static AVPixelFormat get_hw_format(AVCodecContext* ctx,
 	return AV_PIX_FMT_NONE;
 }
 
+// Surfaces this app checks out of the pool beyond the read-ahead queue: the frame on screen, the
+// two update_for_present holds while it settles onto a sought position, and one for a frame the
+// decoder emits after the queue has stopped asking for more.
+static constexpr size_t hw_frames_held_outside_queue = 4;
+
+// What one hardware surface costs in the decoder's pool. Deliberately computed from the coded
+// size rather than the aligned one the pool actually rounds up to: under-reading the cost buys one
+// more surface, and an over-read would buy one fewer than the queue is about to hold.
+static size_t hw_surface_bytes(const AVCodecParameters* par)
+{
+	if (!par || par->width <= 0 || par->height <= 0) return 0;
+
+	const auto* const desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(par->format));
+	const size_t bytes_per_sample = desc && desc->comp[0].depth > 8 ? 2 : 1;
+
+	// NV12, or P010 when the stream is deeper than 8 bits: one full luma plane and a half-height
+	// interleaved chroma plane.
+	return static_cast<size_t>(par->width) * static_cast<size_t>(par->height) * 3 * bytes_per_sample / 2;
+}
+
 
 void av_format_decoder::init_streams(int video_track, int audio_track, const bool can_use_hw, const bool video_only,
                                      const bool can_use_threads)
@@ -1514,7 +1566,21 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 							if (ret == 0)
 							{
 								vc->get_format = get_hw_format;
-								vc->extra_hw_frames = 16;
+
+								// The whole pool is one D3D11 texture array created when the stream
+								// opens, so every surface is paid for whether or not it is used.
+								// FFmpeg already provisions the decoder's own reference frames; these
+								// are the extra surfaces this app checks out - the read-ahead queue,
+								// the frame on screen, and the ones update_for_present holds while it
+								// settles - so they follow the same byte budget the queue does.
+								vc->extra_hw_frames = static_cast<int>(
+									av_read_ahead_frames(hw_surface_bytes(video_stream->codecpar)) +
+									hw_frames_held_outside_queue);
+
+								// Frame threading costs one more pool surface per thread and buys
+								// almost nothing once the GPU is doing the decoding.
+								vc->thread_count = 1;
+
 								vc->hw_device_ctx = av_buffer_ref(_hw_device_ctx);
 								break;
 							}
@@ -1792,7 +1858,8 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 
 
 bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
-                                             const double wanted_time)
+                                             const double wanted_time, const double tolerance,
+                                             df::cancel_token abandon)
 {
 	if (!_has_video)
 	{
@@ -1806,8 +1873,15 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 		_scaler = std::make_unique<av_scaler>();
 	}
 
-	auto success = false;
+	// A seek lands on the key frame at or before the target, so every frame between the two is
+	// decoded on the way. Only a reference to the nearest one is kept: scaling each improving frame
+	// in turn cost a bicubic pass and a fresh surface per frame of the GOP, and all but the last
+	// were thrown away.
+	av_frame best;
+	auto best_time = 0.0;
 	auto best_dist = std::numeric_limits<double>::max();
+	auto found = false;
+	auto reached = false;
 
 	// The walk normally stops the moment it passes wanted_time; this only bounds a stream that
 	// never gets there (a truncated or corrupt file). It therefore has to be wide enough to
@@ -1815,7 +1889,7 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 	// over a thousand - or the caller silently gets a frame short of the position it asked for.
 	constexpr int max_packets = 8192;
 
-	for (int i = 0; i < max_packets && !df::is_closing; i++)
+	for (int i = 0; i < max_packets && !reached && !df::is_closing; i++)
 	{
 		const auto packet = read_packet();
 
@@ -1834,41 +1908,53 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 			continue;
 		}
 
-		AVFrame frame = {};
+		av_frame frame;
 
-		while (avcodec_receive_frame(ctx, &frame) == 0)
+		while (!reached && avcodec_receive_frame(ctx, &frame.frm) == 0)
 		{
-			const auto pts = _pts_vid.guess(frame.best_effort_timestamp, frame.pts, frame.pkt_dts, frame.duration);
+			const auto pts = _pts_vid.guess(frame.frm.best_effort_timestamp, frame.frm.pts, frame.frm.pkt_dts,
+			                                frame.frm.duration);
 			const auto time = to_video_seconds(pts);
 			const auto dist = fabs(time - wanted_time);
-			const auto reached = time >= wanted_time;
 
-			// Frames arrive in presentation order, so the distance to the target
-			// shrinks until we pass it. Scale each improving frame; the last one kept
-			// is the nearest.
-			if (dist < best_dist && _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation()))
+			// Frames arrive in presentation order, so the distance to the target shrinks until we
+			// pass it; the last improvement is the nearest frame.
+			if (dist < best_dist)
 			{
 				best_dist = dist;
-				success = true;
+				best_time = time;
+				found = true;
+				av_frame_unref(&best.frm);
+				av_frame_move_ref(&best.frm, &frame.frm);
+			}
+			else
+			{
+				av_frame_unref(&frame.frm);
 			}
 
-			av_frame_unref(&frame);
-
-			if (reached)
+			// Either the walk has passed the target, or it holds a frame near enough for a caller that
+			// allowed slack. Refining further would only improve a frame already accepted.
+			if (time >= wanted_time || (found && best_dist <= tolerance))
 			{
-				return success;
+				reached = true;
 			}
 		}
 
-		av_frame_unref(&frame);
+		// The caller always needs something to show, so the first frame decoded is never given up -
+		// only the refinement toward the exact one is. A pointer that has already moved on makes that
+		// refinement worthless.
+		if (found && abandon.is_cancelled())
+		{
+			break;
+		}
 	}
 
-	return success;
+	return found && _scaler->scale_frame(best.frm, dest_surface, max_dim, best_time, calc_orientation());
 }
 
 bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
                                            const double pos_numerator,
-                                           const double pos_denominator)
+                                           const double pos_denominator, df::cancel_token abandon)
 {
 	if (!_has_video)
 	{
@@ -1895,13 +1981,14 @@ bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const 
 	avcodec_flush_buffers(ctx);
 	_pts_vid.clear();
 
-	return decode_nearest_frame(dest_surface, max_dim, wanted_time);
+	return decode_nearest_frame(dest_surface, max_dim, wanted_time, 0.0, abandon);
 }
 
 bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const sizei max_dim,
                                           const double pos_numerator,
                                           const double pos_denominator,
-                                          const bool exact_frame)
+                                          const bool exact_frame,
+                                          const double tolerance_fraction, df::cancel_token abandon)
 {
 	auto success = false;
 
@@ -1913,28 +2000,34 @@ bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const s
 
 		if (duration > 0)
 		{
-			auto seek_success = true;
+			// The preview decoder is reused across hovers, so it only sits at the start of the stream
+			// when it has just been opened. Without a seek, a hover near the start answers from
+			// wherever the previous hover left the decoder - and every frame from there is already
+			// past the requested time, so the walk returns the first one it sees.
+			auto seek_success = seek(time_wanted);
 
-			if (time_wanted > 2.0)
+			if (seek_success)
 			{
-				seek_success = seek(time_wanted);
-
-				if (seek_success)
-				{
-					// A container-level seek does not flush the decoder, so drop any
-					// frames buffered before the seek and reset the timestamp estimator -
-					// otherwise the thumbnail can come from a stale pre-seek frame (matches
-					// the flush in extract_seek_frame).
-					avcodec_flush_buffers(ctx);
-					_pts_vid.clear();
-				}
+				// A container-level seek does not flush the decoder, so drop any
+				// frames buffered before the seek and reset the timestamp estimator -
+				// otherwise the thumbnail can come from a stale pre-seek frame (matches
+				// the flush in extract_seek_frame).
+				avcodec_flush_buffers(ctx);
+				_pts_vid.clear();
+			}
+			else
+			{
+				// Decoding forward is only meaningful from a known position, so a stream that cannot
+				// seek answers from the start and nowhere else.
+				seek_success = time_wanted <= 2.0;
 			}
 
 			if (seek_success)
 			{
 				if (exact_frame)
 				{
-					success = decode_nearest_frame(dest_surface, max_dim, time_wanted);
+					success = decode_nearest_frame(dest_surface, max_dim, time_wanted,
+					                               duration * std::max(0.0, tolerance_fraction), abandon);
 				}
 				else
 				{
@@ -2316,6 +2409,14 @@ bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surfa
 		                        ? AV_PIX_FMT_BGRA
 		                        : AV_PIX_FMT_NONE;
 	if (source_fmt == AV_PIX_FMT_NONE) return false;
+
+	// swscale has no RGB->RGB scaler: it converts to planar YUV and back, and a BGRA source carries
+	// no chroma subsampling, so libswscale forces SWS_FULL_CHR_H_INT and the scalar
+	// yuv2bgra32_full_X_c output converter. Reducing a packed surface is answered directly instead.
+	if (source_fmt == AV_PIX_FMT_BGRA && ui::area_downscale(surface_in, surface_out, dimensions_out))
+	{
+		return true;
+	}
 
 	constexpr auto output_fmt = AV_PIX_FMT_BGRA;
 	_scaler = sws_getCachedContext(_scaler, source_extent.cx, source_extent.cy, source_fmt, dimensions_out.cx,

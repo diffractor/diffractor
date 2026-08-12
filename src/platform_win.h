@@ -43,6 +43,7 @@
 #define _WINSOCKAPI_    // stops windows.h including winsock.h
 
 #include <dxgi.h>
+#include <dxgi1_4.h> // IDXGIAdapter3, for the video-memory gauge in the session perf summary
 #include <windows.h>
 #include <wrl.h>
 using namespace Microsoft::WRL;
@@ -84,6 +85,15 @@ uint64_t ft_to_ts(const FILETIME& ft);
 namespace platform
 {
 	file_ptr make_file_from_handle(HANDLE h);
+
+	// Brings a saved window rect back onto a display. Size is preserved where it fits and clamped to
+	// the work area where it does not; the position is nudged inside.
+	recti fit_window_to_work_area(recti saved, recti work_area);
+
+	// True when a saved rect cannot be restored as it stands: it reaches no display at all, it is
+	// larger than the work area it would land in, or so little of it overlaps that there is nothing
+	// left to grab. A window deliberately straddling two displays is none of those and is left alone.
+	bool window_needs_refit(recti saved, recti work_area, bool reaches_a_display);
 }
 
 std::string win32_to_string(const IID& iid);

@@ -97,8 +97,15 @@ df_assert_movable(index_state::thumbnail_result);
 df_assert_movable(index_state::validate_folder_result);
 
 static_assert(sizeof(search_presence_mask) == 4);
-static_assert(sizeof(df::file_path) == sizeof(void*) * 2);
-static_assert(sizeof(key_val) == sizeof(void*) * 2);
+static_assert(sizeof(df::file_path) == sizeof(str::cached) * 2);
+static_assert(sizeof(key_val) == sizeof(str::cached) * 2);
+
+// Every query walks these fields once per candidate. A type that outgrows a machine word makes
+// std::atomic fall back to a lock, which x64 hides for 16 bytes and ARM64 does not, so a widened
+// field would turn the hot index record into a contended mutex rather than fail here.
+static_assert(std::atomic<df::date_t>::is_always_lock_free);
+static_assert(std::atomic<df::duplicate_info>::is_always_lock_free);
+static_assert(std::atomic<search_presence_mask>::is_always_lock_free);
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -1094,6 +1101,15 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					info.crc32c = old_first->crc32c.load();
 					info.phash = old_first->phash.load();
 
+					if (old_first->file_modified != df::date_t(file_first->attributes.modified) ||
+						old_first->size.to_int64() != static_cast<int64_t>(file_first->attributes.size))
+					{
+						// The bytes changed, so a hash of the previous bytes is no longer a description of
+						// this file. Clearing it is what asks the displayed-item worker to compute it again;
+						// carrying it forward would report an edited file and an untouched copy as identical.
+						info.crc32c = 0;
+					}
+
 					const auto was_offline = old_first->flags && df::index_item_flags::is_offline;
 					populate_file_info(info, *file_first, _cache_items_loaded);
 					const auto now_offline = info.flags && df::index_item_flags::is_offline;
@@ -1370,7 +1386,7 @@ void index_state::update_predictions()
 					}
 				}
 
-				dups.emplace_back(crypto::fnv1a_i(file.name), file_index);
+				dups.emplace_back(file.name.ihash(), file_index);
 				dups.emplace_back(x64to32(file.file_created.to_int64()), file_index);
 
 				if (file.crc32c)
@@ -1852,12 +1868,12 @@ void location_matrix::add(df::file_path path, const gps_coordinate coordinate, c
 {
 	if (!params.contains(coordinate)) return;
 	const auto index = params.cell(coordinate);
-	const auto key = std::make_pair(index.x, index.y);
+	const auto key = static_cast<uint64_t>(static_cast<uint32_t>(index.x)) << 32 | static_cast<uint32_t>(index.y);
 	const uint8_t representative_rank = can_thumbnail ? (rating >= 4 ? 2 : 1) : 0;
 	const auto found = _cell_lookup.find(key);
 	if (found == _cell_lookup.end())
 	{
-		_cell_lookup.emplace(key, cells.size());
+		_cell_lookup.emplace(key, static_cast<uint32_t>(cells.size()));
 		_representative_ranks.push_back(representative_rank);
 		cells.push_back({
 			index, std::move(path), {}, 1,
@@ -2363,8 +2379,6 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 		if (is_valid(shell_thumbnail))
 		{
 			files ff;
-			file_encode_params encode_params;
-			encode_params.jpeg_save_quality = thumbnail_quality;
 
 			thumbnail_image = shell_thumbnail;
 			const auto max_extent = setting.thumbnail_max_dimension;
@@ -2374,7 +2388,7 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 			{
 				const auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 				                                      decode_intent::thumbnail);
-				thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
+				thumbnail_image = ff.surface_to_thumbnail(surf);
 			}
 
 			if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
@@ -2495,9 +2509,6 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		write.md = metadata;
 		write.metadata_scanned = now;
 
-		file_encode_params encode_params;
-		encode_params.jpeg_save_quality = thumbnail_quality;
-
 		ui::const_image_ptr cover_art;
 		ui::const_image_ptr thumbnail_image;
 		ui::const_surface_ptr thumbnail_surface;
@@ -2515,14 +2526,12 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 			if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy)
 			{
 				auto surf = ff.image_to_surface(cover_art, max_extent, false, {}, decode_intent::thumbnail);
-				cover_art = ff.surface_to_image(surf, {}, encode_params,
-				                                ui::image_format::Unknown);
+				cover_art = ff.surface_to_thumbnail(surf);
 			}
-
-			df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
 
 			if (is_valid(cover_art))
 			{
+				df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
 				write.cover_art = cover_art;
 			}
 		}
@@ -2538,22 +2547,19 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				const auto dims = ui::scale_dimensions(thumb_extent, max_extent, true);
 				auto surf = std::make_shared<ui::surface>();
 				scaler.scale_surface(sr.thumbnail_surface, surf, dims);
-				thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-				                                      ui::image_format::Unknown);
+				thumbnail_image = ff.surface_to_thumbnail(surf);
 				thumbnail_surface = surf;
 			}
 			else
 			{
 				auto surf = sr.thumbnail_surface;
-				thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-				                                      ui::image_format::Unknown);
+				thumbnail_image = ff.surface_to_thumbnail(surf);
 				thumbnail_surface = surf;
 			}
 
-			df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-
 			if (is_valid(thumbnail_image))
 			{
+				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 				write.thumb = thumbnail_image;
 			}
 		}
@@ -2570,15 +2576,13 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				{
 					auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 					                                decode_intent::thumbnail);
-					thumbnail_image = ff.surface_to_image(surf, {}, encode_params,
-					                                      ui::image_format::Unknown);
+					thumbnail_image = ff.surface_to_thumbnail(surf);
 					thumbnail_surface = surf;
 				}
 
-				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
-
 				if (is_valid(thumbnail_image))
 				{
+					df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 					write.thumb = thumbnail_image;
 				}
 			}
@@ -2625,7 +2629,14 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		metadata->file_name = file_path.name();
 		found_file->metadata_scanned = now;
 		found_file->metadata.store(metadata);
-		found_file->crc32c = sr.crc32c;
+
+		// Same guard as the database write above: scan_file only computes a CRC when it read the whole
+		// file, so an ordinary thumbnail scan of a video answers zero. Storing that would clear a value
+		// the database still holds and silently drop the item out of duplicate detection.
+		if (sr.crc32c)
+		{
+			found_file->crc32c = sr.crc32c;
+		}
 
 		// search_presence is a hard rejection filter, so it must be refreshed with every
 		// published metadata snapshot or a newly matching item stays invisible to search
@@ -2706,11 +2717,11 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 
 		if (force || needs_scan_impl(folder, file, thumbnail_needed, scan_if_offline))
 		{
-			if (!crash_files.is_known_crash_file(file_path))
+			if (!crash_files().is_known_crash_file(file_path))
 			{
 				df::assert_true(ft->is_media());
 
-				record_open_path record(crash_files, file_path, str::utf8_cast(__FUNCTION__));
+				record_open_path record(crash_files(), file_path, str::utf8_cast(__FUNCTION__));
 
 				if (file.flags && df::index_item_flags::is_offline)
 				{
@@ -3261,7 +3272,6 @@ void index_state::index_folders(df::cancel_token token)
 	df::unique_folders unique_folder_paths(folders.cbegin(), folders.cend());
 
 	index_histograms histograms;
-	items_by_folder_t indexed;
 	int count = 0;
 	stats.index_folder_count = 0;
 	auto next_histogram_publish_ms = df::now_ms();
@@ -3964,7 +3974,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 					}
 				}
 
-				items_possible_hashes.emplace_back(crypto::fnv1a_i(request.path.name()), index);
+				items_possible_hashes.emplace_back(request.path.name().ihash(), index);
 			}
 		}
 
@@ -4020,7 +4030,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 						}
 
 						items_possible_hashes_contains(matches, items_possible_hashes, requests, file,
-						                               crypto::fnv1a_i(file.name));
+						                               file.name.ihash());
 					}
 				}
 			}
@@ -4148,28 +4158,25 @@ bool index_state::scan_items(const item_scan_requests& requests,
 	{
 		df::measure_ms ms(stats.scan_items_ms);
 		df::scope_locked_inc l(scanning_items);
-		df::hash_map<df::folder_path, item_scan_requests, df::ihash, df::ieq> items_by_folder;
-
-		for (const auto& request : requests)
-		{
-			if (!request.is_folder)
-			{
-				items_by_folder[request.folder].emplace_back(request);
-			}
-		}
+		df::folder_groups items_by_folder;
+		items_by_folder.build(requests,
+		                      [](const item_scan_request& r) { return r.folder; },
+		                      [](const item_scan_request& r) { return !r.is_folder; });
 
 		const auto now = platform::now();
 		db_write_batch writes(*this);
 
-		for (const auto& ff : items_by_folder)
+		for (const auto& ff : items_by_folder.groups())
 		{
 			if (token.is_cancelled()) break;
 
-			const auto node = validate_folder(ff.first, refresh_from_file_system, now);
+			const auto node = validate_folder(ff.folder, refresh_from_file_system, now);
 			if (!node.folder) continue;
 
-			for (const auto& request : ff.second)
+			for (const auto request_index : items_by_folder.elements(ff))
 			{
+				const auto& request = requests[request_index];
+
 				if (token.is_cancelled()) break;
 
 				if (!only_if_needed || request.thumbnail_needed)
@@ -4803,8 +4810,6 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 			{
 				// Downscale/re-encode to the thumbnail size budget, matching scan_offline_item.
 				files ff;
-				file_encode_params encode_params;
-				encode_params.jpeg_save_quality = thumbnail_quality;
 
 				auto thumbnail_image = shell_thumb;
 				const auto max_extent = setting.thumbnail_max_dimension;
@@ -4814,7 +4819,7 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 				{
 					auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 					                                decode_intent::thumbnail);
-					thumbnail_image = ff.surface_to_image(surf, {}, encode_params, ui::image_format::Unknown);
+					thumbnail_image = ff.surface_to_thumbnail(surf);
 				}
 
 				if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
@@ -5178,6 +5183,8 @@ bool index_state::rebuild_sorted_words(index_metadata_summary& summary, const ui
 		}
 		summary._word_trigrams.add(i, sorted[i]);
 	}
+
+	summary._word_trigrams.freeze();
 
 	return true;
 }

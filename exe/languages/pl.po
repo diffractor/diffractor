@@ -1686,7 +1686,7 @@ msgid "Vernacular"
 msgstr "Fotografia wernakularna"
 
 msgid "Vintage"
-msgstr "Klasyczny"
+msgstr "Vintage"
 
 msgid "Vocal"
 msgstr "Wokal"
@@ -1758,7 +1758,7 @@ msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "Oddziel każdy tag spacją: Kemping wakacyjny w Australii."
 
 msgid "Join 2 words together in one tag using quotes: \"national park\"."
-msgstr "Połącz 2 słowa w jednym tagu, używając cudzysłowu: „park narodowy”."
+msgstr "Połącz 2 słowa w jednym tagu, używając cudzysłowu: \"park narodowy\"."
 
 msgid "Hide verbose metadata"
 msgstr "Ukryj szczegółowe metadane"
@@ -3006,7 +3006,7 @@ msgid "Vibrance"
 msgstr "Intensywność kolorów"
 
 msgid "video"
-msgstr "wideo"
+msgstr "film"
 
 msgid "WEBP - Best for the web"
 msgstr "WEBP — najlepsze dla sieci"
@@ -3665,3 +3665,9 @@ msgstr "Wykonano w tym samym czasie"
 
 msgid "Taken in the same place"
 msgstr "Wykonano w tym samym miejscu"
+
+msgid "Recovered from a startup problem"
+msgstr "Przywrócono po problemie z uruchamianiem"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor został nieoczekiwanie zamknięty przed zakończeniem uruchamiania, dlatego to uruchomienie korzysta z domyślnego układu z wyłączoną akceleracją sprzętową. Twoje pliki, kolekcja i ostatnie elementy pozostają bez zmian. Ustawienia możesz przywrócić w Opcjach."

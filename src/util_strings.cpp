@@ -21,6 +21,11 @@
 
 df_assert_pod(str::part_t);
 df_assert_pod(str::cached);
+static_assert(sizeof(str::cached) == sizeof(uint32_t), "str::cached must stay a 32-bit handle");
+
+// Constant-initialized to the empty record so a handle used before anything is interned still
+// resolves; string_index_t replaces it with the pool base the first time a string is cached.
+std::atomic<const str::chached_string_storage_t*> str::detail::intern_pool_base = &str::detail::empty_storage;
 
 bool str::is_utf8(const char* sz, const int len)
 {
@@ -149,13 +154,18 @@ std::string str::print(__in_z __format_string const char* szFormat, ...)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // The global string index provides efficient string interning for Diffractor's indexing engine.
 // Each unique string is stored exactly once in a memory pool, and str::cached handles are
-// lightweight pointers to this shared storage.
+// 32-bit offsets into that shared storage.
 //
 // ARCHITECTURE:
 // - string_index_t: Singleton managing the intern pool
 // - append-only sharded open-addressing table: linear-probing, grow-only (no deletes, so no
 //   tombstones); 16 shards, one lock per shard for concurrent lookup/insert
-// - platform::memory_pool: Contiguous block allocator for string storage
+// - platform::memory_pool: one contiguous reservation, committed on demand, for string storage
+//
+// HANDLES:
+// Because the pool base never moves, a record is identified by its offset rather than its address,
+// so str::cached is 4 bytes instead of 8. Slot 0 is reserved for a zero-length record, which makes
+// the default-constructed handle resolve without a null check.
 //
 // THREAD SAFETY:
 // Each shard is guarded by its own lock, so strings whose hashes map to different shards can be
@@ -187,7 +197,7 @@ struct string_index_t
 	{
 		platform::mutex cs;
 		std::vector<uint32_t> hashes; // power-of-two size; 0 marks an empty slot
-		std::vector<str::chached_string_storage_t*> entries;
+		std::vector<uint32_t> entries; // str::cached handles
 		uint32_t mask = 0;
 		uint32_t count = 0;
 	};
@@ -198,21 +208,42 @@ struct string_index_t
 	static constexpr uint32_t initial_capacity = 16; // per shard, power of two
 	static constexpr size_t entry_overhead = offsetof(str::chached_string_storage_t, sz) + 1;
 
+	static_assert(platform::memory_pool::alignment == (1u << str::detail::intern_align_shift),
+	              "handles count pool alignment units");
+	static_assert((platform::memory_pool::reserve_size >> str::detail::intern_align_shift) <= UINT32_MAX,
+	              "the reservation must stay addressable by a 32-bit handle");
+
 	shard _shards[shard_count];
 	platform::memory_pool _pool; // contiguous storage for the immutable string bytes
 
+	string_index_t()
+	{
+		df::assert_true(crypto::fnv1a_i({}) == str::detail::empty_ihash);
+
+		// Burn the first slot on an empty record and publish the base, so handle 0 is the empty string
+		// and every later handle resolves to real content.
+		auto* const empty = static_cast<str::chached_string_storage_t*>(_pool.alloc(entry_overhead));
+		empty->len = 0;
+		empty->ihash = str::detail::empty_ihash;
+		empty->sz[0] = 0;
+		df::assert_true(std::bit_cast<const uint8_t*>(empty) == _pool.base);
+		str::detail::intern_pool_base.store(empty, std::memory_order_release);
+	}
+
 	// Allocate immutable storage for a new interned string (flexible array member layout).
-	str::chached_string_storage_t* make_entry(const std::string_view sv)
+	str::cached make_entry(const std::string_view sv)
 	{
 		const auto len = sv.size();
 		const auto allocation = entry_overhead + len;
 		auto* const copy = static_cast<str::chached_string_storage_t*>(_pool.alloc(allocation));
 
 		copy->len = static_cast<uint32_t>(len);
+		copy->ihash = crypto::fnv1a_i(sv);
 		memcpy_s(copy->sz, allocation - offsetof(str::chached_string_storage_t, sz), sv.data(), len * sizeof(char));
 		copy->sz[len] = 0;
 
-		return copy;
+		const auto offset = static_cast<size_t>(std::bit_cast<const uint8_t*>(copy) - _pool.base);
+		return str::cached{static_cast<uint32_t>(offset >> str::detail::intern_align_shift)};
 	}
 
 	// Grow a shard to the next power of two, rehashing existing entries. Caller holds the lock.
@@ -222,7 +253,7 @@ struct string_index_t
 			                          ? initial_capacity
 			                          : static_cast<uint32_t>(s.hashes.size()) * 2;
 		std::vector<uint32_t> next_hashes(new_size);
-		std::vector<str::chached_string_storage_t*> next_entries(new_size);
+		std::vector<uint32_t> next_entries(new_size);
 		const uint32_t new_mask = new_size - 1;
 
 		for (uint32_t old_i = 0; old_i < s.hashes.size(); ++old_i)
@@ -264,8 +295,8 @@ struct string_index_t
 			{
 				if (s.hashes[i] == hash)
 				{
-					const auto* const entry = s.entries[i];
-					if (std::string_view(entry->sz, entry->len) == sv) return {entry};
+					const auto* const entry = str::detail::resolve(s.entries[i]);
+					if (std::string_view(entry->sz, entry->len) == sv) return str::cached{s.entries[i]};
 				}
 				i = (i + 1) & s.mask;
 			}
@@ -278,11 +309,11 @@ struct string_index_t
 				continue;
 			}
 
-			auto* const entry = make_entry(sv);
-			s.entries[i] = entry;
+			const auto entry = make_entry(sv);
+			s.entries[i] = entry.id;
 			s.hashes[i] = hash;
 			s.count += 1;
-			return {entry};
+			return entry;
 		}
 	}
 };

@@ -12,7 +12,7 @@
 #include "pch.h"
 
 #include "metadata_xmp.h"
-#include "test_utils.h"
+#include "test_fixtures.h"
 #include "test_runner.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -76,6 +76,16 @@ int run_console_tests(const std::string_view test_filter)
 	const auto total = static_cast<int>(filtered.size());
 	int passed = 0;
 	int failed = 0;
+	int structural_failures = 0;
+
+	// A filter that matches nothing prints nothing and used to exit 0, so a mistyped /test:<name>
+	// was indistinguishable from a clean run.
+	if (total == 0)
+	{
+		printf("  FAIL  no test matched the filter '%.*s'\n", static_cast<int>(test_filter.size()),
+		       test_filter.data());
+		return 1;
+	}
 
 	// Two registrations under one name make /test:<name> ambiguous and a failure report unattributable.
 	{
@@ -85,8 +95,11 @@ int run_console_tests(const std::string_view test_filter)
 		for (const auto& [name, count] : seen)
 		{
 			if (count > 1)
-				printf("  WARN  duplicate test name '%.*s' registered %d times\n",
+			{
+				printf("  FAIL  duplicate test name '%.*s' registered %d times\n",
 				       static_cast<int>(name.size()), name.data(), count);
+				++structural_failures;
+			}
 		}
 	}
 
@@ -145,5 +158,5 @@ int run_console_tests(const std::string_view test_filter)
 	printf("Results: %d passed, %d failed, %d total\n", passed, failed, total);
 	printf("========================================\n");
 
-	return failed > 0 ? 1 : 0;
+	return failed > 0 || structural_failures > 0 ? 1 : 0;
 }

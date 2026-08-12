@@ -1758,7 +1758,7 @@ msgid "Separate each tag with a space: Australia holiday camping."
 msgstr "用空格分隔每个标签：澳大利亚度假露营。"
 
 msgid "Join 2 words together in one tag using quotes: \"national park\"."
-msgstr "使用引号将 2 个单词连接到一个标签中：“国家公园”。"
+msgstr "使用引号将 2 个单词连接到一个标签中：\"国家公园\"。"
 
 msgid "Hide verbose metadata"
 msgstr "隐藏详细元数据"
@@ -3629,3 +3629,9 @@ msgstr "同一时间拍摄"
 
 msgid "Taken in the same place"
 msgstr "同一地点拍摄"
+
+msgid "Recovered from a startup problem"
+msgstr "已从启动问题中恢复"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor 在完成启动前意外关闭，因此本次运行使用默认布局并关闭了硬件加速。您的文件、集合和最近的项目均未更改。您可以在“选项”中恢复设置。"

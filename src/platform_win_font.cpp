@@ -841,41 +841,6 @@ render_char_result font_renderer::render_glyph(const uint16_t glyph_index, const
 	return result;
 }
 
-sizei font_renderer::measure(const std::wstring_view text, const ui::style::text_style style, const int width,
-                             int height) const
-{
-	if (text.empty() || text.size() > INT_MAX)
-	{
-		return {}; // Return empty result for invalid input
-	}
-
-	if (height == 0) height = 1000;
-
-	ComPtr<IDWriteTextLayout> layout;
-	auto hr = _factory->CreateTextLayout(text.data(), static_cast<int>(text.size()), _text_format.Get(), 0, 0, &layout);
-
-	if (SUCCEEDED(hr))
-	{
-		const auto no_wrap = style != ui::style::text_style::multiline && style !=
-			ui::style::text_style::multiline_center;
-		layout->SetWordWrapping(no_wrap ? DWRITE_WORD_WRAPPING_NO_WRAP : DWRITE_WORD_WRAPPING_WRAP);
-
-		layout->SetMaxWidth(static_cast<float>(width));
-		layout->SetMaxHeight(static_cast<float>(height));
-
-		DWRITE_TEXT_METRICS metrics{};
-		hr = layout->GetMetrics(&metrics);
-
-		if (SUCCEEDED(hr))
-		{
-			return {df::round_up(metrics.width), df::round_up(metrics.height)};
-		}
-	}
-
-	return {};
-}
-
-
 static void configure_layout(const ComPtr<IDWriteTextLayout>& layout, const ui::style::text_style& style)
 {
 	auto word_wrapping = DWRITE_WORD_WRAPPING_NO_WRAP;
@@ -1003,4 +968,99 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteT
 	layout->Draw(nullptr, tr,
 	             static_cast<float>(bounds.left),
 	             static_cast<float>(bounds.top));
+}
+
+void font_renderer::trim_layout_cache()
+{
+	// Drop the least recently used half rather than one entry, so a working set larger than the cap
+	// costs one rebuild per eviction round instead of one per lookup.
+	std::vector<uint64_t> stamps;
+	stamps.reserve(_layouts.size());
+	for (const auto& [key, entry] : _layouts) stamps.emplace_back(entry.used);
+
+	const auto middle = stamps.begin() + stamps.size() / 2;
+	std::ranges::nth_element(stamps, middle);
+	const auto cutoff = *middle;
+
+	std::erase_if(_layouts, [cutoff](const auto& kv) { return kv.second.used <= cutoff; });
+}
+
+IDWriteTextLayout* font_renderer::cached_layout(const std::string_view text, const ui::style::text_style style,
+                                                const bool for_draw)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	// The returned pointer is only valid until the next lookup, which may evict it. Nothing reached
+	// from layout->Draw draws text, so a layout cannot be evicted while it is being drawn.
+	const auto found = _layouts.find(layout_key_view{text, style, for_draw});
+
+	if (found != _layouts.end())
+	{
+		found->second.used = ++_layout_clock;
+		return found->second.layout.Get();
+	}
+
+	const auto textw = str::utf8_to_utf16(text);
+
+	if (textw.empty() || textw.size() > INT_MAX)
+	{
+		return nullptr;
+	}
+
+	ComPtr<IDWriteTextLayout> layout;
+
+	if (FAILED(_factory->CreateTextLayout(textw.data(), static_cast<int>(textw.size()), _text_format.Get(), 0.0f, 0.0f,
+	                                      &layout)) || !layout)
+	{
+		return nullptr;
+	}
+
+	if (for_draw)
+	{
+		configure_layout(layout, style);
+	}
+	else
+	{
+		// Matches the wstring measure overload: wrapping only, so a measured extent keeps meaning
+		// what it did before the cache existed.
+		const auto no_wrap = style != ui::style::text_style::multiline &&
+			style != ui::style::text_style::multiline_center;
+		layout->SetWordWrapping(no_wrap ? DWRITE_WORD_WRAPPING_NO_WRAP : DWRITE_WORD_WRAPPING_WRAP);
+	}
+
+	if (_layouts.size() >= max_cached_layouts)
+	{
+		trim_layout_cache();
+	}
+
+	auto& entry = _layouts[layout_key{std::string(text), style, for_draw}];
+	entry.layout = layout;
+	entry.used = ++_layout_clock;
+	return entry.layout.Get();
+}
+
+sizei font_renderer::measure(const std::string_view text, const ui::style::text_style style, const int width,
+                             int height)
+{
+	if (height == 0) height = 1000;
+
+	auto* const layout = cached_layout(text, style, false);
+	if (!layout) return {};
+
+	layout->SetMaxWidth(static_cast<float>(width));
+	layout->SetMaxHeight(static_cast<float>(height));
+
+	DWRITE_TEXT_METRICS metrics{};
+
+	if (FAILED(layout->GetMetrics(&metrics))) return {};
+
+	return {df::round_up(metrics.width), df::round_up(metrics.height)};
+}
+
+void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const std::string_view text,
+                         const recti bounds, const ui::style::text_style style, const ui::color color,
+                         const ui::color bg)
+{
+	auto* const layout = cached_layout(text, style, true);
+	if (layout) draw(dc, tr, layout, bounds, color, bg);
 }

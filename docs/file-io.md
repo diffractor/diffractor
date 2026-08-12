@@ -36,9 +36,10 @@ to a file was made by Diffractor or by something else (§2.3).
 
 ### 1.1 Reading
 
-The user should never wait in front of an empty display, and should never be shown a hard cut. Every
-transition is from *something* to *something better*, crossfaded. Two rules follow, and they are how
-[zoom.md](zoom.md) L11 and L12 are met:
+The user should never wait in front of an empty display, and should never be shown a hard cut *within
+an item*. Every transition from one representation of an item to a better one is dissolved; moving to
+a different item is immediate, because its thumbnail is already available. Two rules follow, and they
+are how [zoom.md](zoom.md) L11 and L12 are met:
 
 1. **There is always something to draw.** At worst a correctly shaped grey rectangle, at best the
    full-resolution image. Whatever the best available representation is, it is drawn immediately,
@@ -253,6 +254,34 @@ Acquisition of *browser* thumbnails is a different pipeline, owned by
 [implementation.md](implementation.md). This section starts from the point where an item is selected
 for display.
 
+Both pipelines obey one memory rule. Pixels are expensive and encoded bytes are not, so **only what
+is on screen exists decoded**; everything else is held in its compressed form, and anything held
+compressed is under a budget with a cheaper place to reload from. That gives four statements the
+whole read path has to keep true:
+
+- **Decode for the screen, not for the file.** Every decode is asked for at the size the display will
+  use. Nothing is read ahead of what is displayed, and nothing is decoded at native size on the way
+  to a smaller one when the codec can avoid it.
+- **At rest, hold the cheapest form that exists.** An item keeps a bounded WebP thumbnail, and a
+  displayed image keeps its encoded source file — *when it has one*. The codecs that decode straight
+  to a surface have no compressed form at all, so for those the surface is the cheapest form and is
+  what is kept. Nothing keeps a surface it is neither drawing from nor unable to rebuild.
+- **Retention is budgeted, and evicts to something cheaper.** Decoded surfaces are bounded by
+  `df::max_texture_bytes`, thumbnails by `df::max_thumbnail_bytes`, and the recent-texture cache by
+  both a count and a byte budget over its irreproducible remainder. Each evicts to a cheaper source
+  than the original work — SQLite for a thumbnail, the retained encoded image for a surface — and
+  where no cheaper source exists, the expensive form is retained instead; see [4.7](#47-lifetime).
+- **Textures are built just in time.** A GPU texture is created by the frame that first needs it and
+  released with the rest of the graphics resources. It is never the thing that keeps pixels alive.
+
+The two size-reduction mechanisms have to agree for that first statement to hold. libjpeg can scale
+in the DCT domain by any N/8, but `ui::calc_scale_down_factor` uses only 1/2, 1/4 and 1/8, picking
+the largest whose result still covers the target; `files_jpeg` passes it as `scale_denom` and the
+app's own resampler closes the remaining gap. The direction is the invariant: the codec step must
+land at or above the target so the resampler only ever downscales. Every other codec decodes at
+native size and goes straight to `scale_if_needed`, which is why `estimate_decode_bytes` treats JPEG
+and the rest differently.
+
 Each phase is a better representation of the same item. Phases are skipped when unavailable or
 unnecessary, and the display sits at the best phase reached so far.
 
@@ -268,6 +297,31 @@ Phase 1 is the normal entry point, because the browser has usually already obtai
 `texture_state` constructor seeds `_loaded.i` with it before any work is queued. Phase 0 covers the
 case where it has not — a newly indexed item, or a cloud placeholder — and is what makes "no
 thumbnail yet" a shaped grey box rather than a blank area or a stall.
+
+Phase 1 is only *sub-millisecond* where it needs no worker at all, and `seed_placeholder` is what
+buys that. The browser stages a decoded thumbnail surface for every visible item, so the item usually
+holds the very pixels phase 1 wants; `get_tex` hands that surface straight to `_staged_surface` and
+the next draw uploads it. Without that step phase 1 costs a render-worker hop plus a UI hop before
+anything at all is on screen, and phase 0's grey rectangle stands in for the whole of it — which is
+visible as a flash on every selection, and is what the ladder exists to avoid. The seed is applied to
+cached entries as well as new ones, because §4.7 demotion gives up everything an entry had decoded.
+
+That leaves the question of where the surface comes from when there is no browser. The media view has
+no grid staging thumbnails behind it, and switching views clears the cached surface of every item
+outside the browser's viewport, so the display keeps its own supply: `display_state_t::populate`
+stages the thumbnail surface of the displayed item and the one either side of it. Two extra
+320-pixel decodes — this is not the image read-ahead §4.7 rejected, which decoded whole neighbouring
+images at display size. A view switch is correspondingly narrowed to offscreen items only: what the
+user was just looking at is exactly what the media view is about to step through.
+
+Staging is not enough on its own, because an item can reach the display with **no encoded thumbnail
+at all**. A metadata-only index pass stores none, `trim_thumbnail_blobs` gives them up beyond the
+browser's viewport, and only `items_view` ever asks the database for one. With `_loaded.i` empty
+there is nothing for phase 1 to decode and `draw` queues nothing, so the media area holds phase 0 for
+the entire file load and full-size decode — the longest and most visible version of the flash. So
+`populate` also calls `index_state::queue_load_thumbnail` for any of those three items that has none,
+which reads the database and falls back to a source scan. That result arrives long after the
+`texture_state` was built, so `refresh` re-seeds on every layout rather than only at assembly.
 
 ### 4.1 The ladder branches by file type after phase 1
 
@@ -313,6 +367,12 @@ replaced. Phase 0 therefore uses the item's metadata dimensions and orientation 
 index without touching the file — and `calc_display_dimensions` applies the orientation swap. Where
 metadata dimensions are absent, the thumbnail's own dimensions stand in.
 
+A stand-in is not an answer, and `_display_geometry_known` must stay false while one is in use. The
+thumbnail was scaled to fit a bounding box, so it carries the shape only to within a rounding error;
+the first load replaces it. Marking the stand-in as known instead froze that rounded aspect, and the
+correction then landed at whatever later moment happened to clear the flag — a resize with no visible
+cause, long after the image had settled.
+
 ### 4.4 The pipeline
 
 Reaching phase 3 takes three worker hops and three UI hops, which is why perceived latency exceeds
@@ -329,8 +389,17 @@ decode time:
 6. **UI** — the next `draw` uploads the surface to a GPU texture and calls `fade_out`.
 
 Phases 1 and 2 use the same steps 4 to 6; phase 1 skips steps 1 to 3 because its representation is
-already in hand. Step 6 happens on the UI thread by design: only the draw context can create
-textures. Decoding never does.
+already in hand, and skips steps 4 and 5 as well wherever the browser already staged the surface.
+Step 6 happens on the UI thread by design: only the draw context can create textures. Decoding never
+does.
+
+Steps 2 and 4 race, and phase 1 loses that race often enough to matter: `files::load` is single-digit
+milliseconds on a queue of its own, while the phase 1 decode shares `async_queue::render` with
+browser thumbnail staging. The publish guard therefore has one exception. A superseded placeholder
+result is still adopted when nothing is drawn or staged, because the alternative is phase 0 for the
+full duration of the phase 3 decode. It is staged alone: the retained surface and the navigator
+downsample belong to the phase that superseded it, and a thumbnail-derived surface in
+`_retained_surface` would be reused as though it were the source.
 
 ### 4.5 Resolution changes re-enter the ladder
 
@@ -351,6 +420,11 @@ Decoding to display size rather than full resolution is deliberate: it bounds de
 and it keeps minification below roughly 2x so the Catmull-Rom sampler described in
 [rendering.md](rendering.md) stays well sampled. `calc_sampler` depends on this and would alias
 without it.
+
+The seeded phase 1 is the one representation that is *not* pre-scaled to display size — it is the
+browser's thumbnail at thumbnail resolution — so it reaches `calc_sampler` at four or five times
+magnification, past the threshold where a real image is drawn nearest-neighbour. It is passed as
+provisional so it is magnified smoothly; [zoom.md](zoom.md#3-the-laws) L12 owns why.
 
 A RAW held at phase 2 is the exception. Zooming past the embedded preview's resolution upscales it
 rather than quietly starting a development; the phase 4 decision stays with the user however far they
@@ -375,9 +449,33 @@ quality mark visible when the displayed image needs more source pixels.
 
 `display_state_t::populate` carries a `texture_state` forward when the same item remains displayed
 after a selection change. Stepping to another image can reuse the bounded recent texture cache;
-otherwise it builds a fresh `texture_state` and restarts at phase 1. The cache retains at most five
-items and 256 MiB, so stepping back commonly avoids repeated work without allowing memory use to grow
-with session length.
+otherwise it builds a fresh `texture_state` and restarts at phase 1. No image is loaded ahead of the
+one being displayed: a decode at the size the display asks for is fast enough that reading files the
+user has not opened costs more memory than it saves time, and most navigation passes straight over
+an image without zooming into it.
+
+The cache retains **by form, not by recency**. `release_undisplayed` demotes every entry that is no
+longer displayed: it gives up each representation that entry decoded — staged surface, retained
+surface, navigator downsample and GPU textures — and keeps only `_loaded`. For the codecs that end at
+`_loaded.i` that leaves the encoded file, which the next draw re-decodes at display size for less
+than the surface cost to hold. For the codecs that end at `_loaded.s` — PSD, HEIF, JXL, TIFF, GIF,
+BMP and a developed RAW — the surface *is* the only representation, so it survives. Returning to a
+demoted entry therefore has no texture, and would show phase 0 for the length of a phase 3 decode if
+`get_tex` did not re-seed phase 1 from the item's staged thumbnail. That is
+deliberate: those already paid for a whole-frame native-size decode and have nothing compressed to
+fall back on, and a developed RAW additionally carries a phase 4 decision the user made explicitly.
+
+Demotion runs from `view_state::load_display_state` once the new display is live. Nothing reads the
+outgoing entry after that point: with no item-to-item fade, the incoming image no longer needs the
+outgoing one's `_last_draw_tex`.
+
+What is left after that demotion is therefore only the irreproducible remainder, and that is what the
+byte budget bounds — `df::max_texture_bytes`, about what the displayed image itself is allowed, so
+the cache can carry one expensive decode forward rather than several. The cache also holds at most
+`max_recent_textures` entries; two of those are structural, since `populate` finds the outgoing
+display's `texture_state` through this same map and would otherwise restart a still-displayed item at
+phase 1. `free_graphics_resources` clears the cache outright: nothing in it is on screen, and the
+displayed textures are held by the display state itself.
 
 `free_graphics_resources` drops every GPU object and sets `_tex_invalid` but keeps `_loaded`. Device
 loss, a theme change, or a DPI change therefore rebuilds the texture from the retained representation
@@ -410,21 +508,35 @@ a contested extension is an obscure or output-only ffmpeg format, the entry is d
 table instead, and the file is simply not media. `.raw` is the counter-case and stays: it is a real
 Panasonic and Leica raw extension, so dropping it would hide photographs, which fails the wrong way.
 
-### 4.9 Crossfade
+### 4.9 The resolution dissolve
 
-Two animations run per `texture_state`. `_display_alpha_animation` fades the incoming representation
-in from zero; `_fade_out_alpha_animation` fades the outgoing one out. The outgoing texture is drawn
-*over* the incoming one and released once the incoming reaches full alpha, so the transition is a
-dissolve rather than a cut.
+One animation runs per `texture_state`. `_display_alpha_animation` fades an incoming representation in
+over the outgoing one, which is held underneath at full opacity and released once the incoming
+reaches full alpha. Drawing the old image opaque beneath the new one rather than fading both means
+the composite never dips toward the background mid-transition.
 
-`fade_out` captures the last drawn texture within an item as phases improve. `clone_fade_out` copies
-the *previous item's* last drawn texture into the new `texture_state`, so stepping between items also
-dissolves image to image rather than through grey. Phase 0 is the only case where a fade begins from
-grey.
+`fade_out` captures the last drawn texture and restarts the animation, so **the only dissolve is
+between resolutions of one item**: thumbnail to decoded image, embedded preview to development, still
+to first video frame. Where there is no last drawn texture there is nothing to dissolve from, so the
+first image of an item appears at once rather than fading up out of the background.
 
-[zoom.md](zoom.md) §4 treats the item-to-item crossfade as optional and available only where frames
-are cheap, while the within-item upgrade fade is the "no flash" requirement of §10 and is not
-optional.
+Two orderings inside `draw` decide whether that actually holds. The alpha must be read **after** the
+texture upload, because the upload is what calls `fade_out` and restarts the animation: read before
+it, the value is the *previous* fade's finished 1.0, which draws the incoming texture opaque for one
+frame, releases the outgoing texture as though the fade were complete, and leaves every subsequent
+frame fading up from the background — the failure this section exists to prevent, wearing the costume
+of a working fade. And the outgoing texture is drawn at the incoming image's *current* bounds, not
+the bounds it was last drawn at, because a zoom moves those every frame and a frozen copy drifts out
+of register for the length of the dissolve.
+
+There is deliberately no item-to-item fade. A new item's thumbnail is on screen at its first draw, so
+stepping shows it straight away; carrying the previous item's texture across only to dissolve it away
+added a transition the user cannot act on, and made the outgoing `texture_state` load-bearing for the
+incoming one's first frame. That trade only holds while phase 1 really is immediate: with no
+outgoing image underneath, every gap before the first texture is a visible flash rather than a
+hidden one, which is why `seed_placeholder` and the placeholder publish exception in §4.4 are part of
+the same decision. The within-item upgrade fade remains the "no flash" requirement of
+[zoom.md](zoom.md) §10 and is not optional.
 
 ### 4.10 What re-enters the ladder
 
@@ -943,7 +1055,7 @@ an unrelated republish landing first cannot disarm it and let the reload happen 
 instead of reloading. When the write hands back its image,
 `texture_state::publish_written_image` stamps `_photo_timestamp` from the modified time
 `replace_file` read back through the handle, so every comparison stays inside the file's clock domain.
-Ordinary loads stay inside it too: `load_image` and `prefetch` stamp from the item's own file version
+Ordinary loads stay inside it too: `load_image` stamps from the item's own file version
 through `item_version_stamp`, the same expression `refresh` compares against. Stamping the client
 clock there would make every load on a share whose server clock leads the client look instantly stale,
 reloading the texture on every tick until the client caught up.
@@ -1033,7 +1145,7 @@ Write behaviour is covered by `src/test_media_edit.cpp`. The load-bearing cases:
   and bytes are all asserted unchanged, and `staged` is false. Size alone would not catch a
   same-size copy-and-swap, which is exactly what the §5.2 branch exists to remove.
 - A staged replace returns a coherent handle and reading it back yields the bytes just written
-  (`src/test_utils.cpp`).
+  (`src/test_files.cpp`).
 - WebP chunk order survives a metadata save.
 - Sidecar collision handling under the guided-operation grammar.
 
@@ -1042,14 +1154,15 @@ the write staged and swapped — not merely that the value round-trips. Round-tr
 every strategy and so proves nothing about which one ran.
 
 A test that reads back what a write produced must take the write's own scan, via `ff_scan_after_update`
-and `ff_inspect_rescan` in `src/test_utils.cpp`. Re-opening the destination by name is the stale read
+and `ff_inspect_rescan` in `src/test_fixtures.cpp`. Re-opening the destination by name is the stale read
 §6 exists to remove, so a test that does it is not testing what the app does — and over SMB it fails
 intermittently, which reads as a lost edit rather than as a test that asked the wrong question.
 
 The detach/reopen currency rule in §3.5 is covered separately by `Should reject superseded av
-session` in `src/test_index.cpp`, against `display_state_t` rather than the player: `av_player` has
+session` in `src/test_av.cpp`, against `display_state_t` rather than the player: `av_player` has
 no thread of its own, so a test that drove `open`/`close` could only wait on an unpumped queue. The
-shared detachment window is covered by `Should keep file handles detached until last operation`.
+shared detachment window is covered by `Should keep file handles detached until last operation`
+(`src/test_files.cpp`).
 
 A per-run summary of file operations is logged at exit, broken down by file type and by operation —
 reads, in-place patches, replaces, sidecar writes and write failures. It is the cheapest way to
@@ -1099,7 +1212,7 @@ be targeted while iterating:
 
 ### 13.2 Reading
 
-Deferred beyond version 1.27. The implemented viewport-bounded rendering, cancellation, prefetch and
+Deferred beyond version 1.27. The implemented viewport-bounded rendering, cancellation and
 cache behaviour is sufficient for that release; these do not block it.
 
 - **Native decode still tracks the source.** Paint submits only the visible destination and both
@@ -1112,6 +1225,8 @@ cache behaviour is sufficient for that release; these do not block it.
 - **Codec cancellation is capability-based.** JPEG checks the detached cancellation token between
   scanline chunks and aborts publication. Codecs without an owned incremental callback cannot be
   interrupted inside their library call; their stale result is still rejected by request generation.
-- **Prefetch is shallow.** The previous and next bitmap are loaded and decoded ahead, and a
-  five-item/256 MiB recent-texture cache avoids immediate repeat work. Eviction is bounded by count
-  and bytes, but does not yet rank candidates by viewport distance beyond recency.
+- **Nothing is read ahead.** Each displayed image is loaded and decoded on demand at the size the
+  display asks for, and the recent-texture cache described in [4.7](#47-lifetime) avoids immediate
+  repeat work when stepping back. It retains by form rather than by recency, so what remains
+  budgeted is only the decoded pixels of formats with no compressed representation. Eviction within
+  that remainder is still by recency and does not yet rank candidates by viewport distance.

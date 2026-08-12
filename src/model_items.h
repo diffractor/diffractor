@@ -128,7 +128,6 @@ namespace df
 	struct item_hash;
 
 	using unique_item_elements = hash_map<file_path, item_element_ptr, ihash, ieq>;
-	using file_items_by_folder = hash_map<folder_path, item_elements, ihash, ieq>;
 
 	using index_folder_item_ptr = std::shared_ptr<index_folder_item>;
 	using index_folder_info_const_ptr = std::shared_ptr<const index_folder_item>;
@@ -395,9 +394,16 @@ namespace df
 
 	struct index_file_item
 	{
-		index_item_flags flags = index_item_flags::none;
+		// Declared widest-first. MSVC aligns atomic<shared_ptr> to 16 bytes, so leading with the two
+		// published pointers and trailing with the 32-bit members keeps the record at 96 rather than 112.
+		//
+		// Published exactly like metadata: an immutable set replaced whole, never edited in place, so a
+		// reader that holds the pointer holds four orientations of one picture. Null means not computed;
+		// a set whose first entry is crypto::phash_declined means hashed and refused.
+		mutable prop::item_metadata_aptr metadata;
+		mutable df::picture_hashes_aptr phash;
+
 		file_type_ref ft = nullptr;
-		str::cached name;
 		file_size size;
 		date_t file_created;
 		// Mutable and atomic for the same reason as metadata_scanned: a coherent write advances the
@@ -407,47 +413,44 @@ namespace df
 		// the UI, database and search contexts.
 		mutable std::atomic<date_t> file_modified;
 		mutable std::atomic<date_t> metadata_scanned;
-		mutable prop::item_metadata_aptr metadata;
 		mutable std::atomic<duplicate_info> duplicates;
 
+		index_item_flags flags = index_item_flags::none;
+		str::cached name;
 		mutable std::atomic<search_presence_mask> search_presence;
 		mutable std::atomic<uint32_t> crc32c = 0;
-		// Published exactly like metadata: an immutable set replaced whole, never edited in place, so a
-		// reader that holds the pointer holds four orientations of one picture. Null means not computed;
-		// a set whose first entry is crypto::phash_declined means hashed and refused.
-		mutable df::picture_hashes_aptr phash;
 
 		index_file_item() = default;
 
 		index_file_item(const index_file_item& other)
-			: flags(other.flags),
+			: metadata(other.metadata.load()),
+			  phash(other.phash.load()),
 			  ft(other.ft),
-			  name(other.name),
 			  size(other.size),
 			  file_created(other.file_created),
 			  file_modified(other.file_modified.load()),
 			  metadata_scanned(other.metadata_scanned.load()),
-			  metadata(other.metadata.load()),
 			  duplicates(other.duplicates.load()),
+			  flags(other.flags),
+			  name(other.name),
 			  search_presence(other.search_presence.load()),
-			  crc32c(other.crc32c.load()),
-			  phash(other.phash.load())
+			  crc32c(other.crc32c.load())
 		{
 		}
 
 		index_file_item(index_file_item&& other) noexcept
-			: flags(other.flags),
+			: metadata(other.metadata.load()),
+			  phash(other.phash.load()),
 			  ft(other.ft),
-			  name(std::move(other.name)),
 			  size(std::move(other.size)),
 			  file_created(std::move(other.file_created)),
 			  file_modified(other.file_modified.load()),
 			  metadata_scanned(other.metadata_scanned.load()),
-			  metadata(other.metadata.load()),
 			  duplicates(other.duplicates.load()),
+			  flags(other.flags),
+			  name(std::move(other.name)),
 			  search_presence(other.search_presence.load()),
-			  crc32c(other.crc32c.load()),
-			  phash(other.phash.load())
+			  crc32c(other.crc32c.load())
 		{
 			other.metadata.store(nullptr);
 			other.phash.store(nullptr);
@@ -567,26 +570,29 @@ namespace df
 
 	struct index_folder_item
 	{
+		// Declared widest-first so the flags and 32-bit members share one tail word instead of
+		// leaving holes between the wide members; see index_file_item.
 		const index_item_infos files;
 		std::atomic<std::shared_ptr<const index_folder_infos>> child_folders =
 			std::make_shared<const index_folder_infos>();
+
+		date_t created = {};
+		date_t modified = {};
+
+		str::cached volume = {};
+		str::cached name = {};
+
+		// OR-summary of item presence masks. Missing bits reject the whole folder;
+		// extra stale bits are safe because item masks and exact matching follow.
+		std::atomic<search_presence_mask> search_presence_summary;
 
 		// is_in_collection / is_excluded are flipped by the indexing thread (index_folders)
 		// while UI and database threads read them through shared node pointers. They are
 		// atomic so those concurrent reads/writes are not a data race. is_read_only is set
 		// once before the node is published, so it does not need to be atomic.
 		std::atomic<bool> is_in_collection = false;
-		bool is_read_only = false;
 		std::atomic<bool> is_excluded = false;
-
-		str::cached volume = {};
-		str::cached name = {};
-		date_t created = {};
-		date_t modified = {};
-
-		// OR-summary of item presence masks. Missing bits reject the whole folder;
-		// extra stale bits are safe because item masks and exact matching follow.
-		std::atomic<search_presence_mask> search_presence_summary;
+		bool is_read_only = false;
 
 		index_folder_item() = default;
 		index_folder_item(const index_folder_item&) noexcept = delete;
@@ -831,13 +837,8 @@ namespace df
 	class item_element final : public std::enable_shared_from_this<item_element>, public view_element
 	{
 	protected:
-		file_path _path = {};
-		str::cached _name = {};
-		file_type_ref _ft = file_type::other;
-		// Invalidates a staging result if thumbnail() or resource cleanup replaced its inputs
-		// while image_to_surface() was running on the render worker.
-		mutable uint64_t _thumbnail_surface_generation = 0;
-		uint64_t _thumbnail_request_generation = 0;
+		// Declared widest-first so the flags and small enums share tail words instead of each
+		// stranding padding between the pointer- and 8-byte-sized members.
 		prop::item_metadata_const_ptr _metadata;
 		index_folder_item_ptr _info;
 		// Thumbnail rendering has four progressively more disposable representations:
@@ -852,47 +853,55 @@ namespace df
 		mutable ui::texture_ptr _texture;
 		mutable ui::const_surface_ptr _thumbnail_surface;
 		mutable ui::const_surface_ptr _cover_art_surface;
-		mutable thumbnail_state _thumbnail_state = thumbnail_state::db_query_pending;
 
-		void set_thumbnail_state(const thumbnail_state s, const bool on) const
-		{
-			_thumbnail_state = on ? (_thumbnail_state | s) : (_thumbnail_state & ~s);
-		}
-
-		file_size _size = {};
-		date_t _thumbnail_timestamp = {};
-		// Armed before a write that cannot change what is drawn, consumed by the update that publishes
-		// the modified time that write produced. UI thread only.
-		bool _retain_thumbnail_on_modify = false;
-		date_t _modified = {};
-		date_t _created = {};
-		date_t _media_created = {};
-		double _media_position = 0.0;
-		bool _media_position_changed = false;
-
-		// The intrinsic media size that decides this item's tile geometry. Seeded from indexed
-		// metadata, which is stable for the life of the file, and only falls back to a decoded
-		// image's pixel size while no metadata dimensions are known.
-		sizei _layout_dims = {};
-		bool _layout_aspect_known = false;
-		duplicate_info _duplicates = {};
-		uint64_t _total_count = 0;
-		mutable ui::animate_alpha _thumbnail_alpha{1.0f};
 		mutable recti _interactive_bounds;
 		// Logical, unoffset. Empty unless the last render drew the pin badge for this item.
 		mutable recti _pin_badge_bounds;
 		search_result _search = {};
 
+		// Invalidates a staging result if thumbnail() or resource cleanup replaced its inputs
+		// while image_to_surface() was running on the render worker.
+		mutable uint64_t _thumbnail_surface_generation = 0;
+		uint64_t _thumbnail_request_generation = 0;
+		uint64_t _total_count = 0;
+		double _media_position = 0.0;
+
+		file_type_ref _ft = file_type::other;
+		file_size _size = {};
+		date_t _thumbnail_timestamp = {};
+		date_t _modified = {};
+		date_t _created = {};
+		date_t _media_created = {};
+		duplicate_info _duplicates = {};
+		mutable ui::animate_alpha _thumbnail_alpha{1.0f};
+
+		file_path _path = {};
+		// The intrinsic media size that decides this item's tile geometry. Seeded from indexed
+		// metadata, which is stable for the life of the file, and only falls back to a decoded
+		// image's pixel size while no metadata dimensions are known.
+		sizei _layout_dims = {};
+		str::cached _name = {};
 		int _random = 0;
 		uint32_t _crc32c = 0;
 		uint32_t _shell_retry_count = 0;
+		mutable thumbnail_state _thumbnail_state = thumbnail_state::db_query_pending;
 		item_presence _presence = item_presence::unknown;
 		item_online_status _online_status = item_online_status::offline;
 
 		ui::orientation _layout_orientation = ui::orientation::top_left;
+		// Armed before a write that cannot change what is drawn, consumed by the update that publishes
+		// the modified time that write produced. UI thread only.
+		bool _retain_thumbnail_on_modify = false;
+		bool _media_position_changed = false;
+		bool _layout_aspect_known = false;
 		bool _is_visible = false;
 		bool _is_read_only = true;
 		bool _is_folder = false;
+
+		void set_thumbnail_state(const thumbnail_state s, const bool on) const
+		{
+			_thumbnail_state = on ? (_thumbnail_state | s) : (_thumbnail_state & ~s);
+		}
 
 	public:
 		bool alt_background = false;
@@ -1035,6 +1044,40 @@ namespace df
 		{
 			assert_true(ui::is_ui_thread());
 			return is_valid(_cover_art);
+		}
+
+		size_t thumbnail_blob_bytes() const
+		{
+			assert_true(ui::is_ui_thread());
+			size_t bytes = 0;
+			if (is_valid(_thumbnail)) bytes += _thumbnail->data().size();
+			if (is_valid(_cover_art)) bytes += _cover_art->data().size();
+			return bytes;
+		}
+
+		// Gives up the encoded thumbnail so it can be reloaded from the database when the item returns to
+		// view; re-arming the query is what makes that the cheap path rather than a fresh file scan.
+		// Layout dimensions are deliberately left as they are: the same thumbnail comes back, so
+		// recomputing them here would reflow the row for nothing. Returns the bytes released.
+		size_t clear_thumbnail_blob()
+		{
+			assert_true(ui::is_ui_thread());
+
+			if (_is_visible || is_selected() || _is_folder || is_loading_thumbnail()) return 0;
+
+			const auto bytes = thumbnail_blob_bytes();
+			if (bytes == 0) return 0;
+
+			++_thumbnail_surface_generation;
+			_thumbnail.reset();
+			_cover_art.reset();
+			_texture.reset();
+			_thumbnail_surface.reset();
+			_cover_art_surface.reset();
+			set_thumbnail_state(thumbnail_state::surface_cached, false);
+			set_thumbnail_state(thumbnail_state::db_query_pending, true);
+
+			return bytes;
 		}
 
 		ui::const_image_ptr thumbnail() const
@@ -1191,6 +1234,14 @@ namespace df
 		{
 			assert_true(ui::is_ui_thread());
 			return _thumbnail_state && thumbnail_state::surface_cached;
+		}
+
+		// The decoded thumbnail, where the browser has already staged one. Handed to the display so it can
+		// show something the moment an item is selected instead of decoding the same pixels again.
+		const ui::const_surface_ptr& thumbnail_surface() const
+		{
+			assert_true(ui::is_ui_thread());
+			return _thumbnail_surface;
 		}
 
 		void stage_thumbnail_surface(async_strategy& async, bool invalidate_on_complete = false) const;
@@ -1642,6 +1693,12 @@ namespace df
 		}
 	};
 
+	// Keeps the encoded thumbnails the user is most likely to scroll back to and releases the rest.
+	// Distance from the viewport, not age: a retained blob is a texture upload away from the screen
+	// while an evicted one is a database round trip, and scrolling is what decides which is which.
+	// Items inside the viewport are never released. Returns the bytes released.
+	size_t trim_thumbnail_blobs(const item_elements& items, recti viewport, size_t budget_bytes);
+
 	class item_set_info
 	{
 	public:
@@ -2080,15 +2137,15 @@ namespace df
 			if (order2 != other.order2) return order2 < other.order2;
 
 			// Interned storage: same pointer means same text, so the compare can be skipped.
-			const auto text_delta1 = text1.storage == other.text1.storage ? 0 : icmp(text1, other.text1);
+			const auto text_delta1 = text1.id == other.text1.id ? 0 : icmp(text1, other.text1);
 			if (text_delta1 != 0) return text_delta1 < 0;
 
 			if (order3 != other.order3) return order3 < other.order3;
 
-			const auto text_delta2 = text2.storage == other.text2.storage ? 0 : icmp(text2, other.text2);
+			const auto text_delta2 = text2.id == other.text2.id ? 0 : icmp(text2, other.text2);
 			if (text_delta2 != 0) return text_delta2 < 0;
 
-			if (text3.storage == other.text3.storage) return false;
+			if (text3.id == other.text3.id) return false;
 			return icmp(text3, other.text3) < 0;
 		}
 	};
@@ -2183,3 +2240,5 @@ namespace df
 // locations.md 7.1: the totals affordance text. Defined next to the grouping label it was split
 // away from, so the two can never drift into saying the same thing twice.
 std::string format_items_totals(const df::file_group_histogram& summary, bool is_init_complete);
+std::string format_items_summary(group_by grouping, sort_by order, const df::file_group_histogram& summary,
+                                 bool is_init_complete);

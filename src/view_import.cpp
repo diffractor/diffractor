@@ -236,6 +236,9 @@ void import_view::update_rows(const import_analysis_result& analysis_result, con
 	int exists = 0;
 	int already_imported = 0;
 	int collisions = 0;
+	// Rows are built in the order import_copy consumes the same analysis, so the count of importing
+	// rows so far is the work index the run will report.
+	int work_index = 0;
 
 	for (const auto& a : analysis_result)
 	{
@@ -297,6 +300,7 @@ void import_view::update_rows(const import_analysis_result& analysis_result, con
 				break;
 			}
 
+			if (row->_order == 1) row->_work_index = work_index++;
 			rows.emplace_back(row);
 		}
 	}
@@ -424,7 +428,7 @@ void import_view::run()
 	                                                           {
 		                                                           if (view->is_processing_generation(
 			                                                           processing_generation)) view->
-			                                                           processing_exact_order_item(index, 1);
+				                                                           processing_work_item(index);
 	                                                           },
 	                                                           [view, completion_status, processing_generation](
 	                                                           std::string message,

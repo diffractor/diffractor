@@ -203,6 +203,7 @@ void sync_view::update_rows(const sync_analysis_result& analysis_result)
 	int replace_count = 0;
 	int delete_local_count = 0;
 	int delete_remote_count = 0;
+	int work_index = 0;
 
 	for (const auto& a : analysis_result)
 	{
@@ -271,6 +272,9 @@ void sync_view::update_rows(const sync_analysis_result& analysis_result)
 				break;
 			}
 
+			// Rows are built in the order the run consumes the same analysis, so the count of acting
+			// rows so far is the work index the run will report. Ignored rows are never reported.
+			if (row->_order != 100) row->_work_index = work_index++;
 			rows.emplace_back(row);
 		}
 	}
@@ -348,7 +352,7 @@ void sync_view::run()
 	                                                           {
 		                                                           if (view->is_processing_generation(
 			                                                           processing_generation)) view->
-			                                                           processing_order_item(index, 100);
+				                                                           processing_work_item(index);
 	                                                           },
 	                                                           [view, completion_status, processing_generation](
 	                                                           std::string message,

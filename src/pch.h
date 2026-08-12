@@ -22,6 +22,7 @@
 #include <cinttypes>
 
 #include <bit>
+#include <new>
 #include <string>
 #include <string_view>
 #include <charconv>

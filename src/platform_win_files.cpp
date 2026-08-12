@@ -1421,25 +1421,42 @@ void* platform::memory_pool::alloc(const size_t size)
 	exclusive_lock lock(cs);
 
 	if (size > block_size) throw OOM;
-	const auto align_size = (size + (alignment - 1)) / alignment * alignment;
 
-	if (next_free == nullptr || static_cast<size_t>(block_limit - next_free) < align_size)
+	if (base == nullptr)
 	{
-		next_free = std::bit_cast<uint8_t*>(VirtualAlloc(nullptr, block_size, MEM_COMMIT, PAGE_READWRITE));
-
-		if (!next_free)
+		// Reserve once and never move: handles are offsets from this address for the process lifetime.
+		// A 32-bit address space may not have the whole range free in one piece, so settle for a smaller
+		// arena rather than failing to start - the size only bounds how many strings can be interned.
+		for (auto attempt = reserve_size; attempt >= block_size; attempt /= 2)
 		{
-			// Leave no stale limit paired with the null cursor if a later alloc retries.
-			block_limit = nullptr;
-			throw OOM;
+			base = std::bit_cast<uint8_t*>(VirtualAlloc(nullptr, attempt, MEM_RESERVE, PAGE_NOACCESS));
+
+			if (base)
+			{
+				reserved = attempt;
+				break;
+			}
 		}
 
-		block_limit = next_free + block_size;
-		static_memory_usage.fetch_add(block_size, std::memory_order_relaxed);
+		if (!base) throw OOM;
 	}
 
-	auto* const result = next_free;
-	next_free += align_size;
+	const auto align_size = (size + (alignment - 1)) / alignment * alignment;
+
+	if (align_size > committed - used)
+	{
+		const auto shortfall = align_size - (committed - used);
+		const auto grow = (shortfall + block_size - 1) / block_size * block_size;
+
+		if (grow > reserved - committed) throw OOM;
+		if (!VirtualAlloc(base + committed, grow, MEM_COMMIT, PAGE_READWRITE)) throw OOM;
+
+		committed += grow;
+		static_memory_usage.fetch_add(grow, std::memory_order_relaxed);
+	}
+
+	auto* const result = base + used;
+	used += align_size;
 	return result;
 }
 
@@ -2124,18 +2141,80 @@ int platform::display_frequency()
 	return 30; // Guess
 }
 
-bool platform::working_set(int64_t& current, int64_t& peak)
+bool platform::has_avx2()
 {
-	PROCESS_MEMORY_COUNTERS mem;
-
-	if (GetProcessMemoryInfo(GetCurrentProcess(), &mem, sizeof(mem)))
+	static const bool result = []
 	{
-		current = mem.WorkingSetSize;
-		peak = mem.PeakWorkingSetSize;
-		return true;
+#if defined(_M_X64) || defined(_M_IX86)
+		int regs[4] = {};
+		__cpuid(regs, 0);
+		if (regs[0] < 7) return false;
+
+		__cpuid(regs, 1);
+		constexpr auto osxsave_bit = 1 << 27;
+		constexpr auto avx_bit = 1 << 28;
+		if ((regs[2] & osxsave_bit) == 0 || (regs[2] & avx_bit) == 0) return false;
+
+		// XCR0 bits 1 and 2: without the OS saving XMM and YMM state the YMM registers are not
+		// usable however the CPU reports itself.
+		if ((_xgetbv(0) & 0x6) != 0x6) return false;
+
+		__cpuidex(regs, 7, 0);
+		constexpr auto avx2_bit = 1 << 5;
+		return (regs[1] & avx2_bit) != 0;
+#else
+		return false;
+#endif
+	}();
+
+	return result;
+}
+
+bool platform::memory_usage(memory_usage_t& result)
+{
+	PROCESS_MEMORY_COUNTERS_EX mem{};
+	mem.cb = sizeof(mem);
+
+	if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&mem), sizeof(mem)))
+	{
+		return false;
 	}
 
-	return false;
+	result.working_set = mem.WorkingSetSize;
+	result.peak_working_set = mem.PeakWorkingSetSize;
+	result.commit = mem.PrivateUsage;
+
+	// Only QueryWorkingSet reports the per-page share state that separates private from shared.
+	// The working set can grow between sizing the buffer and filling it, so the retry is bounded
+	// rather than a loop that a busy process could keep alive.
+	SYSTEM_INFO si{};
+	GetSystemInfo(&si);
+	const int64_t page_size = si.dwPageSize;
+	std::vector<ULONG_PTR> pages(1u << 16);
+
+	for (auto attempt = 0; attempt < 8; ++attempt)
+	{
+		if (QueryWorkingSet(GetCurrentProcess(), pages.data(),
+		                    static_cast<DWORD>(pages.size() * sizeof(ULONG_PTR))))
+		{
+			const auto count = std::min(static_cast<size_t>(pages[0]), pages.size() - 1u);
+
+			for (auto i = 1u; i <= count; ++i)
+			{
+				// PSAPI_WORKING_SET_BLOCK bit 8 is Shared.
+				if (pages[i] & (1ull << 8)) result.shared_working_set += page_size;
+				else result.private_working_set += page_size;
+			}
+
+			return true;
+		}
+
+		if (GetLastError() != ERROR_BAD_LENGTH) break;
+		pages.resize(pages.size() * 2);
+	}
+
+	// The totals are still good even when the private/shared split is not.
+	return true;
 }
 
 df::folder_path platform::temp_folder()

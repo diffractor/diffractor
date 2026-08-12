@@ -377,6 +377,15 @@ namespace ui
 	sizei scale_dimensions(sizei dims, sizei limit, bool dont_scale_up = false) noexcept;
 	recti scale_dimensions(sizei dims, recti limit, bool dont_scale_up = false) noexcept;
 
+	// Area-average reduction between packed 32 bit surfaces, allocating dst. Answers false for
+	// anything that is not a pure reduction of a packed format, which is the caller's cue to keep
+	// using swscale.
+	bool area_downscale(const const_surface_ptr& src, surface_ptr& dst, sizei dst_extent);
+
+	// Same, pinned to the SSE2 baseline. Only a test uses this, to prove the wider path agrees on a
+	// machine that would otherwise exercise just one of the two.
+	bool area_downscale_baseline(const const_surface_ptr& src, surface_ptr& dst, sizei dst_extent);
+
 	////////////////////////////////////////////////////////////////////////////////////
 	// Pixels Conversions
 
@@ -1253,6 +1262,9 @@ namespace ui
 			}
 		}
 
+		// Lets a backend reuse the transform it already uploaded instead of re-staging the curve.
+		bool operator==(const texture_transform&) const = default;
+
 		bool has_changes() const
 		{
 			return has_perspective || has_color_changes;
@@ -1594,6 +1606,52 @@ namespace ui
 		virtual pointi cursor_location() = 0;
 	};
 
+	// A host's window does not exist before it is attached or after it is destroyed, yet the host is
+	// still populated, laid out, counted and invalidated across both windows. Standing in for the
+	// absent window here keeps that contract in one place instead of asking every caller - including
+	// view_host and view_scroller, which cannot know - to test for null first.
+	class null_frame final : public frame
+	{
+	public:
+		std::any handle() const override { return {}; }
+		void destroy() override {}
+		void enable(bool) override {}
+		std::string window_text() const override { return {}; }
+		void window_text(std::string_view) override {}
+		void focus() override {}
+		sizei measure(int) const override { return {}; }
+		bool is_visible() const override { return false; }
+		bool has_focus() const override { return false; }
+		recti window_bounds() const override { return {}; }
+		void window_bounds(recti, bool) override {}
+		void show(bool) override {}
+		void options_changed() override {}
+
+		void invalidate(recti = {}, bool = false) override {}
+		void layout() override {}
+		void redraw() override {}
+		void redraw_now() override {}
+		void scroll(int, int, recti, bool) override {}
+		void track_menu(recti, const std::vector<command_ptr>&) override {}
+		void close(bool = false) override {}
+
+		bool is_enabled() const override { return false; }
+		bool is_maximized() const override { return false; }
+		// Callers use this to skip drawing, and nothing drawn into an absent window can be seen.
+		bool is_occluded() const override { return true; }
+		void set_cursor(style::cursor) override {}
+		void reset_graphics() override {}
+		// Outside every client rect, so hit testing against it resolves to no controller.
+		pointi cursor_location() override { return {-1, -1}; }
+	};
+
+	// Stateless, so one instance serves every host that has no window.
+	inline const frame_ptr& no_frame()
+	{
+		static const frame_ptr instance = std::make_shared<null_frame>();
+		return instance;
+	}
+
 	enum class other_mouse_button
 	{
 		xb1,
@@ -1883,6 +1941,17 @@ namespace ui
 	// animation. animate_alpha then jumps straight to its target instead of fading.
 	extern bool animations_enabled;
 
+	// Exponential decay rate for alpha fades, per second. Chosen as -ln(1 - 0.333) * 60 so that a
+	// 60Hz frame reproduces exactly the fixed 0.333 per frame this replaced.
+	constexpr float alpha_fade_rate = 24.33f;
+
+	// Fraction of the remaining distance a fade closes this frame, recomputed once per frame from
+	// real elapsed time. Without it a fade advances per frame, so its duration is set by how fast
+	// the machine renders - the same fade runs twice as fast on a 120Hz display as on a 60Hz one.
+	// Written by prepare_frame and read by every step() it drives, so it is UI-thread-owned like
+	// animations_enabled and the animations map beside it.
+	extern float animation_step_factor;
+
 	class animate_alpha
 	{
 		float _val = 0.0f;
@@ -1940,7 +2009,7 @@ namespace ui
 				return changed;
 			}
 
-			_val += dd * 0.333f;
+			_val += dd * animation_step_factor;
 			return true;
 		}
 	};

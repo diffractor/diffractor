@@ -36,6 +36,65 @@ enum class repeat_mode
 	repeat_one
 };
 
+// design.md "Play and Slideshow": what a tick does when the displayed item reaches its end.
+enum class playback_advance
+{
+	none, // nothing has ended yet
+	stop, // the sequence cannot continue
+	hold, // stay on this item - repeat one, or a wrap that lands back on it
+	advance, // move to the next item
+};
+
+// Everything the decision depends on. The caller resolves the candidates because finding them walks
+// the visible items; deciding what to do with them is separable, and is what the rules are about.
+struct playback_tick
+{
+	bool is_slideshow = false;
+	bool is_photo = false;
+	bool is_av = false;
+	bool media_ended = false;
+	bool photo_delay_elapsed = false;
+
+	// False when a command is running, nothing is displayed, or the view cannot play.
+	bool can_next = false;
+
+	bool has_next = false; // a next media item without wrapping
+	bool next_is_current = false;
+	bool has_wrapped_next = false; // a next media item once wrapping is allowed
+	bool wrapped_is_current = false;
+
+	repeat_mode repeat = repeat_mode::repeat_none;
+	bool auto_advance = false;
+};
+
+inline playback_advance calc_playback_advance(const playback_tick& t)
+{
+	// A slideshow that has landed on something that can neither play nor time out would stall
+	// forever, so it ends instead.
+	if (t.is_slideshow && !t.is_photo && !t.is_av) return playback_advance::stop;
+
+	if (!(t.is_photo ? t.photo_delay_elapsed : t.media_ended)) return playback_advance::none;
+
+	if (!t.can_next) return playback_advance::stop;
+
+	// Repeat one holds on the current item; photos simply restart their delay.
+	if (t.repeat == repeat_mode::repeat_one) return playback_advance::hold;
+
+	// Continuing while browsing normally is a preference; a slideshow always continues, because
+	// continuing is what the mode means.
+	if (!t.is_slideshow && !t.auto_advance) return playback_advance::stop;
+
+	if (t.has_next) return t.next_is_current ? playback_advance::hold : playback_advance::advance;
+
+	// Only repeat all returns to the first item after the last.
+	if (t.repeat == repeat_mode::repeat_all && t.has_wrapped_next)
+	{
+		return t.wrapped_is_current ? playback_advance::hold : playback_advance::advance;
+	}
+
+	return playback_advance::stop;
+}
+
 // Closed product ontology (docs/design.md): every destination-writing operation resolves
 // destination collisions with exactly one explicitly named policy. Block Run is the
 // conservative default - the run is refused and the reason is stated.
@@ -81,6 +140,7 @@ enum class async_queue
 
 
 constexpr auto thumbnail_quality = 85;
+constexpr auto thumbnail_webp_quality = 80;
 
 
 struct metadata_text_detail

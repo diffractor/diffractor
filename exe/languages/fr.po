@@ -71,7 +71,7 @@ msgid "Add folder"
 msgstr "Ajouter un dossier"
 
 msgid "Capture metadata and the Windows file created time will be shifted to start at a new local date and time."
-msgstr "La date de prise de vue des métadonnées et l’heure de création du fichier Windows seront décalées pour commencer à une nouvelle date et heure locales."
+msgstr "La date de prise de vue des métadonnées et l'heure de création du fichier Windows seront décalées pour commencer à une nouvelle date et heure locales."
 
 msgid "Time gaps between dated items are preserved. Items without a known date receive the new starting date."
 msgstr "Les intervalles de temps entre les éléments datés sont conservés. Les éléments sans date connue reçoivent la nouvelle date de début."
@@ -540,10 +540,10 @@ msgid "Save"
 msgstr "Enregistrer"
 
 msgid "Add location and open previous"
-msgstr "Ajouter le lieu et ouvrir l’élément précédent"
+msgstr "Ajouter le lieu et ouvrir l'élément précédent"
 
 msgid "Add location and open next"
-msgstr "Ajouter le lieu et ouvrir l’élément suivant"
+msgstr "Ajouter le lieu et ouvrir l'élément suivant"
 
 msgid "Save and open previous"
 msgstr "Enregistrer et ouvrir le précédent"
@@ -714,7 +714,7 @@ msgid "Define what items are shown in the sidebar."
 msgstr "Définissez les éléments affichés dans la barre latérale."
 
 msgid "Add a list of your favorite tags here to save time when tagging."
-msgstr "Ajoutez ici une liste de vos étiquettes préférées pour gagner du temps lors du marquage."
+msgstr "Ajoutez ici une liste de vos étiquettes favorites pour gagner du temps lors de l'étiquetage."
 
 msgid "Favorite Tags"
 msgstr "Étiquettes favorites"
@@ -783,7 +783,7 @@ msgid "Delete {}"
 msgstr "Supprimer {}"
 
 msgid "Set the desktop background to the current image."
-msgstr "Définissez l’arrière-plan du bureau sur l’image actuelle."
+msgstr "Définissez l'arrière-plan du bureau sur l'image actuelle."
 
 msgid "Destination folder:"
 msgstr "Dossier de destination :"
@@ -891,7 +891,7 @@ msgid "The destination is a subtree of the source."
 msgstr "La destination est un sous-arbre de la source."
 
 msgid "Rename operation was specified but the destination path is a different directory. Use the move operation instead."
-msgstr "L'opération de renommage a été spécifiée mais le chemin de destination est un répertoire différent. Utilisez plutôt l’opération de déplacement."
+msgstr "L'opération de renommage a été spécifiée mais le chemin de destination est un répertoire différent. Utilisez plutôt l'opération de déplacement."
 
 msgid "Destination is a root directory and cannot be renamed."
 msgstr "La destination est un répertoire racine et ne peut pas être renommée."
@@ -2024,7 +2024,7 @@ msgid "No location selected."
 msgstr "Aucun emplacement sélectionné."
 
 msgid "Overwrite GPS coordinates when setting a location."
-msgstr "Écraser les coordonnées GPS lors de la définition d’un emplacement."
+msgstr "Écraser les coordonnées GPS lors de la définition d'un emplacement."
 
 msgid "Location"
 msgstr "Emplacement"
@@ -2249,7 +2249,7 @@ msgid "Use NV12 and P010 format textures (Automatically turned off if problems d
 msgstr "Utiliser les textures aux formats NV12 et P010 (automatiquement désactivées si des problèmes sont détectés)"
 
 msgid "Show an inset shadow surrounding the image view panel."
-msgstr "Afficher une ombre incrustée entourant le panneau d’affichage de l’image."
+msgstr "Afficher une ombre incrustée entourant le panneau d'affichage de l'image."
 
 msgid "Resume playing media from the last position played."
 msgstr "Reprendre la lecture du média à partir de la dernière position lue."
@@ -2510,7 +2510,7 @@ msgid "Publisher"
 msgstr "Éditeur"
 
 msgid "Rating"
-msgstr "Notation"
+msgstr "Note"
 
 msgid "Raw file"
 msgstr "Fichier RAW"
@@ -2747,7 +2747,7 @@ msgid "Resolution"
 msgstr "Résolution"
 
 msgid "Rating-Label"
-msgstr "Étiquette de notation"
+msgstr "Note-étiquette"
 
 msgid "Staring"
 msgstr "Interprètes"
@@ -2777,7 +2777,7 @@ msgid "Auto color"
 msgstr "Couleur automatique"
 
 msgid "Copy item path"
-msgstr "Copier le chemin de l’élément"
+msgstr "Copier le chemin de l'élément"
 
 msgid "Auto document"
 msgstr "Document automatique"
@@ -2792,13 +2792,13 @@ msgid "Preview"
 msgstr "Aperçu"
 
 msgid "Automatically improve exposure and color balance"
-msgstr "Améliorer automatiquement l’exposition et l’équilibre des couleurs"
+msgstr "Améliorer automatiquement l'exposition et l'équilibre des couleurs"
 
 msgid "Automatically straighten horizontal and vertical lines"
 msgstr "Redresser automatiquement les lignes horizontales et verticales"
 
 msgid "Show the final cropped image"
-msgstr "Afficher l’image finale recadrée"
+msgstr "Afficher l'image finale recadrée"
 
 msgid "Horizontal perspective"
 msgstr "Perspective horizontale"
@@ -2879,7 +2879,7 @@ msgid "Add or remove Tags"
 msgstr "Ajouter ou supprimer des étiquettes"
 
 msgid "Tag selected items"
-msgstr "Marquer les éléments sélectionnés"
+msgstr "Étiqueter les éléments sélectionnés"
 
 msgid "Common Tags"
 msgstr "Étiquettes communes"
@@ -2903,7 +2903,7 @@ msgid "folder:{}"
 msgstr "dossier : {}"
 
 msgid "rate"
-msgstr "notation"
+msgstr "note"
 
 msgid "Updating..."
 msgstr "Mise à jour..."
@@ -2927,13 +2927,13 @@ msgid "Open selected items with external app"
 msgstr "Ouvrir les éléments sélectionnés avec une application externe"
 
 msgid "Pinned items stay selected. Use this when you want to quickly compare an item to other items."
-msgstr "Les éléments épinglés restent sélectionnés. Utilisez-le lorsque vous souhaitez comparer rapidement un élément à d’autres éléments."
+msgstr "Les éléments épinglés restent sélectionnés. Utilisez-le lorsque vous souhaitez comparer rapidement un élément à d'autres éléments."
 
 msgid "Reset straighten and rotate"
 msgstr "Réinitialiser le redressement et la rotation"
 
 msgid "Tag or un-tag selected items"
-msgstr "Marquer ou supprimer les éléments sélectionnés"
+msgstr "Étiqueter ou désétiqueter les éléments sélectionnés"
 
 msgid "Toggle between thumbnails or details for selected item group"
 msgstr "Basculer entre les vignettes ou les détails du groupe d'éléments sélectionné"
@@ -3023,19 +3023,19 @@ msgid "Value"
 msgstr "Valeur"
 
 msgid "Volume 200%"
-msgstr "Volume 200%"
+msgstr "Volume 200 %"
 
 msgid "Volume 100%"
-msgstr "Volume 100%"
+msgstr "Volume 100 %"
 
 msgid "Volume 75%"
-msgstr "Volume 75%"
+msgstr "Volume 75 %"
 
 msgid "Volume 50%"
-msgstr "Volume 50%"
+msgstr "Volume 50 %"
 
 msgid "Volume 25%"
-msgstr "Volume 25%"
+msgstr "Volume 25 %"
 
 msgid "Mute"
 msgstr "Muet"
@@ -3083,10 +3083,10 @@ msgid "Show all tags"
 msgstr "Afficher toutes les étiquettes"
 
 msgid "Show only favorite tags"
-msgstr "Afficher uniquement les tags favoris"
+msgstr "Afficher uniquement les étiquettes favorites"
 
 msgid "Show only favorite tags in the sidebar"
-msgstr "Afficher uniquement les étiquettes préférées dans la barre latérale"
+msgstr "Afficher uniquement les étiquettes favorites dans la barre latérale"
 
 msgid "Destination"
 msgstr "Destination"
@@ -3271,27 +3271,27 @@ msgid "Choose a valid new starting date and time."
 msgstr "Choisissez une nouvelle date et heure de début valides."
 
 msgid "Windows could not stage the selected items for disc burning."
-msgstr "Windows n’a pas pu préparer les éléments sélectionnés pour la gravure du disque."
+msgstr "Windows n'a pas pu préparer les éléments sélectionnés pour la gravure du disque."
 
 msgid "The selected items will be staged in Windows Disc Burning. Windows will guide you through writing the disc."
-msgstr "Les éléments sélectionnés seront préparés dans l’outil de gravure de disques Windows. Windows vous guidera pendant la gravure du disque."
+msgstr "Les éléments sélectionnés seront préparés dans l'outil de gravure de disques Windows. Windows vous guidera pendant la gravure du disque."
 
 msgid "&Stage files"
 msgstr "&Préparer les fichiers"
 
 msgid "Email draft was canceled."
-msgstr "Le brouillon d’e-mail a été annulé."
+msgstr "Le brouillon d'e-mail a été annulé."
 
 msgid "Maximum dimension must be at least 1 pixel."
-msgstr "La dimension maximale doit être d’au moins 1 pixel."
+msgstr "La dimension maximale doit être d'au moins 1 pixel."
 
 msgid "Select at least one metadata field to update. Checked empty fields clear existing values; unchecked fields are unchanged."
 msgstr "Sélectionnez au moins un champ de métadonnées à mettre à jour. Les champs vides cochés effacent les valeurs existantes ; les champs non cochés restent inchangés."
 
 msgid "{first-name} was canceled."
 msgid_plural "{count} items were canceled."
-msgstr[0] "L’opération concernant {first-name} a été annulée."
-msgstr[1] "L’opération concernant {count} éléments a été annulée."
+msgstr[0] "L'opération concernant {first-name} a été annulée."
+msgstr[1] "L'opération concernant {count} éléments a été annulée."
 
 msgid "{first-name} will be staged for disc burning."
 msgid_plural "{count} selected items ({size}) will be staged for disc burning."
@@ -3302,7 +3302,7 @@ msgid "Detect and straighten a photographed document"
 msgstr "Détecter et redresser un document photographié"
 
 msgid "Failed to Initialize Direct3d"
-msgstr "Échec de l’initialisation de Direct3D"
+msgstr "Échec de l'initialisation de Direct3D"
 
 msgid "Navigator"
 msgstr "Navigateur"
@@ -3339,16 +3339,16 @@ msgid "Cancel was pressed after {}"
 msgstr "Annulation demandée après {}"
 
 msgid "Apply tags"
-msgstr "Appliquer les mots-clés"
+msgstr "Appliquer les étiquettes"
 
 msgid "Item"
 msgstr "Élément"
 
 msgid "Tags after run"
-msgstr "Mots-clés après exécution"
+msgstr "Étiquettes après exécution"
 
 msgid "Enter one or more tags to add or remove."
-msgstr "Saisissez un ou plusieurs mots-clés à ajouter ou à supprimer."
+msgstr "Saisissez une ou plusieurs étiquettes à ajouter ou à supprimer."
 
 msgid "no change"
 msgstr "aucun changement"
@@ -3513,7 +3513,7 @@ msgid "Replaces the current label: {}"
 msgstr "Remplace l'étiquette actuelle : {}"
 
 msgid "Replaces the star rating"
-msgstr "Remplace la notation par étoiles"
+msgstr "Remplace la note en étoiles"
 
 msgid "When the last item has played, start again from the first"
 msgstr "Quand le dernier élément a été lu, recommencer depuis le premier"
@@ -3534,7 +3534,7 @@ msgid "When an item finishes, continue with the next photo, video or audio item"
 msgstr "Quand un élément se termine, continuer avec la photo, la vidéo ou l'élément audio suivant"
 
 msgid "Diffractor cannot write ratings, labels or other metadata into {} files, and does not write a sidecar for them."
-msgstr "Diffractor ne peut pas écrire de notation, d'étiquettes ni d'autres métadonnées dans les fichiers {}, et ne crée pas de fichier annexe pour eux."
+msgstr "Diffractor ne peut pas écrire de notes, d'étiquettes ni d'autres métadonnées dans les fichiers {}, et ne crée pas de fichier annexe pour eux."
 
 msgid "Use a semicolon to list more than one genre. For example: Rock; Blues"
 msgstr "Utilisez un point-virgule pour indiquer plusieurs genres. Par exemple : Rock; Blues"
@@ -3631,3 +3631,9 @@ msgstr "Pris au même moment"
 
 msgid "Taken in the same place"
 msgstr "Pris au même endroit"
+
+msgid "Recovered from a startup problem"
+msgstr "Récupéré après un problème de démarrage"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor s'est fermé de façon inattendue avant la fin de son démarrage ; cette exécution utilise donc la disposition par défaut avec l'accélération matérielle désactivée. Vos fichiers, votre collection et vos éléments récents sont inchangés. Vous pouvez restaurer vos paramètres depuis Options."

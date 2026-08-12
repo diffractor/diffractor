@@ -943,6 +943,12 @@ public:
 		_frame = owner->create_frame(weak_from_this(), {});
 	}
 
+	// Never null: the rating can be set before init() has given this control a window.
+	const ui::frame_ptr& frame() const
+	{
+		return _frame ? _frame : ui::no_frame();
+	}
+
 	void on_window_layout(ui::measure_context& mc, const sizei extent, const bool is_minimized) override
 	{
 		_extent = extent;
@@ -954,7 +960,7 @@ public:
 		if (!_hover)
 		{
 			_hover = true;
-			_frame->invalidate();
+			frame()->invalidate();
 		}
 
 		const auto hr = point_to_stars(loc);
@@ -962,7 +968,7 @@ public:
 		if (hr != _hover_rating)
 		{
 			_hover_rating = hr;
-			_frame->invalidate();
+			frame()->invalidate();
 		}
 	}
 
@@ -981,7 +987,7 @@ public:
 			_edit->window_text(_rating < 1 ? std::string_view{} : str::to_string(_rating));
 		}
 
-		_frame->invalidate();
+		frame()->invalidate();
 	}
 
 	void on_mouse_leave(const pointi loc) override
@@ -990,7 +996,7 @@ public:
 		{
 			_hover = false;
 			_hover_rating = -1;
-			_frame->invalidate();
+			frame()->invalidate();
 		}
 	}
 
@@ -1038,7 +1044,7 @@ public:
 		if (_rating != stars)
 		{
 			_rating = stars;
-			if (_frame) _frame->invalidate();
+			frame()->invalidate();
 		}
 	}
 
@@ -1076,7 +1082,7 @@ public:
 
 	void visit_controls(const std::function<void(const ui::control_base_ptr&)>& handler) override
 	{
-		handler(_stars->_frame);
+		handler(_stars->frame());
 		handler(_edit);
 	}
 
@@ -1103,7 +1109,7 @@ public:
 		rStars.left = std::min(rEdit.right + mc.padding2, bounds.right);
 
 		positions.emplace_back(_edit, rEdit, is_visible());
-		positions.emplace_back(_stars->_frame, rStars, is_visible());
+		positions.emplace_back(_stars->frame(), rStars, is_visible());
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override

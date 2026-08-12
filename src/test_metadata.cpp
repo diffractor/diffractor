@@ -6,13 +6,16 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Metadata scanning tests. Verifies correct parsing of metadata from
-// JPEG, MP3, MP4, MOV, AVI, RAW, HEIC, AVIF, WebP, D64, archive, and MOD files.
+// Purpose: Metadata tests (metadata_exif, metadata_iptc, metadata_xmp, metadata_icc) -- scanning
+// properties from JPEG, MP3, MP4, MOV, MKV, AVI, RAW, HEIF, AVIF, WebP, JXL and MOD files, tag
+// editing and removal, sidecar merging, metadata presentation blocks and filename token replacement.
 
 #include "pch.h"
 
 #include "metadata_xmp.h"
-#include "test_utils.h"
+#include "metadata_exif.h"
+#include "test_fixtures.h"
+#include "test_runner.h"
 #include "av_format.h"
 #include "av_player.h"
 
@@ -254,155 +257,6 @@ static void should_scan_mp4()
 	assert_equal(false, loaded.success && is_valid(loaded.thumbnail_surface), "m4a load thumbnail");
 }
 
-// Issue #78 - Some videos ignore aspect ratio.
-// anamorphic.mp4 is stored at 640x480 with a 4:3 pixel (sample) aspect ratio,
-// i.e. a 16:9 display. The scanner must report the display dimensions (640x360)
-// rather than the stored frame size (640x480).
-static void should_apply_video_aspect_ratio()
-{
-	const auto load_path = test_files_folder.combine_file("anamorphic.mp4");
-
-	files ff;
-	const auto actual = ff_scan_file(ff, load_path);
-	const auto md = actual.to_props();
-
-	assert_equal(640, md->width, "anamorphic display width");
-	assert_equal(360, md->height, "anamorphic display height");
-}
-
-// The index scan bounds FFmpeg's stream probe; the inspect scan does not. Every property the index
-// records has to survive that bound, so the two intents are compared across the AV containers.
-static void should_scan_av_metadata_with_a_bounded_probe()
-{
-	auto fixtures_carrying_xmp = 0;
-
-	for (const auto* const name : {
-		     "gizmo.mp4", "indy.mp4", "anamorphic.mp4", "ipod.mov", "StPauls.MOV", "tagged.mkv",
-		     "Byzantium.avi", "Colorblind.mp3"
-	     })
-	{
-		const auto path = test_files_folder.combine_file(name);
-		const auto* const ft = files::file_type_from_name(path);
-
-		files ff;
-		const auto inspected = ff.scan_file(path, false, ft, {}, {}, scan_intent::inspect);
-		const auto indexed = ff.scan_file(path, false, ft, {}, {}, scan_intent::index);
-
-		assert_equal(true, indexed.success, name, "index scan succeeded");
-		assert_equal(inspected.width, indexed.width, name, "width");
-		assert_equal(inspected.height, indexed.height, name, "height");
-		assert_equal(inspected.duration, indexed.duration, name, "duration");
-		assert_equal(inspected.video_codec.sv(), indexed.video_codec.sv(), name, "video codec");
-		assert_equal(inspected.pixel_format.sv(), indexed.pixel_format.sv(), name, "pixel format");
-		assert_equal(inspected.audio_codec.sv(), indexed.audio_codec.sv(), name, "audio codec");
-		assert_equal(inspected.audio_sample_rate, indexed.audio_sample_rate, name, "audio sample rate");
-		assert_equal(inspected.audio_channels, indexed.audio_channels, name, "audio channels");
-		assert_equal(static_cast<int>(inspected.audio_sample_type), static_cast<int>(indexed.audio_sample_type),
-		             name, "audio sample type");
-		assert_equal(inspected.bitrate.sv(), indexed.bitrate.sv(), name, "bit rate");
-		assert_equal(inspected.orientation, indexed.orientation, name, "orientation");
-		assert_equal(inspected.created_utc, indexed.created_utc, name, "created");
-
-		// gizmo.mp4, ipod.mov and Byzantium.avi carry their XMP packet in the last 1% of the file,
-		// megabytes past the probe budget. It survives because container metadata is read by the
-		// demuxer's read_header, inside avformat_open_input, which the bound is applied after.
-		assert_equal(inspected.metadata.xmp.size(), indexed.metadata.xmp.size(), name, "xmp size");
-		assert_equal(true, std::ranges::equal(inspected.metadata.xmp, indexed.metadata.xmp), name, "xmp bytes");
-
-		if (!inspected.metadata.xmp.empty()) ++fixtures_carrying_xmp;
-	}
-
-	// Without this the XMP assertions above would pass on an empty packet and prove nothing.
-	assert_equal(3, fixtures_carrying_xmp, "fixtures carrying a trailing xmp packet");
-}
-
-// FFmpeg falls back to matching a demuxer on the file extension alone, so a TypeScript source file
-// named index.ts is handed to the MPEG-TS demuxer, opens without any error and then describes no
-// stream whatsoever. The scan must report that as a failure rather than publish an empty video.
-static void should_reject_a_non_media_file()
-{
-	const auto path = test_files_folder.combine("excluded1").combine_file("not-media.ts");
-	const auto* const ft = files::file_type_from_name(path);
-
-	// The extension alone still says video; only the header settles it.
-	assert_equal(true, path.exists(), "fixture is present");
-	assert_equal(true, ft->has_trait(file_traits::av), "ts is an av extension");
-	assert_equal(false, files::media_header_matches(path.extension(), df::blob_from_file(path, 1024)),
-	             "the header rule refuses it before the demuxer sees it");
-
-	av_format_decoder decoder;
-	assert_equal(false, decoder.open(path, media_intent::metadata), "decoder rejects the file");
-
-	files ff;
-	assert_equal(false, ff.scan_file(path, false, ft, {}, {}, scan_intent::inspect).success, "inspect scan fails");
-	assert_equal(false, ff.scan_file(path, false, ft, {}, {}, scan_intent::index).success, "index scan fails");
-}
-
-// A container-level seek does not flush the codec, so extract_thumbnail must flush
-// the decoder after seeking - otherwise, when the decoder is reused across calls, a
-// later-position thumbnail can be served from a frame that was buffered before the
-// seek. This reuses one decoder for an early and a late thumbnail (the exact reuse
-// scenario) and asserts the two frames differ.
-static void should_flush_decoder_on_thumbnail_seek()
-{
-	const auto load_path = test_files_folder.combine_file("gizmo.mp4");
-
-	av_format_decoder decoder;
-	assert_equal(true, decoder.open(load_path, media_intent::thumbnail), "open gizmo.mp4");
-	decoder.init_streams(-1, -1, false, false, false);
-	assert_equal(true, decoder.has_video(), "gizmo.mp4 has video");
-
-	constexpr sizei max_dim(256, 256);
-
-	ui::surface_ptr early;
-	assert_equal(true, decoder.extract_thumbnail(early, max_dim, 1, 100), "early thumbnail decoded");
-	assert_equal(true, is_valid(early), "early thumbnail valid");
-
-	// Reuse the same decoder; the seek to 95% must flush the frames buffered by the
-	// early extraction above rather than replaying one of them.
-	ui::surface_ptr late;
-	assert_equal(true, decoder.extract_thumbnail(late, max_dim, 95, 100), "late thumbnail decoded");
-	assert_equal(true, is_valid(late), "late thumbnail valid");
-
-	const auto same_size = is_valid(early) && is_valid(late) && early->size() == late->size();
-	assert_equal(true, same_size, "thumbnails allocated to the same size");
-
-	const auto identical = same_size && memcmp(early->pixels(), late->pixels(), early->size()) == 0;
-	assert_equal(false, identical, "late thumbnail differs from early (decoder flushed after seek)");
-}
-
-// A media seek can only land on a key frame, so the caller has to say which side of the
-// requested time it may land on. avformat_seek_file clears AVSEEK_FLAG_BACKWARD and instead
-// derives the direction from the min/max window, so the window centred on the target that
-// this used to pass always resolved to the key frame *after* the request. Nothing can decode
-// backwards from there, so the scrubber preview - and playback resuming at a saved position -
-// silently skipped up to a whole GOP of content. indy.mp4 has ~10s between key frames, which
-// is far wider than the tolerance here.
-static void should_seek_to_the_frame_at_the_requested_time()
-{
-	const auto load_path = test_files_folder.combine_file("indy.mp4");
-
-	av_format_decoder decoder;
-	assert_equal(true, decoder.open(load_path, media_intent::thumbnail), "open indy.mp4");
-	decoder.init_streams(-1, -1, false, false, false);
-	assert_equal(true, decoder.has_video(), "indy.mp4 has video");
-
-	constexpr sizei max_dim(256, 256);
-	const auto start = decoder.start_time();
-	const auto len = decoder.end_time() - start;
-	assert_equal(true, len > 60.0, "indy.mp4 is long enough to span several key frames");
-
-	constexpr double numerator = 60;
-	constexpr double denominator = 100;
-	const auto wanted = start + floor(numerator * len / denominator);
-
-	ui::surface_ptr s;
-	assert_equal(true, decoder.extract_seek_frame(s, max_dim, numerator, denominator), "seek frame decoded");
-	assert_equal(true, is_valid(s), "seek frame valid");
-	assert_equal(true, fabs(s->time() - wanted) < 1.0,
-	             std::format("decoded frame is at the requested time (wanted {}, got {})", wanted, s->time()));
-}
-
 // Issue #3 - Cannot remove MP4 tags added in an old version.
 // Old versions left tags in the native MP4 'KEYW' atom (surfaced by FFmpeg as the
 // "keywords" tag). When a file also carries embedded XMP, dc:subject is the
@@ -568,230 +422,6 @@ static void should_scan_avi()
 	assert_metadata(expected, *actual.to_props(), "Byzantium.avi");
 }
 
-static void should_extract_dv_datetime()
-{
-	// Build a minimal raw DV frame (one DIF sequence) carrying the VAUX
-	// recording-date (0x62) and recording-time (0x63) packs at the offsets the
-	// DV format places them (VAUX DIF block 3 of the sequence).
-	std::vector<uint8_t> frame(12000, 0);
-
-	auto* const date_pack = &frame[80 * 3 + 13];
-	date_pack[0] = 0x62; // VAUX recording date pack id
-	date_pack[1] = 0xff; // timezone unknown
-	date_pack[2] = 0xc0 | (1 << 4) | 5; // day 15 (reserved bits set)
-	date_pack[3] = (0 << 4) | 7; // month 07
-	date_pack[4] = (0 << 4) | 3; // year 03 -> 2003
-
-	auto* const time_pack = &frame[80 * 3 + 18];
-	time_pack[0] = 0x63; // VAUX recording time pack id
-	time_pack[1] = 0xff; // frames unknown
-	time_pack[2] = (4 << 4) | 5; // 45 seconds
-	time_pack[3] = (3 << 4) | 0; // 30 minutes
-	time_pack[4] = (1 << 4) | 4; // 14 hours
-
-	const auto actual = dv_extract_rec_datetime(frame.data(), frame.size());
-	assert_equal(df::date_t(2003, 7, 15, 14, 30, 45), actual, "dv rec datetime");
-
-	// A frame without recording packs must yield an invalid (absent) date.
-	const std::vector<uint8_t> empty_frame(12000, 0);
-	assert_equal(false, dv_extract_rec_datetime(empty_frame.data(), empty_frame.size()).is_valid(),
-	             "dv no packs");
-}
-
-static void should_correct_pts()
-{
-	// av_pts_correction takes FFmpeg's AVFrame::best_effort_timestamp (falling back to pts
-	// then pkt_dts) and guarantees a strictly increasing result so the presenter can always
-	// order frames. AV_NOPTS_VALUE is INT64_MIN; mirror it here so the test does not need to
-	// pull in the libav* headers.
-	constexpr int64_t nopts = std::numeric_limits<int64_t>::min();
-
-	// Clean, monotonic timestamps pass straight through.
-	{
-		av_pts_correction pc;
-		assert_equal(0, static_cast<int>(pc.guess(0, 0, 0, 100)), "monotonic 0");
-		assert_equal(100, static_cast<int>(pc.guess(100, 100, 100, 100)), "monotonic 100");
-		assert_equal(200, static_cast<int>(pc.guess(200, 200, 200, 100)), "monotonic 200");
-	}
-
-	// best_effort_timestamp wins over pts and pkt_dts; those are only consulted when the
-	// decoder had nothing to publish.
-	{
-		av_pts_correction pc;
-		assert_equal(500, static_cast<int>(pc.guess(500, 700, 900, 100)), "best effort preferred");
-		assert_equal(700, static_cast<int>(pc.guess(nopts, 700, 900, 100)), "falls back to pts");
-		assert_equal(900, static_cast<int>(pc.guess(nopts, nopts, 900, 100)), "falls back to dts");
-	}
-
-	// A duplicated timestamp must not be returned verbatim - that would make the
-	// presenter treat the frame as "not newer" and stall - so it is advanced by
-	// one frame duration instead.
-	{
-		av_pts_correction pc;
-		assert_equal(0, static_cast<int>(pc.guess(0, nopts, nopts, 100)), "dup first");
-		assert_equal(100, static_cast<int>(pc.guess(100, nopts, nopts, 100)), "dup second");
-		assert_equal(200, static_cast<int>(pc.guess(100, nopts, nopts, 100)), "dup advanced by duration");
-	}
-
-	// With no timestamps at all (raw / MJPEG streams) and no reported duration,
-	// the timeline still advances using the cadence learned from earlier frames.
-	{
-		av_pts_correction pc;
-		assert_equal(0, static_cast<int>(pc.guess(0, nopts, nopts, 0)), "nopts first");
-		assert_equal(40, static_cast<int>(pc.guess(40, nopts, nopts, 0)), "nopts learn cadence");
-		assert_equal(80, static_cast<int>(pc.guess(nopts, nopts, nopts, 0)), "nopts synth 1");
-		assert_equal(120, static_cast<int>(pc.guess(nopts, nopts, nopts, 0)), "nopts synth 2");
-	}
-
-	// The learned cadence is the smallest step seen, not the most recent one: a gap in a
-	// damaged stream must not become the synthetic step and run the timeline away.
-	{
-		av_pts_correction pc;
-		assert_equal(0, static_cast<int>(pc.guess(0, nopts, nopts, 0)), "gap first");
-		assert_equal(40, static_cast<int>(pc.guess(40, nopts, nopts, 0)), "gap learn cadence");
-		assert_equal(9000, static_cast<int>(pc.guess(9000, nopts, nopts, 0)), "gap jump");
-		assert_equal(9040, static_cast<int>(pc.guess(nopts, nopts, nopts, 0)), "synth uses smallest step");
-	}
-
-	// Invariant: however messy the timestamps (duplicates, backward jumps), the output is
-	// always strictly increasing.
-	{
-		av_pts_correction pc;
-		const int64_t messy[] = {0, 200, 100, 100, 400, 300, 500};
-		auto prev = nopts;
-		for (const auto p : messy)
-		{
-			const auto t = pc.guess(p, nopts, nopts, 50);
-			if (prev != nopts) assert_equal(true, t > prev, "strictly increasing");
-			prev = t;
-		}
-	}
-}
-
-// A clip with no audio track has no device clock, so it is timed off the wall clock and the
-// stream's own end is the only thing that separates "played out" from "decode fell behind". That
-// end-of-stream marker carries no media timestamp, so leaving it at the head of the frame queue
-// made front_time() report zero and every distance comparison refuse to look past it - the marker
-// was never consumed and the clip could only end on the two-second hard fallback.
-static void should_end_a_silent_clip_at_the_stream_end()
-{
-	df::file_path silent_path;
-
-	for (const auto* const name : {"anamorphic.mp4", "gizmo.mp4", "tagged.mkv", "tagged.webm"})
-	{
-		const auto candidate = test_files_folder.combine_file(name);
-
-		av_format_decoder probe;
-		if (!probe.open(candidate, media_intent::playback)) continue;
-		probe.init_streams(-1, -1, false, false, false);
-
-		if (probe.has_video() && !probe.has_audio())
-		{
-			silent_path = candidate;
-			break;
-		}
-	}
-
-	assert_equal(false, silent_path.is_empty(), "a video-only test file is available");
-
-	const auto ses = make_test_session();
-	assert_equal(true, ses->open(silent_path, files::file_type_from_name(silent_path), 0.0, true, -1, -1, false,
-	                             false, false), "session opened");
-	assert_equal(true, ses->is_playing(), "session auto-plays");
-
-	const auto media_end = ses->info().end;
-	assert_equal(true, media_end > 0.0, "the test clip declares a duration");
-
-	auto now = df::now();
-	assert_equal(false, ses->has_ended(now), "a freshly opened clip has not ended");
-
-	// Drive the demux, decode and present work the player threads normally own.
-	const platform::thread_event video_event(false, false);
-	const platform::thread_event audio_event(false, false);
-	const platform::thread_event read_event(false, false);
-
-	auto ended_at = -1.0;
-
-	for (auto i = 0; i < 4000 && ended_at < 0.0; ++i)
-	{
-		ses->process_io(video_event, audio_event);
-		ses->process_video(read_event);
-		now += 0.02;
-		ses->update_for_present(now);
-		if (ses->has_ended(now)) ended_at = ses->pos(now);
-	}
-
-	assert_equal(true, ended_at >= 0.0, "the clip ends");
-	assert_equal(true, ended_at < media_end + 1.0,
-	             std::format("ends on the stream end, not the 2s fallback (end {:.2f}, ended at {:.2f})",
-	                         media_end, ended_at));
-
-	ses->close(false);
-}
-
-// Scrubbing sets the wall clock from the position the user asked for, then the audio device
-// re-anchors it to the first sample it is handed. Those two have to agree: if the audio timeline
-// lands somewhere other than the sought position, pos() jumps when the device starts and the view
-// sits frozen until the clock catches back up to the frame already on screen.
-// A seek can only land on a key sample. gizmo.mp4 carries a single video key frame, so seeking
-// anywhere in it puts the demuxer back at the start. update_for_present settles the video forward
-// onto the position asked for; audio has no such step, so without trimming it the buffer - and the
-// device clock anchored to it - starts at the key sample and the view sits frozen on the settled
-// frame until the clock catches back up. That freeze is what a scrub used to produce.
-static void should_land_audio_and_video_on_the_sought_position()
-{
-	const auto load_path = test_files_folder.combine_file("gizmo.mp4");
-
-	const auto ses = make_test_session();
-	assert_equal(true, ses->open(load_path, files::file_type_from_name(load_path), 0.0, true, -1, -1, false,
-	                             false, false), "session opened");
-
-	const auto media_end = ses->info().end;
-	assert_equal(true, ses->info().has_audio && ses->info().has_video, "gizmo.mp4 has both streams");
-
-	constexpr auto wanted = 3.0;
-	assert_equal(true, media_end > wanted + 1.0, "the clip is long enough to seek into");
-
-	ses->seek(wanted, true);
-
-	audio_info_t fmt;
-	fmt.channel_layout = av_get_def_channel_layout(2);
-	fmt.sample_fmt = prop::audio_sample_t::signed_16bit;
-	fmt.sample_rate = 48000;
-
-	audio_buffer playback_buffer;
-	audio_buffer vis_buffer;
-	playback_buffer.init(fmt);
-	vis_buffer.init(fmt);
-
-	const platform::thread_event video_event(false, false);
-	const platform::thread_event audio_event(false, false);
-	const platform::thread_event read_event(false, false);
-
-	auto now = df::now();
-
-	for (auto i = 0; i < 200; ++i)
-	{
-		ses->process_io(video_event, audio_event);
-		ses->process_video(read_event);
-		ses->process_audio(playback_buffer, vis_buffer, read_event);
-		now += 0.02;
-		ses->update_for_present(now);
-	}
-
-	assert_equal(false, playback_buffer.is_empty(), "audio decoded after the seek");
-
-	const auto audio_at = playback_buffer.start_time();
-	const auto video_at = ses->time();
-
-	assert_equal(true, fabs(audio_at - wanted) < 0.5,
-	             std::format("audio lands on the sought position (wanted {:.2f}, got {:.2f})", wanted, audio_at));
-	assert_equal(true, fabs(video_at - wanted) < 0.5,
-	             std::format("video lands on the sought position (wanted {:.2f}, got {:.2f})", wanted, video_at));
-
-	ses->close(false);
-}
-
 static void should_scan_raw()
 {
 	const auto load_path = test_files_folder.combine("raw").combine_file("Screws.CR2");
@@ -820,186 +450,6 @@ static void should_scan_raw()
 	index_state index(as, locations);
 	const auto actual = metadata_from_cache(index, load_path);
 	assert_metadata(expected, *actual, "Screws.CR2");
-}
-
-static void should_parse_facebook_json()
-{
-	const auto path_status = test_files_folder.combine_file("place.json");
-	const auto json = df::util::json::json_from_file(path_status);
-
-	auto& result = json["result"];
-	auto& address_components = result["address_components"];
-	assert_equal(5u, address_components.Size(), "data");
-	assert_equal("WC1X", address_components[0]["long_name"].GetString(), "long_name");
-}
-
-static void should_scan_d64()
-{
-	constexpr auto file_name = "Ace of Aces (Europe).D64";
-	const auto load_path = test_files_folder.combine("retro").combine_file(file_name);
-	const auto loaded = df::blob_from_file(load_path);
-	const auto contents = files::list_disk(loaded);
-
-	assert_equal(4_z, contents.size(), "d64", file_name);
-	assert_equal("147 \"ACE OF ACES+    \" PRG", contents[0].line, "d64", file_name);
-}
-
-static void should_detect_tiff_by_version()
-{
-	// The byte-order mark alone is shared with plenty of non-TIFF files, so the
-	// version word decides: 42 is classic TIFF and 43 is BigTIFF.
-	constexpr uint8_t little_endian_42[] = {'I', 'I', 42, 0, 8, 0, 0, 0};
-	constexpr uint8_t big_endian_42[] = {'M', 'M', 0, 42, 0, 0, 0, 8};
-	constexpr uint8_t big_endian_43[] = {'M', 'M', 0, 43, 0, 8, 0, 0};
-	constexpr uint8_t not_tiff[] = {'I', 'I', 'B', 'M', 0, 0, 0, 0};
-
-	assert_equal(true, files::detect_format({little_endian_42, std::size(little_endian_42)}) ==
-	             detected_format::TIFF, "little endian tiff");
-	assert_equal(true, files::detect_format({big_endian_42, std::size(big_endian_42)}) ==
-	             detected_format::TIFF, "big endian tiff");
-	assert_equal(true, files::detect_format({big_endian_43, std::size(big_endian_43)}) ==
-	             detected_format::TIFF, "big endian bigtiff");
-	assert_equal(true, files::detect_format({not_tiff, std::size(not_tiff)}) ==
-	             detected_format::Unknown, "not tiff");
-}
-
-static void should_scan_and_load_bitmap_psd()
-{
-	// A minimal uncompressed 1-bit-per-pixel bitmap-mode psd. Photoshop stores
-	// bitmap mode inverted, so a set bit is black and a clear bit is white.
-	constexpr uint8_t bitmap_psd[] = {
-		'8', 'B', 'P', 'S', 0, 1, // signature and version
-		0, 0, 0, 0, 0, 0, // reserved
-		0, 1, // channels
-		0, 0, 0, 2, // rows
-		0, 0, 0, 16, // columns
-		0, 1, // depth
-		0, 0, // mode - bitmap
-		0, 0, 0, 0, // colour mode data length
-		0, 0, 0, 0, // image resource length
-		0, 0, 0, 0, // layer and mask length
-		0, 0, // compression - none
-		0b1010'1010, 0b0000'1111, // row 0
-		0b0000'0000, 0b1111'1111, // row 1
-	};
-
-	mem_read_stream scan_stream({bitmap_psd, std::size(bitmap_psd)});
-	const auto scanned = scan_photo(scan_stream);
-
-	assert_equal(true, scanned.success, "bitmap psd scanned");
-	assert_equal(16u, scanned.width, "bitmap psd width");
-	assert_equal(2u, scanned.height, "bitmap psd height");
-	assert_equal("mono"_c, scanned.pixel_format, "bitmap psd pixel format");
-
-	mem_read_stream load_stream({bitmap_psd, std::size(bitmap_psd)});
-	const auto surface = load_psd(load_stream);
-
-	assert_equal(true, is_valid(surface), "bitmap psd loaded");
-	assert_equal(16, static_cast<int>(surface->width()), "bitmap psd surface width");
-	assert_equal(2, static_cast<int>(surface->height()), "bitmap psd surface height");
-
-	const auto* const row0 = std::bit_cast<const uint32_t*>(surface->pixels_line(0));
-	const auto* const row1 = std::bit_cast<const uint32_t*>(surface->pixels_line(1));
-
-	constexpr uint32_t black = 0x000000;
-	constexpr uint32_t white = 0xFFFFFF;
-	const auto rgb = [](const uint32_t pixel) { return pixel & 0xFFFFFF; };
-
-	assert_equal(black, rgb(row0[0]), "bitmap psd 0,0 is black");
-	assert_equal(white, rgb(row0[1]), "bitmap psd 1,0 is white");
-	assert_equal(white, rgb(row0[8]), "bitmap psd 8,0 is white");
-	assert_equal(black, rgb(row0[12]), "bitmap psd 12,0 is black");
-	assert_equal(white, rgb(row1[0]), "bitmap psd 0,1 is white");
-	assert_equal(black, rgb(row1[15]), "bitmap psd 15,1 is black");
-}
-
-static void should_keep_dimensions_from_truncated_gif()
-{
-	// A valid GIF89a header followed by an application extension declaring an 11-byte
-	// identifier the file does not contain. The block walk cannot complete, but the
-	// dimensions were read from the header before it and must survive it - otherwise the
-	// scan is recorded as a failure and the file is re-scanned on every index pass.
-	constexpr uint8_t truncated_gif[] = {
-		'G', 'I', 'F', '8', '9', 'a',
-		0x40, 0x00, // width 64
-		0x20, 0x00, // height 32
-		0x00, 0x00, 0x00, // packed fields (no global colour table), background, aspect
-		0x21, 0xFF, 0x0B, // application extension promising 11 bytes that are not there
-	};
-
-	mem_read_stream stream({truncated_gif, std::size(truncated_gif)});
-	const auto scanned = scan_photo(stream);
-
-	assert_equal(true, scanned.success, "truncated gif scanned");
-	assert_equal(64u, scanned.width, "truncated gif width");
-	assert_equal(32u, scanned.height, "truncated gif height");
-}
-
-static std::vector<uint8_t> make_tiff_with_dimensions(const uint32_t width, const uint32_t height)
-{
-	std::vector<uint8_t> buf;
-
-	const auto put16 = [&buf](const uint16_t v)
-	{
-		buf.push_back(static_cast<uint8_t>(v));
-		buf.push_back(static_cast<uint8_t>(v >> 8));
-	};
-	const auto put32 = [&buf](const uint32_t v)
-	{
-		buf.push_back(static_cast<uint8_t>(v));
-		buf.push_back(static_cast<uint8_t>(v >> 8));
-		buf.push_back(static_cast<uint8_t>(v >> 16));
-		buf.push_back(static_cast<uint8_t>(v >> 24));
-	};
-	const auto put_entry = [put16, put32](const uint16_t tag, const uint32_t value)
-	{
-		put16(tag);
-		put16(4); // FMT_ULONG
-		put32(1);
-		put32(value);
-	};
-
-	put16(0x4949);
-	put16(42);
-	put32(8); // IFD0 offset
-
-	put16(2); // entry count
-	put_entry(0x0100, width); // ImageWidth
-	put_entry(0x0101, height); // ImageLength
-	put32(0); // no IFD1
-
-	return buf;
-}
-
-static void should_reject_absurd_tiff_dimensions()
-{
-	const auto valid = make_tiff_with_dimensions(64, 32);
-	mem_read_stream valid_stream({valid.data(), valid.size()});
-	const auto scanned_valid = scan_photo(valid_stream);
-
-	assert_equal(true, scanned_valid.success, "valid tiff scanned");
-	assert_equal(64u, scanned_valid.width, "valid tiff width");
-	assert_equal(32u, scanned_valid.height, "valid tiff height");
-
-	// These are unvalidated 32-bit file fields. Cast into sizei this one turns negative, and
-	// the decode budget it is later checked against then passes.
-	const auto absurd = make_tiff_with_dimensions(0xFFFFFFFFu, 0xFFFFFFFFu);
-	mem_read_stream absurd_stream({absurd.data(), absurd.size()});
-	const auto scanned_absurd = scan_photo(absurd_stream);
-
-	assert_equal(false, scanned_absurd.success, "absurd tiff rejected");
-	assert_equal(0u, scanned_absurd.width, "absurd tiff width cleared");
-	assert_equal(0u, scanned_absurd.height, "absurd tiff height cleared");
-}
-
-static void should_scan_archive()
-{
-	constexpr auto file_name = "benchmarks.zip";
-	const auto load_path = test_files_folder.combine_file(file_name);
-	const auto contents = files::list_archive(load_path);
-
-	assert_equal(2_z, contents.size(), "archive", file_name);
-	assert_equal("PXL_20240404_074316577.jpg", contents[0].filename, "archive", file_name);
 }
 
 static void should_scan_mod()
@@ -1365,133 +815,643 @@ static void should_present_icc_block_sections()
 	assert_equal(true, tags > 0, "icc tag rows", file_name);
 }
 
-static void should_load_po()
+// The description panel presents one section for every prose field, so the field list drives its
+// header name, its ordering, and which entries collapse as repeats.
+static void should_collect_descriptive_fields()
 {
-	const auto app_folder = known_path(platform::known_folder::running_app_folder);
-	const auto lang_folder = app_folder.combine("languages");
-	const auto lang_path = lang_folder.combine_file("de.po");
+	prop::item_metadata none;
+	assert_equal(size_t{0}, prop::descriptive_fields(none).size(), "no prose fields");
 
-	const auto po_entries = load_po(lang_path);
+	prop::item_metadata one;
+	one.comment = "A note"_c;
+	const auto only_comment = prop::descriptive_fields(one);
+	assert_equal(size_t{1}, only_comment.size(), "single prose field");
+	assert_equal("comment", only_comment[0].id, "lone field keeps its own identity");
+	assert_equal(false, only_comment[0].duplicate, "a lone field is never a repeat");
 
-	app_text_t t;
-	t.load_lang(lang_path.name(), po_entries);
-
-	assert_equal("Datenbank bereinigen und neu indexieren.\nAlle Daten werden regeneriert.", t.reset_database,
-	             "reset_database");
+	prop::item_metadata all;
+	all.comment = "Same text"_c;
+	all.description = "Same text"_c;
+	all.synopsis = "Different text"_c;
+	const auto ordered = prop::descriptive_fields(all);
+	assert_equal(size_t{3}, ordered.size(), "every populated field listed");
+	assert_equal("description", ordered[0].id, "description leads");
+	assert_equal("synopsis", ordered[1].id, "synopsis follows");
+	assert_equal("comment", ordered[2].id, "comment last");
+	assert_equal(false, ordered[0].duplicate, "leading field is the original");
+	assert_equal(false, ordered[1].duplicate, "distinct text is not a repeat");
+	assert_equal(true, ordered[2].duplicate, "text already shown is marked a repeat");
 }
 
-static void should_select_slavic_plural_forms()
+static void should_scan_info_from_title()
 {
-	// Czech (and Polish, Russian, Ukrainian) declare a third plural form:
-	// msgstr[2]. load_po must capture it, and plural_form must select it for
-	// "many" counts while keeping the binary behavior for other languages.
-	const auto path = _temps.next_path(".po");
-
+	const auto assert_name = [](const std::string_view name, const media_name_props& expected)
 	{
-		std::ofstream fs(platform::to_file_system_path(path));
-		fs << "msgid \"one apple\"\n";
-		fs << "msgid_plural \"{count} apples\"\n";
-		fs << "msgstr[0] \"jedno jablko\"\n";
-		fs << "msgstr[1] \"{count} jablka\"\n";
-		fs << "msgstr[2] \"{count} jablek\"\n";
+		const auto actual = scan_info_from_title(name);
+		assert_equal(expected.show, actual.show, "show", name);
+		assert_equal(expected.title, actual.title, "title", name);
+		assert_equal(expected.season, actual.season, "season", name);
+		assert_equal(expected.episode, actual.episode, "episode", name);
+		assert_equal(expected.episode_of, actual.episode_of, "episode_of", name);
+		assert_equal(expected.year, actual.year, "year", name);
+	};
+
+	assert_name("Game.of.Thrones.S02E06.HDTV.x264 - 2HD.mp4",
+	            {.show = "Game of Thrones", .season = 2, .episode = 6});
+	assert_name("It's.a.Wonderful.Life.1946.720p.BluRay.x264.YIFY.mp4",
+	            {.title = "It's a Wonderful Life", .year = 1946});
+	assert_name("The.Show.S01E02.The.Beginning.2160p.WEB-DL.HEVC.HDR",
+	            {.show = "The Show", .title = "The Beginning", .season = 1, .episode = 2});
+	assert_name("The.Show.S01E02.The.Beginning.DV.HEVC",
+	            {.show = "The Show", .title = "The Beginning", .season = 1, .episode = 2});
+	assert_name("Show_Name_S02E06_1080p", {.show = "Show Name", .season = 2, .episode = 6});
+	assert_name("Show.Name.1x02.720p", {.show = "Show Name", .season = 1, .episode = 2});
+	assert_name("Documentary.Part.02of10.1080p", {.show = "Documentary Part", .episode = 2, .episode_of = 10});
+	assert_name("Holiday.Video.1920x1080", {.title = "Holiday Video"});
+	assert_name("Movie.Title.2024", {.title = "Movie Title", .year = 2024});
+	assert_name("Movie.Title.(2024).2160p", {.title = "Movie Title", .year = 2024});
+	assert_name("The.Show.(2020).S01E02.1080p",
+	            {.show = "The Show", .season = 1, .episode = 2, .year = 2020});
+	assert_name("The.Show.S01E02.[GROUP].Episode.Title.1080p",
+	            {.show = "The Show", .title = "Episode Title", .season = 1, .episode = 2});
+	assert_name("Show.S999999999999E1.1080p", {.title = "Show S999999999999E1"});
+	assert_name("Series.10of02.1080p", {.title = "Series 10of02"});
+	assert_name("Family.Holiday.Video", {});
+}
+
+static void should_parse_exif_tags()
+{
+	// Builds a minimal little-endian TIFF/EXIF block that exercises the tags added to
+	// the EXIF parser: Software (-> encoder), Artist (-> artist), the Windows XP string
+	// tags (XPTitle/XPAuthor/XPKeywords/XPSubject) and the APEX MaxApertureValue /
+	// ShutterSpeedValue fallbacks. XP values use ASCII payloads so decoding is
+	// deterministic; the point of this test is the tag-dispatch and fallback logic.
+	struct exif_entry
+	{
+		uint16_t tag;
+		uint16_t fmt;
+		uint32_t count;
+		std::vector<uint8_t> data;
+	};
+
+	const auto ascii = [](const std::string_view s) { return std::vector<uint8_t>(s.begin(), s.end()); };
+	const auto rational_bytes = [](const int32_t n, const int32_t d)
+	{
+		std::vector<uint8_t> v(8);
+		memcpy(v.data(), &n, 4);
+		memcpy(v.data() + 4, &d, 4);
+		return v;
+	};
+
+	// Entries must be in ascending tag order (ARTIST before XPAuthor so the XPAuthor
+	// guard is proven not to overwrite the already-set artist).
+	std::vector<exif_entry> entries = {
+		{0x0131, FMT_STRING, 0, ascii("DiffractorApp")}, // Software      -> encoder
+		{0x013b, FMT_STRING, 0, ascii("Ansel Adams")}, //   Artist        -> artist
+		{0x9201, FMT_SRATIONAL, 1, rational_bytes(6, 1)}, // ShutterSpeed  -> 2^-6 = 1/64s
+		{0x9205, FMT_URATIONAL, 1, rational_bytes(4, 1)}, // MaxAperture   -> 2^(4/2) = f/4
+		{0x9c9b, FMT_STRING, 0, ascii("Winter")}, //         XPTitle       -> title
+		{0x9c9d, FMT_STRING, 0, ascii("Ignored Author")}, // XPAuthor      -> artist (guarded)
+		{0x9c9e, FMT_STRING, 0, ascii("alpha beta")}, //     XPKeywords    -> tags
+		{0x9c9f, FMT_STRING, 0, ascii("A subject")}, //      XPSubject     -> description
+	};
+
+	for (auto& e : entries)
+	{
+		if (e.count == 0) e.count = static_cast<uint32_t>(e.data.size());
 	}
 
-	const auto po_entries = load_po(path);
-
-	assert_equal(1, static_cast<int>(po_entries.size()), "entry count");
-	assert_equal("jedno jablko", po_entries.front().str, "msgstr[0]");
-	assert_equal("{count} jablka", po_entries.front().str_plural, "msgstr[1]");
-	assert_equal(1, static_cast<int>(po_entries.front().str_extra.size()), "extra form count");
-	assert_equal("{count} jablek", po_entries.front().str_extra.front(), "msgstr[2] captured");
-
-	// Czech uses three forms: one (1), few (2-4), many (0, 5+, ...).
-	app_text_t cs;
-	cs.load_lang("cs.po", po_entries);
-	assert_equal(0, cs.plural_form(1), "cs form for 1");
-	assert_equal(1, cs.plural_form(2), "cs form for 2");
-	assert_equal(1, cs.plural_form(4), "cs form for 4");
-	assert_equal(2, cs.plural_form(5), "cs form for 5");
-	assert_equal(2, cs.plural_form(11), "cs form for 11");
-
-	// Russian shares three forms but its form 0 also covers 21, 31, ...; those
-	// are clamped to the plural form so the literal-"1" singular is never reused.
-	app_text_t ru;
-	ru.load_lang("ru.po", po_entries);
-	assert_equal(0, ru.plural_form(1), "ru form for 1");
-	assert_equal(1, ru.plural_form(2), "ru form for 2");
-	assert_equal(2, ru.plural_form(5), "ru form for 5");
-	assert_equal(1, ru.plural_form(21), "ru form for 21 clamped");
-
-	// Unlisted languages keep the binary one/plural behavior.
-	app_text_t de;
-	de.load_lang("de.po", po_entries);
-	assert_equal(0, de.plural_form(1), "de form for 1");
-	assert_equal(1, de.plural_form(2), "de form for 2");
-	assert_equal(1, de.plural_form(5), "de form for 5");
-
-	cs.title_item_count_fmt.extra_forms.emplace_back("{count} polozek");
-	cs.clear();
-	assert_equal(1, cs.plural_form(5), "clear restores binary plural rule");
-	assert_equal(0, static_cast<int>(cs.title_item_count_fmt.extra_forms.size()), "clear drops extra plural forms");
-}
-
-// Indexing must not pay for an embedded thumbnail it will not use: extracting one reads the
-// thumbnail's bytes off the file and copies them (EXIF/TIFF) or fully decodes them (HEIF). The scan
-// asks for one only when a thumbnail is wanted, and this pins both halves of that - nothing when it
-// is not, and still a thumbnail when it is.
-static void should_extract_embedded_thumbnails_only_on_demand()
-{
-	// Each is over the 256 KB in-memory limit, so the scan reaches them through the seek-and-read
-	// stream rather than a span into an already-resident blob.
-	for (const auto* const name : {"Nikon.JPG", "IMG_0096.JPG", "melnik.heic"})
+	std::vector<uint8_t> buf;
+	const auto put16 = [&buf](const uint16_t v)
 	{
-		const auto path = test_files_folder.combine_file(name);
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
 
-		files ff;
-		const auto indexed = ff_scan_file(ff, path);
-		const auto wanted = ff_scan_and_load_thumb(ff, path);
+	const auto entry_count = static_cast<uint32_t>(entries.size());
+	constexpr uint32_t ifd0_offset = 8;
+	const uint32_t data_start = ifd0_offset + 2 + entry_count * 12 + 4;
 
-		assert_equal(true, indexed.success, name, "metadata scan succeeded");
-		assert_equal(false, is_valid(indexed.thumbnail_image) || is_valid(indexed.thumbnail_surface),
-		             name, "metadata scan extracted no embedded thumbnail");
-
-		// The metadata a scan reports must not depend on whether a thumbnail was asked for.
-		assert_equal(wanted.width, indexed.width, name, "width");
-		assert_equal(wanted.height, indexed.height, name, "height");
-		assert_equal(static_cast<int>(wanted.orientation), static_cast<int>(indexed.orientation),
-		             name, "orientation");
-		assert_equal(wanted.created_utc, indexed.created_utc, name, "created");
-
-		assert_equal(true, is_valid(wanted.thumbnail_image) || is_valid(wanted.thumbnail_surface),
-		             name, "on-demand scan produced a thumbnail");
+	// Reserve word-aligned out-of-line offsets for payloads that don't fit in 4 bytes.
+	std::vector<uint32_t> data_offset(entries.size(), 0);
+	uint32_t cursor = data_start;
+	for (size_t i = 0; i < entries.size(); ++i)
+	{
+		const auto size = static_cast<uint32_t>(entries[i].data.size());
+		if (size > 4)
+		{
+			data_offset[i] = cursor;
+			cursor += size;
+			if (cursor & 1) ++cursor;
+		}
 	}
+
+	// TIFF header (little-endian).
+	put16(0x4949);
+	put16(0x002a);
+	put32(ifd0_offset);
+
+	// IFD0.
+	put16(static_cast<uint16_t>(entry_count));
+	for (size_t i = 0; i < entries.size(); ++i)
+	{
+		const auto& e = entries[i];
+		put16(e.tag);
+		put16(e.fmt);
+		put32(e.count);
+
+		const auto size = static_cast<uint32_t>(e.data.size());
+		if (size > 4)
+		{
+			put32(data_offset[i]);
+		}
+		else
+		{
+			uint32_t inline_value = 0;
+			memcpy(&inline_value, e.data.data(), size);
+			put32(inline_value);
+		}
+	}
+	put32(0); // No IFD1.
+
+	// Out-of-line payloads (word aligned, matching the reserved offsets above).
+	for (const auto& e : entries)
+	{
+		if (e.data.size() > 4)
+		{
+			buf.insert(buf.end(), e.data.begin(), e.data.end());
+			if (buf.size() & 1) buf.push_back(0);
+		}
+	}
+
+	prop::item_metadata md;
+	metadata_exif::parse(md, df::cspan{buf.data(), buf.size()});
+
+	assert_equal("DiffractorApp", md.encoder, "Software -> encoder");
+	assert_equal("Ansel Adams", md.artist, "Artist -> artist (XPAuthor must not override)");
+	assert_equal("Winter", md.title, "XPTitle -> title");
+	assert_equal("alpha beta", md.tags, "XPKeywords -> tags");
+	assert_equal("A subject", md.description, "XPSubject -> description");
+	assert_equal(prop::format_f_num(4.0f), prop::format_f_num(md.f_number), "MaxApertureValue -> f_number");
+	assert_equal(prop::format_exposure(1.0f / 64.0f), prop::format_exposure(md.exposure_time),
+	             "ShutterSpeedValue -> exposure_time");
 }
 
-void register_tests3(view_state& state, test_registry& tests)
+// locations.md 2.8: GPS altitude and speed live in a sub-IFD reached through tag 0x8825, and
+// the altitude reference that decides the sign may arrive either side of the value.
+static void should_parse_exif_gps_height()
 {
+	struct gps_entry
+	{
+		uint16_t tag;
+		uint16_t fmt;
+		uint32_t count;
+		std::vector<uint8_t> data;
+	};
+
+	const auto build_gps_exif = [](const std::vector<gps_entry>& entries)
+	{
+		std::vector<uint8_t> buf;
+		const auto put16 = [&buf](const uint16_t v)
+		{
+			buf.push_back(static_cast<uint8_t>(v));
+			buf.push_back(static_cast<uint8_t>(v >> 8));
+		};
+		const auto put32 = [&buf](const uint32_t v)
+		{
+			buf.push_back(static_cast<uint8_t>(v));
+			buf.push_back(static_cast<uint8_t>(v >> 8));
+			buf.push_back(static_cast<uint8_t>(v >> 16));
+			buf.push_back(static_cast<uint8_t>(v >> 24));
+		};
+
+		constexpr uint32_t ifd0_offset = 8;
+		constexpr uint32_t gps_ifd_offset = ifd0_offset + 2 + 12 + 4; // IFD0 holds one entry
+		const auto count = static_cast<uint32_t>(entries.size());
+		const uint32_t gps_data_start = gps_ifd_offset + 2 + count * 12 + 4;
+
+		std::vector<uint32_t> data_offset(entries.size(), 0);
+		uint32_t cursor = gps_data_start;
+		for (size_t i = 0; i < entries.size(); ++i)
+		{
+			if (entries[i].data.size() > 4)
+			{
+				data_offset[i] = cursor;
+				cursor += static_cast<uint32_t>(entries[i].data.size());
+			}
+		}
+
+		put16(0x4949);
+		put16(0x002a);
+		put32(ifd0_offset);
+
+		put16(1);
+		put16(0x8825); // GPS IFD pointer
+		put16(4); // FMT_ULONG
+		put32(1);
+		put32(gps_ifd_offset);
+		put32(0);
+
+		put16(static_cast<uint16_t>(count));
+		for (size_t i = 0; i < entries.size(); ++i)
+		{
+			const auto& e = entries[i];
+			put16(e.tag);
+			put16(e.fmt);
+			put32(e.count);
+
+			const auto size = static_cast<uint32_t>(e.data.size());
+			if (size > 4)
+			{
+				put32(data_offset[i]);
+			}
+			else
+			{
+				uint32_t inline_value = 0;
+				memcpy(&inline_value, e.data.data(), size);
+				put32(inline_value);
+			}
+		}
+		put32(0);
+
+		for (const auto& e : entries)
+		{
+			if (e.data.size() > 4) buf.insert(buf.end(), e.data.begin(), e.data.end());
+		}
+
+		return buf;
+	};
+
+	const auto urational = [](const uint32_t n, const uint32_t d)
+	{
+		std::vector<uint8_t> v(8);
+		memcpy(v.data(), &n, 4);
+		memcpy(v.data() + 4, &d, 4);
+		return v;
+	};
+
+	constexpr uint16_t FMT_BYTE = 1;
+	constexpr uint16_t FMT_STRING = 2;
+	constexpr uint16_t FMT_URATIONAL = 5;
+
+	// A cruising airliner: 10,668 m above sea level at 900 km/h.
+	prop::item_metadata cruising;
+	const auto cruising_exif = build_gps_exif({
+		{0x0005, FMT_BYTE, 1, {0}},
+		{0x0006, FMT_URATIONAL, 1, urational(10668, 1)},
+		{0x000c, FMT_STRING, 2, {'K', 0}},
+		{0x000d, FMT_URATIONAL, 1, urational(900, 1)},
+	});
+	metadata_exif::parse(cruising, df::cspan{cruising_exif.data(), cruising_exif.size()});
+	assert_equal(10668.0f, cruising.altitude, "GPSAltitude -> altitude");
+	assert_equal(900.0f, cruising.gps_speed, "GPSSpeed in km/h -> gps_speed");
+
+	// A dive: reference 1 means below sea level, so the stored positive magnitude is negated.
+	prop::item_metadata dive;
+	const auto dive_exif = build_gps_exif({
+		{0x0005, FMT_BYTE, 1, {1}},
+		{0x0006, FMT_URATIONAL, 1, urational(180, 10)},
+	});
+	metadata_exif::parse(dive, df::cspan{dive_exif.data(), dive_exif.size()});
+	assert_equal(-18.0f, dive.altitude, "below-sea-level reference negates the altitude");
+
+	// Knots are the other common speed reference.
+	prop::item_metadata knots;
+	const auto knots_exif = build_gps_exif({
+		{0x000c, FMT_STRING, 2, {'N', 0}},
+		{0x000d, FMT_URATIONAL, 1, urational(100, 1)},
+	});
+	metadata_exif::parse(knots, df::cspan{knots_exif.data(), knots_exif.size()});
+	assert_equal(185.2f, knots.gps_speed, "GPSSpeed in knots -> km/h");
+}
+
+// Issue #65 - Binary text in JPEG comment
+// Some Samsung phones (e.g. SM-G900F) store a binary blob in the EXIF UserComment
+// tag, either raw or behind a valid "ASCII\0\0\0" character code. The parser must
+// recognise the junk and drop it, while still preserving valid comments.
+static void should_drop_binary_exif_comment()
+{
+	constexpr uint16_t TAG_USER_COMMENT = 0x9286;
+	constexpr uint16_t FMT_UNDEFINED = 7;
+
+	// Builds a minimal little-endian TIFF/EXIF block containing a single entry.
+	const auto build_exif = [](const uint16_t tag, const uint16_t fmt, const std::vector<uint8_t>& data)
+	{
+		std::vector<uint8_t> buf;
+		const auto put16 = [&buf](const uint16_t v)
+		{
+			buf.push_back(static_cast<uint8_t>(v));
+			buf.push_back(static_cast<uint8_t>(v >> 8));
+		};
+		const auto put32 = [&buf](const uint32_t v)
+		{
+			buf.push_back(static_cast<uint8_t>(v));
+			buf.push_back(static_cast<uint8_t>(v >> 8));
+			buf.push_back(static_cast<uint8_t>(v >> 16));
+			buf.push_back(static_cast<uint8_t>(v >> 24));
+		};
+
+		constexpr uint32_t ifd0_offset = 8;
+		constexpr uint32_t data_start = ifd0_offset + 2 + 1 * 12 + 4; // one entry
+		const auto size = static_cast<uint32_t>(data.size());
+
+		put16(0x4949); // little-endian TIFF header
+		put16(0x002a);
+		put32(ifd0_offset);
+
+		put16(1); // entry count
+		put16(tag);
+		put16(fmt);
+		put32(size);
+		if (size > 4)
+		{
+			put32(data_start);
+		}
+		else
+		{
+			uint32_t inline_value = 0;
+			memcpy(&inline_value, data.data(), size);
+			put32(inline_value);
+		}
+		put32(0); // no IFD1
+
+		if (size > 4) buf.insert(buf.end(), data.begin(), data.end());
+		return buf;
+	};
+
+	// The Samsung junk blob begins with the fixed marker {0x12, 0xf8, 0x0f, 0x3b}.
+	const std::vector<uint8_t> junk = {
+		0x12, 0xf8, 0x0f, 0x3b, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77
+	};
+	prop::item_metadata md_junk;
+	const auto exif_junk = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, junk);
+	metadata_exif::parse(md_junk, df::cspan{exif_junk.data(), exif_junk.size()});
+	assert_equal(true, prop::is_null(md_junk.comment), "binary Samsung comment dropped");
+
+	// SM-G900F hides its blob behind a valid "ASCII\0\0\0" character code, so the marker
+	// test alone never fires; the payload is still binary and must be dropped.
+	std::vector<uint8_t> samsung = {'A', 'S', 'C', 'I', 'I', 0, 0, 0, 0x0a, 0, 0, 0};
+	for (const auto c : {'J', 'K', 'J', 'K'}) samsung.push_back(static_cast<uint8_t>(c));
+	for (const uint8_t c : {0x27, 0x03, 0xab, 0x5c, 0x46, 0x0b, 0x01, 0x00}) samsung.push_back(c);
+	prop::item_metadata md_samsung;
+	const auto exif_samsung = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, samsung);
+	metadata_exif::parse(md_samsung, df::cspan{exif_samsung.data(), exif_samsung.size()});
+	assert_equal(true, prop::is_null(md_samsung.comment), "ASCII-prefixed binary comment dropped");
+
+	// Control: a well-formed ASCII UserComment ("ASCII\0\0\0" prefix) is preserved.
+	const std::vector<uint8_t> good = {
+		'A', 'S', 'C', 'I', 'I', 0, 0, 0, 'H', 'e', 'l', 'l', 'o'
+	};
+	prop::item_metadata md_good;
+	const auto exif_good = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, good);
+	metadata_exif::parse(md_good, df::cspan{exif_good.data(), exif_good.size()});
+	assert_equal("Hello", md_good.comment, "valid ASCII comment preserved");
+
+	// Control: multi-line text with trailing nul padding survives the binary scan.
+	const std::vector<uint8_t> padded = {
+		'A', 'S', 'C', 'I', 'I', 0, 0, 0, 'L', 'i', 'n', 'e', '\n', '2', 0, 0
+	};
+	prop::item_metadata md_padded;
+	const auto exif_padded = build_exif(TAG_USER_COMMENT, FMT_UNDEFINED, padded);
+	metadata_exif::parse(md_padded, df::cspan{exif_padded.data(), exif_padded.size()});
+	assert_equal("Line\n2", md_padded.comment, "multi-line padded comment preserved");
+}
+
+static void should_copy_preserve_properties()
+{
+	prop::item_metadata src;
+	src.title = "Test Title"_c;
+	src.rating = 4;
+	src.media_position = 19.5;
+	src.iso_speed = 400;
+	src.artist = "Test Artist"_c;
+
+	prop::item_metadata dst;
+	dst = src;
+
+	assert_equal(src.title, dst.title, "should copy title");
+	assert_equal(src.rating, dst.rating, "should copy rating");
+	assert_equal(src.iso_speed, dst.iso_speed, "should copy iso_speed");
+	assert_equal(src.artist, dst.artist, "should copy artist");
+}
+
+static void should_replace_item_metadata_without_resetting_playback_position()
+{
+	df::index_file_item initial;
+	initial.name = "position.mp4"_c;
+	initial.ft = files::file_type_from_name(initial.name);
+	const auto initial_metadata = std::make_shared<prop::item_metadata>();
+	initial_metadata->title = "Initial"_c;
+	initial_metadata->media_position = 12.0;
+	initial.metadata.store(initial_metadata);
+
+	const auto path = df::file_path("c:\\position.mp4");
+	const auto item = std::make_shared<df::item_element>(path, initial);
+	const auto old_snapshot = item->metadata();
+	item->media_position(24.0);
+
+	const auto refreshed = initial;
+	const auto refreshed_metadata = std::make_shared<prop::item_metadata>(*initial_metadata);
+	refreshed_metadata->title = "Refreshed"_c;
+	refreshed_metadata->media_position = 4.0;
+	refreshed.metadata.store(refreshed_metadata);
+	item->update(path, refreshed);
+
+	assert_equal("Initial", old_snapshot->title, "old metadata snapshot remains unchanged");
+	assert_equal("Refreshed", item->metadata()->title, "item receives refreshed metadata snapshot");
+	assert_equal(24, static_cast<int>(item->media_position()), "live playback position survives metadata refresh");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Issue #209 - Unable to remove tags by any means
+// Tags removed via tag_set::remove() should actually be deleted.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_remove_tags()
+{
+	tag_set tags("cat dog bird fish");
+	assert_equal(4, static_cast<int>(tags.size()), "initial tag count");
+
+	// Remove a single tag
+	const tag_set to_remove("dog");
+	tags.remove(to_remove);
+	assert_equal(3, static_cast<int>(tags.size()), "after removing dog");
+
+	// Verify removed tag is gone and others remain
+	const auto result = tags.to_string();
+	assert_equal(true, result.find("dog") == std::string::npos, "dog should be gone");
+	assert_equal(true, result.find("cat") != std::string::npos, "cat should remain");
+	assert_equal(true, result.find("bird") != std::string::npos, "bird should remain");
+	assert_equal(true, result.find("fish") != std::string::npos, "fish should remain");
+}
+
+static void should_remove_tags_case_insensitive()
+{
+	tag_set tags("Cat Dog Bird");
+	const tag_set to_remove("DOG");
+	tags.remove(to_remove);
+
+	assert_equal(2, static_cast<int>(tags.size()), "case insensitive remove");
+	assert_equal(true, tags.to_string().find("Dog") == std::string::npos, "Dog gone");
+}
+
+static void should_remove_multiple_tags()
+{
+	tag_set tags("cat dog bird fish");
+	const tag_set to_remove("dog fish");
+	tags.remove(to_remove);
+
+	assert_equal(2, static_cast<int>(tags.size()), "multi-remove count");
+}
+
+static void should_remove_all_tags()
+{
+	tag_set tags("cat dog");
+	const tag_set to_remove("cat dog");
+	tags.remove(to_remove);
+
+	assert_equal(true, tags.is_empty(), "all tags removed");
+}
+
+static void should_remove_nonexistent_tag()
+{
+	tag_set tags("cat dog");
+	const tag_set to_remove("elephant");
+	tags.remove(to_remove);
+
+	// Should not crash and should leave existing tags untouched
+	assert_equal(2, static_cast<int>(tags.size()), "remove nonexistent");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Issue #219 - Korean tags are not working
+// Korean (Hangul) tags must round-trip through tag parsing.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_parse_korean_tags()
+{
+	constexpr auto family = "\uAC00\uC871"; // 가족
+	constexpr auto travel = "\uC5EC\uD589"; // 여행
+	constexpr auto photo = "\uC0AC\uC9C4"; // 사진
+
+	// Space-separated Korean tags split into individual tags.
+	tag_set tags(std::format("{} {} {}", family, travel, photo));
+	assert_equal(3, static_cast<int>(tags.size()), "korean tag count");
+
+	// Removing one Korean tag leaves the others intact (case-insensitive path).
+	tags.remove(tag_set(travel));
+	assert_equal(2, static_cast<int>(tags.size()), "korean tag count after remove");
+	assert_equal(true, tags.to_string().find(travel) == std::string::npos, "travel tag removed");
+	assert_equal(true, tags.to_string().find(family) != std::string::npos, "family tag remains");
+	assert_equal(true, tags.to_string().find(photo) != std::string::npos, "photo tag remains");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Issue #184 - 'Group by date created' uses the wrong date (ignores DateTimeOriginal)
+// The media "created" date (used for group-by/sort-by date created and the
+// displayed creation date) must prefer the EXIF DateTimeOriginal capture time
+// over the container/file creation time, falling back to the latter only when
+// no capture time is present.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_prefer_datetimeoriginal_for_created()
+{
+	// DateTimeOriginal (created_exif) wins over the file/container date (created_utc).
+	prop::item_metadata md;
+	md.created_utc = df::date_t(2020, 1, 1, 12, 0, 0); // e.g. date the file was written
+	md.created_exif = df::date_t(2005, 6, 15, 9, 30, 0); // capture time
+	assert_equal(df::date_t(2005, 6, 15, 9, 30, 0), md.created(), "prefers DateTimeOriginal");
+
+	// With no capture time, fall back to the container/file creation date.
+	prop::item_metadata md2;
+	md2.created_utc = df::date_t(2020, 1, 1, 12, 0, 0);
+	assert_equal(md2.created_utc.system_to_local(), md2.created(), "falls back to created_utc");
+
+	// With neither set the date is invalid (the item then uses the file date).
+	constexpr prop::item_metadata md3;
+	assert_equal(false, md3.created().is_valid(), "no dates -> invalid");
+}
+
+// tag_set is what every keyword edit passes through, and it is the reason a written file keeps its
+// tags in a stable order. Ordering, case-insensitive de-duplication and the quoting round trip are
+// each load-bearing: a set that reorders makes an unchanged file look edited to the write path.
+static void should_combine_and_deduplicate_tag_sets()
+{
+	tag_set tags("holiday beach");
+	assert_equal(2, static_cast<int>(tags.size()), "parsed tag count");
+
+	tags.add(tag_set("Beach sunset"));
+	tags.make_unique();
+
+	// Case-insensitive: "Beach" must not join "beach" as a second tag.
+	assert_equal(3, static_cast<int>(tags.size()), "a differently cased duplicate is not a new tag");
+	assert_equal("beach holiday sunset", tags.to_string(" ", false), "tags are held in name order");
+
+	tags.remove(tag_set("HOLIDAY"));
+	assert_equal("beach sunset", tags.to_string(" ", false), "removal ignores case");
+
+	tags.remove(tag_set("absent"));
+	assert_equal("beach sunset", tags.to_string(" ", false), "removing an absent tag changes nothing");
+
+	// A tag containing a space has to survive the string round trip, which is what quoting is for.
+	tag_set quoted("\"new york\" paris");
+	assert_equal(2, static_cast<int>(quoted.size()), "a quoted multi-word tag is one tag");
+	assert_equal(true, tag_set(quoted.to_string()) == quoted, "a quoted tag set round trips through text");
+
+	tags.clear();
+	assert_equal(true, tags.is_empty(), "a cleared set is empty");
+}
+
+void register_metadata_tests(view_state& state, test_registry& tests)
+{
+	tests.add("Should collect descriptive fields"s, should_collect_descriptive_fields);
+	tests.add("Should scan info from title"s, should_scan_info_from_title);
+	tests.add("Should combine and deduplicate tag sets"s, should_combine_and_deduplicate_tag_sets);
+	tests.add("Should copy preserve properties"s, should_copy_preserve_properties);
+	tests.add("Should replace item metadata without resetting playback position"s,
+	          should_replace_item_metadata_without_resetting_playback_position);
+	tests.add("Should parse exif tags"s, should_parse_exif_tags);
+	tests.add("Should parse exif gps height"s, should_parse_exif_gps_height);
+
+	// Issue #65 - binary exif comment
+	tests.add("Should drop binary exif comment"s, should_drop_binary_exif_comment);
+
+	//
+	// Tags
+	//
+	// Issue #209 - tag removal
+	tests.add("Should remove tags"s, should_remove_tags);
+	tests.add("Should remove tags case insensitive"s, should_remove_tags_case_insensitive);
+	tests.add("Should remove multiple tags"s, should_remove_multiple_tags);
+	tests.add("Should remove all tags"s, should_remove_all_tags);
+	tests.add("Should remove nonexistent tag"s, should_remove_nonexistent_tag);
+
+	// Issue #219 - Korean tags
+	tests.add("Should parse Korean tags"s, should_parse_korean_tags);
+
+	// Issue #184 - group by date created uses DateTimeOriginal
+	tests.add("Should prefer DateTimeOriginal for created"s, should_prefer_datetimeoriginal_for_created);
+
 	//
 	// Scan Metadata
 	//
 	tests.add("Should scan jpg metadata"s, should_scan_jpeg);
 	tests.add("Should scan avi metadata"s, should_scan_avi);
-	tests.add("Should extract dv datetime"s, should_extract_dv_datetime);
-	tests.add("Should correct pts"s, should_correct_pts);
 	tests.add("Should scan mov metadata"s, should_scan_mov);
 	tests.add("Should scan mkv metadata"s, [] { should_scan_matroska("tagged.mkv", "rawvideo"); });
 	tests.add("Should scan webm metadata"s, [] { should_scan_matroska("tagged.webm", "vp8"); });
 	tests.add("Should scan mp3 metadata"s, should_scan_mp3);
 	tests.add("Should scan mp4 metadata"s, should_scan_mp4);
-	tests.add("Issue #78: Should apply video aspect ratio"s, should_apply_video_aspect_ratio);
-	tests.add("Should scan av metadata with a bounded probe"s, should_scan_av_metadata_with_a_bounded_probe);
-	tests.add("Should reject a non media file"s, should_reject_a_non_media_file);
-	tests.add("Should extract embedded thumbnails only on demand"s,
-	          should_extract_embedded_thumbnails_only_on_demand);
-	tests.add("Should flush decoder on thumbnail seek"s, should_flush_decoder_on_thumbnail_seek);
-	tests.add("Should seek to the frame at the requested time"s, should_seek_to_the_frame_at_the_requested_time);
-	tests.add("Should end a silent clip at the stream end"s, should_end_a_silent_clip_at_the_stream_end);
-	tests.add("Should land audio and video on the sought position"s,
-	          should_land_audio_and_video_on_the_sought_position);
-	tests.add("Issue #3: Should not resurrect container tags"s, should_not_resurrect_container_tags);
+
+	// Issue #3 - container tags added by an old version cannot be removed
+	tests.add("Should not resurrect container tags"s, should_not_resurrect_container_tags);
 	tests.add("Should apply property level Windows metadata precedence"s,
 	          should_apply_property_level_windows_metadata_precedence);
 	tests.add("Should scan raw metadata"s, should_scan_raw);
@@ -1510,25 +1470,4 @@ void register_tests3(view_state& state, test_registry& tests)
 	tests.add("Should present heif structure"s, should_present_heif_structure_block);
 	tests.add("Should merge Xmp sidecar"s, should_merge_xmp_sidecar);
 	tests.add("Should replace tokens"s, should_replace_tokens);
-
-	//
-	// Commodore
-	//
-	tests.add("Should scan d64"s, should_scan_d64);
-	tests.add("Should detect tiff by version"s, should_detect_tiff_by_version);
-	tests.add("Should scan and load bitmap psd"s, should_scan_and_load_bitmap_psd);
-	tests.add("Should keep dimensions from truncated gif"s, should_keep_dimensions_from_truncated_gif);
-	tests.add("Should reject absurd tiff dimensions"s, should_reject_absurd_tiff_dimensions);
-
-	//
-	// Archive
-	//
-	tests.add("Should scan archive"s, should_scan_archive);
-
-	//
-	// Other
-	//
-	tests.add("Should parse facebook Json"s, should_parse_facebook_json);
-	tests.add("Should load po"s, should_load_po);
-	tests.add("Should select Slavic plural forms"s, should_select_slavic_plural_forms);
 }

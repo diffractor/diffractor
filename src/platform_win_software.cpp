@@ -905,6 +905,9 @@ public:
 
 static ui::surface_ptr decode_png_resource_to_surface(const factories_ptr& f, const uint32_t res_id)
 {
+	// WIC is optional - startup continues without it - so the shadow art simply does not load.
+	if (!f || !f->wic) return nullptr;
+
 	ComPtr<IWICStream> stream;
 	ComPtr<IWICBitmapDecoder> decoder;
 	ComPtr<IWICBitmapFrameDecode> frame;
@@ -1127,12 +1130,18 @@ public:
 
 		_display_valid = false; // new frame - drop the display-scaled cache
 
+		// The first frame must report tex_created like the two overloads above: tex_updated maps to a
+		// redraw, which replays the scene recorded before this texture existed, so the video would never
+		// be drawn at all.
+		const auto was_empty = _surface->empty();
+
 		if (_scaler->scale_surface(frame, _surface))
 		{
+			const auto created = was_empty || _dimensions != _surface->dimensions();
 			_dimensions = _surface->dimensions();
 			_format = _surface->format();
 			_orientation = _surface->orientation();
-			return ui::texture_update_result::tex_updated;
+			return created ? ui::texture_update_result::tex_created : ui::texture_update_result::tex_updated;
 		}
 
 		return ui::texture_update_result::failed;
@@ -2015,7 +2024,7 @@ public:
 	                   const ui::style::text_style style, const int width, const int height) override
 	{
 		const auto fr = _f->font_face(font, _base_font_size);
-		if (fr) return fr->measure(str::utf8_to_utf16(text), style, width, height);
+		if (fr) return fr->measure(text, style, width, height);
 		return {};
 	}
 
@@ -2074,7 +2083,7 @@ public:
 		_clr = c;
 		_highlights.clear();
 		_horizontal_mirror = horizontal_mirror;
-		_font->draw(_ctx, this, str::utf8_to_utf16(text), bounds, style, c, bg, {});
+		_font->draw(_ctx, this, text, bounds, style, c, bg);
 		_horizontal_mirror = false;
 	}
 

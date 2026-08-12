@@ -369,6 +369,7 @@ void selector_view::render(ui::draw_context& dc, const view_controller_ptr contr
 			entry.texture.reset();
 			entry.surface.reset();
 			entry.decode_pending = false;
+			entry.decode_failed = false;
 		}
 
 		if (entry.surface)
@@ -378,12 +379,13 @@ void selector_view::render(ui::draw_context& dc, const view_controller_ptr contr
 			if (texture && texture->update(entry.surface) != ui::texture_update_result::failed)
 			{
 				entry.texture = std::move(texture);
+				entry.surface.reset();
 			}
-
-			entry.surface.reset();
+			// Otherwise the surface is kept: creating a device resource fails while the device is lost, and
+			// dropping it here would send the decode round again instead of retrying the upload.
 		}
 
-		if (is_valid(image) && !entry.texture && !entry.decode_pending)
+		if (is_valid(image) && !entry.texture && !entry.surface && !entry.decode_pending && !entry.decode_failed)
 		{
 			// Paint asks for the decode instead of performing it. The item type icon below stands in
 			// until the surface lands, which is what an item without a thumbnail already draws.
@@ -406,6 +408,13 @@ void selector_view::render(ui::draw_context& dc, const view_controller_ptr contr
 					                          if (found == view->_items.end() || found->image != image) return;
 
 					                          found->decode_pending = false;
+
+					                          if (!ui::is_valid(surface))
+					                          {
+						                          found->decode_failed = true;
+						                          return;
+					                          }
+
 					                          found->surface = std::move(surface);
 					                          view->_host->frame()->invalidate();
 				                          });
@@ -548,6 +557,12 @@ void selector_view::broadcast_event(const view_element_event& event) const
 	if (event.type == view_element_event_type::free_graphics_resources ||
 		event.type == view_element_event_type::dpi_changed)
 	{
-		for (auto& entry : const_cast<std::vector<selector_item>&>(_items)) entry.texture.reset();
+		// The decode latch is dropped with the textures: a decode that failed under memory pressure or
+		// at a previous scale deserves one more attempt once the view is rebuilt.
+		for (auto& entry : const_cast<std::vector<selector_item>&>(_items))
+		{
+			entry.texture.reset();
+			entry.decode_failed = false;
+		}
 	}
 }

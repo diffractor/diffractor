@@ -12,6 +12,7 @@
     - deploy     : Deploy build artifacts to Google Cloud Storage
     - release    : Create GitHub release with tag and upload installer/zip assets
     - run        : Run the recently built diffractor64.exe
+    - run32      : Run the recently built diffractor32.exe (32-bit)
     - cpu        : Run diffractor64.exe using CPU software rendering
     - build      : Bump the build number and build Release x64 (diffractor64.exe)
     - test       : Run unit tests and validate translation (.po) files
@@ -36,6 +37,10 @@
     Run diffractor64.exe
 
 .EXAMPLE
+    .\dd.ps1 run32
+    Run diffractor32.exe
+
+.EXAMPLE
     .\dd.ps1 cpu
     Run diffractor64.exe using CPU software rendering
 
@@ -54,7 +59,7 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("desktop", "store", "run", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
+    [ValidateSet("desktop", "store", "run", "run32", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
     [string]$Command = ""
 )
 
@@ -262,6 +267,7 @@ function Show-Usage {
     Write-Host "  deploy       Deploy desktop build artifacts to Google Cloud Storage"
     Write-Host "  release      Create GitHub release with tag and upload installers"
     Write-Host "  run          Run the recently built diffractor64.exe"
+    Write-Host "  run32        Run the recently built diffractor32.exe (32-bit)"
     Write-Host "  cpu          Run diffractor64.exe using CPU software rendering"
     Write-Host "  build        Bump the build number and build Release x64 (diffractor64.exe)"
     Write-Host "  test         Run unit tests and validate translation (.po) files"
@@ -279,6 +285,7 @@ function Show-Usage {
     Write-Host "  .\dd.ps1 store        Build Windows Store package (run bump-ver first)"
     Write-Host "  .\dd.ps1 bump-ver     Increment version before a major release"
     Write-Host "  .\dd.ps1 run          Run diffractor64.exe"
+    Write-Host "  .\dd.ps1 run32        Run diffractor32.exe"
     Write-Host "  .\dd.ps1 cpu          Run diffractor64.exe using CPU software rendering"
     Write-Host "  .\dd.ps1 test         Run unit tests and validate .po files"
     Write-Host ""
@@ -779,34 +786,43 @@ function Build-Store {
 
 function Start-Diffractor {
     param(
-        [switch]$SoftwareRendering
+        [switch]$SoftwareRendering,
+        [ValidateSet("x64", "Win32")]
+        [string]$Platform = "x64"
     )
 
     # Build the executable if it is missing or out of date (no build-number bump)
-    $exe64 = Build-App
+    $exe = Build-App -Platform $Platform
+    $exeName = Split-Path $exe -Leaf
 
     if ($SoftwareRendering) {
-        Write-Host "Starting diffractor64.exe using CPU software rendering..." -ForegroundColor Yellow
-        Start-Process $exe64 -ArgumentList "-no-gpu" -WorkingDirectory $SourceFilesDir
+        Write-Host "Starting $exeName using CPU software rendering..." -ForegroundColor Yellow
+        Start-Process $exe -ArgumentList "-no-gpu" -WorkingDirectory $SourceFilesDir
     }
     else {
-        Write-Host "Starting diffractor64.exe..." -ForegroundColor Yellow
-        Start-Process $exe64 -WorkingDirectory $SourceFilesDir
+        Write-Host "Starting $exeName..." -ForegroundColor Yellow
+        Start-Process $exe -WorkingDirectory $SourceFilesDir
     }
 }
 
 function Build-App {
-    # Build the Release x64 executable if it is missing or out of date
-    # relative to the source files. Returns the path to diffractor64.exe.
-    $exe64 = Join-Path $SourceFilesDir "diffractor64.exe"
+    param(
+        [ValidateSet("x64", "Win32")]
+        [string]$Platform = "x64"
+    )
+
+    # Build the Release executable if it is missing or out of date relative to the
+    # source files. Returns the path to the executable for $Platform.
+    $exeName = if ($Platform -eq "Win32") { "diffractor32.exe" } else { "diffractor64.exe" }
+    $exe = Join-Path $SourceFilesDir $exeName
 
     $needBuild = $false
-    if (-not (Test-Path $exe64)) {
-        Write-Host "diffractor64.exe not found - building..." -ForegroundColor Yellow
+    if (-not (Test-Path $exe)) {
+        Write-Host "$exeName not found - building..." -ForegroundColor Yellow
         $needBuild = $true
     }
     else {
-        $exeTime = (Get-Item $exe64).LastWriteTimeUtc
+        $exeTime = (Get-Item $exe).LastWriteTimeUtc
         $srcDir = Join-Path $ScriptDir "src"
         $newestSrc = Get-ChildItem -Path $srcDir -Recurse -File -Include *.cpp, *.h, *.rc, *.manifest -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
@@ -817,18 +833,18 @@ function Build-App {
     }
 
     if ($needBuild) {
-        Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "x64"
+        Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform $Platform
     }
     else {
-        Write-Host "diffractor64.exe is up to date." -ForegroundColor Green
+        Write-Host "$exeName is up to date." -ForegroundColor Green
     }
 
-    if (-not (Test-Path $exe64)) {
-        Write-Host "Error: diffractor64.exe not found at $exe64 after build." -ForegroundColor Red
+    if (-not (Test-Path $exe)) {
+        Write-Host "Error: $exeName not found at $exe after build." -ForegroundColor Red
         exit 1
     }
 
-    return $exe64
+    return $exe
 }
 
 function Invoke-Tests {
@@ -971,8 +987,18 @@ function New-GitHubRelease {
     
     # Create release with assets, generate notes automatically
     # Note: gh release create will create the tag automatically
+    # --target pins the tag to the commit that produced these artifacts. Without it gh tags the
+    # repository default branch, so releasing from a branch not yet merged to master would publish
+    # a tag and source archives for a tree the uploaded installer was never built from.
+    $releaseTarget = & git rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Could not resolve HEAD for the release tag" -ForegroundColor Red
+        exit 1
+    }
+
     & gh release create $tagName `
         --title $releaseName `
+        --target $releaseTarget `
         --generate-notes `
         $installer `
         $zipFile
@@ -1242,6 +1268,7 @@ switch ($Command) {
     "deploy" { Deploy-Desktop }
     "release" { New-GitHubRelease }
     "run" { Start-Diffractor }
+    "run32" { Start-Diffractor -Platform "Win32" }
     "cpu" { Start-Diffractor -SoftwareRendering }
     "build" { Invoke-BumpBuild; Build-App | Out-Null }
     "test" { Invoke-Tests }

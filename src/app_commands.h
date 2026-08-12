@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "ui.h"
+
 
 enum class commands
 {
@@ -203,3 +205,14 @@ enum class commands
 	view_zoom_navigator_auto_hide,
 	view_zoom_navigator_off,
 };
+
+struct command_accelerator
+{
+	commands id = commands::none;
+	keyboard_accelerator_t key;
+};
+
+// The shipped key bindings. A table rather than a run of assignments so the set can be inspected -
+// nothing else can tell whether two commands have quietly claimed the same key.
+std::vector<command_accelerator> default_keyboard_accelerators();
+

@@ -234,7 +234,28 @@
     <ClCompile Include="platform_win_settings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="test_utils.cpp">
+    <ClCompile Include="test_fixtures.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_app.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_av.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_files.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_locations.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_render.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_text.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="test_util.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="test_metadata.cpp">
@@ -247,9 +268,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="test_index.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="test_regressions.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="test_view.cpp">
@@ -452,6 +470,9 @@
     <ClInclude Include="model_tile_cache.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="app_search.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="app_settings.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -548,7 +569,7 @@
     <ClInclude Include="test.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="test_utils.h">
+    <ClInclude Include="test_fixtures.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="util_log.h">

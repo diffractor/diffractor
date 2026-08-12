@@ -1008,7 +1008,7 @@ msgid "Favorites are listed in the sidebar for quick access."
 msgstr "즐겨찾기는 빠른 액세스를 위해 사이드바에 나열됩니다."
 
 msgid "These items are in your collection."
-msgstr "이 항목은 컬렉션에 있습니다."
+msgstr "이 항목들은 컬렉션에 있습니다."
 
 msgid "These items are outside your collection, so search and duplicate detection do not cover them. Add this folder to your collection to include them."
 msgstr "이 항목은 컬렉션 밖에 있으므로 검색과 중복 감지의 대상이 아닙니다. 포함하려면 이 폴더를 컬렉션에 추가하세요."
@@ -3629,3 +3629,9 @@ msgstr "같은 시각에 촬영됨"
 
 msgid "Taken in the same place"
 msgstr "같은 장소에서 촬영됨"
+
+msgid "Recovered from a startup problem"
+msgstr "시작 문제에서 복구됨"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor가 시작을 완료하기 전에 예기치 않게 종료되어 이번 실행에서는 하드웨어 가속을 끈 기본 레이아웃을 사용합니다. 파일, 컬렉션, 최근 항목은 변경되지 않았습니다. 옵션에서 설정을 복원할 수 있습니다."

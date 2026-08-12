@@ -6,8 +6,8 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: File I/O helpers. Provides memory-mapped file reading, stream
-// utilities, and buffered I/O operations.
+// Purpose: File I/O helpers. Buffered reads over a platform file handle, whole-file loads and
+// in-place insert/replace. Memory-mapped reading lives in platform (platform::map_file).
 
 #pragma once
 

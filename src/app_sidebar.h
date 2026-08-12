@@ -2219,6 +2219,14 @@ public:
 		_owner = owner;
 	}
 
+	// The sidebar borrows the items view's frame, so it is attached whether or not it is on screen:
+	// counting, drive scans and index events run regardless of visibility. This answers the separate
+	// question of whether a repaint or a relayout of that shared frame is worth asking for.
+	static bool is_shown()
+	{
+		return setting.show_sidebar;
+	}
+
 	void layout_embedded(ui::measure_context& mc, const recti bounds)
 	{
 		_embedded_bounds = bounds;
@@ -2241,7 +2249,7 @@ public:
 
 	void invalidate_file_type() const
 	{
-		if (_frame) _frame->invalidate(_type_chart->bounds.offset(-_scroller.scroll_offset()));
+		if (is_shown()) frame()->invalidate(_type_chart->bounds.offset(-_scroller.scroll_offset()));
 	}
 
 	void populate_file_types_and_dates() const
@@ -2577,27 +2585,24 @@ public:
 
 	void layout() const
 	{
-		if (_frame)
+		if (is_shown())
 		{
-			_frame->layout();
-			_frame->invalidate();
+			frame()->layout();
+			frame()->invalidate();
 		}
 	}
 
 	void invalidate() const
 	{
-		if (_frame)
+		if (is_shown())
 		{
-			_frame->invalidate();
+			frame()->invalidate();
 		}
 	}
 
 	void invalidate_element(const view_element_ptr& e) override
 	{
-		if (_frame)
-		{
-			_frame->invalidate();
-		}
+		invalidate();
 	}
 
 	void layout(ui::measure_context& mc)
@@ -2654,7 +2659,7 @@ public:
 
 	void tick() override
 	{
-		if (_frame && _frame->is_visible())
+		if (is_shown() && frame()->is_visible())
 		{
 			const auto is_indexing = _state.item_index.indexing > 0;
 			const auto is_detecting = _state.item_index.detecting > 0;
@@ -2670,7 +2675,7 @@ public:
 			if (_is_detecting != is_detecting)
 			{
 				_is_detecting = is_detecting;
-				_frame->invalidate(_indexing_elements->bounds);
+				frame()->invalidate(_indexing_elements->bounds);
 			}
 
 			if (_show_indexing_control)
@@ -2699,9 +2704,9 @@ public:
 		return false;
 	};
 
-	const ui::frame_ptr frame() override
+	const ui::frame_ptr frame() const override
 	{
-		return _frame;
+		return _frame ? _frame : ui::no_frame();
 	}
 
 	const ui::control_frame_ptr owner() override
@@ -2726,7 +2731,7 @@ public:
 
 	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override
 	{
-		_state.track_menu(_frame, bounds, commands);
+		_state.track_menu(frame(), bounds, commands);
 	}
 
 	void invalidate_view(const view_invalid invalid) override
@@ -2745,10 +2750,10 @@ public:
 			e->dispatch_event(ev);
 		}
 
-		if (_frame)
+		if (is_shown())
 		{
-			_frame->layout();
-			_frame->invalidate();
+			frame()->layout();
+			frame()->invalidate();
 		}
 	}
 };

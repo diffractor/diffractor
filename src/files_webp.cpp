@@ -18,15 +18,22 @@
 #include "webp/demux.h"
 #include "webp/encode.h"
 
+// Crops one pixel off an odd axis, as decode_jpeg does, so an odd-sized image still reaches the GPU
+// as NV12. Without it a 320x213 thumbnail costs 4 bytes per pixel instead of 1.5.
 static ui::surface_ptr decode_webp_nv12(const df::cspan data, const int width, const int height)
 {
+	const auto even_width = width & ~1;
+	const auto even_height = height & ~1;
+
+	if (even_width < 2 || even_height < 2) return {};
+
 	auto result = std::make_shared<ui::surface>();
 
-	if (!result->alloc(width, height, ui::texture_format::NV12)) return {};
+	if (!result->alloc(even_width, even_height, ui::texture_format::NV12)) return {};
 
 	const auto luma_stride = static_cast<int>(result->stride());
-	const auto chroma_width = width / 2;
-	const auto chroma_height = height / 2;
+	const auto chroma_width = even_width / 2;
+	const auto chroma_height = even_height / 2;
 	const auto chroma_size = static_cast<size_t>(chroma_width) * chroma_height;
 	const auto chroma = df::unique_alloc<uint8_t>(chroma_size * 2);
 
@@ -35,15 +42,33 @@ static ui::surface_ptr decode_webp_nv12(const df::cspan data, const int width, c
 	auto* const u = chroma.get();
 	auto* const v = u + chroma_size;
 
-	if (!WebPDecodeYUVInto(data.data, data.size,
-	                       result->pixels(), static_cast<size_t>(luma_stride) * height, luma_stride,
-	                       u, chroma_size, chroma_width,
-	                       v, chroma_size, chroma_width))
-	{
-		return {};
-	}
+	WebPDecoderConfig config;
 
-	auto* const uv = result->pixels() + static_cast<size_t>(luma_stride) * height;
+	if (!WebPInitDecoderConfig(&config)) return {};
+
+	// A crop origin has to be even for 4:2:0 chroma to stay aligned, which zero is.
+	config.options.use_cropping = 1;
+	config.options.crop_width = even_width;
+	config.options.crop_height = even_height;
+
+	config.output.colorspace = MODE_YUV;
+	config.output.is_external_memory = 1;
+	config.output.u.YUVA.y = result->pixels();
+	config.output.u.YUVA.y_stride = luma_stride;
+	config.output.u.YUVA.y_size = static_cast<size_t>(luma_stride) * even_height;
+	config.output.u.YUVA.u = u;
+	config.output.u.YUVA.u_stride = chroma_width;
+	config.output.u.YUVA.u_size = chroma_size;
+	config.output.u.YUVA.v = v;
+	config.output.u.YUVA.v_stride = chroma_width;
+	config.output.u.YUVA.v_size = chroma_size;
+
+	const auto status = WebPDecode(data.data, data.size, &config);
+	WebPFreeDecBuffer(&config.output);
+
+	if (status != VP8_STATUS_OK) return {};
+
+	auto* const uv = result->pixels() + static_cast<size_t>(luma_stride) * even_height;
 
 	for (auto y = 0; y < chroma_height; ++y)
 	{
@@ -79,14 +104,17 @@ ui::surface_ptr load_webp(const df::cspan data, const bool can_use_yuv)
 			return {};
 		}
 
-		const auto use_yuv = can_use_yuv && features.format == 1 && !features.has_alpha &&
-			!features.has_animation && (width & 1) == 0 && (height & 1) == 0;
+		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
+		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
+		const auto use_yuv = can_use_yuv && setting.use_yuv && features.format == 1 && !features.has_alpha &&
+			!features.has_animation && width >= 2 && height >= 2;
 
 		if (use_yuv)
 		{
 			result = decode_webp_nv12(data, width, height);
 		}
-		else
+
+		if (!is_valid(result))
 		{
 			result = std::make_shared<ui::surface>();
 			// Opaque images decode into the ignored X byte, so tag them RGB and let the renderer skip blending.
@@ -369,21 +397,32 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 			}
 			else
 			{
-				config.thread_level = 1;
+				// A thumbnail is a rebuildable cache entry written for every indexed item, so it takes a
+				// much cheaper search than a file the user asked to save.
+				config.thread_level = params.webp_fast ? 0 : 1;
 				config.lossless = false;
 				config.quality = static_cast<float>(params.webp_quality);
-				config.method = 6;
-				config.preprocessing = 4;
+				config.method = params.webp_fast ? 2 : 6;
+				config.use_sharp_yuv = params.webp_fast ? 0 : 1;
 				// https://groups.google.com/a/webmproject.org/forum/#!topic/webp-discuss/7dV1qXrdQ2Y
 				config.alpha_quality = params.webp_lossy_alpha ? params.webp_quality : 100;
 			}
 
-			df::assert_true(WebPValidateConfig(&config));
+			// assert_true evaluates nothing in Release, so the validation has to stand on its own.
+			const auto valid_config = WebPValidateConfig(&config) != 0;
+
+			if (!valid_config) df::log(__FUNCTION__, "rejected webp encoder configuration");
 
 			picture.writer = WebPMemoryWrite;
 			picture.custom_ptr = &memory_writer;
 
-			const int success = WebPEncode(&config, &picture);
+			const int success = valid_config && WebPEncode(&config, &picture);
+
+			if (valid_config && !success)
+			{
+				df::log(__FUNCTION__, std::format("webp encode failed with error {}",
+				                                  static_cast<int>(picture.error_code)));
+			}
 
 			if (success)
 			{

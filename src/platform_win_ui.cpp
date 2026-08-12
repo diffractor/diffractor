@@ -1943,6 +1943,8 @@ public:
 
 	void redraw() override
 	{
+		// Accounted as an invalidate, not a redraw: this one goes on to rebuild the scene.
+		df::bump(df::ui_perf.invalidates);
 		InvalidateRect(hwnd(), nullptr, 0);
 	}
 
@@ -1953,6 +1955,8 @@ public:
 
 	void invalidate(const recti bounds, const bool erase) override
 	{
+		df::bump(df::ui_perf.invalidates);
+
 		if (bounds.is_empty())
 		{
 			InvalidateRect(hwnd(), nullptr, erase);
@@ -2307,7 +2311,7 @@ public:
 
 		if (_styles.spelling)
 		{
-			spell.lazy_load();
+			spell().lazy_load();
 		}
 
 		if (!_styles.cue.empty())
@@ -2618,7 +2622,7 @@ void edit_impl::update_spelling(const std::wstring& text)
 			{
 				auto word_a = str::utf16_to_utf8(word);
 
-				if (!spell.is_word_valid(word_a))
+				if (!spell().is_word_valid(word_a))
 				{
 					add_unknown_word(word_a, word_start, word_start + static_cast<int>(word.size()));
 				}
@@ -2646,7 +2650,7 @@ void edit_impl::update_spelling(const std::wstring& text)
 	{
 		const auto word_a = str::utf16_to_utf8(word);
 
-		if (!spell.is_word_valid(word_a))
+		if (!spell().is_word_valid(word_a))
 		{
 			add_unknown_word(word_a, word_start, std::min(word_start + static_cast<int>(word.size()), len - 1));
 		}
@@ -3588,7 +3592,7 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 	{
 		HRESULT hr = S_OK;
 
-		if (use_d3d && _f->d3d_device)
+		if (use_d3d && _f->d3d_device && _f->dxgi)
 		{
 			ComPtr<IDXGISwapChain> sc;
 			ComPtr<IDXGIFactory2> f2;
@@ -3821,7 +3825,14 @@ void frame_base::present() const
 {
 	if (_swap_chain)
 	{
-		const auto hr = _swap_chain->Present(0, 0);
+		// Timed because this is where the GPU applies backpressure: with a frame latency of 1, a
+		// scene the GPU cannot keep up with shows here rather than in draw_scene.
+		HRESULT hr;
+		{
+			df::perf_timer timer(df::gpu_perf.present_us, &df::gpu_perf.present_max_us);
+			hr = _swap_chain->Present(0, 0);
+		}
+
 		if (FAILED(hr))
 		{
 			handle_device_loss(hr, "Present");
@@ -3848,7 +3859,11 @@ void frame_base::handle_render(const recti damage)
 	if (ctx)
 	{
 		ctx->begin_draw(_extent, _gdi_ctx->calc_base_font_size(), damage);
-		on_render(ctx);
+
+		{
+			df::perf_timer build(df::ui_perf.scene_build_us, &df::ui_perf.scene_build_max_us);
+			on_render(ctx);
+		}
 
 		const auto hr = ctx->render();
 
@@ -4357,6 +4372,8 @@ public:
 
 	void redraw() override
 	{
+		df::bump(df::ui_perf.redraws);
+
 		if (is_valid_device())
 		{
 			// No begin_draw runs here, so any damage limit from the last paint is stale - the
@@ -5584,6 +5601,8 @@ public:
 
 	void invalidate(const recti bounds, const bool erase) override
 	{
+		df::bump(df::ui_perf.invalidates);
+
 		if (bounds.is_empty())
 		{
 			InvalidateRect(m_hWnd, nullptr, erase);
@@ -5607,6 +5626,7 @@ public:
 		bool visible = false;
 		bool size_changed = true;
 		bool self_painting = false;
+		bool appearing = false;
 
 		bool suppress_redraw() const noexcept
 		{
@@ -5648,13 +5668,17 @@ public:
 
 			// A child whose parent moved but whose relative bounds did not change was skipped by the
 			// nested layout, so repaint direct children without rendering the parent surface again.
+			// A window that is appearing has nothing on screen at all, and this runs once the whole
+			// batch is in place, which is the first moment it is no longer covered by a sibling.
+			if (!self_painting || appearing)
+			{
+				RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME);
+			}
+
 			if (self_painting)
 			{
 				EnumChildWindows(h, invalidate_direct_child, std::bit_cast<LPARAM>(h));
-				return;
 			}
-
-			RedrawWindow(h, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 		}
 	};
 
@@ -5704,7 +5728,7 @@ public:
 
 			moves.push_back({
 				h, bounds, was_visible ? current_bounds : recti{}, c.visible, size_changed,
-				std::dynamic_pointer_cast<frame>(c.control) != nullptr
+				std::dynamic_pointer_cast<frame>(c.control) != nullptr, c.visible && !was_visible
 			});
 		}
 
@@ -6518,7 +6542,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 		if (popup.CreatePopupMenu())
 		{
 			// Append the suggestions, if there are any
-			auto suggestions = spell.suggest(selected_word.word);
+			auto suggestions = spell().suggest(selected_word.word);
 			if (suggestions.size() > 8) suggestions.resize(8);
 
 			uint32_t item_id = ID_SPELLCHECK_OPT0;
@@ -6569,7 +6593,7 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 				break;
 
 			case ID_SPELLCHECK_ADD:
-				spell.add_word(selected_word.word);
+				spell().add_word(selected_word.word);
 				InvalidateRect(m_hWnd, nullptr, TRUE);
 				break;
 
@@ -7970,13 +7994,6 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 
 				CloseHandle(dump_file);
 			}
-			else
-			{
-				// Log the error if file creation failed
-				const auto error = GetLastError();
-				// Can't use normal logging during crash handling, but store for later
-				(void)error; // Suppress unused variable warning
-			}
 		}
 	}
 
@@ -7996,11 +8013,15 @@ static LONG WINAPI exception_callback(EXCEPTION_POINTERS* pExceptionPointers)
 	if (app)
 	{
 		const auto dump_file_path = platform::temp_file();
+		const auto dump_created = create_dump(pExceptionPointers, dump_file_path);
 
-		if (create_dump(pExceptionPointers, dump_file_path))
-		{
-			app->crash(dump_file_path);
-		}
+		// A failed write still leaves the file create_dump opened.
+		if (!dump_created) platform::delete_file(dump_file_path);
+
+		// Reported even when no dump could be written: dbghelp or the temp file can fail, and that
+		// is exactly the machine whose next launch would crash again. The handler also records the
+		// crashed file in the skip list, which must not depend on the minidump.
+		app->crash(dump_created ? dump_file_path : df::file_path{});
 	}
 
 	return EXCEPTION_CONTINUE_SEARCH;
@@ -8238,6 +8259,14 @@ static void show_fatal_error(const std::string_view message)
 	::MessageBox(nullptr, s.c_str(), s_app_name_l, MB_OK | MB_ICONHAND);
 }
 
+// The app's own failure dialog needs a window and a running message loop. Startup failures happen
+// before both exist, so they come back here for a bare message box instead of being queued to a
+// loop that is never entered - a silent exit is the one outcome worth ruling out.
+void platform::show_startup_failure(const std::string_view message)
+{
+	show_fatal_error(message);
+}
+
 
 //
 //STDAPI SetProcessDpiAwareness(
@@ -8249,7 +8278,7 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 	is_current_thread_ui = true;
 
 	constexpr int result = 0;
-	const auto app_impl = std::make_shared<win32_app>();
+	std::shared_ptr<win32_app> app_impl;
 	ui::app_ptr app;
 
 	// Every startup failure below returns early, so teardown is expressed as scope guards rather
@@ -8261,6 +8290,10 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 	try
 	{
+		// Nothing above the try may allocate: a throw there escapes the handlers below and the user
+		// sees the process vanish instead of a message.
+		app_impl = std::make_shared<win32_app>();
+
 		// Done in manifest
 		//SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
 
@@ -8439,6 +8472,13 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 	{
 		df::log(__FUNCTION__, e.what());
 		show_fatal_error(str::utf8_cast(e.what()));
+	}
+	catch (...)
+	{
+		// Not everything thrown through here derives from std::exception - COM wrappers and
+		// third-party code throw their own types. Without this the runtime calls terminate and the
+		// user sees the process vanish with nothing said. The detail is diagnostic, like e.what().
+		show_fatal_error("Unhandled exception");
 	}
 
 #ifdef _DEBUG
@@ -8983,6 +9023,29 @@ void win32_app::set_font_base_size(const int i)
 	}
 }
 
+recti platform::fit_window_to_work_area(const recti saved, const recti work_area)
+{
+	const auto width = std::min(saved.width(), work_area.width());
+	const auto height = std::min(saved.height(), work_area.height());
+	const auto x = std::clamp(saved.left, work_area.left, std::max(work_area.left, work_area.right - width));
+	const auto y = std::clamp(saved.top, work_area.top, std::max(work_area.top, work_area.bottom - height));
+	return {x, y, x + width, y + height};
+}
+
+bool platform::window_needs_refit(const recti saved, const recti work_area, const bool reaches_a_display)
+{
+	if (!reaches_a_display) return true;
+	if (saved.width() > work_area.width() || saved.height() > work_area.height()) return true;
+
+	// Enough left to see and to grab. A window dragged almost off the edge of a display that is still
+	// attached does reach it, and restoring it there leaves nothing to click.
+	constexpr auto min_visible_cx = 96;
+	constexpr auto min_visible_cy = 32;
+	const auto overlap_cx = std::min(saved.right, work_area.right) - std::max(saved.left, work_area.left);
+	const auto overlap_cy = std::min(saved.bottom, work_area.bottom) - std::max(saved.top, work_area.top);
+	return overlap_cx < min_visible_cx || overlap_cy < min_visible_cy;
+}
+
 ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_ptr& store,
                                                   const ui::frame_host_weak_ptr& host)
 {
@@ -9007,20 +9070,26 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 				wp.showCmd = SW_SHOW;
 			}
 
-			const HDC hdc_screen = CreateDC(L"DISPLAY", nullptr, nullptr, nullptr);
-
-			if (hdc_screen)
+			// Validated against the display the rect is actually on, not the primary one. A window saved
+			// on a second display does not intersect the primary at all, so clipping to it either started
+			// the app off-screen or silently shrank a window that merely straddled two displays.
+			if (!IsRectEmpty(&wp.rcNormalPosition))
 			{
-				const win_rect screenRect(0, 0, GetDeviceCaps(hdc_screen, HORZRES),
-				                          GetDeviceCaps(hdc_screen, VERTRES));
+				const auto reaches_a_display = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONULL) != nullptr;
+				const auto nearest = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
+				MONITORINFO info = {sizeof(MONITORINFO)};
 
-				// Never start bigger than the screen?
-				if (screenRect.intersects(wp.rcNormalPosition))
+				if (nearest && GetMonitorInfo(nearest, &info))
 				{
-					wp.rcNormalPosition = screenRect.intersection(wp.rcNormalPosition);
-				}
+					const recti saved(wp.rcNormalPosition.left, wp.rcNormalPosition.top, wp.rcNormalPosition.right,
+					                  wp.rcNormalPosition.bottom);
+					const recti work(info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom);
 
-				DeleteDC(hdc_screen);
+					if (platform::window_needs_refit(saved, work, reaches_a_display))
+					{
+						wp.rcNormalPosition = win_rect(platform::fit_window_to_work_area(saved, work));
+					}
+				}
 			}
 		}
 	}

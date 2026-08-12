@@ -80,13 +80,14 @@ class database;
 class tile_cache_db;
 class av_player;
 class av_format_decoder;
+class files;
 class scrubber_element;
 class display_state_t;
 
 using display_state_ptr = std::shared_ptr<display_state_t>;
 
 ui::texture_sampler calc_sampler(sizei draw_extent, sizei texture_extent, const ui::orientation& orientation,
-                                 bool interactive = false);
+                                 bool interactive = false, bool provisional = false);
 void draw_texture_info(ui::draw_context& rc, recti media_bounds, const ui::texture_ptr& tex,
                        ui::orientation orientation, ui::texture_sampler sampler, float alpha);
 df::unique_paths make_unique_paths(df::paths selection);
@@ -95,6 +96,23 @@ struct media_preview_state
 {
 	std::shared_ptr<av_format_decoder> decoder1;
 	std::shared_ptr<av_format_decoder> decoder2;
+
+	// Held with the decoders because constructing one runs jpeg_create_compress and
+	// jpeg_create_decompress, which a pointer move should not pay for.
+	std::unique_ptr<files> encoder;
+
+	// Owned by the preview worker: set while a newer hover waits behind the one running.
+	std::atomic_bool* superseded = nullptr;
+
+	media_preview_state();
+	~media_preview_state();
+
+	// A pointer that has already moved on makes the rest of the walk toward an exact frame
+	// worthless, so the decode stops at the nearest frame it has reached and answers with that.
+	df::cancel_token abandon_token() const
+	{
+		return superseded ? df::cancel_token(*superseded) : df::cancel_token{};
+	}
 
 	void close();
 	bool open1(df::file_path file_path);
@@ -551,15 +569,12 @@ private:
 	int _load_retry_count = 0;
 
 	ui::texture_ptr _last_draw_tex;
-	recti _last_draw_rect;
 	recti _last_draw_source_rect;
 	ui::texture_sampler _last_drawn_sampler = ui::texture_sampler::point;
 
 	ui::texture_ptr _fade_out_tex;
-	recti _fade_out_rect;
 	recti _fade_out_source_rect;
 	ui::texture_sampler _fade_out_sampler = ui::texture_sampler::point;
-	ui::animate_alpha _fade_out_alpha_animation;
 
 	ui::animate_alpha _display_alpha_animation;
 	std::atomic_int _preview_rendering = 0;
@@ -591,8 +606,10 @@ public:
 	texture_state(async_strategy& async, const df::item_element_ptr& i);
 
 	void load_image(const df::item_element_ptr& i);
-	void prefetch(const df::item_element_ptr& i);
 	void load_raw();
+	// Puts phase 1 on screen at the next draw, using the surface the browser already staged for the
+	// item. Does nothing once anything better is drawn or staged.
+	void seed_placeholder(const df::item_element_ptr& i);
 
 	void refresh(const df::item_element_ptr& i);
 	// Declares what is held to be current across the next write, for a write that changes the file's
@@ -607,7 +624,6 @@ public:
 	sizei calc_display_dimensions() const;
 	void clear();
 	bool is_empty() const;
-	void clone_fade_out(const std::shared_ptr<texture_state>& other);
 	void fade_out();
 	void display_dimensions(sizei dims);
 
@@ -628,12 +644,15 @@ public:
 
 	bool step()
 	{
-		auto result = _display_alpha_animation.step();
-		result |= _fade_out_alpha_animation.step();
-		return result;
+		return _display_alpha_animation.step();
 	}
 
 	void free_graphics_resources();
+
+	// Drops every representation derived from _loaded, keeping _loaded itself, so the next draw decodes
+	// at the size it needs instead of returning to the file. A format that decoded straight to a
+	// surface keeps it: _loaded.s is the compressed form it does not have.
+	void release_decoded_surfaces();
 	void update(const ui::const_surface_ptr& staged_surface);
 	void update(file_load_result loaded);
 	void complete_load(file_load_result loaded, uint64_t generation, bool raw);
@@ -662,6 +681,13 @@ public:
 		return _preview_rendering != 0;
 	}
 
+	// Whether the next draw has something to show. False is phase 0 - the shaped grey rectangle - which
+	// every seeding path exists to keep off the screen.
+	bool has_visual() const
+	{
+		return (_tex && _tex->is_valid()) || (_vid_tex && _vid_tex->is_valid()) || ui::is_valid(_staged_surface);
+	}
+
 	bool is_provisional() const
 	{
 		if (_is_placeholder || !_tex || !_tex->is_valid()) return true;
@@ -677,9 +703,29 @@ public:
 		return required_width > texture_dims.cx || required_height > texture_dims.cy;
 	}
 
-	size_t retained_surface_bytes() const noexcept
+	// Everything decoded from _loaded, deduplicated by buffer because these members routinely alias
+	// one surface. _loaded.s counts: a format that decodes straight to a surface has no encoded form,
+	// so its pixels are the only representation it has.
+	size_t retained_decoded_bytes() const noexcept
 	{
-		return _retained_surface ? _retained_surface->size() : 0;
+		std::array<const ui::surface*, 4> seen{};
+		size_t seen_count = 0;
+		size_t bytes = 0;
+
+		const auto add = [&seen, &seen_count, &bytes](const ui::const_surface_ptr& s)
+		{
+			if (!s) return;
+			for (size_t i = 0; i < seen_count; ++i) if (seen[i] == s.get()) return;
+			seen[seen_count++] = s.get();
+			bytes += s->size();
+		};
+
+		add(_loaded.s);
+		add(_staged_surface);
+		add(_retained_surface);
+		add(_zoom_staged_surface);
+
+		return bytes;
 	}
 };
 
@@ -692,20 +738,48 @@ struct common_display_state_t
 	df::zoom_view_state _zoom;
 	std::vector<std::pair<df::file_path, texture_state_ptr>> _recent_textures;
 
+	static constexpr size_t max_recent_textures = 5;
+
 	void retain_texture(const df::file_path path, const texture_state_ptr& texture)
 	{
 		if (!texture) return;
 		std::erase_if(_recent_textures, [&path](const auto& entry) { return entry.first == path; });
 		_recent_textures.emplace(_recent_textures.begin(), path, texture);
-		constexpr auto max_count = 5u;
-		constexpr auto max_bytes = 256ull * 1024ull * 1024ull;
-		auto bytes = size_t{};
-		for (const auto& entry : _recent_textures) bytes += entry.second->retained_surface_bytes();
-		while (_recent_textures.size() > max_count || bytes > max_bytes)
+		while (_recent_textures.size() > max_recent_textures) _recent_textures.pop_back();
+	}
+
+	// Nothing off the display keeps decoded pixels. A JPEG holds its encoded file, and re-decoding that
+	// at display size costs less than the surface costs to keep, so retaining the surface buys nothing.
+	// What survives is what has no compressed form at all - HEIF, JXL, PSD and a developed RAW decode
+	// straight to a surface - and that irreproducible remainder is the only thing worth budgeting.
+	void release_undisplayed(const texture_state_ptr& displayed1, const texture_state_ptr& displayed2)
+	{
+		size_t decoded = 0;
+
+		for (const auto& [path, texture] : _recent_textures)
 		{
-			bytes -= _recent_textures.back().second->retained_surface_bytes();
+			if (texture == displayed1 || texture == displayed2) continue;
+			texture->release_decoded_surfaces();
+			decoded += texture->retained_decoded_bytes();
+		}
+
+		// About what the displayed image itself is allowed, so the cache can carry one expensive decode
+		// forward rather than several.
+		const auto budget = static_cast<size_t>(df::max_texture_bytes);
+
+		while (decoded > budget && !_recent_textures.empty())
+		{
+			const auto& back = _recent_textures.back().second;
+			if (back == displayed1 || back == displayed2) break;
+			decoded -= back->retained_decoded_bytes();
 			_recent_textures.pop_back();
 		}
+	}
+
+	// Nothing here is on screen; the displayed textures are held by the display state itself.
+	void clear_retained_textures()
+	{
+		_recent_textures.clear();
 	}
 };
 
@@ -2078,6 +2152,7 @@ public:
 	bool open(const view_host_base_ptr& view, const df::search_t& path, const df::unique_paths& selection);
 	void open(const view_host_base_ptr& view, const df::item_element_ptr& i);
 	void load_display_state();
+	void release_retained_textures() { _common_display_state.clear_retained_textures(); }
 
 	void change_tracks(int video_track, int audio_track) const;
 	void change_audio_device(const std::string& id) const;

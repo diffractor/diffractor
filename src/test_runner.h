@@ -12,25 +12,37 @@
 
 #include "test.h"
 
-void register_tests1(view_state& state, test_registry& tests);
-void register_tests2(view_state& state, test_registry& tests);
-void register_tests3(view_state& state, test_registry& tests);
-void register_tests4(view_state& state, test_registry& tests);
-void register_tests5(view_state& state, test_registry& tests);
-void register_tests6(view_state& state, test_registry& tests);
-void register_tests7(view_state& state, test_registry& tests);
-void register_tests8(view_state& state, test_registry& tests);
+// One registration function per subject file. The taxonomy -- which subject owns which test -- is
+// documented in docs/testing.md; a test whose subject moves moves file with it.
+void register_app_tests(view_state& state, test_registry& tests);
+void register_av_tests(view_state& state, test_registry& tests);
+void register_files_tests(view_state& state, test_registry& tests);
+void register_index_tests(view_state& state, test_registry& tests);
+void register_location_tests(view_state& state, test_registry& tests);
+void register_media_edit_tests(view_state& state, test_registry& tests);
+void register_metadata_tests(view_state& state, test_registry& tests);
+void register_platform_tests(view_state& state, test_registry& tests);
+void register_render_tests(view_state& state, test_registry& tests);
+void register_search_tests(view_state& state, test_registry& tests);
+void register_text_tests(view_state& state, test_registry& tests);
+void register_util_tests(view_state& state, test_registry& tests);
+void register_view_tests(view_state& state, test_registry& tests);
 
 inline void register_tests(view_state& state, test_registry& registry)
 {
-	register_tests1(state, registry);
-	register_tests2(state, registry);
-	register_tests3(state, registry);
-	register_tests4(state, registry);
-	register_tests5(state, registry);
-	register_tests6(state, registry);
-	register_tests7(state, registry);
-	register_tests8(state, registry);
+	register_util_tests(state, registry);
+	register_text_tests(state, registry);
+	register_render_tests(state, registry);
+	register_files_tests(state, registry);
+	register_metadata_tests(state, registry);
+	register_media_edit_tests(state, registry);
+	register_av_tests(state, registry);
+	register_index_tests(state, registry);
+	register_search_tests(state, registry);
+	register_location_tests(state, registry);
+	register_view_tests(state, registry);
+	register_app_tests(state, registry);
+	register_platform_tests(state, registry);
 }
 
 int run_console_tests(std::string_view test_filter = "*");

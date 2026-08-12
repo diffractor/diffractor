@@ -337,6 +337,8 @@ Surfaces distinguish Loading, Searching, Empty Folder, No Results, Filtered Resu
 
 Long work shows operation, current item, completed and total counts, and Cancel. Results and actionable errors remain afterward. Indexing progressively improves results while browsing remains usable and discloses when results may be incomplete.
 
+A task view that lists what a run will do keeps the row it is working on visible while it runs. Visible means clear of the chrome painted over the list — the column headers above it and the status band below it — with a line of text of margin, not merely inside the scrolling area.
+
 Visible state converges automatically after its source changes. Results, filters, groups, selection, focus, command availability, address, sidebar summaries, presence, previews, layout, and paint must not remain stale until unrelated navigation or input. Progressive background results apply only to the scope and generation that requested them; superseded work must not overwrite newer state.
 
 Changes refresh the smallest sufficient surface while preserving every dependent invariant. Paint-only changes must not restart searches or scans, while data changes must refresh all affected derived state before it is presented as current. The implementation-level invalidation contract is defined in [implementation.md](implementation.md#view-invalidation).
@@ -346,6 +348,8 @@ Fades and other alpha transitions are decoration, never a carrier of meaning, so
 Persist durable preferences, not transient focus, selection, pin, zoom, playback, or operation progress. Settings either apply immediately and say so or use Apply/Cancel consistently.
 
 A file that crashed the application is skipped only by work the user did not ask for. Indexing, scanning, and thumbnailing reach files the user never chose to touch, so repeating that crash is the application's to prevent, and a skipped file presents as a failed item rather than as one still loading. Work the user asked for is always attempted: an explicit open is a request, and refusing it silently would trade a crash the user can choose to avoid for an inaction they cannot explain. The skip lapses on the next update, so a fix reaches the file without the user knowing a list exists.
+
+A crash before the first window is the one failure the user has no mental model for, because nothing they did caused it and nothing they can stop doing avoids it. After two consecutive launches that never reach a settled window, the next one opens with the default layout and hardware acceleration off, and says so. Only presentation is reverted; files, collection, recent items, favorite tags, language and task settings are unchanged, and the user restores their own choices from Options. Opening degraded and explained is always preferred to not opening.
 
 Network features independently disclose trigger, transmitted data, recipient, purpose, and disable control. Keyboard, toolbar, menu, context-menu, and accessibility paths share availability, targeting, confirmation, and validation. Escape unwinds the most local temporary state first.
 

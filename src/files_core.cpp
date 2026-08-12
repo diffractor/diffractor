@@ -1434,6 +1434,28 @@ ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface
 	return result;
 }
 
+// Thumbnails are a rebuildable cache, so the format is chosen for bytes rather than fidelity. A
+// lossy WebP is materially smaller than the JPEG or PNG it replaces at the same measured quality,
+// and libwebp drops the alpha plane itself for a surface that turns out to be opaque.
+ui::const_image_ptr files::surface_to_thumbnail(const ui::const_surface_ptr& surface_in)
+{
+	if (!is_valid(surface_in)) return {};
+
+	file_encode_params params;
+	params.jpeg_save_quality = thumbnail_quality;
+	params.webp_quality = thumbnail_webp_quality;
+	params.webp_lossy_alpha = true;
+	params.webp_fast = true;
+
+	ui::const_image_ptr result = save_webp(surface_in, {}, params);
+
+	// save_webp accepts only RGB and ARGB, so anything else falls back to what the thumbnail store
+	// held before WebP: PNG when the surface carries alpha, JPEG otherwise.
+	if (!is_valid(result)) result = surface_to_image(surface_in, {}, params, ui::image_format::Unknown);
+
+	return result;
+}
+
 av_scaler& files::scaler()
 {
 	if (!_scaler)
@@ -1523,7 +1545,9 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// YCbCr JPEGs can be uploaded as an NV12 texture and converted on the
 		// GPU (smaller uploads, no CPU colour conversion). JPEG/JFIF is full-range
 		// BT.601, which the shader applies via the rec601_full matrix.
-		const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_nv12();
+		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
+		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
+		const auto use_yuv = can_use_yuv && setting.use_yuv && _jpeg_decoder.can_render_nv12();
 		const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
 
 		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
@@ -2168,8 +2192,7 @@ file_scan_result files::scan_file(platform::file_ptr f, const df::file_path path
 
 							if (is_valid(s))
 							{
-								file_encode_params params;
-								auto i = surface_to_image(s, {}, params, ui::image_format::Unknown);
+								auto i = surface_to_thumbnail(s);
 
 								if (is_valid(i))
 								{
@@ -2515,6 +2538,15 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 				scan_result = scan_photo(stream);
 				has_photo_edits = photo_edits.has_changes(scan_result.dimensions()) || extension_change;
 			}
+			else
+			{
+				// Without the source there is no way to honour a crop, a rotation or a re-encode into
+				// another format, and falling through would report the no-op return below - or a raw copy
+				// under the new extension - as a successful save.
+				result.code = platform::file_op_result_code::FAILED;
+				result.error_message = "the file could not be opened for reading";
+				return result;
+			}
 		}
 
 		if (!path_change && !has_photo_edits && !metadata_edits.has_changes())
@@ -2624,13 +2656,14 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 
 				if (!transformed.empty())
 				{
+					// The file is created before a short write can fail, so the stage is claimed for
+					// cleanup either way; otherwise a full disk leaves a truncated diffractor_* file
+					// beside the user's photo for the indexer to find.
+					temp_file_created = true;
+
 					if (!blob_save_to_file(transformed, path_temp))
 					{
 						result.code = platform::file_op_result_code::FAILED;
-					}
-					else
-					{
-						temp_file_created = true;
 					}
 				}
 				else
@@ -2656,13 +2689,19 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 						const auto saved = save_surface(extension_to_format(path_temp.extension()), temp_surface,
 						                                scan_result.save_metadata(save_meta), encode_params);
 
-						if (is_empty(saved) || !blob_save_to_file(saved->data(), path_temp))
+						if (is_empty(saved))
 						{
 							result.code = platform::file_op_result_code::FAILED;
 						}
 						else
 						{
+							// Claimed before the write, for the same reason as the branch above.
 							temp_file_created = true;
+
+							if (!blob_save_to_file(saved->data(), path_temp))
+							{
+								result.code = platform::file_op_result_code::FAILED;
+							}
 						}
 					}
 				}
@@ -2673,8 +2712,10 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 			// Always staged, whatever the size. Handing the original to the metadata update lets a
 			// crash, a full disk or a handler fault mid-rewrite leave the user with a corrupt file
 			// and nothing to roll back to.
+			// Claimed before the copy: CopyFile leaves the partial destination behind when it runs out
+			// of disk part way, and this is the branch every metadata-only staged write takes.
+			temp_file_created = true;
 			result = platform::copy_file(path_src, path_temp, true, false);
-			temp_file_created = result.success();
 		}
 
 		if (result.success())
@@ -2764,10 +2805,15 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 	if (result.failed())
 	{
 		if (temp_file_created) platform::delete_file(path_temp);
-		// Only ever a staged copy; the live sidecar is never the cleanup target.
-		if (temp_file_created && !xmp_result.xmp_path.is_empty()) platform::delete_file(xmp_result.xmp_path);
+		// The staged sidecar is cleaned up by its own path rather than the returned one: a throw out
+		// of metadata_xmp::update leaves the result unassigned, and the file it had already created
+		// would then survive. Only ever a staged copy; the live sidecar is never the cleanup target.
+		if (temp_file_created) platform::delete_file(path_temp.extension(".xmp"));
 	}
-	if (rollback_file_created && !rollback_holds_sole_original) platform::delete_file(path_rollback);
+	// Unconditional rather than gated on rollback_file_created, which means "a usable copy exists" and
+	// so is false when CopyFile ran out of disk part way and left a partial one. The path is a
+	// reserved temp name, so deleting it when nothing was written is a no-op.
+	if (!rollback_holds_sole_original) platform::delete_file(path_rollback);
 
 	return result;
 }

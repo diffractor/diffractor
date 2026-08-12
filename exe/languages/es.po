@@ -89,10 +89,10 @@ msgid "Analyzing..."
 msgstr "Analizando..."
 
 msgid "archive"
-msgstr "archivo"
+msgstr "archivo comprimido"
 
 msgid "archives"
-msgstr "archivos"
+msgstr "archivos comprimidos"
 
 msgid "audio"
 msgstr "audio"
@@ -3027,19 +3027,19 @@ msgid "Value"
 msgstr "Valor"
 
 msgid "Volume 200%"
-msgstr "Volumen 200%"
+msgstr "Volumen 200 %"
 
 msgid "Volume 100%"
-msgstr "Volumen 100%"
+msgstr "Volumen 100 %"
 
 msgid "Volume 75%"
-msgstr "Volumen 75%"
+msgstr "Volumen 75 %"
 
 msgid "Volume 50%"
-msgstr "Volumen 50%"
+msgstr "Volumen 50 %"
 
 msgid "Volume 25%"
-msgstr "Volumen 25%"
+msgstr "Volumen 25 %"
 
 msgid "Mute"
 msgstr "Silenciar"
@@ -3635,3 +3635,9 @@ msgstr "Tomado al mismo tiempo"
 
 msgid "Taken in the same place"
 msgstr "Tomado en el mismo lugar"
+
+msgid "Recovered from a startup problem"
+msgstr "Recuperado de un problema de inicio"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor se cerró inesperadamente antes de terminar de iniciarse, por lo que esta ejecución usa el diseño predeterminado con la aceleración de hardware desactivada. Los archivos, la colección y los elementos recientes no han cambiado. Puede restaurar la configuración desde Opciones."

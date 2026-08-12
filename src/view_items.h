@@ -8,8 +8,10 @@
 // Purpose: Main thumbnail grid and list view. Displays file collections
 // with thumbnail rendering, selection, and navigation. Layout calculates one set of
 // disjoint regions (sidebar, chrome, splitters, scroll bars, media, items) that render,
-// hit testing and wheel routing all share. The commands that decide what the list contains
-// are drawn at the head of the list as a command_bar_element rather than in a fixed status band.
+// hit testing and wheel routing all share. The media column's arrangement is a free function so
+// its stability contract can be tested without a window. The commands that decide what the list
+// contains are drawn at the head of the list as a command_bar_element rather than in a fixed
+// status band.
 
 #pragma once
 
@@ -31,6 +33,26 @@ struct metadata_tree_state
 };
 
 using metadata_tree_state_ptr = std::shared_ptr<metadata_tree_state>;
+
+
+// The items preview media column: the media and its primary properties, then the detail that the
+// file's own metadata blocks fill in later. Free of the view so its arrangement is testable without a
+// window.
+struct media_column_inputs
+{
+	const std::vector<view_element_ptr>* priority = nullptr;
+	const std::vector<view_element_ptr>* detail = nullptr;
+	const std::vector<view_element_ptr>* all = nullptr;
+	recti bounds;
+	bool verbose_metadata = false;
+	// Whether this selection can ever put detail below the block. A single item can, and its detail
+	// arrives late, so the arrangement must not depend on whether it has arrived yet. Every other
+	// selection has no detail form at all.
+	bool detail_possible = false;
+};
+
+// Returns the scrollable content height.
+int layout_media_column(const media_column_inputs& in, ui::measure_context& mc, ui::control_layouts& positions);
 
 
 struct item_and_group

@@ -554,6 +554,8 @@ struct file_encode_params
 	bool webp_lossless = false;
 	int webp_quality = 70;
 	bool webp_lossy_alpha = false;
+	// Trades a few percent of size for a several-times cheaper encode, for output nothing reads back.
+	bool webp_fast = false;
 
 	// The JPEG an edit is being written back over, when there is one. Encoding against its own
 	// quantization tables and chroma sampling leaves an untouched block quantizing to itself,
@@ -1290,6 +1292,7 @@ public:
 
 	ui::const_image_ptr surface_to_image(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
 	                                     const file_encode_params& params, ui::image_format format);
+	ui::const_image_ptr surface_to_thumbnail(const ui::const_surface_ptr& surface_in);
 	ui::surface_ptr image_to_surface(const ui::const_image_ptr& image, sizei scale_hint = {}, bool can_use_yuv = false,
 	                                 const df::cancel_token& token = {},
 	                                 decode_intent intent = decode_intent::display);

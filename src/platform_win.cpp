@@ -370,8 +370,8 @@ platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 		return result;
 	}
 
-	// Convert the HBITMAP to a 32bpp BGRA surface via WIC, then encode to a PNG image so the caller
-	// receives the same ui::image type as the property-store thumbnail path.
+	// Convert the HBITMAP to a 32bpp BGRA surface via WIC, then encode it so the caller receives the
+	// same ui::image type as the property-store thumbnail path.
 	ComPtr<IWICImagingFactory> wic;
 	hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic));
 
@@ -438,7 +438,8 @@ platform::get_cached_file_properties_response platform::get_shell_thumbnail(
 				return get_cached_file_properties_response::pending;
 			}
 
-			auto image = save_png(surface, {});
+			files ff;
+			auto image = ff.surface_to_thumbnail(surface);
 
 			if (is_valid(image))
 			{
@@ -809,6 +810,146 @@ platform::file_ptr platform::make_file_from_handle(const HANDLE h)
 	}
 
 	return std::make_shared<file_impl>(h);
+}
+
+class mapped_file_impl final : public platform::mapped_file
+{
+	static DWORD allocation_granularity()
+	{
+		static const DWORD value = []
+		{
+			SYSTEM_INFO si{};
+			GetSystemInfo(&si);
+			return si.dwAllocationGranularity;
+		}();
+
+		return value;
+	}
+
+	HANDLE _file = INVALID_HANDLE_VALUE;
+	HANDLE _section = nullptr;
+	const uint8_t* _view = nullptr; // granularity-aligned base of the current view
+	size_t _view_size = 0;
+	df::cspan _span; // the bytes the caller asked for, inside _view
+
+	uint64_t _file_size = 0;
+
+	void unmap_view()
+	{
+		if (_view)
+		{
+			UnmapViewOfFile(_view);
+			_view = nullptr;
+			_view_size = 0;
+			_span = {};
+		}
+	}
+
+public:
+	mapped_file_impl(const HANDLE file, const HANDLE section, const uint64_t file_size) noexcept
+		: _file(file), _section(section), _file_size(file_size)
+	{
+	}
+
+	~mapped_file_impl() override
+	{
+		unmap_view();
+		if (_section) CloseHandle(_section);
+		if (_file != INVALID_HANDLE_VALUE) CloseHandle(_file);
+	}
+
+	uint64_t file_size() const override
+	{
+		return _file_size;
+	}
+
+	df::cspan data() const override
+	{
+		return _span;
+	}
+
+	df::cspan set_window(const uint64_t offset, const uint64_t len) override
+	{
+		unmap_view();
+
+		if (offset >= _file_size) return {};
+
+		const auto available = _file_size - offset;
+		const auto want = std::min(len, available);
+		if (want == 0) return {};
+
+		const uint64_t granularity = allocation_granularity();
+
+		// A view must start on an allocation-granularity boundary, so map from the boundary at or
+		// below the requested offset and hand back a span that starts at the offset itself.
+		const auto aligned = (offset / granularity) * granularity;
+		const auto skew = offset - aligned;
+		const auto map_len = skew + want;
+
+		if (map_len > std::numeric_limits<size_t>::max()) return {};
+
+		_view = static_cast<const uint8_t*>(MapViewOfFile(_section, FILE_MAP_READ,
+		                                                  static_cast<DWORD>(aligned >> 32),
+		                                                  static_cast<DWORD>(aligned & 0xFFFFFFFFull),
+		                                                  static_cast<SIZE_T>(map_len)));
+
+		if (!_view)
+		{
+			df::log(__FUNCTION__, platform::last_os_error());
+			return {};
+		}
+
+		_view_size = static_cast<size_t>(map_len);
+		_span = {_view + skew, static_cast<size_t>(want)};
+		return _span;
+	}
+
+	void release_working_set() override
+	{
+		// VirtualUnlock on pages that were never locked removes them from the working set and
+		// reports ERROR_NOT_LOCKED. That is the documented way to trim just this mapping rather
+		// than the whole process, so the failure is expected and deliberately ignored.
+		if (_view) VirtualUnlock(const_cast<uint8_t*>(_view), _view_size);
+	}
+};
+
+platform::mapped_file_ptr platform::map_file(const df::file_path path, const map_mode mode)
+{
+	const auto path_w = to_file_system_path(path);
+	auto* const file = CreateFileW(path_w.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+	                               OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+
+	if (file == INVALID_HANDLE_VALUE)
+	{
+		return {};
+	}
+
+	LARGE_INTEGER li{};
+
+	if (!GetFileSizeEx(file, &li) || li.QuadPart <= 0)
+	{
+		// An empty file cannot be mapped at all, so this is a normal answer rather than a fault.
+		CloseHandle(file);
+		return {};
+	}
+
+	auto* const section = CreateFileMappingW(file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+
+	if (!section)
+	{
+		df::log(__FUNCTION__, platform::last_os_error());
+		CloseHandle(file);
+		return {};
+	}
+
+	auto result = std::make_shared<mapped_file_impl>(file, section, static_cast<uint64_t>(li.QuadPart));
+
+	if (mode == map_mode::whole_file && result->set_window(0, static_cast<uint64_t>(li.QuadPart)).empty())
+	{
+		return {};
+	}
+
+	return result;
 }
 
 uint32_t platform::file_crc32(const df::file_path path)
@@ -1687,6 +1828,39 @@ uint32_t platform::current_thread_id()
 	return GetCurrentThreadId();
 }
 
+static HANDLE g_startup_scope = nullptr;
+
+bool platform::claim_startup_scope()
+{
+	if (g_startup_scope) return true;
+
+	// Names the window between this process starting and its first idle frame, per user session. Only
+	// one process holds it at a time, so overlapping launches can tell themselves apart from a repeat
+	// of a launch that failed. A crash releases it with the process, which is the case that matters.
+	g_startup_scope = ::CreateMutexW(nullptr, TRUE, L"Local\\DiffractorStartupScope");
+
+	if (!g_startup_scope) return false;
+
+	if (::GetLastError() == ERROR_ALREADY_EXISTS)
+	{
+		::CloseHandle(g_startup_scope);
+		g_startup_scope = nullptr;
+		return false;
+	}
+
+	return true;
+}
+
+void platform::release_startup_scope()
+{
+	if (g_startup_scope)
+	{
+		::ReleaseMutex(g_startup_scope);
+		::CloseHandle(g_startup_scope);
+		g_startup_scope = nullptr;
+	}
+}
+
 platform::thread_init::thread_init()
 {
 	// https://support.microsoft.com/en-us/help/287087/info-calling-shell-functions-and-interfaces-from-a-multithreaded-apart
@@ -1851,12 +2025,18 @@ uint64_t platform::from_date(const df::day_t& day)
 
 double df::now()
 {
-	LARGE_INTEGER tps = {0};
-	QueryPerformanceFrequency(&tps);
+	// Reciprocal rather than a divide: this is read several times a frame by animation, A/V sync and
+	// the zoom timer, and the rounding sits far below the counter's own resolution.
+	static const double seconds_per_tick = []
+	{
+		LARGE_INTEGER tps = {0};
+		QueryPerformanceFrequency(&tps);
+		return tps.QuadPart == 0 ? 0.0 : 1.0 / static_cast<double>(tps.QuadPart);
+	}();
 
 	LARGE_INTEGER pc = {0};
 	QueryPerformanceCounter(&pc);
-	return static_cast<double>(pc.QuadPart) / static_cast<double>(tps.QuadPart);
+	return static_cast<double>(pc.QuadPart) * seconds_per_tick;
 }
 
 int64_t df::now_ms()

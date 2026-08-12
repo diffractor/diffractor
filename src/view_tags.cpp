@@ -105,11 +105,20 @@ void tags_view::refresh_words() const
 
 bool tags_view::can_run() const
 {
-	return !_rows.empty() && (!_adds.empty() || !_removes.empty());
+	// A finished run leaves result rows, which describe what happened rather than what would happen.
+	// Running those would report against a plan that no longer exists; editing the tag field or
+	// changing the selection routes through refresh() and puts the view back into review.
+	return !showing_results() && !_rows.empty() && (!_adds.empty() || !_removes.empty());
 }
 
 void tags_view::refresh()
 {
+	// The worker reports against the reviewed rows, so rebuilding them under it would repoint the
+	// run at a different set of files.
+	if (progress().active) return;
+	// Every input to the plan routes here, so a change to one is also what leaves results mode.
+	_showing_results = false;
+
 	const auto& items = _state.selected_items();
 
 	parse_tags();
@@ -146,6 +155,7 @@ void tags_view::refresh()
 		row->_text_color[2] = changed ? changed_color : unchanged_color;
 		if (changed) row->_icons[1] = icon_index::next;
 		row->_order = count++;
+		row->_work_index = row->_order;
 		rows.emplace_back(row);
 
 		if (changed) ++changes;
@@ -191,7 +201,7 @@ void tags_view::run()
 	                                                           {
 		                                                           if (view->is_processing_generation(
 			                                                           processing_generation)) view->
-			                                                           processing_exact_order_item(index, 1);
+				                                                           processing_work_item(index);
 	                                                           },
 	                                                           [view, processing_generation](
 	                                                           std::string message,

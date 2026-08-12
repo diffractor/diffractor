@@ -479,6 +479,31 @@ settings_t::settings_t()
 	available_version = s_app_version;
 };
 
+void settings_t::reset_presentation()
+{
+	// Taken from a fresh instance rather than repeated literals, so this cannot drift away from
+	// what a first run actually looks like.
+	const settings_t defaults;
+
+	show_sidebar = defaults.show_sidebar;
+	sidebar = defaults.sidebar;
+	large_font = defaults.large_font;
+	show_debug_info = defaults.show_debug_info;
+	show_shadow = defaults.show_shadow;
+	zoom_navigator = defaults.zoom_navigator;
+	item_scale = defaults.item_scale;
+	item_scale_position = defaults.item_scale_position;
+	item_splitter_pos = defaults.item_splitter_pos;
+	view_splitter_positions = defaults.view_splitter_positions;
+	detail_items = defaults.detail_items;
+
+	// Not the defaults: a crash before the first frame is most often the graphics path, and the
+	// user cannot turn it off from a window that never appears.
+	use_gpu = false;
+	use_d3d11va = false;
+	use_yuv = false;
+}
+
 class setting_formatter
 {
 	platform::setting_file_ptr _file;

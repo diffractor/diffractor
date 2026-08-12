@@ -23,12 +23,12 @@ class crash_files_db
 	using path_set = df::hash_set<df::file_path, df::ihash, df::ieq>;
 
 	// The list only has to survive until the next launch, so a small ceiling is enough to stop a
-	// repeating crash from growing the file without bound. Lines left by other builds count toward
+	// repeating crash from growing the file without bound. Lines left by other releases count toward
 	// it, because they are still occupying the file.
 	static constexpr size_t max_entries = 512;
 
 	df::file_path _crash_files_path;
-	std::string _build_tag;
+	std::string _release_tag;
 
 	path_set _crash_files;
 	size_t _lines_on_disk = 0;
@@ -36,7 +36,7 @@ class crash_files_db
 	path_map _open_files;
 	platform::mutex _mtx;
 
-	// Each line is "<build>\t<path>". Only the current build's entries skip a file. A decoder fix
+	// Each line is "<release>\t<path>". Only the running release's entries skip a file. A decoder fix
 	// ships in an update, and without the tag a file blacklisted once would never be scanned again on
 	// this install - a permanently missing thumbnail with nothing in the product to recover it.
 	void load()
@@ -52,7 +52,7 @@ class crash_files_db
 			const auto tab = entry.find('\t');
 
 			if (tab == std::string_view::npos) continue;
-			if (entry.substr(0, tab) != _build_tag) continue;
+			if (entry.substr(0, tab) != _release_tag) continue;
 
 			const auto path = entry.substr(tab + 1);
 			if (!path.empty()) _crash_files.emplace(path);
@@ -60,10 +60,30 @@ class crash_files_db
 	}
 
 public:
-	crash_files_db(const df::file_path path, const std::string_view build_tag) :
-		_crash_files_path(path), _build_tag(build_tag)
+	// Deliberately the release line and not the build or the point release. The build number changes
+	// on every compile, so tagging with it retried every recorded file after almost any update and
+	// handed the user the same crash again. Retrying once per release line is where a decoder fix
+	// actually reaches them, and costs at most one repeat crash per file.
+	static std::string release_tag(const std::string_view app_version)
 	{
-		load();
+		return str::to_string(df::version(app_version).major);
+	}
+
+	crash_files_db(const df::file_path path, const std::string_view release_tag) :
+		_crash_files_path(path), _release_tag(release_tag)
+	{
+		try
+		{
+			load();
+		}
+		catch (const std::exception& e)
+		{
+			// Bounded fallback: an unreadable skip list only costs one repeated decoder crash, and
+			// this is constructed during startup where a throw would take the whole launch with it.
+			df::log(__FUNCTION__, e.what());
+			_crash_files.clear();
+			_lines_on_disk = 0;
+		}
 	}
 
 	bool is_known_crash_file(const df::file_path path) const
@@ -124,7 +144,7 @@ public:
 			if (_crash_files.contains(path)) continue;
 
 			df::log(__FUNCTION__, std::format("Add file type to crash list {}", path.extension()));
-			appended += std::format("{}\t{}\n", _build_tag, path.str());
+			appended += std::format("{}\t{}\n", _release_tag, path.str());
 			--room;
 		}
 
@@ -134,6 +154,10 @@ public:
 		// truncate away the protection already earned by earlier crashes.
 		std::ofstream file(platform::to_file_system_path(_crash_files_path), std::ios_base::app);
 		file << appended;
+
+		// A read-only install folder makes this the difference between one crash and a crash on every
+		// launch, so it is stated rather than left as an unexplained repeat.
+		if (!file) df::log(__FUNCTION__, std::format("could not write {}", _crash_files_path.str()));
 	}
 
 	void log_open_files() const
@@ -172,4 +196,6 @@ struct record_open_path
 	}
 };
 
-extern crash_files_db crash_files;
+// Constructed on first use rather than as a global: the constructor resolves known folders and reads
+// a file, and before WinMain a throw there would end the process with no log and no message box.
+crash_files_db& crash_files();

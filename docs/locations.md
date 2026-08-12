@@ -107,6 +107,8 @@ Resolution then follows one ladder, first match wins:
 
 An item that reaches steps 3–5 is still located. It never appears in `without:location`, which means *no coordinates and no text* and nothing else.
 
+The ladder needs the gazetteer file, so it never runs on the UI thread: `view_state::derived_location` memoizes per attribution cell, queues the read on first ask, and lets the published result invalidate the panel. That answer therefore arrives after the panel is already on screen, and a location row that appeared from nothing at that moment would move the media and every property around it. The row is held open with `Loading...` while the read is in flight — the coordinate is already proof there is a place to name, so the only thing unknown is the text, and a blank in a location row reads as "this photo has none". [selection-controls](selection-controls.md) owns why nothing arriving late may move what is above it.
+
 ### 2.6 Water bodies, offshore, and in flight
 
 **Deferred, and step 4 of the §2.5 ladder is currently unreachable.** This section originally specified a `location-waters.txt` of roughly eighty bounding boxes for oceans, seas, gulfs, bays, straits, and channels, so that a mid-Adriatic photo would read `Adriatic Sea`. It is not implemented, and it is recorded here as deferred rather than pending because the reason is a data problem rather than a scheduling one.
@@ -499,4 +501,4 @@ Deferred to a future release, with their sections: §2.4, §2.6, §3.4 and the c
 - Timeline node derivation is deterministic for a fixed result set, suppresses a residence-scale cluster, reveals it when the query names it, caps at ten nodes, and produces for each node a query that reproduces exactly that node's items.
 - No location resolution, gazetteer read, or node computation runs on the UI thread, and none runs inside a paint path.
 
-Regression coverage extends the existing location tests in `src/test_search.cpp` (`should_find_location`, the map-area tests) and the map regression in `src/test_regressions.cpp`.
+Regression coverage lives with the subject in `src/test_locations.cpp` (`should_find_location`, the map-area tests, the sidebar map grouping); see [testing](testing.md) for the taxonomy.

@@ -267,7 +267,7 @@ class location_cache final : public df::no_copy
 		}
 	};
 
-	_Guarded_by_(_rw) std::vector<kd_coordinates_t> _coords;
+	_Guarded_by_(_rw) kd_points _coords;
 	_Guarded_by_(_rw) std::vector<location_id_and_offset> _locations_by_id;
 	_Guarded_by_(_rw) std::vector<location_ngram_and_offset> _locations_by_ngram;
 
@@ -285,13 +285,18 @@ class location_cache final : public df::no_copy
 	void load_states();
 
 	static int scan_entries(std::string_view line, csv_entry* entries);
-	static int scan_entries(std::ifstream& file, std::string& line, std::streamoff offset, csv_entry* entries);
 
-	// Every record lookup is a seek plus a getline, so opening the gazetteer each time makes a
-	// single attribution cost a file open. Records are read by absolute offset (scan_entries
-	// clears and seeks), so one handle per thread can be reused for the life of a loaded index.
-	// The generation invalidates those handles when the index is reloaded from a different file.
-	std::ifstream& record_stream() const;
+	// The whole gazetteer, mapped read-only for the life of a loaded index. Reading a record is
+	// then pointer arithmetic against clean shared pages rather than a seek and a getline, which
+	// matters because auto-complete reads one record per ngram hit. Only touched pages become
+	// resident, so the mapping costs the process no private memory for records nobody looks at.
+	_Guarded_by_(_rw) platform::mapped_file_ptr _places_map;
+
+	// The record starting at offset, without its line terminator. Empty when the offset is not
+	// inside the mapping, which is how a stale offset fails safely rather than reading past the
+	// end. Caller holds _rw.
+	std::string_view record_at(uint32_t offset) const;
+
 	std::atomic<uint32_t> _load_generation = 0;
 
 	// Readiness is published outside _rw so a UI-thread check does not queue behind the exclusive
@@ -314,7 +319,7 @@ class location_cache final : public df::no_copy
 	// line would get no candidates at all. Caller holds _rw.
 	void collect_within_km(double x, double y, double max_km, std::vector<kd_coordinates_t>& candidates) const;
 
-	location_t build_location(std::ifstream& file, int offset) const;
+	location_t build_location(uint32_t offset) const;
 	location_t build_location(const csv_entry* entries) const;
 
 public:

@@ -1413,7 +1413,9 @@ void view_state::update_item_groups()
 	df::item_groups new_item_groups;
 	new_item_groups.reserve(groups.size());
 
-	df::hash_set<const df::item_element*> current_members;
+	// Sorted rather than hashed: this is rebuilt for every group on every regroup, and a node per
+	// displayed item was the allocation traffic that cost. The vector keeps its capacity across groups.
+	std::vector<const df::item_element*> current_members;
 
 	for (auto&& i : groups)
 	{
@@ -1432,11 +1434,12 @@ void view_state::update_item_groups()
 			{
 				current_members.clear();
 				current_members.reserve(b->items().size());
-				for (const auto& item : b->items()) current_members.emplace(item.get());
+				for (const auto& item : b->items()) current_members.emplace_back(item.get());
+				std::ranges::sort(current_members);
 
 				for (const auto& item : i.second)
 				{
-					if (!current_members.contains(item.get()))
+					if (!std::ranges::binary_search(current_members, item.get()))
 					{
 						membership_unchanged = false;
 						break;
@@ -2943,6 +2946,61 @@ view_controller_ptr df::item_element::controller_from_location(const view_host_p
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 
+
+size_t df::trim_thumbnail_blobs(const item_elements& items, const recti viewport, const size_t budget_bytes)
+{
+	assert_true(ui::is_ui_thread());
+
+	// Distance from an empty viewport says nothing, and answering it anyway would rank every item as
+	// maximally far and dump the whole set whenever Items is not the laid-out view.
+	if (viewport.height() <= 0) return 0;
+
+	// Distance is measured in viewport heights, so the policy is the same whatever the window size
+	// and the item scale. Eight is past any plausible scroll-back; beyond it everything is equal.
+	constexpr size_t band_count = 8;
+	const auto screen = viewport.height();
+
+	const auto band_of = [screen, viewport](const recti bounds)
+	{
+		const auto distance = bounds.bottom < viewport.top
+			                      ? viewport.top - bounds.bottom
+			                      : (bounds.top > viewport.bottom ? bounds.top - viewport.bottom : 0);
+		return std::min(static_cast<size_t>(distance / screen), band_count - 1);
+	};
+
+	std::array<size_t, band_count> bytes_by_band{};
+	size_t total = 0;
+
+	for (const auto& i : items)
+	{
+		const auto bytes = i->thumbnail_blob_bytes();
+		if (bytes == 0) continue;
+		total += bytes;
+		bytes_by_band[band_of(i->bounds)] += bytes;
+	}
+
+	if (total <= budget_bytes) return 0;
+
+	// Band 0 is kept whatever it costs: a budget that blanks what is on screen is worse than the
+	// memory it saves. Bands are then added outward while they still fit.
+	auto kept = bytes_by_band[0];
+	size_t keep_bands = 1;
+
+	while (keep_bands < band_count && kept + bytes_by_band[keep_bands] <= budget_bytes)
+	{
+		kept += bytes_by_band[keep_bands];
+		++keep_bands;
+	}
+
+	size_t freed = 0;
+
+	for (const auto& i : items)
+	{
+		if (band_of(i->bounds) >= keep_bands) freed += i->clear_thumbnail_blob();
+	}
+
+	return freed;
+}
 
 std::vector<ui::const_image_ptr> df::item_set::thumbs(const size_t max, const item_element_ptr& skip_this) const
 {

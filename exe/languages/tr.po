@@ -3631,3 +3631,9 @@ msgstr "Aynı zamanda çekildi"
 
 msgid "Taken in the same place"
 msgstr "Aynı yerde çekildi"
+
+msgid "Recovered from a startup problem"
+msgstr "Başlatma sorunundan kurtarıldı"
+
+msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
+msgstr "Diffractor başlatmayı tamamlamadan beklenmedik şekilde kapandı, bu nedenle bu çalıştırma donanım hızlandırma kapalıyken varsayılan düzeni kullanıyor. Dosyalarınız, koleksiyonunuz ve son öğeleriniz değişmedi. Ayarlarınızı Seçenekler'den geri yükleyebilirsiniz."
