@@ -34,6 +34,20 @@ namespace df
 	};
 
 
+	// How a path is spelled is a property of the filesystem, and this module owns path spelling, so
+	// the conditional lives here rather than behind a platform function: it has to be a constant
+	// expression for is_path and friends to stay constexpr. Both separators are always accepted on
+	// input; normalisation rewrites to the preferred one so a path has a single form in the index.
+#ifdef _WIN32
+	constexpr char preferred_path_sep = '\\';
+	constexpr char foreign_path_sep = '/';
+	constexpr bool windows_path_semantics = true;
+#else
+	constexpr char preferred_path_sep = '/';
+	constexpr char foreign_path_sep = '\\';
+	constexpr bool windows_path_semantics = false;
+#endif
+
 	constexpr bool is_path_sep(const wchar_t c)
 	{
 		return c == L'\\' || c == L'/';
@@ -43,13 +57,21 @@ namespace df
 	{
 		if (s == nullptr || s[0] == 0 || s[1] == 0) return false;
 
-		if (s[1] == L':' && (is_path_sep(s[2]) || s[2] == 0))
+		if constexpr (!windows_path_semantics)
 		{
-			const auto first_char = str::to_lower(s[0]);
-			return first_char >= 'a' && first_char <= 'z';
+			// An absolute path is the only qualified form; there is no drive or UNC equivalent.
+			return s[0] == '/';
 		}
+		else
+		{
+			if (s[1] == L':' && (is_path_sep(s[2]) || s[2] == 0))
+			{
+				const auto first_char = str::to_lower(s[0]);
+				return first_char >= 'a' && first_char <= 'z';
+			}
 
-		return is_path_sep(s[0]) && is_path_sep(s[1]); // unc path
+			return is_path_sep(s[0]) && is_path_sep(s[1]); // unc path
+		}
 	}
 
 	constexpr bool is_path(const std::string_view r)
@@ -91,8 +113,8 @@ namespace df
 			auto sv = sv_in;
 			while (sv.size() > 3 && str::is_slash(sv.back())) sv.remove_suffix(1);
 
-			const auto has_wrong_slash = sv.find('/') != std::string_view::npos;
-			const auto is_drive_missing_slash = sv.size() == 2 && sv[1] == ':';
+			const auto has_wrong_slash = sv.find(foreign_path_sep) != std::string_view::npos;
+			const auto is_drive_missing_slash = windows_path_semantics && sv.size() == 2 && sv[1] == ':';
 
 			if (!has_wrong_slash && !is_drive_missing_slash)
 			{
@@ -103,16 +125,16 @@ namespace df
 
 			for (auto&& c : normalized)
 			{
-				if (c == '/')
+				if (c == foreign_path_sep)
 				{
-					c = '\\';
+					c = preferred_path_sep;
 				}
 			}
 
 			if (is_drive_missing_slash)
 			{
 				// drive does need last slash
-				normalized += '\\';
+				normalized += preferred_path_sep;
 			}
 
 			return str::cache(normalized);
@@ -282,7 +304,7 @@ namespace df
 
 			if (!str::is_empty(part))
 			{
-				if (!is_path_sep(str::last_char(result)) && !is_path_sep(part[0])) result += '\\';
+				if (!is_path_sep(str::last_char(result)) && !is_path_sep(part[0])) result += preferred_path_sep;
 				result += part;
 			}
 			return folder_path(result);
@@ -405,7 +427,7 @@ namespace df
 		std::string pack() const
 		{
 			auto result = std::string(_folder.text());
-			if (!is_path_sep(last_char(_folder.text()))) result += '\\';
+			if (!is_path_sep(last_char(_folder.text()))) result += preferred_path_sep;
 			result += _name;
 			return result;
 		}
