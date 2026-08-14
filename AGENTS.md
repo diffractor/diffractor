@@ -29,7 +29,7 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
 | [Linux port](docs/linux.md) | Portability assessment, platform-boundary debt, staging and open decisions for a Linux build |
 | [README](README.md) | Product overview, build prerequisites, command line |
-| [release notes](docs/v-1.27.1.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
+| [release notes](docs/v-1.27.2.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
 | [post-release context](docs/v-next.md) | Deferred work and why, validation not run, open issues, and invariants that must survive a re-sync or refactor |
 
 Move information to its owner; link rather than duplicate volatile detail.
