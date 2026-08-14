@@ -458,6 +458,22 @@ bool platform::wait_for_unlocked_write(const df::file_path path)
 	return ::access(path.str().c_str(), W_OK) == 0 || !exists(path);
 }
 
+std::string platform::file_write_error(const df::file_path path)
+{
+	// Probe write access the same way a metadata writer would, so the caller can report the
+	// concrete reason instead of an opaque toolkit error. Without mandatory locking the answer is
+	// about permissions, a read-only mount or a missing file rather than another process.
+	const auto fd = ::open(path.str().c_str(), O_WRONLY);
+
+	if (fd < 0)
+	{
+		return std::string(::strerror(errno));
+	}
+
+	::close(fd);
+	return {};
+}
+
 df::file_path platform::temp_file(const std::string_view ext, const df::folder_path folder)
 {
 	const auto dir = folder.is_empty() ? known_path(known_folder::app_cache_data) : folder;

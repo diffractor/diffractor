@@ -18,7 +18,13 @@
 
 
 #define TXMP_STRING_TYPE std::string
+// The toolkit rejects more than one of these, and the client has to name the same one the library
+// was built with or the two disagree about structure layout.
+#ifdef _WIN32
 #define WIN_ENV 1
+#else
+#define UNIX_ENV 1
+#endif
 #define XMP_INCLUDE_XMPFILES 1
 #define XML_STATIC
 #define XMP_StaticBuild 1
@@ -417,7 +423,16 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 void metadata_xmp::initialise()
 {
 	SXMPMeta::Initialize();
-	SXMPFiles::Initialize(0UL);
+	// Spelled with its own type: a bare zero is also a null pointer constant, which makes the
+	// option and plugin-folder overloads ambiguous where unsigned long is not unsigned int.
+#ifdef _WIN32
+	SXMPFiles::Initialize(XMP_OptionBits{0});
+#else
+	// The toolkit refuses to start on generic UNIX without this. There is no system code page to
+	// reconcile legacy local-encoded text against, so such text is left exactly as stored rather
+	// than transcoded by guess.
+	SXMPFiles::Initialize(kXMPFiles_IgnoreLocalText);
+#endif
 
 	// https://github.com/nomacs/nomacs/blob/master/exiv2-0.25/src/xmp.cpp	
 	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto", &microsoft_photo_prefix);

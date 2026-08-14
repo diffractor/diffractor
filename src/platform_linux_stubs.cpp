@@ -77,61 +77,6 @@ file_scan_result files::scan_raw(df::file_path, std::string_view, bool, sizei, s
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// XMP. Needs the vendored Adobe toolkit fork, which is not built here yet.
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-void metadata_xmp::initialise()
-{
-	not_ported("xmp"sv);
-}
-
-void metadata_xmp::term()
-{
-}
-
-void metadata_xmp::parse(prop::item_metadata&, df::cspan)
-{
-	not_ported("xmp"sv);
-}
-
-void metadata_xmp::parse(prop::item_metadata&, df::file_path)
-{
-	not_ported("xmp"sv);
-}
-
-metadata_xmp::property_presence metadata_xmp::properties(df::cspan)
-{
-	not_ported("xmp"sv);
-	return {};
-}
-
-bool metadata_xmp::has_embedded_xmp(df::file_path)
-{
-	not_ported("xmp"sv);
-	return false;
-}
-
-// Reports failure rather than success-with-no-write: the write pipeline treats a false result as a
-// refusal and leaves the user's file alone, which is the safe reading of "not implemented".
-xmp_update_result metadata_xmp::update(df::file_path, df::file_path, const metadata_edits&, std::string_view,
-                                       df::file_path)
-{
-	not_ported("xmp"sv);
-	return {};
-}
-
-void metadata_xmp::update(std::string&, const metadata_edits&)
-{
-	not_ported("xmp"sv);
-}
-
-metadata_kv_list metadata_xmp::to_info(df::cspan)
-{
-	not_ported("xmp"sv);
-	return {};
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 // Spell checking. Needs hunspell, which is not linked here.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

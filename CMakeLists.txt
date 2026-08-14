@@ -72,7 +72,7 @@ diffractor_dependency(exif PKG_CONFIG libexif VENDORED_DIR third-party/libexif O
 
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard.
-diffractor_dependency(xmp FORK VENDORED_DIR third-party/xmp OPTIONAL)
+diffractor_dependency(xmp FORK VENDORED_MODULE vendored/Xmp VENDORED_DIR third-party/xmp OPTIONAL)
 diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg OPTIONAL)
 
 diffractor_report_dependencies()
@@ -149,11 +149,18 @@ set(DIFFRACTOR_PORTABLE_SOURCES
 )
 
 # av_format.cpp and platform_linux_av_stubs.cpp define the same symbols and are alternatives: one
-# drives the FFmpeg fork, the other reports every media operation as failed.
+# drives the FFmpeg fork, the other reports every media operation as failed. metadata_xmp.cpp and
+# platform_linux_xmp_stubs.cpp stand in the same relation over the Adobe toolkit fork.
 if (TARGET diffractor::ffmpeg)
     list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/av_format.cpp)
 else ()
     list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/platform_linux_av_stubs.cpp)
+endif ()
+
+if (TARGET diffractor::xmp)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/metadata_xmp.cpp)
+else ()
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/platform_linux_xmp_stubs.cpp)
 endif ()
 
 # The suite itself. run_console_tests builds a view_state and registers every subject file, so this
@@ -199,7 +206,7 @@ target_include_directories(diffractor PRIVATE
 # include reaches the same file by a different path, which defeats #pragma once on this filesystem
 # and reports every declaration in it as a redefinition.
 
-foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif ffmpeg)
+foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif ffmpeg xmp)
     if (TARGET diffractor::${dep})
         target_link_libraries(diffractor PRIVATE diffractor::${dep})
     endif ()
