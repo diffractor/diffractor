@@ -73,7 +73,7 @@ diffractor_dependency(exif PKG_CONFIG libexif VENDORED_DIR third-party/libexif O
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard.
 diffractor_dependency(xmp FORK VENDORED_DIR third-party/xmp OPTIONAL)
-diffractor_dependency(ffmpeg FORK VENDORED_DIR third-party/FFmpeg OPTIONAL)
+diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg OPTIONAL)
 
 diffractor_report_dependencies()
 
@@ -148,6 +148,14 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/view_tags.cpp
 )
 
+# av_format.cpp and platform_linux_av_stubs.cpp define the same symbols and are alternatives: one
+# drives the FFmpeg fork, the other reports every media operation as failed.
+if (TARGET diffractor::ffmpeg)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/av_format.cpp)
+else ()
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/platform_linux_av_stubs.cpp)
+endif ()
+
 # The suite itself. run_console_tests builds a view_state and registers every subject file, so this
 # is all or nothing; test_platform_win.cpp is Windows-only by subject.
 set(DIFFRACTOR_TEST_SOURCES
@@ -181,7 +189,6 @@ add_executable(diffractor
 target_include_directories(diffractor PRIVATE
         src
         third-party/rapidjson/include
-        third-party/FFmpeg
         ${DIFFRACTOR_COMPAT_INCLUDE}
 )
 
@@ -192,7 +199,7 @@ target_include_directories(diffractor PRIVATE
 # include reaches the same file by a different path, which defeats #pragma once on this filesystem
 # and reports every declaration in it as a redefinition.
 
-foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif)
+foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif ffmpeg)
     if (TARGET diffractor::${dep})
         target_link_libraries(diffractor PRIVATE diffractor::${dep})
     endif ()

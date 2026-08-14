@@ -15,9 +15,14 @@
 #include "metadata_xmp.h"
 #include "files.h"
 
+// Both of these are MSVC dialect repairs. excpt.h has no equivalent elsewhere, and __restrict__ is
+// a real keyword on GCC and Clang: defining it away there would strip the qualifier FFmpeg's
+// headers rely on rather than supply one MSVC lacks.
+#ifdef _MSC_VER
 #include <excpt.h>
-
 #define __restrict__
+#endif
+
 #define __STDC_CONSTANT_MACROS
 #define FF_API_PIX_FMT 0
 
@@ -41,7 +46,7 @@ df_assert_movable(av_stream_info);
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
 
-static void av_log(void*, const int level, const char* format, const va_list argList)
+static void av_log(void*, const int level, const char* format, va_list argList)
 {
 #ifdef _DEBUG
 	if (level <= AV_LOG_WARNING)
