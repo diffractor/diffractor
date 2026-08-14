@@ -15,6 +15,7 @@
 #include "app_text.h"
 #include "util_base64.h"
 
+#include <condition_variable>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/stat.h>
@@ -70,6 +71,71 @@ int64_t df::now_us()
 {
 	return std::chrono::duration_cast<std::chrono::microseconds>(
 		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+int64_t df::now_ms()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Events
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	// platform::thread_event stores an opaque handle, so the condition variable and its state live
+	// behind it exactly as the Win32 HANDLE does.
+	struct event_state
+	{
+		std::mutex mutex;
+		std::condition_variable cv;
+		bool signalled = false;
+		bool manual_reset = false;
+	};
+}
+
+platform::thread_event::thread_event(const bool manual_reset, const bool initial_state)
+{
+	create(manual_reset, initial_state);
+}
+
+platform::thread_event::~thread_event()
+{
+	delete static_cast<event_state*>(_h);
+	_h = nullptr;
+}
+
+void platform::thread_event::create(const bool manual_reset, const bool initial_state)
+{
+	auto* const state = new event_state();
+	state->manual_reset = manual_reset;
+	state->signalled = initial_state;
+	_h = state;
+}
+
+void platform::thread_event::set() const noexcept
+{
+	auto* const state = static_cast<event_state*>(_h);
+	if (state == nullptr) return;
+
+	{
+		std::lock_guard lock(state->mutex);
+		state->signalled = true;
+	}
+
+	if (state->manual_reset) state->cv.notify_all();
+	else state->cv.notify_one();
+}
+
+void platform::thread_event::reset() const noexcept
+{
+	auto* const state = static_cast<event_state*>(_h);
+	if (state == nullptr) return;
+
+	std::lock_guard lock(state->mutex);
+	state->signalled = false;
 }
 
 namespace

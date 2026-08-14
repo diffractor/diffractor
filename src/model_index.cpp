@@ -1732,7 +1732,7 @@ void index_state::update_predictions()
 		const auto found_group = component_groups.find(root);
 		const auto group = found_group == component_groups.end() ? 0u : found_group->second;
 		const auto grade = group == 0 ? df::copy_grade::none : grades[i];
-		files[i].file->update_duplicates(files[i].folder, {group, count, grade});
+		files[i].file->update_duplicates(files[i].folder, df::duplicate_info{group, count, grade});
 	}
 
 	stats.indexed_dup_folder_count = static_cast<int>(component_groups.size());
@@ -4062,7 +4062,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 					}
 				}
 				match.state = evidence_complete ? item_presence::not_in : item_presence::unknown;
-				match.duplicates = {};
+				match.duplicates = df::duplicate_info{};
 			}
 		}
 

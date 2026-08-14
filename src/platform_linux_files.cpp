@@ -1,0 +1,635 @@
+// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
+// 
+// This program is free software; you can redistribute it and / or modify it
+// under the terms of the LGPL License either version 2.1 or later.
+// License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
+
+// Purpose: Linux file system implementation of the platform file interface: opening, attributes,
+// enumeration, copy/move/delete, temporary files and memory mapping. The Windows counterpart is
+// platform_win_files.cpp; the shell integration it also carries has no equivalent here and is
+// stubbed in platform_linux_stubs.cpp.
+
+#include "pch.h"
+
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <utime.h>
+
+namespace
+{
+	// df::date_t counts 100ns intervals since 1601; the file system counts seconds since 1970.
+	constexpr uint64_t ft_ticks_per_second = 10'000'000ull;
+	constexpr uint64_t ft_epoch_to_unix_seconds = 11'644'473'600ull;
+
+	uint64_t to_ticks(const timespec& ts)
+	{
+		return (static_cast<uint64_t>(ts.tv_sec) + ft_epoch_to_unix_seconds) * ft_ticks_per_second +
+			static_cast<uint64_t>(ts.tv_nsec) / 100u;
+	}
+
+	time_t to_unix_seconds(const df::date_t date)
+	{
+		if (!date.is_valid()) return 0;
+		return static_cast<time_t>(date._i / ft_ticks_per_second) - static_cast<time_t>(ft_epoch_to_unix_seconds);
+	}
+
+	platform::file_attributes_t attributes_from_stat(const std::string& path)
+	{
+		platform::file_attributes_t result;
+		struct stat st = {};
+
+		if (::stat(path.c_str(), &st) != 0)
+		{
+			// Only an unambiguous "it is not there" counts as absence; anything else stays unknown,
+			// so a caller that would overwrite on "not found" cannot act on a denied or offline path.
+			result.presence = (errno == ENOENT || errno == ENOTDIR)
+				                  ? platform::file_presence::not_found
+				                  : platform::file_presence::unknown;
+			return result;
+		}
+
+		result.presence = platform::file_presence::found;
+		result.size = static_cast<uint64_t>(st.st_size);
+		result.modified = to_ticks(st.st_mtim);
+		result.created = to_ticks(st.st_ctim);
+		result.is_readonly = ::access(path.c_str(), W_OK) != 0;
+
+		const auto slash = path.find_last_of('/');
+		const auto name = slash == std::string::npos ? path : path.substr(slash + 1);
+		result.is_hidden = name.size() > 1 && name.front() == '.';
+
+		return result;
+	}
+
+	class posix_file final : public platform::file
+	{
+	public:
+		posix_file(const int fd, const df::file_path path) : _fd(fd), _path(path)
+		{
+		}
+
+		~posix_file() override
+		{
+			if (_fd >= 0) ::close(_fd);
+		}
+
+		uint64_t size() const override
+		{
+			struct stat st = {};
+			if (::fstat(_fd, &st) != 0) return 0;
+			return static_cast<uint64_t>(st.st_size);
+		}
+
+		uint64_t read(uint8_t* buf, const uint64_t buf_size) const override
+		{
+			uint64_t total = 0;
+
+			while (total < buf_size)
+			{
+				const auto n = ::read(_fd, buf + total, buf_size - total);
+				if (n < 0)
+				{
+					if (errno == EINTR) continue;
+					break;
+				}
+				if (n == 0) break;
+				total += static_cast<uint64_t>(n);
+			}
+
+			return total;
+		}
+
+		uint64_t write(const uint8_t* data, const uint64_t size) override
+		{
+			uint64_t total = 0;
+
+			while (total < size)
+			{
+				const auto n = ::write(_fd, data + total, size - total);
+				if (n < 0)
+				{
+					if (errno == EINTR) continue;
+					break;
+				}
+				total += static_cast<uint64_t>(n);
+			}
+
+			return total;
+		}
+
+		uint64_t seek(const uint64_t pos, const whence w) const override
+		{
+			const int origin = w == whence::begin ? SEEK_SET : w == whence::current ? SEEK_CUR : SEEK_END;
+			const auto result = ::lseek(_fd, static_cast<off_t>(pos), origin);
+			return result < 0 ? static_cast<uint64_t>(-1) : static_cast<uint64_t>(result);
+		}
+
+		uint64_t pos() const override
+		{
+			const auto result = ::lseek(_fd, 0, SEEK_CUR);
+			return result < 0 ? static_cast<uint64_t>(-1) : static_cast<uint64_t>(result);
+		}
+
+		bool trunc(const uint64_t pos) const override
+		{
+			return ::ftruncate(_fd, static_cast<off_t>(pos)) == 0;
+		}
+
+		df::date_t get_created() override
+		{
+			struct stat st = {};
+			if (::fstat(_fd, &st) != 0) return {};
+			return df::date_t(to_ticks(st.st_ctim));
+		}
+
+		// A creation time cannot be set on Linux; birth time is not writable through any portable
+		// interface. Recorded as a no-op rather than silently writing the modified time instead.
+		void set_created(df::date_t) override
+		{
+		}
+
+		df::date_t get_modified() override
+		{
+			struct stat st = {};
+			if (::fstat(_fd, &st) != 0) return {};
+			return df::date_t(to_ticks(st.st_mtim));
+		}
+
+		void set_modified(const df::date_t date) override
+		{
+			timespec times[2] = {};
+			times[0].tv_nsec = UTIME_OMIT;
+			times[1].tv_sec = to_unix_seconds(date);
+			::futimens(_fd, times);
+		}
+
+		df::file_path path() const override
+		{
+			return _path;
+		}
+
+	private:
+		int _fd = -1;
+		df::file_path _path;
+	};
+
+	class posix_mapped_file final : public platform::mapped_file
+	{
+	public:
+		posix_mapped_file(const int fd, const uint64_t size) : _fd(fd), _size(size)
+		{
+		}
+
+		~posix_mapped_file() override
+		{
+			unmap();
+			if (_fd >= 0) ::close(_fd);
+		}
+
+		bool map_whole()
+		{
+			return !set_window(0, _size).empty();
+		}
+
+		uint64_t file_size() const override
+		{
+			return _size;
+		}
+
+		df::cspan data() const override
+		{
+			return {_view, _view_len};
+		}
+
+		df::cspan set_window(const uint64_t offset, const uint64_t len) override
+		{
+			unmap();
+
+			if (offset >= _size) return {};
+
+			const auto want = std::min(len, _size - offset);
+			if (want == 0) return {};
+
+			// mmap requires a page-aligned offset, so the mapping starts below the requested one and
+			// the returned span is shifted back up to it.
+			static const auto page = static_cast<uint64_t>(::sysconf(_SC_PAGESIZE));
+			const auto aligned = offset & ~(page - 1);
+			const auto slack = offset - aligned;
+
+			_map_len = static_cast<size_t>(want + slack);
+			_map = ::mmap(nullptr, _map_len, PROT_READ, MAP_PRIVATE, _fd, static_cast<off_t>(aligned));
+
+			if (_map == MAP_FAILED)
+			{
+				_map = nullptr;
+				_map_len = 0;
+				return {};
+			}
+
+			_view = static_cast<const uint8_t*>(_map) + slack;
+			_view_len = static_cast<size_t>(want);
+			return {_view, _view_len};
+		}
+
+		void release_working_set() override
+		{
+			if (_map != nullptr) ::madvise(_map, _map_len, MADV_DONTNEED);
+		}
+
+	private:
+		void unmap()
+		{
+			if (_map != nullptr) ::munmap(_map, _map_len);
+			_map = nullptr;
+			_map_len = 0;
+			_view = nullptr;
+			_view_len = 0;
+		}
+
+		int _fd = -1;
+		uint64_t _size = 0;
+		void* _map = nullptr;
+		size_t _map_len = 0;
+		const uint8_t* _view = nullptr;
+		size_t _view_len = 0;
+	};
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Paths
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+std::wstring platform::to_file_system_path(const df::file_path path)
+{
+	return str::utf8_to_utf16(path.str());
+}
+
+std::wstring platform::to_file_system_path(const df::folder_path path)
+{
+	return str::utf8_to_utf16(path.text());
+}
+
+// Not yet ported: Linux has no single system normaliser, and the ICU dependency this needs has not
+// been taken on. Returning the text unchanged matches what a filesystem that does no normalisation
+// stores, which is the common case on ext4.
+std::string platform::normalize_nfc(const std::string_view text)
+{
+	return {text.begin(), text.end()};
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Files
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+platform::file_ptr platform::open_file(const df::file_path path, const file_open_mode mode)
+{
+	int flags = 0;
+
+	switch (mode)
+	{
+	case file_open_mode::read:
+	case file_open_mode::sequential_scan:
+		flags = O_RDONLY;
+		break;
+	case file_open_mode::write:
+		flags = O_WRONLY | O_CREAT;
+		break;
+	case file_open_mode::create:
+		flags = O_RDWR | O_CREAT | O_TRUNC;
+		break;
+	case file_open_mode::read_write:
+		flags = O_RDWR;
+		break;
+	}
+
+	const auto fd = ::open(path.str().c_str(), flags, 0644);
+	if (fd < 0) return {};
+
+	if (mode == file_open_mode::sequential_scan)
+	{
+		::posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+	}
+
+	return std::make_shared<posix_file>(fd, path);
+}
+
+platform::mapped_file_ptr platform::map_file(const df::file_path path, const map_mode mode)
+{
+	const auto fd = ::open(path.str().c_str(), O_RDONLY);
+	if (fd < 0) return {};
+
+	struct stat st = {};
+	if (::fstat(fd, &st) != 0 || st.st_size == 0)
+	{
+		::close(fd);
+		return {};
+	}
+
+	auto result = std::make_shared<posix_mapped_file>(fd, static_cast<uint64_t>(st.st_size));
+
+	if (mode == map_mode::whole_file && !result->map_whole())
+	{
+		return {};
+	}
+
+	return result;
+}
+
+platform::file_attributes_t platform::file_attributes(const df::file_path path)
+{
+	return attributes_from_stat(path.str());
+}
+
+platform::file_attributes_t platform::file_attributes(const df::folder_path path)
+{
+	return attributes_from_stat(std::string(path.text()));
+}
+
+platform::file_op_result platform::delete_file(const df::file_path path)
+{
+	if (::unlink(path.str().c_str()) != 0)
+	{
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	return {file_op_result_code::OK};
+}
+
+platform::file_op_result platform::create_folder(const df::folder_path path)
+{
+	const std::string text(path.text());
+	std::string partial;
+
+	// Every parent has to exist, and the Windows implementation creates the chain too.
+	for (size_t i = 0; i <= text.size(); ++i)
+	{
+		if (i == text.size() || text[i] == '/')
+		{
+			if (i > 0)
+			{
+				partial.assign(text, 0, i);
+
+				if (::mkdir(partial.c_str(), 0755) != 0 && errno != EEXIST)
+				{
+					return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+				}
+			}
+		}
+	}
+
+	return {file_op_result_code::OK};
+}
+
+platform::file_op_result platform::copy_file(const df::file_path existing, const df::file_path destination,
+                                             const bool fail_if_exists, const bool can_create_folder)
+{
+	if (fail_if_exists && exists(destination))
+	{
+		return {file_op_result_code::ALREADY_EXISTS};
+	}
+
+	if (can_create_folder)
+	{
+		const auto folder = destination.folder();
+		if (!exists(folder)) create_folder(folder);
+	}
+
+	const auto src = ::open(existing.str().c_str(), O_RDONLY);
+	if (src < 0) return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+
+	const auto dst = ::open(destination.str().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (dst < 0)
+	{
+		::close(src);
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	uint8_t buffer[64 * 1024];
+	file_op_result result{file_op_result_code::OK};
+
+	for (;;)
+	{
+		const auto n = ::read(src, buffer, sizeof(buffer));
+
+		if (n < 0)
+		{
+			if (errno == EINTR) continue;
+			result = {file_op_result_code::FAILED, std::string(::strerror(errno))};
+			break;
+		}
+
+		if (n == 0) break;
+
+		if (::write(dst, buffer, static_cast<size_t>(n)) != n)
+		{
+			result = {file_op_result_code::FAILED, std::string(::strerror(errno))};
+			break;
+		}
+	}
+
+	::close(src);
+	::close(dst);
+
+	if (result.failed()) ::unlink(destination.str().c_str());
+	return result;
+}
+
+platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
+                                                bool)
+{
+	// rename is atomic within a filesystem, which is the property the write pipeline depends on.
+	if (::rename(existing.str().c_str(), destination.str().c_str()) != 0)
+	{
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	return {file_op_result_code::OK};
+}
+
+bool platform::wait_for_unlocked_write(const df::file_path path)
+{
+	// Linux has no mandatory locking, so a file is never held open against a writer the way it is
+	// on Windows. Writability is the only question left.
+	return ::access(path.str().c_str(), W_OK) == 0 || !exists(path);
+}
+
+df::file_path platform::temp_file(const std::string_view ext, const df::folder_path folder)
+{
+	const auto dir = folder.is_empty() ? known_path(known_folder::app_cache_data) : folder;
+	if (!exists(dir)) create_folder(dir);
+
+	for (auto attempt = 0; attempt < 64; ++attempt)
+	{
+		uint32_t r = 0;
+		generate_random_bytes(std::bit_cast<uint8_t*>(&r), sizeof(r));
+
+		const auto name = std::format("diffractor_{:08x}{}", r, ext);
+		const auto candidate = dir.combine_file(name);
+
+		if (!exists(candidate)) return candidate;
+	}
+
+	return dir.combine_file(std::format("diffractor_fallback{}", ext));
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Enumeration
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+platform::folder_contents platform::iterate_file_items(const df::folder_path folder, const bool show_hidden)
+{
+	folder_contents result;
+
+	const std::string path(folder.text());
+	auto* const dir = ::opendir(path.c_str());
+	if (dir == nullptr) return result;
+
+	while (const auto* const entry = ::readdir(dir))
+	{
+		const std::string_view name(entry->d_name);
+
+		if (name == "." || name == "..") continue;
+		if (!show_hidden && name.size() > 1 && name.front() == '.') continue;
+
+		const auto full = std::format("{}/{}", path, name);
+		auto attributes = attributes_from_stat(full);
+
+		struct stat st = {};
+		if (::stat(full.c_str(), &st) != 0) continue;
+
+		if (S_ISDIR(st.st_mode))
+		{
+			result.folders.emplace_back(folder_info{str::cache(name), attributes});
+		}
+		else if (S_ISREG(st.st_mode))
+		{
+			result.files.emplace_back(file_info{folder, str::cache(name), attributes});
+		}
+	}
+
+	::closedir(dir);
+	result.success = true;
+	return result;
+}
+
+std::string platform::file_op_result::format_error(const std::string_view text, const std::string_view more_text) const
+{
+	std::string result(text);
+
+	if (!error_message.empty())
+	{
+		if (!result.empty()) result += ": ";
+		result += error_message;
+	}
+
+	if (!more_text.empty())
+	{
+		if (!result.empty()) result += " ";
+		result += more_text;
+	}
+
+	return result;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Not yet ported: desktop integration. docs/linux.md records which of these map to XDG portals and
+// which have no Linux counterpart at all.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+std::vector<platform::folder_info> platform::select_folders(const df::item_selector&, bool)
+{
+	return {};
+}
+
+bool platform::run(std::string_view)
+{
+	return false;
+}
+
+bool platform::run(df::file_path, std::string_view)
+{
+	return false;
+}
+
+df::blob platform::load_resource(resource_item)
+{
+	return {};
+}
+
+// The Windows Shell property handlers and thumbnail cache have no Linux counterpart. Answering
+// `fail` is what the callers already do when the shell has nothing, so each falls through to
+// Diffractor's own metadata and thumbnail pipeline.
+platform::get_cached_file_properties_response platform::get_cached_file_properties(df::file_path,
+	prop::item_metadata&, ui::const_image_ptr&)
+{
+	return get_cached_file_properties_response::fail;
+}
+
+platform::get_cached_file_properties_response platform::get_shell_thumbnail(df::file_path, sizei, bool,
+	ui::const_image_ptr&)
+{
+	return get_cached_file_properties_response::fail;
+}
+
+df::count_and_size platform::calc_folder_summary(const df::folder_path folder, const bool show_hidden,
+                                                 const df::cancel_token& token)
+{
+	df::count_and_size result;
+
+	// Recursion is bounded by the token the caller already owns, as on Windows.
+	const auto contents = iterate_file_items(folder, show_hidden);
+
+	for (const auto& f : contents.files)
+	{
+		if (token.is_cancelled()) return result;
+		result.add(df::file_size(f.attributes.size));
+	}
+
+	for (const auto& sub : contents.folders)
+	{
+		if (token.is_cancelled()) return result;
+		result += calc_folder_summary(folder.combine(sub.name), show_hidden, token);
+	}
+
+	return result;
+}
+
+// Linux has no drive letters. The mount table would be the equivalent, and is a separate piece of
+// work; an empty list is what the sidebar already renders when there is nothing to show.
+platform::drives platform::scan_drives()
+{
+	return {};
+}
+
+// WIC on Windows; the vendored codecs already cover these formats, so this becomes a files:: call
+// rather than a platform one when it is ported.
+ui::surface_ptr platform::image_to_surface(df::cspan, sizei)
+{
+	return {};
+}
+
+// Renders from a Windows-only font. Linux needs a bundled icon set, which is a visual design
+// decision rather than a port.
+ui::const_surface_ptr platform::create_segoe_md2_icon(wchar_t)
+{
+	return {};
+}
+
+std::string platform::user_name()
+{
+	const auto* const name = std::getenv("USER");
+	return name != nullptr ? std::string(name) : std::string("user");
+}
+
+// The INI store is already portable in shape and is selected at runtime on Windows, so Linux
+// simply always takes it -- there is no registry to choose between.
+platform::setting_file_ptr platform::settings()
+{
+	static const auto store = create_ini_file_settings(known_path(known_folder::app_data));
+	return store;
+}

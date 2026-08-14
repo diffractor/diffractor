@@ -1397,7 +1397,9 @@ void df::search_t::parse_part(const search_part& part)
 	}
 	else if (type == prop::file_size)
 	{
-		auto size = 0ull;
+// Not 0ull: under LP64 unsigned long long is a distinct type from uint64_t, so the
+			// search_term overload set has no exact match and the call is ambiguous.
+			uint64_t size = 0;
 
 		if (str::ends(part.term, "gb"))
 		{

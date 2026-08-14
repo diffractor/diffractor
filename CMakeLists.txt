@@ -103,6 +103,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/crypto_md5.cpp
         src/crypto_sha.cpp
         src/app_text.cpp
+        src/app_settings.cpp
         src/model_property.cpp
         src/model_tags.cpp
         src/model_visits.cpp
@@ -118,16 +119,23 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/files_webp.cpp
         src/metadata_exif.cpp
         src/model_db.cpp
+        src/model_index.cpp
+        src/model_items.cpp
+        src/model_search.cpp
         src/model_tile_cache.cpp
         src/render_color.cpp
         src/render_image.cpp
         src/render_surface.cpp
+        src/ui.cpp
         src/ui_flex.cpp
 )
 
 add_executable(diffractor
         ${DIFFRACTOR_PORTABLE_SOURCES}
         src/platform_linux.cpp
+        src/platform_linux_files.cpp
+        src/platform_linux_settings.cpp
+        src/platform_linux_stubs.cpp
 )
 
 target_include_directories(diffractor PRIVATE
