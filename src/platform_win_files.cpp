@@ -585,6 +585,16 @@ std::wstring platform::to_file_system_path(const df::folder_path path)
 	return result;
 }
 
+std::filesystem::path platform::to_stream_path(const df::file_path path)
+{
+	return {to_file_system_path(path)};
+}
+
+std::filesystem::path platform::to_stream_path(const df::folder_path path)
+{
+	return {to_file_system_path(path)};
+}
+
 std::wstring platform::to_shell_path(const df::folder_path path)
 {
 	if (df::folder_path::is_guid_path(path.text()))

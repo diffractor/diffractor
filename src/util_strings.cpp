@@ -810,6 +810,7 @@ std::string str::to_string(const uint32_t v)
 	return result;
 }
 
+#if !DF_LONG_IS_INT64
 std::string str::to_string(const long v)
 {
 	static constexpr int size = 64;
@@ -818,6 +819,7 @@ std::string str::to_string(const long v)
 	_ltoa_s(v, std::bit_cast<char*>(static_cast<char*>(result)), size, 10);
 	return result;
 }
+#endif
 
 std::string str::to_string(const int64_t v)
 {

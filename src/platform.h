@@ -255,6 +255,11 @@ namespace platform
 	std::wstring to_file_system_path(df::file_path path);
 	std::wstring to_file_system_path(df::folder_path path);
 
+	// std::fstream accepts a std::filesystem::path everywhere, but only MSVC accepts a std::wstring.
+	// Going through this keeps stream call sites free of any assumption about the native encoding.
+	std::filesystem::path to_stream_path(df::file_path path);
+	std::filesystem::path to_stream_path(df::folder_path path);
+
 	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
 	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
 	std::wstring to_shell_path(df::file_path path);

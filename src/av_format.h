@@ -47,8 +47,14 @@ struct av_pts_correction;
 struct audio_info_t;
 struct video_info_t;
 struct file_load_result;
-enum AVSampleFormat;
-enum AVPixelFormat;
+
+// These cannot be forward-declared: an opaque enum declaration is an MSVC extension, and giving
+// them a fixed underlying type here would contradict FFmpeg's own definition.
+extern "C"
+{
+#include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
+}
 
 
 using av_packet_ptr = std::shared_ptr<av_packet>;

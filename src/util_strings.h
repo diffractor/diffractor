@@ -888,7 +888,9 @@ namespace str
 	std::string to_string(bool v);
 	std::string to_string(int v);
 	std::string to_string(uint32_t v);
+#if !DF_LONG_IS_INT64
 	std::string to_string(long v);
+#endif
 	std::string to_string(int64_t v);
 	std::string to_string(uint64_t v);
 	std::string to_string(double v, int num_digits);

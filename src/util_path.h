@@ -555,8 +555,8 @@ namespace df
 		return file_path(*this, part);
 	}
 
-	static std::string combine_paths(__in const folder_paths& paths, const std::string_view join = " ",
-	                                 __in const bool quote = true)
+	static std::string combine_paths(const folder_paths& paths, const std::string_view join = " ",
+	                                 const bool quote = true)
 	{
 		std::string result;
 		for (const auto& s : paths) str::join(result, s.text(), join, quote);

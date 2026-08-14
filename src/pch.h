@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "platform_compat.h"
+
 #include <cstdint>
 #include <climits>
 #include <cmath>
@@ -20,6 +22,7 @@
 #include <cctype>
 #include <cwctype>
 #include <cinttypes>
+#include <cstring>
 
 #include <bit>
 #include <new>
@@ -51,13 +54,17 @@
 #include <span>
 #include <variant>
 #include <format>
+#include <filesystem>
 
 #include <thread>
 #include <mutex>
 
 using namespace std::literals;
 
+// glibc's <cmath> defines M_PI as a macro; MSVC only does under _USE_MATH_DEFINES.
+#ifndef M_PI
 constexpr double M_PI = 3.141592653589793238463;
+#endif
 constexpr float M_PIF = 3.14159265358979f;
 // std::numbers c++ 20
 

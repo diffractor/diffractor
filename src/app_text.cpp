@@ -162,7 +162,7 @@ std::string_view tt_prep(std::string_view result)
 std::vector<po_entry> load_po(const df::file_path lang_file)
 {
 	std::vector<po_entry> result;
-	std::ifstream fs(platform::to_file_system_path(lang_file));
+	std::ifstream fs(platform::to_stream_path(lang_file));
 
 	enum class parse_po_state
 	{
