@@ -94,7 +94,9 @@ target_include_directories(diffractor_dav1d PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/include"
 )
 
-target_compile_definitions(diffractor_dav1d PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+if (WIN32)
+    target_compile_definitions(diffractor_dav1d PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 # Assembler include paths and definitions. These are not compiler settings and reach
 # nasm no other way. Grouping is by the source's own directory, because that is what
@@ -148,8 +150,15 @@ set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/refmvs.asm"
         PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/ -I${CMAKE_SOURCE_DIR}/third-party/dav1d/ -I${CMAKE_SOURCE_DIR}/third-party/dav1d/src/")
 
-target_compile_options(diffractor_dav1d PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/experimental:c11atomics>)
+if (MSVC)
+    target_compile_options(diffractor_dav1d PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/experimental:c11atomics>)
+endif ()
 
 diffractor_apply_vendored_policy(diffractor_dav1d)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/dav1d.local.cmake" OPTIONAL)
 
 add_library(diffractor::dav1d ALIAS diffractor_dav1d)

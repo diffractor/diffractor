@@ -150,8 +150,17 @@ target_include_directories(diffractor_archive PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/ZLib"
 )
 
-target_compile_definitions(diffractor_archive PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:HAVE_CONFIG_H>" "$<$<COMPILE_LANGUAGE:C,CXX>:LIBARCHIVE_STATIC>" "$<$<COMPILE_LANGUAGE:C,CXX>:LZMA_API_STATIC>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+target_compile_definitions(diffractor_archive PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:HAVE_CONFIG_H>" "$<$<COMPILE_LANGUAGE:C,CXX>:LIBARCHIVE_STATIC>" "$<$<COMPILE_LANGUAGE:C,CXX>:LZMA_API_STATIC>")
+
+if (WIN32)
+    target_compile_definitions(diffractor_archive PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 diffractor_apply_vendored_policy(diffractor_archive)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/archive.local.cmake" OPTIONAL)
 
 add_library(diffractor::archive ALIAS diffractor_archive)

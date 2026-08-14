@@ -190,8 +190,17 @@ target_include_directories(diffractor_jxl PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/skcms"
 )
 
-target_compile_definitions(diffractor_jxl PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:JPEGXL_ENABLE_SKCMS=1>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+target_compile_definitions(diffractor_jxl PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:JPEGXL_ENABLE_SKCMS=1>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>")
+
+if (WIN32)
+    target_compile_definitions(diffractor_jxl PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 diffractor_apply_vendored_policy(diffractor_jxl)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/jxl.local.cmake" OPTIONAL)
 
 add_library(diffractor::jxl ALIAS diffractor_jxl)

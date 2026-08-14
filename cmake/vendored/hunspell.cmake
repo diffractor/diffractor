@@ -26,8 +26,17 @@ target_include_directories(diffractor_hunspell PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/hunspell"
 )
 
-target_compile_definitions(diffractor_hunspell PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:W32>" "$<$<COMPILE_LANGUAGE:C,CXX>:HUNSPELL_STATIC>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+target_compile_definitions(diffractor_hunspell PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:W32>" "$<$<COMPILE_LANGUAGE:C,CXX>:HUNSPELL_STATIC>")
+
+if (WIN32)
+    target_compile_definitions(diffractor_hunspell PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 diffractor_apply_vendored_policy(diffractor_hunspell)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/hunspell.local.cmake" OPTIONAL)
 
 add_library(diffractor::hunspell ALIAS diffractor_hunspell)

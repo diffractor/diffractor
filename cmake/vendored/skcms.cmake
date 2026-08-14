@@ -20,8 +20,15 @@ target_include_directories(diffractor_skcms PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/skcms"
 )
 
-target_compile_definitions(diffractor_skcms PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+if (WIN32)
+    target_compile_definitions(diffractor_skcms PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 diffractor_apply_vendored_policy(diffractor_skcms)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/skcms.local.cmake" OPTIONAL)
 
 add_library(diffractor::skcms ALIAS diffractor_skcms)

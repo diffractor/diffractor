@@ -91,6 +91,12 @@ diffractor_dependency(bzip2 VENDORED_MODULE vendored/bzip2 MSVC_ONLY VENDORED_DI
 diffractor_dependency(lzma VENDORED_MODULE vendored/lzma MSVC_ONLY VENDORED_DIR third-party/liblzma OPTIONAL)
 diffractor_dependency(brotli VENDORED_MODULE vendored/brotli MSVC_ONLY VENDORED_DIR third-party/brotli OPTIONAL)
 diffractor_dependency(highway VENDORED_MODULE vendored/highway MSVC_ONLY VENDORED_DIR third-party/highway OPTIONAL)
+# Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
+# copy would silently discard. Declared before the codecs because dng compiles against the XMP
+# toolkit, and a dependency can only be stated on a target that already exists.
+diffractor_dependency(xmp FORK VENDORED_MODULE vendored/Xmp VENDORED_DIR third-party/xmp OPTIONAL)
+diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg OPTIONAL)
+
 diffractor_dependency(skcms VENDORED_MODULE vendored/skcms MSVC_ONLY VENDORED_DIR third-party/skcms OPTIONAL)
 diffractor_dependency(de265 VENDORED_MODULE vendored/de265 MSVC_ONLY VENDORED_DIR third-party/libde265 OPTIONAL)
 diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d MSVC_ONLY VENDORED_DIR third-party/dav1d OPTIONAL)
@@ -105,11 +111,6 @@ diffractor_dependency(jxl VENDORED_MODULE vendored/jxl MSVC_ONLY VENDORED_DIR th
 diffractor_dependency(raw VENDORED_MODULE vendored/raw MSVC_ONLY VENDORED_DIR third-party/LibRaw OPTIONAL)
 diffractor_dependency(hunspell VENDORED_MODULE vendored/hunspell MSVC_ONLY VENDORED_DIR third-party/hunspell OPTIONAL)
 diffractor_dependency(minizip VENDORED_MODULE vendored/minizip MSVC_ONLY VENDORED_DIR third-party/minizip OPTIONAL)
-
-# Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
-# copy would silently discard.
-diffractor_dependency(xmp FORK VENDORED_MODULE vendored/Xmp VENDORED_DIR third-party/xmp OPTIONAL)
-diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg OPTIONAL)
 
 diffractor_report_dependencies()
 

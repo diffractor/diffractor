@@ -1719,7 +1719,11 @@ target_include_directories(diffractor_ffmpeg_msvc PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/libopenmpt"
 )
 
-target_compile_definitions(diffractor_ffmpeg_msvc PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:HAVE_AV_CONFIG_H>" "$<$<COMPILE_LANGUAGE:C,CXX>:_FILE_OFFSET_BITS=64>" "$<$<COMPILE_LANGUAGE:C,CXX>:_ISOC99_SOURCE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_LARGEFILE_SOURCE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_SYSCRT>" "$<$<COMPILE_LANGUAGE:C,CXX>:_USE_MATH_DEFINES>" "$<$<COMPILE_LANGUAGE:C,CXX>:inline=__inline>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+target_compile_definitions(diffractor_ffmpeg_msvc PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:HAVE_AV_CONFIG_H>" "$<$<COMPILE_LANGUAGE:C,CXX>:_FILE_OFFSET_BITS=64>" "$<$<COMPILE_LANGUAGE:C,CXX>:_ISOC99_SOURCE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_LARGEFILE_SOURCE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_SYSCRT>" "$<$<COMPILE_LANGUAGE:C,CXX>:_USE_MATH_DEFINES>" "$<$<COMPILE_LANGUAGE:C,CXX>:inline=__inline>")
+
+if (WIN32)
+    target_compile_definitions(diffractor_ffmpeg_msvc PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 # Assembler include paths and definitions. These are not compiler settings and reach
 # nasm no other way. Grouping is by the source's own directory, because that is what
@@ -1874,5 +1878,10 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 
 diffractor_apply_vendored_policy(diffractor_ffmpeg_msvc)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/ffmpeg_msvc.local.cmake" OPTIONAL)
 
 add_library(diffractor::ffmpeg_msvc ALIAS diffractor_ffmpeg_msvc)

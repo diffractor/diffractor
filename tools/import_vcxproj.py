@@ -329,8 +329,8 @@ def staged_assembly(name: str, srcs: list[str]) -> dict[str, str]:
 
 
 def render(name: str, project: Path, config: str, srcs: list[str], incs: list[str], defs: list[str],
-           file_defs: dict[str, list[str]], asm_incs: list[str], asm_defs: list[str],
-           asm_pre: list[str], options: list[str]) -> str:
+           win_defs: list[str], file_defs: dict[str, list[str]], asm_incs: list[str],
+           asm_defs: list[str], asm_pre: list[str], options: list[str]) -> str:
     target = f"diffractor_{name}"
     lines = [
         "# This file is part of the Diffractor photo and video organizer",
@@ -385,6 +385,14 @@ def render(name: str, project: Path, config: str, srcs: list[str], incs: list[st
         lines.append(f"target_compile_definitions({target} PRIVATE {quoted})")
         lines.append("")
 
+    if win_defs:
+        # CharacterSet Unicode selects the wide Win32 entry points and means nothing elsewhere.
+        lines.append("if (WIN32)")
+        quoted = " ".join(f'"$<$<COMPILE_LANGUAGE:C,CXX>:{d}>"' for d in win_defs)
+        lines.append(f"    target_compile_definitions({target} PRIVATE {quoted})")
+        lines.append("endif ()")
+        lines.append("")
+
     asm = [s for s in srcs if s.endswith(".asm")]
 
     if asm:
@@ -420,11 +428,20 @@ def render(name: str, project: Path, config: str, srcs: list[str], incs: list[st
         lines.append("")
 
     if options:
+        # These are cl.exe switches taken verbatim from the project, so they are offered to no other
+        # compiler: GCC read dav1d's /experimental:c11atomics as a file name.
         guarded = " ".join(f"$<$<COMPILE_LANGUAGE:C,CXX>:{o}>" for o in options)
-        lines.append(f"target_compile_options({target} PRIVATE {guarded})")
+        lines.append("if (MSVC)")
+        lines.append(f"    target_compile_options({target} PRIVATE {guarded})")
+        lines.append("endif ()")
         lines.append("")
 
     lines.append(f"diffractor_apply_vendored_policy({target})")
+    lines.append("")
+    lines.append("# Anything the Windows project could not describe - a header its build generates, a flag a")
+    lines.append("# different compiler needs. Hand written, and kept out of this file so that re-importing")
+    lines.append("# does not discard it.")
+    lines.append(f"include(\"${{CMAKE_CURRENT_LIST_DIR}}/{name}.local.cmake\" OPTIONAL)")
     lines.append("")
     lines.append(f"add_library(diffractor::{name} ALIAS {target})")
     lines.append("")
@@ -473,7 +490,8 @@ def main() -> int:
         module.write_text(
             render(name, project, config, srcs,
                    incs,
-                   defines(root, config) + character_set(root, config),
+                   defines(root, config),
+                   character_set(root, config),
                    per_file_defines(root, project.parent, config),
                    asm_incs,
                    asm_defs,

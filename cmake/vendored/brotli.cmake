@@ -52,8 +52,15 @@ target_include_directories(diffractor_brotli PUBLIC
         "${CMAKE_SOURCE_DIR}/third-party/brotli/c/include"
 )
 
-target_compile_definitions(diffractor_brotli PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+if (WIN32)
+    target_compile_definitions(diffractor_brotli PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
+endif ()
 
 diffractor_apply_vendored_policy(diffractor_brotli)
+
+# Anything the Windows project could not describe - a header its build generates, a flag a
+# different compiler needs. Hand written, and kept out of this file so that re-importing
+# does not discard it.
+include("${CMAKE_CURRENT_LIST_DIR}/brotli.local.cmake" OPTIONAL)
 
 add_library(diffractor::brotli ALIAS diffractor_brotli)
