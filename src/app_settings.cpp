@@ -549,10 +549,12 @@ public:
 		return false;
 	}
 
+#if !DF_LONG_IS_INT64
 	bool write(const std::string_view section, const std::string_view name, const long v) const
 	{
 		return _file->write(section, name, std::bit_cast<uint32_t>(v));
 	}
+#endif
 
 	bool read(const std::string_view section, const std::string_view name, int64_t& v) const
 	{
@@ -626,6 +628,7 @@ public:
 		return _file->write(section, name, str::to_string(v, 5));
 	}
 
+#if !DF_LONG_IS_INT64
 	bool read(const std::string_view section, const std::string_view name, long& v) const
 	{
 		uint32_t vv{};
@@ -636,6 +639,7 @@ public:
 		}
 		return false;
 	}
+#endif
 
 	bool write(const std::string_view section, const std::string_view name, const bool v) const
 	{

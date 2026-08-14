@@ -59,11 +59,17 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("desktop", "store", "run", "run32", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
-    [string]$Command = ""
+    [ValidateSet("desktop", "store", "run", "run32", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "setup", "configure", "clean", "info", "help", "")]
+    [string]$Command = "",
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Rest = @()
 )
 
 $ErrorActionPreference = "Stop"
+
+# Windows PowerShell 5.1 has no $IsLinux, so the absence of the variable means Windows.
+$IsLinuxHost = [bool](Get-Variable -Name IsLinux -ErrorAction SilentlyContinue) -and $IsLinux
 
 # Configuration
 $ScriptDir = $PSScriptRoot
@@ -72,13 +78,17 @@ $SourceFilesDir = Join-Path $ScriptDir "exe"
 $PackageRoot = Join-Path $ScriptDir "dist"
 $InstallerDir = Join-Path $ScriptDir "installer"
 
-# Newest installed SDK that actually has the packaging tools.
+# Newest installed SDK that actually has the packaging tools. Windows-only, and the probe is
+# skipped on Linux so the gateway can still reach the cross-platform commands.
 $SdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
-$SdkBinDir = Get-ChildItem $SdkRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^10(\.\d+){3}$' -and (Test-Path (Join-Path $_.FullName "x64\MakeAppx.exe")) } |
-    Sort-Object { [version]$_.Name } |
-    Select-Object -Last 1 -ExpandProperty FullName
-if ($SdkBinDir) { $SdkBinDir = Join-Path $SdkBinDir "x64" } else { $SdkBinDir = Join-Path $SdkRoot "10.0.26100.0\x64" }
+$SdkBinDir = $null
+if (-not $IsLinuxHost) {
+    $SdkBinDir = Get-ChildItem $SdkRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^10(\.\d+){3}$' -and (Test-Path (Join-Path $_.FullName "x64\MakeAppx.exe")) } |
+        Sort-Object { [version]$_.Name } |
+        Select-Object -Last 1 -ExpandProperty FullName
+    if ($SdkBinDir) { $SdkBinDir = Join-Path $SdkBinDir "x64" } else { $SdkBinDir = Join-Path $SdkRoot "10.0.26100.0\x64" }
+}
 
 # The Store rejects a MaxVersionTested above the newest publicly released Windows, so an
 # Insider dev machine must not raise it. Bump this when a new release ships.
@@ -88,12 +98,12 @@ $MaxVersionTestedCap = "10.0.26200.0"
 $DesktopSignThumbprint = "B3B4EA219B9BCB79749D5E84066DDCAC61E5C4C3"
 $StoreSignThumbprint = "0BC1CD0A4F37CE2A5A2CE72DAA9B08B1EC1CB522"
 
-# Version file paths
+# Version file paths. Forward slashes so the same literals resolve on both hosts.
 $NsiFile = Join-Path $InstallerDir "diff.nsi"
 $AppxManifestFile = Join-Path $SourceFilesDir "AppxManifest.xml"
-$ResourceFile = Join-Path $ScriptDir "src\platform_win_res.rc"
-$AppManifestFile = Join-Path $ScriptDir "src\platform_win.manifest"
-$AppCppFile = Join-Path $ScriptDir "src\app.cpp"
+$ResourceFile = Join-Path $ScriptDir "src/platform_win_res.rc"
+$AppManifestFile = Join-Path $ScriptDir "src/platform_win.manifest"
+$AppCppFile = Join-Path $ScriptDir "src/app.cpp"
 
 # ============================================================================
 # Version Management Functions
@@ -277,6 +287,14 @@ function Show-Usage {
     Write-Host "  bump-build   Manually increment build number (e.g., $($version.Build) -> $($version.Build + 1))"
     Write-Host "  bump-ver     Increment version (e.g., $($version.VersionString) -> $($version.Major).$($version.Minor).$($version.Patch + 1))"
     Write-Host "  clear-cache  Clear Windows icon and thumbnail cache (requires restart)"
+    Write-Host ""
+    Write-Host "Cross-platform (tools/dd.py):"
+    Write-Host "  setup        Install the build toolchain and system packages (Linux)"
+    Write-Host "  configure    Configure the CMake/Ninja build"
+    Write-Host "  clean        Remove the CMake build directory"
+    Write-Host "  info         Report host, build directory and detected tooling"
+    Write-Host ""
+    Write-Host "  build / test / run use MSBuild on Windows and CMake/Ninja on Linux."
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\dd.ps1 desktop      Build desktop release (auto-increments build)"
@@ -552,9 +570,29 @@ function Build-Desktop {
 
 function Get-PythonExe {
     # The repo venv carries the tooling dependencies (Pillow, polib); a bare `python` often does not.
+    if ($IsLinuxHost) {
+        $venvPython = Join-Path $ScriptDir ".venv/bin/python3"
+        if (Test-Path $venvPython) { return $venvPython }
+        return "python3"
+    }
+
     $venvPython = Join-Path $ScriptDir ".venv\Scripts\python.exe"
     if (Test-Path $venvPython) { return $venvPython }
     return "python"
+}
+
+# The CMake/Ninja build lives in tools/dd.py so one implementation serves both hosts. This stays
+# the gateway; it does not duplicate what the backend knows.
+function Invoke-DdPython {
+    param(
+        [Parameter(Mandatory = $true)][string]$Action,
+        [string[]]$Arguments = @()
+    )
+
+    $python = Get-PythonExe
+    $script = Join-Path $ToolsDir "dd.py"
+    & $python $script $Action @Arguments
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Assert-StoreVersionUnused {
@@ -1267,17 +1305,35 @@ switch ($Command) {
     "store" { Build-Store }
     "deploy" { Deploy-Desktop }
     "release" { New-GitHubRelease }
-    "run" { Start-Diffractor }
     "run32" { Start-Diffractor -Platform "Win32" }
     "cpu" { Start-Diffractor -SoftwareRendering }
-    "build" { Invoke-BumpBuild; Build-App | Out-Null }
-    "test" { Invoke-Tests }
     "bean" { Invoke-Tests -TempPath "\\bean.local\home\tmp" }
     "code" { Open-VSCode }
     "loc" { Update-Locations }
     "bump-build" { Invoke-BumpBuild }
     "bump-ver" { Invoke-BumpVersion }
     "clear-cache" { Clear-IconCache }
+
+    # Cross-platform, delegated to tools/dd.py.
+    "setup" { Invoke-DdPython -Action "setup" -Arguments $Rest }
+    "configure" { Invoke-DdPython -Action "configure" -Arguments $Rest }
+    "clean" { Invoke-DdPython -Action "clean" -Arguments $Rest }
+    "info" { Invoke-DdPython -Action "info" -Arguments $Rest }
+
+    # Same verb, different build system per host.
+    "build" {
+        if ($IsLinuxHost) { Invoke-DdPython -Action "build" -Arguments $Rest }
+        else { Invoke-BumpBuild; Build-App | Out-Null }
+    }
+    "test" {
+        if ($IsLinuxHost) { Invoke-DdPython -Action "test" -Arguments $Rest }
+        else { Invoke-Tests }
+    }
+    "run" {
+        if ($IsLinuxHost) { Invoke-DdPython -Action "run" -Arguments $Rest }
+        else { Start-Diffractor }
+    }
+
     "help" { Show-Usage }
     "" { Show-Usage }
     default { Show-Usage }

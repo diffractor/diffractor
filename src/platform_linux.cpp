@@ -402,6 +402,18 @@ void platform::mutex::sh_unlock() const
 bool platform::crc32_supported = false;
 bool platform::arm_crc32_supported = false;
 
+bool platform::has_avx2()
+{
+#if defined(__x86_64__) || defined(__i386__)
+	// The build targets an SSE2 baseline, so the AVX2 paths in render_surface.cpp are dispatched
+	// at runtime exactly as they are on Windows.
+	static const bool supported = __builtin_cpu_supports("avx2");
+	return supported;
+#else
+	return false;
+#endif
+}
+
 void platform::secure_zero(void* ptr, const size_t len)
 {
 	::explicit_bzero(ptr, len);

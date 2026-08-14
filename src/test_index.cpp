@@ -13,7 +13,7 @@
 
 #include "pch.h"
 
-#include <Sqlite3.h>
+#include <sqlite3.h>
 
 #include "test_fixtures.h"
 #include "model_db_pack.h"

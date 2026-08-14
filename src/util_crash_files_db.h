@@ -41,7 +41,7 @@ class crash_files_db
 	// this install - a permanently missing thumbnail with nothing in the product to recover it.
 	void load()
 	{
-		std::ifstream file(platform::to_file_system_path(_crash_files_path));
+		std::ifstream file(platform::to_stream_path(_crash_files_path));
 		std::string line;
 
 		while (_lines_on_disk < max_entries && std::getline(file, line))
@@ -152,7 +152,7 @@ public:
 
 		// Appended rather than rewritten: a second fault inside this handler must not be able to
 		// truncate away the protection already earned by earlier crashes.
-		std::ofstream file(platform::to_file_system_path(_crash_files_path), std::ios_base::app);
+		std::ofstream file(platform::to_stream_path(_crash_files_path), std::ios_base::app);
 		file << appended;
 
 		// A read-only install folder makes this the difference between one crash and a crash on every

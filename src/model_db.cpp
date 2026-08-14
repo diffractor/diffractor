@@ -11,7 +11,7 @@
 
 #include "pch.h"
 
-#include <Sqlite3.h>
+#include <sqlite3.h>
 
 #include "files.h"
 #include "model_db.h"

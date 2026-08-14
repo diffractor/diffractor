@@ -1907,7 +1907,7 @@ namespace ui
 					dc.draw_rect(progress_rect, cc);
 
 					auto r = progress_rect.inflate(-2);
-					r.right = r.left + static_cast<int>(df::mul_div(std::min(pos, 1000ll),
+					r.right = r.left + static_cast<int>(df::mul_div(std::min<int64_t>(pos, 1000),
 					                                                static_cast<int64_t>(r.width()), 1000ll));
 					dc.draw_rect(r, color(0xFFFFFF, dc.colors.alpha * 0.22f));
 				}
