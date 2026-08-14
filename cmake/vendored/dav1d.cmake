@@ -97,9 +97,8 @@ target_include_directories(diffractor_dav1d PUBLIC
 target_compile_definitions(diffractor_dav1d PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
 
 # Assembler include paths and definitions. These are not compiler settings and reach
-# nasm no other way. The object name keeps the source's relative directory because
-# FFmpeg has several same-named .asm files - hevc/sao.asm and vvc/sao.asm among them -
-# and a flat object directory silently lets one overwrite the other.
+# nasm no other way. Grouping is by the source's own directory, because that is what
+# MSBuild supplied per item as %(RootDir)%(Directory) and every %include resolves against.
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/cdef16_avx2.asm"
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/cdef16_avx512.asm"
@@ -147,8 +146,7 @@ set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/msac.asm"
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/pal.asm"
         "${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/refmvs.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/ -I${CMAKE_SOURCE_DIR}/third-party/dav1d/ -I${CMAKE_SOURCE_DIR}/third-party/dav1d/src/"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/dav1d/src/x86/ -I${CMAKE_SOURCE_DIR}/third-party/dav1d/ -I${CMAKE_SOURCE_DIR}/third-party/dav1d/src/")
 
 target_compile_options(diffractor_dav1d PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/experimental:c11atomics>)
 
