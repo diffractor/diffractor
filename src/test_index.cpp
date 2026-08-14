@@ -260,7 +260,7 @@ static void should_replace_an_unreadable_database()
 	const auto file_path = test_files_folder.combine_file("Test.jpg");
 
 	{
-		std::ofstream corrupt(platform::to_file_system_path(db_path), std::ios::binary | std::ios::trunc);
+		std::ofstream corrupt(platform::to_stream_path(db_path), std::ios::binary | std::ios::trunc);
 		corrupt << "SQLite format 3\0not a database at all";
 	}
 
@@ -1046,7 +1046,7 @@ static void should_update_collection_presence(shared_test_context& stc)
 	const auto folder_info = std::make_shared<df::index_folder_item>();
 	const auto folder = std::make_shared<df::item_element>(external_root.combine("folder"), folder_info);
 	folder->presence(item_presence::similar_in);
-	folder->duplicates({42, 2});
+	folder->duplicates(df::duplicate_info{42, 2});
 
 	stc.test_index.queue_update_presence(df::item_set({
 		in_collection, possible_copy, possible_older_copy, possible_newer_copy, absent, incomplete, folder

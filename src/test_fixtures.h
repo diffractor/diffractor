@@ -486,7 +486,7 @@ location_cache& test_locations();
 
 inline void write_test_file(const df::file_path path, const std::string_view text)
 {
-	std::ofstream fs(platform::to_file_system_path(path), std::ios::binary | std::ios::trunc);
+	std::ofstream fs(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
 	fs << text;
 }
 

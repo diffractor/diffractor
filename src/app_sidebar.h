@@ -888,7 +888,7 @@ public:
 				for (auto j = i; j < file_group::max_count; ++j)
 					remaining_count_total += counts[j].count_sr;
 
-				const auto segments = std::max(1ll, df::mul_div(remaining_segments, count_sr, remaining_count_total));
+const auto segments = std::max<int64_t>(1, df::mul_div(remaining_segments, count_sr, remaining_count_total));
 
 				for (int k = 0; (k < segments || is_last) && current_segment < chart_segment_count; k++)
 				{

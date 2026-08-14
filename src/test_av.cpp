@@ -46,7 +46,8 @@ static void should_format_audio_stream_names()
 	assert_equal("Audio track 3 - aac", format_audio_stream_name(stream, 3), "codec fallback");
 }
 
-static void should_compact_consumed_audio_only_when_needed()
+// Not static: av_visualizer.h declares this a friend, which names the external-linkage function.
+void should_compact_consumed_audio_only_when_needed()
 {
 	audio_info_t format;
 	format.channel_layout = av_get_def_channel_layout(2);
@@ -141,7 +142,8 @@ static void should_ramp_audio_at_buffer_edges()
 	assert_equal(4000u, buffer.used_bytes(), "ramping does not consume buffered audio");
 }
 
-static void should_time_visualizer_independently_of_refresh_rate()
+// Not static: av_visualizer.h declares this a friend, which names the external-linkage function.
+void should_time_visualizer_independently_of_refresh_rate()
 {
 	auto animate = [](const double frame_seconds)
 	{

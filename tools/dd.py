@@ -46,6 +46,8 @@ APT_DEPENDENCIES = [
     "libwebp-dev",
     "libarchive-dev",
     "libexif-dev",
+    "libhunspell-dev",  # util_spell.cpp
+    "libminizip-dev",  # util_zip.cpp
 ]
 
 

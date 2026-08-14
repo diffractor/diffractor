@@ -131,11 +131,47 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/ui.cpp
         src/ui_controls.cpp
         src/ui_flex.cpp
+        src/app_commands.cpp
+        src/app.cpp
+        src/app_dup_report.cpp
+        src/app_search.cpp
+        src/app_toolbar.cpp
+        src/app_workers.cpp
+        src/view_batch.cpp
+        src/view_edit.cpp
+        src/view_import.cpp
+        src/view_items.cpp
+        src/view_locate.cpp
+        src/view_rename.cpp
+        src/view_selector.cpp
+        src/view_sync.cpp
+        src/view_tags.cpp
+)
+
+# The suite itself. run_console_tests builds a view_state and registers every subject file, so this
+# is all or nothing; test_platform_win.cpp is Windows-only by subject.
+set(DIFFRACTOR_TEST_SOURCES
+        src/test_app.cpp
+        src/test_av.cpp
+        src/test_files.cpp
+        src/test_fixtures.cpp
+        src/test_index.cpp
+        src/test_locations.cpp
+        src/test_media_edit.cpp
+        src/test_metadata.cpp
+        src/test_render.cpp
+        src/test_runner.cpp
+        src/test_search.cpp
+        src/test_text.cpp
+        src/test_util.cpp
+        src/test_view.cpp
 )
 
 add_executable(diffractor
         ${DIFFRACTOR_PORTABLE_SOURCES}
+        ${DIFFRACTOR_TEST_SOURCES}
         src/platform_linux.cpp
+        src/platform_linux_desktop.cpp
         src/platform_linux_files.cpp
         src/platform_linux_settings.cpp
         src/platform_linux_stubs.cpp

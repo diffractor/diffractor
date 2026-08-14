@@ -76,7 +76,7 @@ static void should_select_slavic_plural_forms()
 	const auto path = _temps.next_path(".po");
 
 	{
-		std::ofstream fs(platform::to_file_system_path(path));
+		std::ofstream fs(platform::to_stream_path(path));
 		fs << "msgid \"one apple\"\n";
 		fs << "msgid_plural \"{count} apples\"\n";
 		fs << "msgstr[0] \"jedno jablko\"\n";

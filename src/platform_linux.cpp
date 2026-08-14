@@ -13,6 +13,9 @@
 #include "pch.h"
 
 #include "app_text.h"
+#include "files.h"
+#include "model.h"
+#include "test_runner.h"
 #include "util_base64.h"
 
 #include <condition_variable>
@@ -23,21 +26,6 @@
 #include <sys/random.h>
 #include <linux/limits.h>
 #include <ctime>
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-// Not yet ported. These belong to app.cpp and app_text.cpp, which do not compile under GCC yet.
-// Delete this block when they join the build rather than letting two definitions exist.
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-const std::string_view s_app_name = "Diffractor";
-const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1275";
-const wchar_t* s_app_name_l = L"Diffractor";
-
-std::string df::format_version(bool)
-{
-	return std::format("{}.{}", s_app_version, g_app_build);
-}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Paths and time
@@ -577,6 +565,20 @@ bool platform::generate_random_bytes(uint8_t* buffer, const size_t len)
 
 int main(const int argc, const char* const argv[])
 {
+	// /test[:filter] runs the suite headless, matching the Windows command line.
+	for (auto i = 1; i < argc; ++i)
+	{
+		const std::string_view arg(argv[i]);
+
+		if (arg == "/test" || arg.starts_with("/test:"))
+		{
+			const auto colon = arg.find(':');
+			const auto filter = colon == std::string_view::npos ? "*"sv : arg.substr(colon + 1);
+			load_file_types();
+			return run_console_tests(filter);
+		}
+	}
+
 	printf("Diffractor %s (linux stage-one build)\n", df::format_version(false).c_str());
 
 	// Exercise the portable core so a successful run proves linkage, not only a successful build.
@@ -586,27 +588,10 @@ int main(const int argc, const char* const argv[])
 	printf("  str::to_lower       %s\n", str::to_lower(sample).c_str());
 	printf("  str::icmp           %d\n", str::icmp(sample, "DIFFRACTOR"sv));
 	printf("  crypto::fnv1a_i     %u\n", crypto::fnv1a_i(sample));
-	printf("  str::to_string i64  %s\n", str::to_string(static_cast<int64_t>(-1234567890123LL)).c_str());
-	printf("  str::to_string dbl  %s\n", str::to_string(3.14159, 3).c_str());
 	printf("  base64 round trip   %s\n", base64_decode(base64_encode(sample)) == sample_bytes ? "ok" : "FAILED");
 	printf("  known app_data      %s\n",
 	       std::string(platform::known_path(platform::known_folder::app_data).text()).c_str());
-	printf("  known pictures      %s\n",
-	       std::string(platform::known_path(platform::known_folder::pictures).text()).c_str());
-
-	uint8_t random[8] = {};
-	printf("  random bytes        %s\n", platform::generate_random_bytes(random, sizeof(random)) ? "ok" : "FAILED");
-
-	platform::mutex m;
-	{
-		const platform::exclusive_lock lock(m);
-		printf("  exclusive lock      ok\n");
-	}
-
-	for (auto i = 1; i < argc; ++i)
-	{
-		printf("  arg[%d] %s\n", i, argv[i]);
-	}
+	printf("\nRun with /test to run the suite.\n");
 
 	return 0;
 }

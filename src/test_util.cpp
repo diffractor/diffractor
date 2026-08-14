@@ -297,7 +297,9 @@ static void should_calc_perceptual_hashes()
 	assert_equal(0, crypto::phash_distance(hash, hash), "distance to itself");
 
 	// Bit 0 comes from the DC coefficient, which is excluded, so it is free to mark a declined hash.
-	assert_equal(0ull, hash & 1ull, "a real hash never sets the reserved bit");
+	// Typed rather than 0ull: under LP64 unsigned long long is distinct from uint64_t, so the
+	// assert_equal overload set has no exact match.
+	assert_equal(uint64_t{0}, hash & uint64_t{1}, "a real hash never sets the reserved bit");
 	assert_equal(false, crypto::phash_is_usable(crypto::phash_declined), "the declined marker is not a hash");
 	assert_equal(false, crypto::phash_is_usable(0), "not computed is not a hash");
 
@@ -883,7 +885,7 @@ static void should_report_file_presence()
 	const auto scratch = _temps.next_folder("file-presence");
 	const auto present = scratch.combine_file("present.txt");
 	{
-		std::ofstream fs(platform::to_file_system_path(present));
+		std::ofstream fs(platform::to_stream_path(present));
 		fs << "content";
 	}
 
@@ -902,7 +904,7 @@ static void should_report_file_presence()
 	// An empty file must not read as absent just because it has no bytes.
 	const auto empty_path = scratch.combine_file("empty.txt");
 	{
-		std::ofstream fs(platform::to_file_system_path(empty_path));
+		std::ofstream fs(platform::to_stream_path(empty_path));
 	}
 	const auto empty = platform::file_attributes(empty_path);
 	assert_equal(true, empty.exists(), "empty file exists");

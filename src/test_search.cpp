@@ -59,12 +59,12 @@ static void should_update_duplicate_search_presence()
 	assert_equal(false, matcher.can_contain(file.search_presence), "initial item presence");
 	assert_equal(false, matcher.can_contain(folder->search_presence_summary), "initial folder presence");
 
-	file.update_duplicates(folder, {.group = 7, .count = 2});
+	file.update_duplicates(folder, df::duplicate_info{.group = 7, .count = 2});
 	assert_equal(true, matcher.can_contain(file.search_presence), "added item presence");
 	assert_equal(true, matcher.can_contain(folder->search_presence_summary), "added folder presence");
 	assert_equal(true, matcher.match_item({}, file).is_match(), "added exact duplicate state");
 
-	file.update_duplicates(folder, {});
+	file.update_duplicates(folder, df::duplicate_info{});
 	assert_equal(false, matcher.can_contain(file.search_presence), "removed item presence");
 	assert_equal(true, matcher.can_contain(folder->search_presence_summary), "safe stale folder presence");
 	assert_equal(false, matcher.match_item({}, file).is_match(), "removed exact duplicate state");

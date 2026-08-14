@@ -19,6 +19,8 @@
 #include "av_player.h"
 #include "files.h"
 #include "metadata_xmp.h"
+#include "util_spell.h"
+#include "util_zip.h"
 
 namespace
 {
@@ -258,4 +260,176 @@ void av_session::seek(double, bool)
 void av_session::state(av_play_state)
 {
 	not_ported("ffmpeg"sv);
+}
+
+av_packet_ptr av_format_decoder::read_packet() const
+{
+	return {};
+}
+
+void av_format_decoder::receive_frames(av_packet_queue&, av_frame_queue&)
+{
+	not_ported("ffmpeg"sv);
+}
+
+bool av_scaler::convert_yuv_surface(const ui::surface&, const ui::surface_ptr&)
+{
+	not_ported("ffmpeg"sv);
+	return false;
+}
+
+int64_t av_pts_correction::guess(const int64_t best_effort, const int64_t pts, const int64_t dts, int64_t)
+{
+	// AV_NOPTS_VALUE without the FFmpeg headers. Without a decoder there is no stream to correct
+	// against, so prefer the timestamps as given.
+	constexpr int64_t no_pts = INT64_C(0x8000000000000000);
+	if (best_effort != no_pts) return best_effort;
+	if (pts != no_pts) return pts;
+	return dts;
+}
+
+double av_audio_frame_duration(const av_frame_ptr&)
+{
+	return 0.0;
+}
+
+df::date_t dv_extract_rec_datetime(const uint8_t*, size_t)
+{
+	return {};
+}
+
+void av_session::process_io(const platform::thread_event&, const platform::thread_event&)
+{
+	not_ported("ffmpeg"sv);
+}
+
+audio_resampler::audio_resampler(const audio_info_t&)
+{
+	not_ported("ffmpeg"sv);
+}
+
+void audio_resampler::flush()
+{
+}
+
+void audio_resampler::drain(audio_buffer&, int)
+{
+}
+
+void audio_resampler::resample(const av_frame_ptr&, audio_buffer&)
+{
+	not_ported("ffmpeg"sv);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Audio format arithmetic. These are FFmpeg-free in principle, but they live beside the decoder
+// and are defined in av_format.cpp, which is not built here.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// The layout is a shared_ptr to an FFmpeg type, so the real count is not reachable without the
+// decoder. Zero propagates as "no audio", which is the state this build is in anyway.
+uint32_t audio_info_t::channel_count() const
+{
+	return 0;
+}
+
+uint32_t audio_info_t::bytes_per_sample() const
+{
+	switch (sample_fmt)
+	{
+	case prop::audio_sample_t::unsigned_8bit: return 1;
+	case prop::audio_sample_t::signed_16bit: return 2;
+	case prop::audio_sample_t::signed_32bit:
+	case prop::audio_sample_t::signed_float: return 4;
+	case prop::audio_sample_t::signed_64bit:
+	case prop::audio_sample_t::signed_double: return 8;
+	default: return 0;
+	}
+}
+
+uint32_t audio_info_t::bytes_per_second() const
+{
+	return sample_rate * channel_count() * bytes_per_sample();
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Spell checking. Needs hunspell, which is not linked here.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// spell_check holds a unique_ptr<Hunspell>, so its destructor needs the type complete even though
+// lazy_load never creates one here. Installing libhunspell-dev and building util_spell.cpp
+// replaces this whole section.
+class Hunspell
+{
+};
+
+void spell_check::lazy_download(df::async_i&) const
+{
+	not_ported("hunspell"sv);
+}
+
+void spell_check::lazy_load()
+{
+	not_ported("hunspell"sv);
+}
+
+// Every word is accepted: marking correct words as misspelled would be worse than not checking.
+bool spell_check::is_word_valid(std::string_view) const
+{
+	return true;
+}
+
+std::vector<std::string> spell_check::suggest(std::string_view) const
+{
+	return {};
+}
+
+spell_check& spell()
+{
+	static spell_check instance;
+	return instance;
+}
+
+spell_check::spell_check() = default;
+spell_check::~spell_check() = default;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Channel layouts. FFmpeg types, so these can only hand back an empty layout.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+channel_layout_ptr av_get_channel_layout(uint64_t, int)
+{
+	return {};
+}
+
+channel_layout_ptr av_get_def_channel_layout(int)
+{
+	return {};
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Zip. Needs minizip, which is not linked here.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+df::zip_file::~zip_file() = default;
+
+bool df::zip_file::create(file_path)
+{
+	not_ported("minizip"sv);
+	return false;
+}
+
+bool df::zip_file::close()
+{
+	return false;
+}
+
+bool df::zip_file::add(file_path, std::string_view) const
+{
+	return false;
+}
+
+bool df::zip_file::add(file_path)
+{
+	return false;
 }
