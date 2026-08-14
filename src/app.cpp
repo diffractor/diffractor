@@ -46,8 +46,6 @@
 #include "util_spell.h"
 
 
-command_line_t command_line;
-
 const wchar_t* s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
@@ -167,23 +165,6 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 #endif
 		spell().lazy_download(s._async);
 	}
-}
-
-crash_files_db& crash_files()
-{
-	static crash_files_db instance(df::probe_data_file("diffractor-files-that-crash.txt"),
-	                               crash_files_db::release_tag(s_app_version));
-	return instance;
-}
-
-void flush_open_files_to_crash_files_list()
-{
-	crash_files().flush_open_files();
-}
-
-void log_open_files_to_crash_files_list()
-{
-	crash_files().log_open_files();
 }
 
 std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index,
@@ -487,74 +468,6 @@ std::string command_line_t::format_restart_cmd_line() const
 	if (no_gpu) result += " -no-gpu";
 	if (no_indexing) result += " -no-indexing";
 	return result;
-}
-
-std::string format_plural_text(const plural_text& fmt, const std::string_view first_name, const int64_t count,
-                               const df::file_size size, const int64_t of_total)
-{
-	// Select the plural form for the active language. Form 0 is the singular
-	// (fmt.one), form 1 the general plural (fmt.plural), forms >= 2 the extra
-	// Slavic forms. Missing extra forms fall back to the general plural.
-	const int form = tt.plural_form(count);
-	std::string_view template_text;
-
-	if (form <= 0)
-	{
-		template_text = fmt.one;
-	}
-	else if (form == 1)
-	{
-		template_text = fmt.plural;
-	}
-	else
-	{
-		const size_t extra = static_cast<size_t>(form) - 2;
-		template_text = (extra < fmt.extra_forms.size() && !fmt.extra_forms[extra].empty())
-			                ? std::string_view(fmt.extra_forms[extra])
-			                : std::string_view(fmt.plural);
-	}
-
-	const auto number = [](const int64_t n) { return platform::format_number(str::to_string(n)); };
-
-	auto substitute = [&](std::ostringstream& result, const std::string_view token)
-	{
-		if (token == "first-name") result << first_name;
-		else if (token == "count" || token.empty()) result << number(count);
-		else if (token == "other") result << number(count - 1);
-		else if (token == "total") result << number(of_total);
-		else if (token == "size") result << prop::format_size(size);
-	};
-
-	return str::replace_tokens(template_text, substitute);
-}
-
-std::string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
-{
-	return format_plural_text(fmt, {}, count, {}, of_total);
-}
-
-std::string format_plural_text(const plural_text& fmt, const df::item_set& items)
-{
-	const auto summary = items.summary();
-	const auto total_items = summary.total_items() + summary.total_folders();
-	return format_plural_text(fmt, items.first_name(), total_items.count, total_items.size, 0);
-}
-
-std::string format_plural_text(const plural_text& fmt, const std::vector<std::string>& result)
-{
-	const std::string_view first_name = result.empty() ? std::string_view{} : std::string_view(result.front());
-	return format_plural_text(fmt, first_name, static_cast<int64_t>(result.size()), {}, 0);
-}
-
-void rating_control::dispatch_event(const view_element_event& event)
-{
-	if (event.type == view_element_event_type::invoke)
-	{
-		auto dlg = make_dlg(event.host->owner());
-		const auto results = std::make_shared<command_status>(_state._async, dlg, icon_index::star,
-		                                                      tt.prop_name_rating, 1);
-		_state.toggle_rating(results, {_item}, _hover_rating, event.host);
-	}
 }
 
 

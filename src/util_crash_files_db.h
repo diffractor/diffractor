@@ -199,3 +199,7 @@ struct record_open_path
 // Constructed on first use rather than as a global: the constructor resolves known folders and reads
 // a file, and before WinMain a throw there would end the process with no log and no message box.
 crash_files_db& crash_files();
+
+// Called from the crash handler and the shutdown path.
+void flush_open_files_to_crash_files_list();
+void log_open_files_to_crash_files_list();

@@ -16,6 +16,7 @@
 #include "pch.h"
 
 #include "av_format.h"
+#include "av_player.h"
 #include "files.h"
 #include "metadata_xmp.h"
 
@@ -178,4 +179,83 @@ bool av_format_decoder::extract_thumbnail(ui::surface_ptr&, sizei, double, doubl
 {
 	not_ported("ffmpeg"sv);
 	return false;
+}
+
+bool av_format_decoder::extract_seek_frame(ui::surface_ptr&, sizei, double, double, df::cancel_token)
+{
+	not_ported("ffmpeg"sv);
+	return false;
+}
+
+bool av_format_decoder::seek(double) const
+{
+	return false;
+}
+
+ui::orientation av_format_decoder::calc_orientation() const
+{
+	return ui::orientation::top_left;
+}
+
+av_media_info av_format_decoder::info() const
+{
+	return {};
+}
+
+file_load_result av_format_decoder::render_frame(const av_frame_ptr&) const
+{
+	not_ported("ffmpeg"sv);
+	return {};
+}
+
+std::unique_ptr<audio_resampler> av_format_decoder::make_audio_resampler() const
+{
+	return {};
+}
+
+audio_resampler::~audio_resampler() = default;
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Frame accessors. No decoder produces a frame in this build, so these are only reached with an
+// empty pointer.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+double av_time_from_frame(const av_frame_ptr&)
+{
+	return 0.0;
+}
+
+int av_seek_gen_from_frame(const av_frame_ptr&)
+{
+	return 0;
+}
+
+bool av_frame_is_eof(const av_frame_ptr&)
+{
+	return true;
+}
+
+bool av_is_frame_empty(const av_frame_ptr&)
+{
+	return true;
+}
+
+size_t av_queued_payload_bytes(const av_packet_ptr&)
+{
+	return 0;
+}
+
+size_t av_queued_payload_bytes(const av_frame_ptr&)
+{
+	return 0;
+}
+
+void av_session::seek(double, bool)
+{
+	not_ported("ffmpeg"sv);
+}
+
+void av_session::state(av_play_state)
+{
+	not_ported("ffmpeg"sv);
 }

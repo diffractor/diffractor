@@ -606,6 +606,107 @@ platform::drives platform::scan_drives()
 	return {};
 }
 
+platform::file_op_result platform::move_file(const df::folder_path existing, const df::folder_path destination)
+{
+	if (::rename(std::string(existing.text()).c_str(), std::string(destination.text()).c_str()) != 0)
+	{
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	return {file_op_result_code::OK};
+}
+
+// True for a UNC or network location on Windows. A Linux mount point carries no such marker in the
+// path itself, so answering false keeps the local-path behaviour rather than guessing.
+bool platform::is_server(std::string_view)
+{
+	return false;
+}
+
+uint32_t platform::caret_blink_time()
+{
+	return 530;
+}
+
+std::string platform::format_time(const df::date_t date)
+{
+	return format_date_time(date);
+}
+
+// Opening a location in the desktop's handler is an XDG portal call; see docs/linux.md.
+bool platform::open(df::file_path)
+{
+	return false;
+}
+
+bool platform::open(std::string_view)
+{
+	return false;
+}
+
+bool platform::created_date(const df::file_path path, const df::date_t dt)
+{
+	// A creation time cannot be set on Linux, so report the failure rather than a silent no-op that
+	// a caller would record as a written date.
+	(void)path;
+	(void)dt;
+	return false;
+}
+
+bool platform::is_valid_file_name(const std::string_view name)
+{
+	if (name.empty()) return false;
+	if (name == "." || name == "..") return false;
+
+	// The only bytes a Linux filesystem refuses. The Windows implementation additionally rejects the
+	// reserved device names and trailing dots and spaces, none of which mean anything here.
+	return name.find('/') == std::string_view::npos && name.find('\\0') == std::string_view::npos;
+}
+
+local_folders_result platform::local_folders()
+{
+	local_folders_result result;
+	result.pictures = known_path(known_folder::pictures);
+	result.video = known_path(known_folder::video);
+	result.music = known_path(known_folder::music);
+	result.desktop = known_path(known_folder::desktop);
+	result.downloads = known_path(known_folder::downloads);
+	return result;
+}
+
+std::string platform::format_number(const std::string& num_text)
+{
+	// Thousands separators come from the C locale; the C.UTF-8 default groups nothing, which is
+	// what the Windows implementation produces for an invalid locale too.
+	return num_text;
+}
+
+uint32_t platform::file_crc32(const df::file_path path)
+{
+	return file_crc32(path, {});
+}
+
+uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& token)
+{
+	const auto f = open_file(path, file_open_mode::sequential_scan);
+	if (!f) return 0;
+
+	uint32_t crc = 0;
+	std::vector<uint8_t> buffer(64 * 1024);
+
+	for (;;)
+	{
+		if (token.is_cancelled()) return 0;
+
+		const auto n = f->read(buffer.data(), buffer.size());
+		if (n == 0) break;
+
+		crc = crypto::crc32c(crc, buffer.data(), static_cast<size_t>(n));
+	}
+
+	return crc;
+}
+
 // WIC on Windows; the vendored codecs already cover these formats, so this becomes a files:: call
 // rather than a platform one when it is ported.
 ui::surface_ptr platform::image_to_surface(df::cspan, sizei)

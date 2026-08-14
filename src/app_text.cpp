@@ -12,7 +12,75 @@
 #include "pch.h"
 #include "app_text.h"
 #include "av_format.h"
+#include "model_items.h"
 #include "model_property.h"
+
+// Declared in app_text.h and model_items.h respectively. Both formatters select wording from the
+// active language, so they belong with the rest of the text layer rather than in the application
+// frame and the edit view, where they used to be defined.
+
+std::string format_plural_text(const plural_text& fmt, const std::string_view first_name, const int64_t count,
+                               const df::file_size size, const int64_t of_total)
+{
+	// Select the plural form for the active language. Form 0 is the singular
+	// (fmt.one), form 1 the general plural (fmt.plural), forms >= 2 the extra
+	// Slavic forms. Missing extra forms fall back to the general plural.
+	const int form = tt.plural_form(count);
+	std::string_view template_text;
+
+	if (form <= 0)
+	{
+		template_text = fmt.one;
+	}
+	else if (form == 1)
+	{
+		template_text = fmt.plural;
+	}
+	else
+	{
+		const size_t extra = static_cast<size_t>(form) - 2;
+		template_text = (extra < fmt.extra_forms.size() && !fmt.extra_forms[extra].empty())
+			                ? std::string_view(fmt.extra_forms[extra])
+			                : std::string_view(fmt.plural);
+	}
+
+	const auto number = [](const int64_t n) { return platform::format_number(str::to_string(n)); };
+
+	auto substitute = [&](std::ostringstream& result, const std::string_view token)
+	{
+		if (token == "first-name") result << first_name;
+		else if (token == "count" || token.empty()) result << number(count);
+		else if (token == "other") result << number(count - 1);
+		else if (token == "total") result << number(of_total);
+		else if (token == "size") result << prop::format_size(size);
+	};
+
+	return str::replace_tokens(template_text, substitute);
+}
+
+std::string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
+{
+	return format_plural_text(fmt, {}, count, {}, of_total);
+}
+
+std::string format_plural_text(const plural_text& fmt, const df::item_set& items)
+{
+	const auto summary = items.summary();
+	const auto total_items = summary.total_items() + summary.total_folders();
+	return format_plural_text(fmt, items.first_name(), total_items.count, total_items.size, 0);
+}
+
+std::string format_plural_text(const plural_text& fmt, const std::vector<std::string>& result)
+{
+	const std::string_view first_name = result.empty() ? std::string_view{} : std::string_view(result.front());
+	return format_plural_text(fmt, first_name, static_cast<int64_t>(result.size()), {}, 0);
+}
+
+std::string format_invalid_name_message(const std::string_view name)
+{
+	const auto name_error = str_format(tt.error_invalid_path_fmt.sv(), name);
+	return std::format("{}\n{} \\ / : * ? \" < > |", name_error, tt.error_invalid_path);
+}
 
 std::string language_name(const std::string_view code)
 {

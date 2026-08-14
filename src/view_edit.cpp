@@ -1433,12 +1433,6 @@ bool select_path(df::file_path& path)
 	return platform::prompt_for_save_path(path);
 }
 
-std::string format_invalid_name_message(const std::string_view name)
-{
-	const auto name_error = str_format(tt.error_invalid_path_fmt.sv(), name);
-	return std::format("{}\n{} \\ / : * ? \" < > |", name_error, tt.error_invalid_path);
-}
-
 bool edit_view::check_path(df::file_path& path, const ui::control_frame_ptr& owner) const
 {
 	if (!path.is_save_valid())

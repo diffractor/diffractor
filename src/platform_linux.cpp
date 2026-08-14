@@ -79,6 +79,11 @@ int64_t df::now_ms()
 		std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+double df::now()
+{
+	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Events
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -136,6 +141,75 @@ void platform::thread_event::reset() const noexcept
 
 	std::lock_guard lock(state->mutex);
 	state->signalled = false;
+}
+
+uint32_t platform::wait_for_timeout = 0xFFFFFFFF;
+
+// Set only after df::is_closing, and manual reset, so a late waiter is still released.
+platform::thread_event platform::event_exit(true, false);
+
+// Provisional: a poll rather than a real multi-object wait. Each event owns its own condition
+// variable, so waiting on a set of them needs one shared condition; giving them that is part of
+// the same work as replacing the spin lock in this file. The poll is correct, just not efficient.
+uint32_t platform::wait_for(const std::vector<std::reference_wrapper<thread_event>>& events,
+                            const uint32_t timeout_ms, const bool wait_all)
+{
+	constexpr uint32_t poll_ms = 5;
+	const auto deadline = df::now_ms() + (timeout_ms == 0 ? 0 : timeout_ms);
+
+	for (;;)
+	{
+		size_t signalled_count = 0;
+
+		for (size_t i = 0; i < events.size(); ++i)
+		{
+			auto* const state = static_cast<event_state*>(events[i].get()._h);
+			if (state == nullptr) continue;
+
+			std::unique_lock lock(state->mutex);
+			if (!state->signalled) continue;
+
+			if (!wait_all)
+			{
+				if (!state->manual_reset) state->signalled = false;
+				return static_cast<uint32_t>(i);
+			}
+
+			++signalled_count;
+		}
+
+		if (wait_all && signalled_count == events.size() && !events.empty()) return 0;
+		if (timeout_ms != 0 && df::now_ms() >= deadline) return wait_for_timeout;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(poll_ms));
+	}
+}
+
+void platform::set_crash_guard(crash_guard, bool)
+{
+}
+
+bool platform::read_crash_guard(crash_guard)
+{
+	return false;
+}
+
+void platform::fail_crash_guard(crash_guard)
+{
+}
+
+bool platform::crash_guard_failed(crash_guard)
+{
+	return false;
+}
+
+void platform::suppress_crash_guard(crash_guard, bool)
+{
+}
+
+bool platform::crash_guard_suppressed(crash_guard)
+{
+	return false;
 }
 
 namespace
@@ -323,14 +397,6 @@ std::string platform::utf8_to_a(const std::string_view utf8)
 {
 	// There is no "ANSI code page" on Linux; the system encoding is UTF-8, so this is the identity.
 	return {utf8.begin(), utf8.end()};
-}
-
-// Not yet ported: file I/O is the next platform surface after this build runs. Returning null is
-// what every caller already treats as "could not open", so nothing misreads an unported call as
-// an empty file.
-platform::file_ptr platform::open_file(df::file_path, file_open_mode)
-{
-	return {};
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

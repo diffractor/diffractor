@@ -1699,6 +1699,7 @@
     <ClCompile Include="test_text.cpp" />
     <ClCompile Include="test_util.cpp" />
     <ClCompile Include="test_view.cpp" />
+    <ClCompile Include="ui_controls.cpp" />
     <ClCompile Include="ui_flex.cpp" />
     <ClInclude Include="test.h" />
     <ClInclude Include="test_fixtures.h" />
