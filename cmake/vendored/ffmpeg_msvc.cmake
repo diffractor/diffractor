@@ -9,6 +9,22 @@
 
 include_guard(GLOBAL)
 
+# These assembly sources share a file name with another in this library, and CMake names a
+# nasm object after the file name alone. Copied under a name that is unique so that no
+# generator's object directory can let one quietly overwrite the other.
+configure_file("${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/mc.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_mc.asm" COPYONLY)
+configure_file("${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/sao.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_sao.asm" COPYONLY)
+configure_file("${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/sao_10bit.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_sao_10bit.asm" COPYONLY)
+configure_file("${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/mc.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_mc.asm" COPYONLY)
+configure_file("${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sao.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_sao.asm" COPYONLY)
+configure_file("${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sao_10bit.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_sao_10bit.asm" COPYONLY)
+
 add_library(diffractor_ffmpeg_msvc STATIC
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/012v.c"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/4xm.c"
@@ -1597,9 +1613,9 @@ add_library(diffractor_ffmpeg_msvc STATIC
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/deblock.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/dequant.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/idct.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/mc.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/sao.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/sao_10bit.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_mc.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_sao.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_sao_10bit.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hpeldsp.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/huffyuvdsp.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/huffyuvencdsp.asm"
@@ -1648,11 +1664,11 @@ add_library(diffractor_ffmpeg_msvc STATIC
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vp9mc.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vp9mc_16bpp.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/alf.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/mc.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_mc.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sad.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/of.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sao.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sao_10bit.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_sao.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_sao_10bit.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/dmvr.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/xvididct.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/cpuid.asm"
@@ -1706,9 +1722,8 @@ target_include_directories(diffractor_ffmpeg_msvc PUBLIC
 target_compile_definitions(diffractor_ffmpeg_msvc PRIVATE "$<$<COMPILE_LANGUAGE:C,CXX>:HAVE_AV_CONFIG_H>" "$<$<COMPILE_LANGUAGE:C,CXX>:_FILE_OFFSET_BITS=64>" "$<$<COMPILE_LANGUAGE:C,CXX>:_ISOC99_SOURCE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_LARGEFILE_SOURCE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_SYSCRT>" "$<$<COMPILE_LANGUAGE:C,CXX>:_USE_MATH_DEFINES>" "$<$<COMPILE_LANGUAGE:C,CXX>:inline=__inline>" "$<$<COMPILE_LANGUAGE:C,CXX>:UNICODE>" "$<$<COMPILE_LANGUAGE:C,CXX>:_UNICODE>")
 
 # Assembler include paths and definitions. These are not compiler settings and reach
-# nasm no other way. The object name keeps the source's relative directory because
-# FFmpeg has several same-named .asm files - hevc/sao.asm and vvc/sao.asm among them -
-# and a flat object directory silently lets one overwrite the other.
+# nasm no other way. Grouping is by the source's own directory, because that is what
+# MSBuild supplied per item as %(RootDir)%(Directory) and every %include resolves against.
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/aacencdsp.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/aacpsdsp.asm"
@@ -1803,34 +1818,30 @@ set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/snowdsp.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vc1dsp_inv_trans.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/simple_idct10.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/h26x/h2656_inter.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/h26x/h2656_sao.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/h26x/h2656_sao_10bit.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/h26x/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/h26x/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/add_res.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/deblock.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/dequant.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/idct.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/mc.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/sao.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/sao_10bit.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_mc.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_sao.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_hevc_sao_10bit.asm"
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/hevc/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/alf.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/mc.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_mc.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sad.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/of.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sao.asm"
-        "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/sao_10bit.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_sao.asm"
+        "${CMAKE_BINARY_DIR}/vendored/ffmpeg_msvc-asm/third-party_FFmpeg_libavcodec_x86_vvc_sao_10bit.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/dmvr.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavcodec/x86/vvc/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/cpuid.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/emms.asm"
@@ -1842,14 +1853,12 @@ set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/lls.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/tx_float.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/crc.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libavutil/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswresample/x86/audio_convert.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswresample/x86/rematrix.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswresample/x86/resample.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswresample/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswresample/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/input.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/output.asm"
@@ -1862,8 +1871,7 @@ set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/ops_common.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/ops_float.asm"
         "${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/ops_int.asm"
-        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm"
-        VS_SETTINGS "ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj")
+        PROPERTIES COMPILE_FLAGS "-I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/libswscale/x86/ -I${CMAKE_SOURCE_DIR}/third-party/FFmpeg/ -P${CMAKE_SOURCE_DIR}/third-party/FFmpeg/config-x64.asm")
 
 diffractor_apply_vendored_policy(diffractor_ffmpeg_msvc)
 

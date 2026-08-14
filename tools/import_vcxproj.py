@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import sys
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 MSBUILD_NS = "{http://schemas.microsoft.com/developer/msbuild/2003}"
@@ -315,6 +316,18 @@ def per_file_defines(root, project_dir: Path, config: str) -> dict[str, list[str
     return result
 
 
+def staged_assembly(name: str, srcs: list[str]) -> dict[str, str]:
+    """Assembly sources whose file name is not unique within the library, mapped to a staged copy
+    that is. CMake names a nasm object after the source's file name alone under the Visual Studio
+    generator, so FFmpeg's hevc/sao.asm and vvc/sao.asm overwrite each other's object in silence.
+    The metadata that would fix it, OutputFormat, cannot be set per source on a built item."""
+    asm = [s for s in srcs if s.endswith(".asm")]
+    counts = Counter(Path(a).name for a in asm)
+
+    return {a: f"vendored/{name}-asm/{a.replace('/', '_')}"
+            for a in asm if counts[Path(a).name] > 1}
+
+
 def render(name: str, project: Path, config: str, srcs: list[str], incs: list[str], defs: list[str],
            file_defs: dict[str, list[str]], asm_incs: list[str], asm_defs: list[str],
            asm_pre: list[str], options: list[str]) -> str:
@@ -331,11 +344,28 @@ def render(name: str, project: Path, config: str, srcs: list[str], incs: list[st
         "",
         "include_guard(GLOBAL)",
         "",
-        f"add_library({target} STATIC",
     ]
 
+    staged = staged_assembly(name, srcs)
+
+    def source_expr(path: str) -> str:
+        if path in staged:
+            return f"${{CMAKE_BINARY_DIR}}/{staged[path]}"
+        return f"${{CMAKE_SOURCE_DIR}}/{path}"
+
+    if staged:
+        lines.append("# These assembly sources share a file name with another in this library, and CMake names a")
+        lines.append("# nasm object after the file name alone. Copied under a name that is unique so that no")
+        lines.append("# generator's object directory can let one quietly overwrite the other.")
+        for original, copy in sorted(staged.items()):
+            lines.append(f"configure_file(\"${{CMAKE_SOURCE_DIR}}/{original}\"")
+            lines.append(f"        \"${{CMAKE_BINARY_DIR}}/{copy}\" COPYONLY)")
+        lines.append("")
+
+    lines.append(f"add_library({target} STATIC")
+
     for s in srcs:
-        lines.append(f"        \"${{CMAKE_SOURCE_DIR}}/{s}\"")
+        lines.append(f"        \"{source_expr(s)}\"")
 
     lines.append(")")
     lines.append("")
@@ -366,9 +396,8 @@ def render(name: str, project: Path, config: str, srcs: list[str], incs: list[st
             by_dir.setdefault(str(Path(a).parent.as_posix()), []).append(a)
 
         lines.append("# Assembler include paths and definitions. These are not compiler settings and reach")
-        lines.append("# nasm no other way. The object name keeps the source's relative directory because")
-        lines.append("# FFmpeg has several same-named .asm files - hevc/sao.asm and vvc/sao.asm among them -")
-        lines.append("# and a flat object directory silently lets one overwrite the other.")
+        lines.append("# nasm no other way. Grouping is by the source's own directory, because that is what")
+        lines.append("# MSBuild supplied per item as %(RootDir)%(Directory) and every %include resolves against.")
 
         for directory, files in sorted(by_dir.items()):
             dirs = [directory] + [d for d in asm_incs if d != directory]
@@ -378,9 +407,8 @@ def render(name: str, project: Path, config: str, srcs: list[str], incs: list[st
 
             lines.append("set_source_files_properties(")
             for f in files:
-                lines.append(f"        \"${{CMAKE_SOURCE_DIR}}/{f}\"")
-            lines.append(f"        PROPERTIES COMPILE_FLAGS \"{flags}\"")
-            lines.append("        VS_SETTINGS \"ObjectFileName=$(IntDir)%(RelativeDir)%(FileName).obj\")")
+                lines.append(f"        \"{source_expr(f)}\"")
+            lines.append(f"        PROPERTIES COMPILE_FLAGS \"{flags}\")")
 
         lines.append("")
 
