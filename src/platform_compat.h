@@ -40,6 +40,8 @@
 #include <locale.h>
 #include <malloc.h>
 #include <string>
+#include <tuple>
+#include <type_traits>
 
 // SAL annotations document ownership and locking, and MSVC's analyser acts on them. They have no
 // GCC or Clang equivalent, so they compile away rather than being deleted from the source.
@@ -159,13 +161,52 @@ inline int fopen_s(FILE** stream, const char* filename, const char* mode)
 	return *stream == nullptr ? errno : 0;
 }
 
-// sscanf bounded to the first `count` characters. MSVC's _snscanf_s also takes a buffer size after
-// every %s and %c conversion; no caller here uses either, so none is accepted.
+namespace compat_detail
+{
+	// Every value scanf actually assigns through is a pointer, so a by-value argument in the pack can
+	// only be one of MSVC's buffer sizes. Dropping them is what makes the call match glibc's sscanf.
+	inline std::tuple<> keep_scanf_args() { return {}; }
+
+	template <typename FirstT, typename... RestT>
+	auto keep_scanf_args(FirstT first, RestT... rest)
+	{
+		if constexpr (std::is_pointer_v<FirstT>)
+			return std::tuple_cat(std::tuple<FirstT>(first), keep_scanf_args(rest...));
+		else
+			return keep_scanf_args(rest...);
+	}
+
+	// Those sizes were the only bound on %s and %[, which run until a delimiter. Once they are gone
+	// the format's field width has to supply the bound, so a format without one is refused.
+	inline bool scanf_conversions_bounded(const char* format)
+	{
+		for (auto p = format; *p != 0; ++p)
+		{
+			if (*p != '%') continue;
+
+			++p;
+			if (*p == 0 || *p == '%' || *p == '*') continue;
+
+			const auto digits = p;
+			while (*p >= '0' && *p <= '9') ++p;
+
+			if ((*p == 's' || *p == '[') && p == digits) return false;
+		}
+
+		return true;
+	}
+}
+
+// sscanf bounded to the first `count` characters, accepting MSVC's buffer size after every %s, %c
+// and %[ conversion.
 template <typename... ArgsT>
 int _snscanf_s(const char* buffer, const size_t count, const char* format, ArgsT... args)
 {
+	if (!compat_detail::scanf_conversions_bounded(format)) return EOF;
+
 	const std::string bounded(buffer, ::strnlen(buffer, count));
-	return std::sscanf(bounded.c_str(), format, args...);
+	return std::apply([&](auto... kept) { return std::sscanf(bounded.c_str(), format, kept...); },
+	                  compat_detail::keep_scanf_args(args...));
 }
 
 inline int _vscprintf(const char* format, va_list args)

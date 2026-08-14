@@ -956,7 +956,7 @@ static void should_update_location(const std::string_view name)
 static void should_update_gps_in_exif()
 {
 	const auto save_path = _temps.next_path(".jpg");
-	const auto load_path = test_files_folder.combine_file("IMG_9340.jpg");
+	const auto load_path = test_files_folder.combine_file("IMG_9340.JPG");
 	const auto coordinate = gps_coordinate(40.71417, -74.00611);
 
 	metadata_edits metadata_edits;
@@ -985,7 +985,7 @@ static void should_update_gps_in_exif()
 static void should_handle_international_characters()
 {
 	const auto save_path = _temps.next_path(".jpg");
-	const auto load_path = test_files_folder.combine_file("test.jpg");
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 	constexpr auto description = "In vollen Zügen genießen";
 
 	tag_set tags;
@@ -1028,7 +1028,7 @@ static void should_handle_international_characters()
 static void should_handle_korean_characters()
 {
 	const auto save_path = _temps.next_path(".jpg");
-	const auto load_path = test_files_folder.combine_file("test.jpg");
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 	// "서울에서 찍은 사진" (a photo taken in Seoul)
 	constexpr auto description = "\uC11C\uC6B8\uC5D0\uC11C \uCC0D\uC740 \uC0AC\uC9C4";
 

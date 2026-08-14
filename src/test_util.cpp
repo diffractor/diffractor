@@ -134,13 +134,19 @@ static void should_group_elements_by_folder()
 		bool skip = false;
 	};
 
+	// The subject is grouping, not path spelling, so the literals use the running platform's root.
+	constexpr auto a = df::windows_path_semantics ? "c:\\a" : "/a";
+	constexpr auto b = df::windows_path_semantics ? "c:\\b" : "/b";
+	constexpr auto c = df::windows_path_semantics ? "c:\\c" : "/c";
+	constexpr auto a_upper = df::windows_path_semantics ? "C:\\A" : "/A";
+
 	const std::vector<element> elements{
-		{df::folder_path("c:\\a"), 1},
-		{df::folder_path("c:\\b"), 2},
-		{df::folder_path("c:\\a"), 3},
-		{df::folder_path("c:\\b"), 4, true},
-		{df::folder_path("C:\\A"), 5},
-		{df::folder_path("c:\\c"), 6},
+		{df::folder_path(a), 1},
+		{df::folder_path(b), 2},
+		{df::folder_path(a), 3},
+		{df::folder_path(b), 4, true},
+		{df::folder_path(a_upper), 5},
+		{df::folder_path(c), 6},
 	};
 
 	df::folder_groups groups;
@@ -151,9 +157,9 @@ static void should_group_elements_by_folder()
 	assert_equal(3, static_cast<int>(groups.groups().size()), "one group per distinct folder");
 
 	// Groups are in first-seen order and each keeps its elements in input order.
-	assert_equal("c:\\a", groups.groups()[0].folder.text().str(), "first group");
-	assert_equal("c:\\b", groups.groups()[1].folder.text().str(), "second group");
-	assert_equal("c:\\c", groups.groups()[2].folder.text().str(), "third group");
+	assert_equal(a, groups.groups()[0].folder.text().str(), "first group");
+	assert_equal(b, groups.groups()[1].folder.text().str(), "second group");
+	assert_equal(c, groups.groups()[2].folder.text().str(), "third group");
 
 	const auto ids = [&](const size_t g)
 	{
@@ -173,8 +179,12 @@ static void should_group_elements_by_folder()
 
 	// Enough distinct folders to force the lookup tables to grow and rehash.
 	std::vector<element> many;
-	for (auto i = 0; i < 500; ++i) many.emplace_back(df::folder_path(std::format("c:\\f{}", i)), i);
-	for (auto i = 0; i < 500; ++i) many.emplace_back(df::folder_path(std::format("c:\\f{}", i)), i);
+	const auto numbered = [](const int i)
+	{
+		return df::folder_path(df::windows_path_semantics ? std::format("c:\\f{}", i) : std::format("/f{}", i));
+	};
+	for (auto i = 0; i < 500; ++i) many.emplace_back(numbered(i), i);
+	for (auto i = 0; i < 500; ++i) many.emplace_back(numbered(i), i);
 
 	groups.build(many, [](const element& e) { return e.folder; });
 	assert_equal(500, static_cast<int>(groups.groups().size()), "grown tables keep folders distinct");
@@ -698,7 +708,8 @@ static void should_parse_command_line()
 	assert_equal(false, cl2.no_indexing, "no_indexing");
 
 
-	const auto path3 = test_files_folder.combine_file("test.jpg");
+	// The fixture's own spelling: a case-folded name only resolves on a case-insensitive volume.
+	const auto path3 = test_files_folder.combine_file("Test.jpg");
 	command_line_t cl3;
 	cl3.parse(std::format("{} -no-indexing", path3));
 
@@ -708,10 +719,15 @@ static void should_parse_command_line()
 	assert_equal(false, cl3.no_gpu, "no_gpu");
 	assert_equal(true, cl3.no_indexing, "no_indexing");
 
+	// The subject is that quotes hold a spaced path together as one part, so the folder is made
+	// here rather than borrowed from whatever the platform happens to install.
+	temp_files temps;
+	const auto spaced = temps.next_folder("program files");
+
 	command_line_t cl4;
-	cl4.parse("--no-gpu \"C:\\Program Files\"");
+	cl4.parse(std::format("--no-gpu \"{}\"", spaced));
 	assert_equal(true, cl4.no_gpu, "no_gpu");
-	assert_equal(false, cl4.folder_path.is_empty(), "folder_path program Files");
+	assert_equal(false, cl4.folder_path.is_empty(), "folder_path with a space");
 
 	command_line_t cl5;
 	cl5.parse("----- --no-gpu");

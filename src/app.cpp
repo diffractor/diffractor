@@ -403,7 +403,11 @@ void command_line_t::parse(const std::string_view command_line_text)
 			continue;
 		}
 
-		if ((part[0] == '-' || part[0] == '/') && part.size() > 1)
+		// A leading '/' introduces a switch only where it cannot begin an absolute path. Everywhere
+		// else '/home/zac' would be read as a switch and never reach the path branch below.
+		const auto starts_switch = part[0] == '-' || (df::windows_path_semantics && part[0] == '/');
+
+		if (starts_switch && part.size() > 1)
 		{
 			const auto op = part.substr(part[1] == '-' ? 2 : 1);
 			std::string_view value;

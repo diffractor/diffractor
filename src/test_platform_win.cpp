@@ -253,7 +253,7 @@ static void should_validate_registry_value_types_and_sizes()
 static void should_offer_each_drag_format_once()
 {
 	const auto file1 = test_files_folder.combine_file("Test.jpg");
-	const auto file2 = test_files_folder.combine_file("small.jpg");
+	const auto file2 = test_files_folder.combine_file("Small.jpg");
 
 	assert_equal(true, file1.exists(), "Test.jpg exists");
 	assert_equal(true, file2.exists(), "small.jpg exists");

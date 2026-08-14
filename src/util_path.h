@@ -142,14 +142,22 @@ namespace df
 
 		static bool is_qualified(const std::string_view s)
 		{
-			if (s.size() > 2)
+			if constexpr (!windows_path_semantics)
 			{
-				if (s[1] == 0 || s[2] == 0) return false; // Too short
-				if (is_path_sep(s[0]) && is_path_sep(s[1])) return true; // network
-				if (s[1] == ':' && is_path_sep(s[2])) return true; // drive
+				// There is one root, so a leading separator is the whole of being qualified.
+				return !s.empty() && is_path_sep(s[0]);
 			}
+			else
+			{
+				if (s.size() > 2)
+				{
+					if (s[1] == 0 || s[2] == 0) return false; // Too short
+					if (is_path_sep(s[0]) && is_path_sep(s[1])) return true; // network
+					if (s[1] == ':' && is_path_sep(s[2])) return true; // drive
+				}
 
-			return false;
+				return false;
+			}
 		}
 
 	public:

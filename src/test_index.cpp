@@ -502,7 +502,7 @@ static void should_parse_drive_label_roots(shared_test_context& stc)
 // makes that same thumbnail stale.
 static void should_not_reload_thumb_when_valid()
 {
-	const auto load_path = test_files_folder.combine_file("test.jpg");
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	const df::date_t date(1972, 5, 25);
 	const df::date_t date2(1972, 5, 26);
@@ -532,7 +532,7 @@ static void should_not_reload_thumb_when_valid()
 static void should_reuse_persisted_hover_thumbnail_until_video_changes()
 {
 	const auto index_path = _temps.next_path();
-	const auto image_path = test_files_folder.combine_file("test.jpg");
+	const auto image_path = test_files_folder.combine_file("Test.jpg");
 	const df::file_path video_path(test_files_folder, "hover-preview.mp4");
 	const df::date_t modified(2026, 7, 31);
 
@@ -583,7 +583,7 @@ static void should_reload_thumb_after_scan()
 	build_index(index, db);
 
 	auto path_test = df::file_path(test_files_folder, "Test.jpg");
-	const auto path_sony = df::file_path(test_files_folder, "Sony.jpg");
+	const auto path_sony = df::file_path(test_files_folder, "Sony.JPG");
 
 	const auto test_item = load_item(index, path_test, false);
 	const auto sony_item = load_item(index, path_sony, false);
@@ -829,7 +829,7 @@ static void should_detect_duplicates(shared_test_context& stc)
 	const auto path3 = df::file_path(test_files_folder, "Test180.jpg");
 	const auto path4 = df::file_path(test_files_folder, "Test270.jpg");
 	const auto path5 = df::file_path(test_files_folder, "Small.jpg");
-	const auto path_sony = df::file_path(test_files_folder, "Sony.jpg");
+	const auto path_sony = df::file_path(test_files_folder, "Sony.JPG");
 
 	const auto test_item1 = std::make_shared<df::item_element>(path1, index.find_item(path1));
 	const auto test_item2 = std::make_shared<df::item_element>(path2, index.find_item(path2));

@@ -1472,10 +1472,10 @@ void register_files_tests(view_state& state, test_registry& tests)
 	// Decoder robustness
 	//
 #ifndef _DEBUG
-	tests.add("Should not crash on JPEG"s, [] { should_not_crash("small.jpg"); });
+	tests.add("Should not crash on JPEG"s, [] { should_not_crash("Small.jpg"); });
 	tests.add("Should not crash on GIF"s, [] { should_not_crash("tuesday.gif"); });
-	tests.add("Should not crash on TIFF"s, [] { should_not_crash("small.tif"); });
-	tests.add("Should not crash on PNG"s, [] { should_not_crash("cube.png"); });
+	tests.add("Should not crash on TIFF"s, [] { should_not_crash("Small.tif"); });
+	tests.add("Should not crash on PNG"s, [] { should_not_crash("Cube.png"); });
 	tests.add("Should not crash on WEBP"s, [] { should_not_crash("lake.webp"); });
 #endif
 }

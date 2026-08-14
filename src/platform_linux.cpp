@@ -272,7 +272,7 @@ df::folder_path platform::known_path(const known_folder f)
 	case known_folder::app_cache_data:
 		return df::folder_path(std::format("{}/diffractor", env_or("XDG_CACHE_HOME", home + "/.cache")));
 	case known_folder::test_files_folder:
-		return df::folder_path(home + "/diffractor-test-files");
+		return known_path(known_folder::running_app_folder).combine("test");
 	case known_folder::downloads:
 		return df::folder_path(env_or("XDG_DOWNLOAD_DIR", home + "/Downloads"));
 	case known_folder::pictures:
@@ -565,12 +565,17 @@ bool platform::generate_random_bytes(uint8_t* buffer, const size_t len)
 
 int main(const int argc, const char* const argv[])
 {
-	// /test[:filter] runs the suite headless, matching the Windows command line.
+	// /test[:filter] runs the suite headless. The '-' forms are the Linux spelling; '/test' is
+	// accepted too because it is what the Windows documentation and habits say.
 	for (auto i = 1; i < argc; ++i)
 	{
-		const std::string_view arg(argv[i]);
+		std::string_view arg(argv[i]);
 
-		if (arg == "/test" || arg.starts_with("/test:"))
+		if (arg.starts_with("--")) arg.remove_prefix(2);
+		else if (arg.starts_with('-') || arg.starts_with('/')) arg.remove_prefix(1);
+		else continue;
+
+		if (arg == "test" || arg.starts_with("test:"))
 		{
 			const auto colon = arg.find(':');
 			const auto filter = colon == std::string_view::npos ? "*"sv : arg.substr(colon + 1);
