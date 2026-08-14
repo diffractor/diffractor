@@ -1,47 +1,50 @@
 # This file is part of the Diffractor photo and video organizer
 # Copyright 2026  Zac Walker
 #
-# Purpose: Linux build of Diffractor. This is stage one of the port described in docs/linux.md:
-# it builds the portable core under GCC so that the Windows assumptions still sitting in that
-# code fail loudly on a second toolchain. It is not yet a build of the application -- the source
-# list below grows as each translation unit is made to compile, and is deliberately explicit
-# rather than a glob so that "what already ports" stays readable.
+# Purpose: The build of Diffractor, for every platform. This is becoming the single source of
+# truth: df.sln and the .vcxproj files are being replaced by it, and the Visual Studio projects
+# that remain useful for debugging and profiling are generated from here on demand.
 #
-# The Windows build remains driven by df.sln and the .vcxproj files; this does not replace them.
+# The source list is deliberately explicit rather than a glob, so that what is built is reviewable
+# and a file cannot join the build by being dropped in a folder.
+#
 # Drive this through the gateway rather than by hand:
 #
-#   ./dd setup       install the build tooling and system packages
-#   ./dd build       configure (Ninja) and build
-#   ./dd run         run what has been built
+#   dd setup       install the build tooling and system packages
+#   dd build       configure and build
+#   dd run         run what has been built
 
 cmake_minimum_required(VERSION 3.22)
+
+# Selecting the MSVC runtime by property rather than by editing flag strings needs this policy.
+cmake_policy(SET CMP0091 NEW)
+
 project(diffractor CXX C)
 
-if (WIN32)
-    message(FATAL_ERROR "The Windows build is df.sln; this CMake build targets Linux only.")
-endif ()
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-if (NOT CMAKE_BUILD_TYPE)
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug)
 endif ()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+include(DiffractorCompilerPolicy)
 include(DiffractorDependency)
 
 # Vendored libjpeg-turbo assembles its SIMD with nasm. enable_language() only takes effect at
 # directory scope, and the vendored modules are included from inside a function, so it happens here.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     enable_language(ASM_NASM)
-    set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
+
+    if (WIN32)
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT win64)
+    else ()
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
+    endif ()
 endif ()
 
 find_program(CCACHE_PROGRAM ccache)
-if (CCACHE_PROGRAM)
+if (CCACHE_PROGRAM AND NOT MSVC)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif ()
 
@@ -163,8 +166,37 @@ else ()
     list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/platform_linux_xmp_stubs.cpp)
 endif ()
 
+# Tools rather than tests: neither has a library dependency, so neither is conditional.
+list(APPEND DIFFRACTOR_PORTABLE_SOURCES
+        src/app_gen_docs.cpp
+        src/app_validate_po.cpp
+)
+
+# Codec and utility translation units, each gated on the library it needs. Where the library is
+# absent, platform_linux_stubs.cpp supplies the same symbols -- so when one of these libraries is
+# first resolved on Linux, the matching block must come out of that file or the two will collide.
+if (TARGET diffractor::heif)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/files_heif.cpp)
+endif ()
+
+if (TARGET diffractor::jxl)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/files_jxl.cpp)
+endif ()
+
+if (TARGET diffractor::raw)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/files_raw.cpp)
+endif ()
+
+if (TARGET diffractor::hunspell)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/util_spell.cpp)
+endif ()
+
+if (TARGET diffractor::minizip)
+    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/util_zip.cpp)
+endif ()
+
 # The suite itself. run_console_tests builds a view_state and registers every subject file, so this
-# is all or nothing; test_platform_win.cpp is Windows-only by subject.
+# is all or nothing.
 set(DIFFRACTOR_TEST_SOURCES
         src/test_app.cpp
         src/test_av.cpp
@@ -182,15 +214,37 @@ set(DIFFRACTOR_TEST_SOURCES
         src/test_view.cpp
 )
 
+if (WIN32)
+    list(APPEND DIFFRACTOR_TEST_SOURCES src/test_platform_win.cpp)
+
+    set(DIFFRACTOR_PLATFORM_SOURCES
+            src/platform_win.cpp
+            src/platform_win_d3d11.cpp
+            src/platform_win_files.cpp
+            src/platform_win_font.cpp
+            src/platform_win_settings.cpp
+            src/platform_win_software.cpp
+            src/platform_win_sound.cpp
+            src/platform_win_ui.cpp
+            src/platform_win_web.cpp
+            src/platform_win_wic.cpp
+            src/platform_win_res.rc
+    )
+else ()
+    set(DIFFRACTOR_PLATFORM_SOURCES
+            src/platform_linux.cpp
+            src/platform_linux_desktop.cpp
+            src/platform_linux_files.cpp
+            src/platform_linux_settings.cpp
+            src/platform_linux_stubs.cpp
+            src/platform_linux_ui.cpp
+    )
+endif ()
+
 add_executable(diffractor
         ${DIFFRACTOR_PORTABLE_SOURCES}
         ${DIFFRACTOR_TEST_SOURCES}
-        src/platform_linux.cpp
-        src/platform_linux_desktop.cpp
-        src/platform_linux_files.cpp
-        src/platform_linux_settings.cpp
-        src/platform_linux_stubs.cpp
-        src/platform_linux_ui.cpp
+        ${DIFFRACTOR_PLATFORM_SOURCES}
 )
 
 target_include_directories(diffractor PRIVATE
@@ -199,28 +253,19 @@ target_include_directories(diffractor PRIVATE
         ${DIFFRACTOR_COMPAT_INCLUDE}
 )
 
-# Include/ is an MSVC shim supplying POSIX headers Windows lacks. On Linux its unistd.h shadows
-# the real one and pulls in io.h, so it must never reach the include path.
+# Include/ is an MSVC shim supplying POSIX headers Windows lacks. It belongs on the include path
+# there and nowhere else: on Linux its unistd.h shadows the real one and pulls in io.h.
+if (WIN32)
+    target_include_directories(diffractor PRIVATE Include)
+endif ()
 
-# No target_precompile_headers: every translation unit includes pch.h itself, and CMake's forced
-# include reaches the same file by a different path, which defeats #pragma once on this filesystem
-# and reports every declaration in it as a redefinition.
-
-foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif ffmpeg xmp)
+foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif ffmpeg xmp heif jxl raw hunspell minizip)
     if (TARGET diffractor::${dep})
         target_link_libraries(diffractor PRIVATE diffractor::${dep})
     endif ()
 endforeach ()
 
-target_compile_options(diffractor PRIVATE
-        -Wall
-        -Wno-unknown-pragmas
-        -Wno-multichar
-        # GCC 13 makes this an error by default. Accessors such as ui::surface::orientation() share
-        # a name with a type in the enclosing namespace, which is ill-formed by the letter of the
-        # standard and accepted by every compiler; renaming them buys nothing.
-        -Wno-changes-meaning
-)
+diffractor_apply_app_policy(diffractor)
 
 find_package(Threads REQUIRED)
 target_link_libraries(diffractor PRIVATE Threads::Threads)
