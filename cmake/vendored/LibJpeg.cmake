@@ -10,24 +10,32 @@
 # actually compiles.
 #
 # third-party/ is only ever read. The sources are staged into the build tree because
-# src/jconfig.h is hand-written for MSVC and is reached by a quoted include from jpeglib.h, so it
-# cannot be overridden with -I.
+# src/jconfig.h and src/jconfigint.h are hand-written for MSVC and are reached by a quoted include
+# from jpeglib.h, so they cannot be overridden with -I. On Windows the checked-in pair is the right
+# one and is staged with everything else; elsewhere it is replaced.
 
 include_guard(GLOBAL)
 
 set(_jpeg_upstream "${CMAKE_SOURCE_DIR}/third-party/LibJpeg")
 set(_jpeg_stage "${CMAKE_BINARY_DIR}/vendored/LibJpeg")
 
-file(COPY "${_jpeg_upstream}/src" "${_jpeg_upstream}/simd"
-        DESTINATION "${_jpeg_stage}"
-        PATTERN "jconfig.h" EXCLUDE
-        PATTERN "jconfigint.h" EXCLUDE
-        PATTERN "intermediate" EXCLUDE
-)
+if (MSVC)
+    file(COPY "${_jpeg_upstream}/src" "${_jpeg_upstream}/simd"
+            DESTINATION "${_jpeg_stage}"
+            PATTERN "intermediate" EXCLUDE
+    )
+else ()
+    file(COPY "${_jpeg_upstream}/src" "${_jpeg_upstream}/simd"
+            DESTINATION "${_jpeg_stage}"
+            PATTERN "jconfig.h" EXCLUDE
+            PATTERN "jconfigint.h" EXCLUDE
+            PATTERN "intermediate" EXCLUDE
+    )
 
-file(COPY "${CMAKE_SOURCE_DIR}/cmake/vendored/libjpeg-linux/jconfig.h"
-        "${CMAKE_SOURCE_DIR}/cmake/vendored/libjpeg-linux/jconfigint.h"
-        DESTINATION "${_jpeg_stage}/src")
+    file(COPY "${CMAKE_SOURCE_DIR}/cmake/vendored/libjpeg-linux/jconfig.h"
+            "${CMAKE_SOURCE_DIR}/cmake/vendored/libjpeg-linux/jconfigint.h"
+            DESTINATION "${_jpeg_stage}/src")
+endif ()
 
 set(_jpeg_src "${_jpeg_stage}/src")
 
@@ -78,10 +86,22 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     list(FILTER _jpeg_asm EXCLUDE REGEX "ext-(avx2|sse2)\\.asm$")
     set(_jpeg_simd_sources ${_jpeg_asm} "${_jpeg_stage}/simd/jsimd.c")
 
-    # -DPIC selects the i386 GOT paths in jsimdext.inc; x86-64 is position independent anyway.
+    # ELF and WIN64 select the object format's symbol decoration in jsimdext.inc. -DPIC is not
+    # wanted either way: it selects the i386 GOT paths, and x86-64 is position independent anyway.
+    #
+    # WIN32 is undefined rather than merely not passed. jsimdext.inc tests it before WIN64, so a
+    # WIN32 arriving from the directory's definitions decorates every SIMD symbol with a leading
+    # underscore and nothing resolves; the Visual Studio generator does not honour a
+    # COMPILE_LANGUAGE guard on a definition, so it cannot be kept away from nasm at the source.
+    if (WIN32)
+        set(_jpeg_asm_abi "-DWIN64 -UWIN32")
+    else ()
+        set(_jpeg_asm_abi "-DELF")
+    endif ()
+
     set_source_files_properties(${_jpeg_asm} PROPERTIES
             COMPILE_FLAGS
-            "-D__x86_64__ -DELF -I${_jpeg_stage}/simd/nasm/ -I${_jpeg_stage}/simd/x86_64/")
+            "-D__x86_64__ ${_jpeg_asm_abi} -I${_jpeg_stage}/simd/nasm/ -I${_jpeg_stage}/simd/x86_64/")
 endif ()
 
 add_library(diffractor_jpeg STATIC

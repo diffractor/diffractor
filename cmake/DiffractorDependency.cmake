@@ -24,12 +24,15 @@ set(DIFFRACTOR_RESOLVED_MISSING "" CACHE INTERNAL "")
 #     VENDORED_MODULE <module>       owned cmake/ module that defines diffractor::<name>
 #     VENDORED_DIR    <dir>          in-tree copy, relative to the project root
 #     [FORK]                         never resolvable from the system
+#     [MSVC_ONLY]                    the vendored module is an import of a .vcxproj and carries
+#                                    that project's Windows configuration, so it is not offered
+#                                    to another toolchain until it has been made to build there
 #     [OPTIONAL]                     absence is reported, not fatal
 # )
 #
 # Defines the imported target diffractor::<name> when the dependency resolves.
 function(diffractor_dependency NAME)
-    cmake_parse_arguments(DEP "FORK;OPTIONAL" "VENDORED_DIR;VENDORED_MODULE" "PKG_CONFIG" ${ARGN})
+    cmake_parse_arguments(DEP "FORK;OPTIONAL;MSVC_ONLY" "VENDORED_DIR;VENDORED_MODULE" "PKG_CONFIG" ${ARGN})
 
     string(TOUPPER "${NAME}" UPPER)
     set(TARGET_NAME "diffractor::${NAME}")
@@ -58,7 +61,7 @@ function(diffractor_dependency NAME)
 
     # An owned module knows how to build the vendored copy -- usually by driving that library's own
     # build system rather than restating it.
-    if (DEP_VENDORED_MODULE)
+    if (DEP_VENDORED_MODULE AND NOT (DEP_MSVC_ONLY AND NOT MSVC))
         include(${DEP_VENDORED_MODULE})
 
         if (TARGET ${TARGET_NAME})
@@ -68,9 +71,11 @@ function(diffractor_dependency NAME)
         endif ()
     endif ()
 
-    # The vendored copies still have only hand-written .vcxproj files, so there is nothing here to
-    # add_subdirectory yet. Reporting that plainly is better than a confusing find failure.
-    if (DEP_VENDORED_DIR AND EXISTS "${CMAKE_SOURCE_DIR}/${DEP_VENDORED_DIR}/CMakeLists.txt")
+    # Upstream's own CMakeLists, where the vendored copy still has one. Skipped for the same reason
+    # as the imported module: an upstream build that has never been run here is a claim, not a fact,
+    # and libheif's fails to configure outright.
+    if (DEP_VENDORED_DIR AND NOT (DEP_MSVC_ONLY AND NOT MSVC)
+            AND EXISTS "${CMAKE_SOURCE_DIR}/${DEP_VENDORED_DIR}/CMakeLists.txt")
         add_subdirectory("${DEP_VENDORED_DIR}" "${CMAKE_BINARY_DIR}/third-party/${NAME}")
         set(DIFFRACTOR_RESOLVED_VENDORED
                 "${DIFFRACTOR_RESOLVED_VENDORED};${NAME}" CACHE INTERNAL "")

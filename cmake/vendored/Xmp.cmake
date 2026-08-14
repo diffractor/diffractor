@@ -124,11 +124,14 @@ set(_xmp_sources
         source/XMP_LibUtils.cpp
         source/XMP_ProgressTracker.cpp
         third-party/zuid/interfaces/MD5.cpp
-
-        # The two the vcxproj takes from Windows.
-        source/Host_IO-POSIX.cpp
-        XMPFiles/source/PluginHandler/OS_Utils_Linux.cpp
 )
+
+# The two the vcxproj takes from Windows, chosen here by the platform being built for.
+if (WIN32)
+    list(APPEND _xmp_sources source/Host_IO-Win.cpp XMPFiles/source/PluginHandler/OS_Utils_WIN.cpp)
+else ()
+    list(APPEND _xmp_sources source/Host_IO-POSIX.cpp XMPFiles/source/PluginHandler/OS_Utils_Linux.cpp)
+endif ()
 
 list(TRANSFORM _xmp_sources PREPEND "${_xmp_root}/")
 
@@ -138,12 +141,21 @@ target_include_directories(diffractor_xmp
         PUBLIC "${_xmp_root}/public/include" "${_xmp_root}"
         PRIVATE "${_xmp_root}/XMPFilesPlugins/api/source")
 
-# UNIX_ENV replaces the vcxproj's WIN_ENV; the rest is the same configuration Windows builds.
-# XMP_StaticBuild matters to callers too, so it is PUBLIC: metadata_xmp.cpp includes
-# XMP.incl_cpp and has to agree about linkage.
+# The environment macro the toolkit rejects more than one of. XMP_StaticBuild matters to callers
+# too, so it is PUBLIC: metadata_xmp.cpp includes XMP.incl_cpp and has to agree about linkage.
+if (WIN32)
+    # CharacterSet Unicode in the vcxproj. Host_IO-Win.cpp calls FindNextFile with a
+    # WIN32_FIND_DATAW, which only resolves when the wide entry points are selected.
+    set(_xmp_env WIN_ENV=1)
+    set(_xmp_platform UNICODE _UNICODE)
+else ()
+    set(_xmp_env UNIX_ENV=1)
+    set(_xmp_platform "")
+endif ()
+
 target_compile_definitions(diffractor_xmp
-        PUBLIC XMP_StaticBuild=1 UNIX_ENV=1
-        PRIVATE EnablePluginManager=0 HAVE_EXPAT_CONFIG_H=1 XML_STATIC=1)
+        PUBLIC XMP_StaticBuild=1 ${_xmp_env}
+        PRIVATE EnablePluginManager=0 HAVE_EXPAT_CONFIG_H=1 XML_STATIC=1 ${_xmp_platform})
 
 # The SDK reaches for expat directly. It is a system package here, and its config header is not
 # the one the SDK bundles, so XML_STATIC is stated above rather than taken from expat_config.h.
@@ -151,12 +163,19 @@ if (TARGET diffractor::expat)
     target_link_libraries(diffractor_xmp PRIVATE diffractor::expat)
 endif ()
 
+# UCF_Handler.cpp inflates the zip container a UCF file is.
+if (TARGET diffractor::zlib)
+    target_link_libraries(diffractor_xmp PRIVATE diffractor::zlib)
+endif ()
+
 set_target_properties(diffractor_xmp PROPERTIES POSITION_INDEPENDENT_CODE ON CXX_STANDARD 17)
 
-# One Diffractor patch in MP3_Handler.cpp reconciles the ID3 POPM rating using _itoa_s. That is a
-# secure-CRT name, and platform_compat.h is where this repository already supplies those, so it is
-# forced in rather than the fork being edited.
-target_compile_options(diffractor_xmp PRIVATE -include "${CMAKE_SOURCE_DIR}/src/platform_compat.h")
+# One Diffractor patch in MP3_Handler.cpp reconciles the ID3 POPM rating using _itoa_s. MSVC has
+# that name natively; everywhere else platform_compat.h is where this repository supplies it, and it
+# is forced in rather than the fork being edited.
+if (NOT MSVC)
+    target_compile_options(diffractor_xmp PRIVATE -include "${CMAKE_SOURCE_DIR}/src/platform_compat.h")
+endif ()
 
 # Upstream is not warning-clean under -Wall and it is not ours to fix.
 target_compile_options(diffractor_xmp PRIVATE -w)

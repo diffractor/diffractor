@@ -17,6 +17,21 @@ if (NOT EXISTS "${_ff_src}/configure")
     return()
 endif ()
 
+# On Windows the fork is not configured at all: config-x64.h and config.asm are checked in for
+# exactly this, because FFmpeg's configure needs a shell. The source list therefore comes from
+# ffmpeg.vcxproj, the same way the other vendored libraries do.
+if (MSVC)
+    include(vendored/ffmpeg_msvc OPTIONAL RESULT_VARIABLE _ff_msvc)
+
+    if (TARGET diffractor_ffmpeg_msvc)
+        add_library(diffractor::ffmpeg ALIAS diffractor_ffmpeg_msvc)
+    else ()
+        message(STATUS "ffmpeg: no MSVC module yet; run tools/import_vcxproj.py")
+    endif ()
+
+    return()
+endif ()
+
 # The fork checks in config.h for the MSVC build, and FFmpeg refuses to configure out of tree while
 # that file sits in the source directory. Staging a copy is what makes the build possible at all,
 # and it keeps the checkout free of build output as a side effect.

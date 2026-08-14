@@ -21,23 +21,26 @@ if (MSVC)
     # would change what the shipped binary depends on without changing anything a test observes.
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-    add_compile_definitions(WIN32 _WINDOWS)
+    # Guarded by language like the switches below. nasm sees these too otherwise, and libjpeg's
+    # jsimdext.inc reads WIN32 as "this is a 32-bit build" and decorates every SIMD symbol with a
+    # leading underscore that nothing then resolves.
+    add_compile_definitions($<$<COMPILE_LANGUAGE:C,CXX>:WIN32> $<$<COMPILE_LANGUAGE:C,CXX>:_WINDOWS>)
 
+    # Guarded by language throughout: these are cl.exe switches, and nasm assembles some of the
+    # vendored SIMD. An assembler handed /bigobj does not warn, it fails.
     add_compile_options(
-            /bigobj         # AdditionalOptions
-            /utf-8          # AdditionalOptions - source and execution charset, not a warning switch
-            /FS             # AdditionalOptions - required for /MP to share one PDB writer
-            /W3             # WarningLevel Level3
-            /GF             # StringPooling
-            /Gy             # FunctionLevelLinking
-            /Oi             # IntrinsicFunctions
-            /GS             # BufferSecurityCheck, on in both configurations
-            /sdl            # SDLCheck
-            /MP             # MultiProcessorCompilation
-            /Zi             # DebugInformationFormat ProgramDatabase, in Release too
-            /EHsc           # ExceptionHandling Sync
-            /GR             # RuntimeTypeInfo
-            /fp:fast        # FloatingPointModel Fast - changes results, not just speed
+            $<$<COMPILE_LANGUAGE:C,CXX>:/bigobj>     # AdditionalOptions
+            $<$<COMPILE_LANGUAGE:C,CXX>:/utf-8>      # source and execution charset, not a warning switch
+            $<$<COMPILE_LANGUAGE:C,CXX>:/FS>         # required for /MP to share one PDB writer
+            $<$<COMPILE_LANGUAGE:C,CXX>:/GF>         # StringPooling
+            $<$<COMPILE_LANGUAGE:C,CXX>:/Gy>         # FunctionLevelLinking
+            $<$<COMPILE_LANGUAGE:C,CXX>:/Oi>         # IntrinsicFunctions
+            $<$<COMPILE_LANGUAGE:C,CXX>:/GS>         # BufferSecurityCheck, on in both configurations
+            $<$<COMPILE_LANGUAGE:C,CXX>:/MP>         # MultiProcessorCompilation
+            $<$<COMPILE_LANGUAGE:C,CXX>:/Zi>         # DebugInformationFormat, in Release too
+            $<$<COMPILE_LANGUAGE:CXX>:/EHsc>         # ExceptionHandling Sync
+            $<$<COMPILE_LANGUAGE:CXX>:/GR>           # RuntimeTypeInfo
+            $<$<COMPILE_LANGUAGE:C,CXX>:/fp:fast>    # changes results, not just speed
     )
 
     # EnableEnhancedInstructionSet StreamingSIMDExtensions2. SSE2 is unconditional on x64, where
@@ -74,14 +77,24 @@ else ()
             -Wno-multichar
             # GCC 13 makes this an error by default. Accessors such as ui::surface::orientation()
             # share a name with a type in the enclosing namespace, which is ill-formed by the letter
-            # of the standard and accepted by every compiler; renaming them buys nothing.
-            -Wno-changes-meaning
+            # of the standard and accepted by every compiler; renaming them buys nothing. C++ only:
+            # the C compiler rejects the option rather than ignoring it.
+            $<$<COMPILE_LANGUAGE:CXX>:-Wno-changes-meaning>
     )
 endif ()
 
 # Diffractor's own code. Warnings are on, and the precompiled header is applied where it works.
 function(diffractor_apply_app_policy target)
     if (MSVC)
+        # WarningLevel Level3 and SDLCheck. Both judge source we own and can fix, so neither is
+        # applied globally: /sdl promotes the deprecated-CRT warning to an error, which no vendored
+        # C library written before those functions were deprecated would survive.
+        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W3> $<$<COMPILE_LANGUAGE:C,CXX>:/sdl>)
+
+        # CharacterSet Unicode. This is what makes RegCreateKeyEx and its like resolve to the wide
+        # entry points the code passes wchar_t strings to.
+        target_compile_definitions(${target} PRIVATE UNICODE _UNICODE)
+
         # PrecompiledHeader Use, pch.h. Not applied elsewhere: CMake's forced include reaches the
         # same header by a different path, which defeats #pragma once on a case-preserving
         # case-insensitive filesystem and reports every declaration in it as a redefinition.
@@ -89,13 +102,22 @@ function(diffractor_apply_app_policy target)
 
         # SubSystem Windows.
         set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE ON)
+
+        # GenerateManifest false. platform_win_res.rc embeds platform_win.manifest itself, and a
+        # linker-generated one collides with it rather than being ignored.
+        target_link_options(${target} PRIVATE /MANIFEST:NO)
     endif ()
 endfunction()
 
 # Vendored code. It is not ours to make warning-clean, and the noise would bury our own.
 function(diffractor_apply_vendored_policy target)
     if (MSVC)
-        target_compile_options(${target} PRIVATE /W0)
+        # These libraries are C of an age that predates the secure CRT, and the .vcxproj files all
+        # said so themselves.
+        target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:/W0>)
+        target_compile_definitions(${target} PRIVATE
+                $<$<COMPILE_LANGUAGE:C,CXX>:_CRT_SECURE_NO_WARNINGS>
+                $<$<COMPILE_LANGUAGE:C,CXX>:_CRT_NONSTDC_NO_WARNINGS>)
     else ()
         # Must not reach an assembler: there -w expects an argument and would swallow the next
         # define. See cmake/vendored/LibJpeg.cmake.

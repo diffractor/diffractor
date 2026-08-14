@@ -31,9 +31,16 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(DiffractorCompilerPolicy)
 include(DiffractorDependency)
 
-# Vendored libjpeg-turbo assembles its SIMD with nasm. enable_language() only takes effect at
-# directory scope, and the vendored modules are included from inside a function, so it happens here.
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+# Vendored libjpeg-turbo and dav1d assemble their SIMD with nasm. enable_language() only takes
+# effect at directory scope, and the vendored modules are included from inside a function, so it
+# happens here. Windows carries its own copy in tools/, which is what the .vcxproj files used.
+find_program(NASM_EXECUTABLE
+        NAMES nasm
+        HINTS "${CMAKE_SOURCE_DIR}/tools"
+        DOC "The nasm assembler")
+
+if (NASM_EXECUTABLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set(CMAKE_ASM_NASM_COMPILER "${NASM_EXECUTABLE}")
     enable_language(ASM_NASM)
 
     if (WIN32)
@@ -41,6 +48,8 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     else ()
         set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
     endif ()
+else ()
+    message(STATUS "nasm not found: the libraries that assemble their SIMD will not build")
 endif ()
 
 find_program(CCACHE_PROGRAM ccache)
@@ -57,8 +66,11 @@ endif ()
 # package is reported rather than fatal.
 # ---------------------------------------------------------------------------------------------
 
-diffractor_dependency(zlib PKG_CONFIG zlib VENDORED_DIR third-party/ZLib OPTIONAL)
-diffractor_dependency(png PKG_CONFIG libpng16 VENDORED_DIR third-party/libpng OPTIONAL)
+# Every module below marked MSVC_ONLY was imported from a .vcxproj and carries that project's
+# Windows configuration. Linux resolves what it can from system packages and stubs the rest, and
+# each import earns its way onto another toolchain by being made to build there.
+diffractor_dependency(zlib PKG_CONFIG zlib VENDORED_MODULE vendored/zlib MSVC_ONLY VENDORED_DIR third-party/ZLib OPTIONAL)
+diffractor_dependency(png PKG_CONFIG libpng16 VENDORED_MODULE vendored/png MSVC_ONLY VENDORED_DIR third-party/libpng OPTIONAL)
 
 # The system libjpeg-turbo is too old to be a substitute: files_jpeg.cpp uses the 12- and 16-bit
 # APIs added in 3.0, and Ubuntu 24.04 ships 2.1.5. Declared before the call so the option below
@@ -66,12 +78,33 @@ diffractor_dependency(png PKG_CONFIG libpng16 VENDORED_DIR third-party/libpng OP
 option(DIFFRACTOR_SYSTEM_JPEG "Use the system jpeg rather than the vendored copy" OFF)
 diffractor_dependency(jpeg PKG_CONFIG libjpeg VENDORED_MODULE vendored/LibJpeg OPTIONAL)
 
-diffractor_dependency(sqlite PKG_CONFIG sqlite3 VENDORED_DIR third-party/sqlite OPTIONAL)
-diffractor_dependency(expat PKG_CONFIG expat VENDORED_DIR third-party/expat OPTIONAL)
+diffractor_dependency(sqlite PKG_CONFIG sqlite3 VENDORED_MODULE vendored/sqlite MSVC_ONLY VENDORED_DIR third-party/sqlite OPTIONAL)
+diffractor_dependency(expat PKG_CONFIG expat VENDORED_MODULE vendored/expat MSVC_ONLY VENDORED_DIR third-party/expat OPTIONAL)
 # webp splits the muxer and demuxer into their own pkg-config modules; files_webp.cpp uses all three.
-diffractor_dependency(webp PKG_CONFIG libwebp libwebpmux libwebpdemux VENDORED_DIR third-party/webp OPTIONAL)
-diffractor_dependency(archive PKG_CONFIG libarchive VENDORED_DIR third-party/libarchive OPTIONAL)
-diffractor_dependency(exif PKG_CONFIG libexif VENDORED_DIR third-party/libexif OPTIONAL)
+diffractor_dependency(webp PKG_CONFIG libwebp libwebpmux libwebpdemux VENDORED_MODULE vendored/webp MSVC_ONLY VENDORED_DIR third-party/webp OPTIONAL)
+diffractor_dependency(archive PKG_CONFIG libarchive VENDORED_MODULE vendored/archive MSVC_ONLY VENDORED_DIR third-party/libarchive OPTIONAL)
+diffractor_dependency(exif PKG_CONFIG libexif VENDORED_MODULE vendored/exif MSVC_ONLY VENDORED_DIR third-party/libexif OPTIONAL)
+
+# Compression and support libraries. Nothing in src/ includes these directly: they are here because
+# the codecs above and below link them.
+diffractor_dependency(bzip2 VENDORED_MODULE vendored/bzip2 MSVC_ONLY VENDORED_DIR third-party/bzip2 OPTIONAL)
+diffractor_dependency(lzma VENDORED_MODULE vendored/lzma MSVC_ONLY VENDORED_DIR third-party/liblzma OPTIONAL)
+diffractor_dependency(brotli VENDORED_MODULE vendored/brotli MSVC_ONLY VENDORED_DIR third-party/brotli OPTIONAL)
+diffractor_dependency(highway VENDORED_MODULE vendored/highway MSVC_ONLY VENDORED_DIR third-party/highway OPTIONAL)
+diffractor_dependency(skcms VENDORED_MODULE vendored/skcms MSVC_ONLY VENDORED_DIR third-party/skcms OPTIONAL)
+diffractor_dependency(de265 VENDORED_MODULE vendored/de265 MSVC_ONLY VENDORED_DIR third-party/libde265 OPTIONAL)
+diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d MSVC_ONLY VENDORED_DIR third-party/dav1d OPTIONAL)
+diffractor_dependency(dng VENDORED_MODULE vendored/dng MSVC_ONLY VENDORED_DIR third-party/dng OPTIONAL)
+diffractor_dependency(ebml VENDORED_MODULE vendored/ebml MSVC_ONLY VENDORED_DIR third-party/libebml OPTIONAL)
+diffractor_dependency(matroska VENDORED_MODULE vendored/matroska MSVC_ONLY VENDORED_DIR third-party/libmatroska OPTIONAL)
+diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt MSVC_ONLY VENDORED_DIR third-party/libopenmpt OPTIONAL)
+
+# Codecs and utilities that gate a translation unit of their own.
+diffractor_dependency(heif VENDORED_MODULE vendored/heif MSVC_ONLY VENDORED_DIR third-party/libheif OPTIONAL)
+diffractor_dependency(jxl VENDORED_MODULE vendored/jxl MSVC_ONLY VENDORED_DIR third-party/libjx OPTIONAL)
+diffractor_dependency(raw VENDORED_MODULE vendored/raw MSVC_ONLY VENDORED_DIR third-party/LibRaw OPTIONAL)
+diffractor_dependency(hunspell VENDORED_MODULE vendored/hunspell MSVC_ONLY VENDORED_DIR third-party/hunspell OPTIONAL)
+diffractor_dependency(minizip VENDORED_MODULE vendored/minizip MSVC_ONLY VENDORED_DIR third-party/minizip OPTIONAL)
 
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard.
@@ -82,9 +115,9 @@ diffractor_report_dependencies()
 
 # files_core.cpp includes libarchive by the shape of the vendored tree
 # ("libarchive/libarchive/archive.h"), which the system package does not provide. Forwarding
-# headers cost nothing and avoid changing the source, which would also mean changing the include
-# path in app.vcxproj on Windows.
-if (TARGET diffractor::archive)
+# headers cost nothing and avoid changing the source. Not needed where the vendored tree itself is
+# on the include path, which is what Windows does.
+if (TARGET diffractor::archive AND NOT WIN32)
     set(DIFFRACTOR_COMPAT_INCLUDE "${CMAKE_BINARY_DIR}/compat")
     file(WRITE "${DIFFRACTOR_COMPAT_INCLUDE}/libarchive/libarchive/archive.h" "#include <archive.h>\n")
     file(WRITE "${DIFFRACTOR_COMPAT_INCLUDE}/libarchive/libarchive/archive_entry.h" "#include <archive_entry.h>\n")
@@ -255,11 +288,99 @@ target_include_directories(diffractor PRIVATE
 
 # Include/ is an MSVC shim supplying POSIX headers Windows lacks. It belongs on the include path
 # there and nowhere else: on Linux its unistd.h shadows the real one and pulls in io.h.
+#
+# The rest are the vendored roots app.vcxproj listed. Several headers are reached by their position
+# in the tree rather than through a library target, libarchive/libarchive/archive.h among them.
 if (WIN32)
-    target_include_directories(diffractor PRIVATE Include)
+    target_include_directories(diffractor PRIVATE
+            Include
+            third-party
+            third-party/webp/src
+            third-party/LibJpeg/src
+            third-party/libheif/api
+            third-party/hunspell
+            third-party/libpng
+            third-party/sqlite
+            third-party/dng
+            third-party/libexif
+            third-party/bzip2
+            third-party/zlib
+            third-party/xmp/public/include
+            third-party/libraw
+            third-party/FFmpeg
+    )
 endif ()
 
-foreach (dep IN ITEMS zlib png jpeg sqlite expat webp archive exif ffmpeg xmp heif jxl raw hunspell minizip)
+# The resource script embeds the Direct3D shaders as binary resources, so they have to be compiled
+# before it is. app.vcxproj expressed this as FxCompile items writing .cso into $(IntDir), which the
+# resource compiler then had on its include path.
+if (WIN32)
+    # The SDK installs one fxc per version, and none of them is on the path.
+    file(GLOB _fxc_candidates
+            "$ENV{ProgramFiles\(x86\)}/Windows Kits/10/bin/*/x64/fxc.exe"
+            "$ENV{ProgramFiles}/Windows Kits/10/bin/*/x64/fxc.exe")
+
+    set(_fxc_dirs "")
+    foreach (_candidate IN LISTS _fxc_candidates)
+        get_filename_component(_dir "${_candidate}" DIRECTORY)
+        list(APPEND _fxc_dirs "${_dir}")
+    endforeach ()
+
+    list(SORT _fxc_dirs)
+    list(REVERSE _fxc_dirs)
+
+    find_program(FXC_EXECUTABLE NAMES fxc HINTS ${_fxc_dirs} DOC "The Direct3D shader compiler")
+
+    if (NOT FXC_EXECUTABLE)
+        message(FATAL_ERROR "fxc was not found; the shaders the resource script embeds cannot be built")
+    endif ()
+
+    set(_shader_dir "${CMAKE_BINARY_DIR}/shaders")
+    file(MAKE_DIRECTORY "${_shader_dir}")
+
+    # ShaderModel 4.0 throughout; vs.hlsl is the only vertex shader.
+    set(_pixel_shaders circle_ps font_ps rgb_bicubic_ps rgb_ps solid_ps yuv_bicubic_ps yuv_ps)
+    set(_vertex_shaders vs)
+    set(_shader_outputs "")
+
+    foreach (_shader IN LISTS _pixel_shaders _vertex_shaders)
+        if (_shader IN_LIST _vertex_shaders)
+            set(_profile vs_4_0)
+        else ()
+            set(_profile ps_4_0)
+        endif ()
+
+        set(_out "${_shader_dir}/${_shader}.cso")
+
+        add_custom_command(
+                OUTPUT "${_out}"
+                COMMAND "${FXC_EXECUTABLE}" /nologo /T ${_profile} /E main
+                /Fo "${_out}" "${CMAKE_SOURCE_DIR}/src/shaders/${_shader}.hlsl"
+                MAIN_DEPENDENCY "${CMAKE_SOURCE_DIR}/src/shaders/${_shader}.hlsl"
+                DEPENDS "${CMAKE_SOURCE_DIR}/src/shaders/common.hlsli"
+                COMMENT "Compiling ${_shader}.hlsl (${_profile})"
+                VERBATIM)
+
+        list(APPEND _shader_outputs "${_out}")
+    endforeach ()
+
+    add_custom_target(diffractor_shaders DEPENDS ${_shader_outputs})
+    add_dependencies(diffractor diffractor_shaders)
+
+    # The script names them without a path, so the directory holding them is what makes them found.
+    target_include_directories(diffractor PRIVATE "${_shader_dir}")
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/src/platform_win_res.rc"
+            PROPERTIES OBJECT_DEPENDS "${_shader_outputs}")
+endif ()
+
+# Every resolved dependency is named here rather than relying on one library to pull in another.
+# These are static archives, and the support libraries have no translation unit of their own that
+# would otherwise put them on the line.
+foreach (dep IN ITEMS
+        zlib png jpeg sqlite expat webp archive exif ffmpeg xmp
+        heif jxl raw hunspell minizip
+        de265 dav1d dng ebml matroska openmpt
+        bzip2 lzma brotli highway skcms)
     if (TARGET diffractor::${dep})
         target_link_libraries(diffractor PRIVATE diffractor::${dep})
     endif ()
