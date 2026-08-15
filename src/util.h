@@ -12,7 +12,12 @@
 
 #pragma once
 
+// SSE2 and SSE4.2 are properties of the processor, not of the compiler. GCC and Clang carry the
+// same intrinsics, and x86-64 has SSE2 in its baseline, so the only extra requirement is naming
+// SSE4.2 on the one function that uses it - see DF_TARGET_SSE42 in util_simd.h.
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#define COMPILE_SIMD_INTRINSIC
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
 #define COMPILE_SIMD_INTRINSIC
 #endif
 

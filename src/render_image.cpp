@@ -11,10 +11,34 @@
 
 #include "pch.h"
 #include "util.h"
+#include "util_simd.h"
 
 #ifdef COMPILE_SIMD_INTRINSIC
 #include <emmintrin.h>
 #include <tmmintrin.h>
+
+// Separated so SSSE3 can be named for this loop alone. Naming it on swap_rb would let the scalar
+// fallback below use SSSE3 as well - on a processor that reached the fallback by not having it.
+DF_TARGET_SSSE3 static void swap_rb_ssse3(uint8_t* const pixels, const int stride, const int height)
+{
+	const auto mask = _mm_setr_epi8(
+		0x02, 0x01, 0x00, 0x03,
+		0x06, 0x05, 0x04, 0x07,
+		0x0a, 0x09, 0x08, 0x0b,
+		0x0e, 0x0d, 0x0c, 0x0f);
+
+	for (auto y = 0; y < height; y++)
+	{
+		const auto dst = pixels + y * stride;
+		const auto* end = dst + stride;
+
+		for (auto p = dst; p < end; p += 16)
+		{
+			const __m128i pixel = _mm_load_si128(std::bit_cast<__m128i*>(p));
+			_mm_store_si128(std::bit_cast<__m128i*>(p), _mm_shuffle_epi8(pixel, mask));
+		}
+	}
+}
 #endif
 
 void ui::surface::swap_rb()
@@ -29,24 +53,7 @@ void ui::surface::swap_rb()
 
 		if (std::bit_cast<uintptr_t>(_pixels.get()) % 16 == 0 && dest_stride % 16 == 0)
 		{
-			const auto mask = _mm_setr_epi8(
-				0x02, 0x01, 0x00, 0x03,
-				0x06, 0x05, 0x04, 0x07,
-				0x0a, 0x09, 0x08, 0x0b,
-				0x0e, 0x0d, 0x0c, 0x0f);
-
-			for (auto y = 0; y < _dimensions.cy; y++)
-			{
-				const auto dst = pixels_line(y);
-				const auto* end = dst + dest_stride;
-
-				for (auto p = dst; p < end; p += 16)
-				{
-					const __m128i pixel = _mm_load_si128((__m128i*)p);
-					_mm_store_si128((__m128i*)p, _mm_shuffle_epi8(pixel, mask));
-				}
-			}
-
+			swap_rb_ssse3(_pixels.get(), dest_stride, _dimensions.cy);
 			return;
 		}
 	}

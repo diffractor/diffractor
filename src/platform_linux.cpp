@@ -549,7 +549,21 @@ void platform::mutex::sh_unlock() const
 	lock_state(_cs).fetch_sub(lock_reader_step, std::memory_order_release);
 }
 
+#if defined(__x86_64__) || defined(__i386__)
+namespace
+{
+	// __builtin_cpu_init has to run before any __builtin_cpu_supports query, and these are
+	// namespace-scope initialisers, so it is sequenced ahead of them here.
+	const bool cpu_features_ready = (__builtin_cpu_init(), true);
+}
+
+bool platform::ssse3_supported = cpu_features_ready && __builtin_cpu_supports("ssse3");
+bool platform::crc32_supported = cpu_features_ready && __builtin_cpu_supports("sse4.2");
+#else
+bool platform::ssse3_supported = false;
 bool platform::crc32_supported = false;
+#endif
+
 bool platform::arm_crc32_supported = false;
 
 bool platform::has_avx2()
