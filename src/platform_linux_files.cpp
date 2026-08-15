@@ -572,8 +572,22 @@ bool platform::run(df::file_path, std::string_view)
 	return false;
 }
 
-df::blob platform::load_resource(resource_item)
+// Generated from src/Res by CMake; see the resource block in CMakeLists.txt.
+extern const unsigned char diffractor_resource_sql[];
+extern const unsigned long diffractor_resource_sql_size;
+extern const unsigned char diffractor_resource_map_png[];
+extern const unsigned long diffractor_resource_map_png_size;
+
+df::blob platform::load_resource(const resource_item i)
 {
+	switch (i)
+	{
+	case resource_item::sql:
+		return {diffractor_resource_sql, diffractor_resource_sql + diffractor_resource_sql_size};
+	case resource_item::map_png:
+		return {diffractor_resource_map_png, diffractor_resource_map_png + diffractor_resource_map_png_size};
+	}
+
 	return {};
 }
 

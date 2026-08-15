@@ -265,12 +265,43 @@ if (WIN32)
             src/platform_win_res.rc
     )
 else ()
+    # platform_win_res.rc carries these on Windows. Elsewhere they are generated into a translation
+    # unit rather than read from disk, so the executable stays self-contained and a resource cannot
+    # go missing beside it.
+    function(diffractor_embed_resource SYMBOL SOURCE OUT_TEXT)
+        file(READ "${SOURCE}" _hex HEX)
+        string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _bytes "${_hex}")
+        string(LENGTH "${_hex}" _hex_length)
+        math(EXPR _length "${_hex_length} / 2")
+
+        # A literal semicolon has to arrive by value; escaping one inside a quoted argument leaves
+        # the backslash in the written file.
+        string(ASCII 59 _t)
+
+        set(${OUT_TEXT}
+                "extern const unsigned char ${SYMBOL}[]${_t}\nextern const unsigned long ${SYMBOL}_size${_t}\nconst unsigned char ${SYMBOL}[] = {${_bytes}}${_t}\nconst unsigned long ${SYMBOL}_size = ${_length}${_t}\n"
+                PARENT_SCOPE)
+    endfunction()
+
+    diffractor_embed_resource(diffractor_resource_sql
+            "${CMAKE_SOURCE_DIR}/src/Res/create_tables.sql" _sql_text)
+    diffractor_embed_resource(diffractor_resource_map_png
+            "${CMAKE_SOURCE_DIR}/src/Res/map-hires.png" _map_png_text)
+
+    set(_generated_resources "${CMAKE_BINARY_DIR}/generated/platform_resources.cpp")
+    # Written through configure_file so an unchanged resource does not restamp the file and force a
+    # rebuild on every configure.
+    file(WRITE "${_generated_resources}.in"
+            "// Generated from src/Res by CMake. Do not edit.\n\n${_sql_text}\n${_map_png_text}")
+    configure_file("${_generated_resources}.in" "${_generated_resources}" COPYONLY)
+
     set(DIFFRACTOR_PLATFORM_SOURCES
             src/platform_linux.cpp
             src/platform_linux_desktop.cpp
             src/platform_linux_files.cpp
             src/platform_linux_settings.cpp
             src/platform_linux_ui.cpp
+            "${_generated_resources}"
     )
 endif ()
 
