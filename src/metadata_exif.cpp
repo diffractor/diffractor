@@ -314,13 +314,15 @@ public:
 					constexpr size_t offset = 8;
 					p = p + offset;
 					const auto length = len - offset;
-					const auto char_length = length / sizeof(wchar_t);
+					// Exif spells this UTF-16, so the code unit is two bytes on every platform.
+					// wchar_t is only two on Windows.
+					const auto char_length = length / sizeof(char16_t);
 
 					if (_is_intel)
 					{
-						// p is a file offset, so it carries no wchar_t alignment of its own.
-						std::wstring aligned(char_length, L'\0');
-						std::memcpy(aligned.data(), p, char_length * sizeof(wchar_t));
+						// p is a file offset, so it carries no char16_t alignment of its own.
+						std::u16string aligned(char_length, u'\0');
+						std::memcpy(aligned.data(), p, char_length * sizeof(char16_t));
 						return str::strip_and_cache(aligned);
 					}
 
@@ -338,7 +340,9 @@ public:
 						pos += 2;
 					}
 
-					return str::strip_and_cache({std::bit_cast<const wchar_t*>(dst), char_length});
+					std::u16string aligned(char_length, u'\0');
+					std::memcpy(aligned.data(), dst, char_length * sizeof(char16_t));
+					return str::strip_and_cache(aligned);
 				}
 			}
 			else if (len > 5 && memcmp(p, "ASCII", 5) == 0)
@@ -360,8 +364,8 @@ public:
 			else if (str::is_utf16(p, len))
 			{
 				const auto char_length = len / 2;
-				std::wstring aligned(char_length, L'\0');
-				std::memcpy(aligned.data(), p, char_length * sizeof(wchar_t));
+				std::u16string aligned(char_length, u'\0');
+				std::memcpy(aligned.data(), p, char_length * sizeof(char16_t));
 				return str::strip_and_cache(aligned);
 			}
 			else if (str::is_utf8(std::bit_cast<const char*>(p), len))
@@ -1078,8 +1082,10 @@ bool exif_gps_coordinate_builder::is_valid() const
 
 gps_coordinate exif_gps_coordinate_builder::build() const
 {
-	auto lat = abs(_latitude);
-	auto lng = abs(_longitude);
+	// std::fabs, not abs: these are doubles, and the C abs takes and returns int, so a coordinate
+	// would arrive here as whole degrees with the minutes and seconds truncated away.
+	auto lat = std::fabs(_latitude);
+	auto lng = std::fabs(_longitude);
 
 	if (_south == NorthSouth::South)
 	{
@@ -1172,7 +1178,7 @@ public:
 					const auto low = low_focal_len / static_cast<double>(focal_units);
 					const auto high = high_focal_len / static_cast<double>(focal_units);
 
-					if (abs(low - high) < 0.1 || low < 0.1)
+					if (std::fabs(low - high) < 0.1 || low < 0.1)
 					{
 						lens_text = str::cache(std::format("{:.1}mm", high));
 					}

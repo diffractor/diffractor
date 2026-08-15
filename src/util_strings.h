@@ -398,6 +398,43 @@ namespace str
 		return result;
 	}
 
+	// For UTF-16 that arrives as bytes rather than as a platform string: char16_t is two bytes
+	// everywhere, where wchar_t is two on Windows and four elsewhere.
+	inline std::string utf16_to_utf8(const std::u16string_view s)
+	{
+		std::string result;
+		result.reserve(s.size() * 3);
+		auto inserter = std::back_inserter(result);
+
+		auto start = s.begin();
+		const auto end = s.end();
+
+		while (start != end)
+		{
+			uint32_t cp = mask16(*start++);
+
+			if (is_lead_surrogate(cp))
+			{
+				if (start != end && is_trail_surrogate(mask16(*start)))
+				{
+					cp = (cp << 10) + mask16(*start++) + SURROGATE_OFFSET;
+				}
+				else
+				{
+					cp = 0xFFFD;
+				}
+			}
+			else if (is_trail_surrogate(cp))
+			{
+				cp = 0xFFFD;
+			}
+
+			char32_to_utf8(inserter, cp);
+		}
+
+		return result;
+	}
+
 	inline std::wstring utf8_to_utf16(const std::string_view s)
 	{
 		std::wstring result;
@@ -734,6 +771,11 @@ namespace str
 	}
 
 	inline cached strip_and_cache(const std::wstring_view r)
+	{
+		return cache(trim(utf16_to_utf8(r)));
+	}
+
+	inline cached strip_and_cache(const std::u16string_view r)
 	{
 		return cache(trim(utf16_to_utf8(r)));
 	}

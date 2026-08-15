@@ -785,7 +785,7 @@ static void should_present_heif_structure_block()
 
 static void should_present_icc_block_sections()
 {
-	constexpr auto file_name = "cmyk.JPG";
+	constexpr auto file_name = "cmyk.jpg";
 
 	files ff;
 	const auto sr = ff_scan_file(ff, test_files_folder.combine_file(file_name));

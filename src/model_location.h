@@ -106,7 +106,8 @@ public:
 	{
 		uint32_t n[3];
 		decimal_to_dms(coord, n);
-		return str::print("%lu,%lu,%lu%c", n[0], n[1], n[2],
+		// %u, not %lu: uint32_t is unsigned int, and under LP64 unsigned long is twice its width.
+		return str::print("%u,%u,%u%c", n[0], n[1], n[2],
 		                  is_ns ? (coord < 0 ? 'S' : 'N') : coord < 0 ? 'W' : 'E');
 	}
 

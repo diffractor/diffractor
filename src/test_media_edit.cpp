@@ -1428,7 +1428,7 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 		"Gherkin.CR2",
 		"gizmo.mp4",
 		"IMG_0096.JPG",
-		"cmyk.JPG",
+		"cmyk.jpg",
 		"ipod.mov",
 		"jello.tif",
 		"StPauls.MOV",
