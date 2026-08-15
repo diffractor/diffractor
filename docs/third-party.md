@@ -174,13 +174,21 @@ encoders/muxers**, keeps `dxva2` hardware video decode, and disables genuinely r
 
   ```
   ./configure --target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --enable-cross-compile \
-    --enable-gpl --enable-runtime-cpudetect --enable-static --disable-shared --enable-small \
+    --enable-runtime-cpudetect --enable-static --disable-shared --enable-small \
     --enable-x86asm --disable-inline-asm --enable-w32threads --disable-pthreads \
     --enable-zlib --disable-programs --disable-doc --disable-avfilter --disable-network \
     --disable-encoders --disable-muxers --enable-muxer=avif --disable-devices --disable-filters \
     --disable-protocols --enable-protocol=file
   ```
   - x86: `--arch=x86 --cross-prefix=i686-w64-mingw32-`.
+  - **No `--enable-gpl`.** Diffractor is LGPL 2.1-or-later, so FFmpeg is configured LGPL to match;
+    the Linux build has never passed it either. It costs exactly eleven components, all gated on the
+    fork's `lgpl_gpl` marker — eight game-console ADPCM decoders (N64, PSXC, Circus, IMA
+    Escape/HVQM2/HVQM4/Magix/PDA) and the CRI AHX decoder, parser and `ahx_to_mp2` bsf. Note the
+    fork's own comment on that gate: these files *are* marked LGPL, and are withheld by preference
+    rather than by licence. No video codec, image decoder, demuxer or hwaccel is affected.
+    If a regenerated config brings `CONFIG_GPL 1` back, the eleven return with it and must be
+    zeroed in `config_components.h` and dropped from `{codec,parser,bsf}_list.c`.
   - **`--disable-inline-asm` is the key unblocker.** It matches MSVC (no GCC inline asm): it zeroes
     the inline-asm `HAVE_*` flags AND drops inline-asm-only `.c` (e.g. `hscale_fast_bilinear_simd.c`)
     from the source list so the `.vcxproj` stays correct. Without it you get `mathops.h` C2143 errors.
