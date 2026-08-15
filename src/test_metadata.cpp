@@ -116,7 +116,7 @@ static void should_parse_xmp()
 static void should_merge_xmp_sidecar()
 {
 	const auto cr2_path = test_files_folder.combine_file("Gherkin.CR2");
-	const auto xmp_path = test_files_folder.combine_file("Gherkin.XMP");
+	const auto xmp_path = test_files_folder.combine_file("Gherkin.xmp");
 
 	const auto actual = extract_properties(cr2_path);
 

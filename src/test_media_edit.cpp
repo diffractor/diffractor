@@ -1201,8 +1201,11 @@ static void should_refuse_to_write_an_unreadable_sidecar()
 	metadata_edits edits;
 	edits.rating = 5;
 
+#ifdef _WIN32
 	{
 		// read_write opens with no sharing, which is how a sidecar held by another application reads.
+		// That denial is Windows' mandatory locking; a POSIX descriptor refuses nothing, so there is
+		// no unreadable sidecar to present here.
 		const auto lock = platform::open_file(path_xmp, platform::file_open_mode::read_write);
 		assert_equal(true, static_cast<bool>(lock), "sidecar locked");
 
@@ -1220,6 +1223,7 @@ static void should_refuse_to_write_an_unreadable_sidecar()
 		assert_equal(true, refused, "an unreadable sidecar is refused, not rebuilt from the edits alone");
 		assert_equal(false, staged_path.exists(), "and nothing is staged to swap over it");
 	}
+#endif
 
 	const auto result = metadata_xmp::update(path, path, edits, {}, staged_path);
 	assert_equal(true, result.success, "staged once the sidecar can be read");
