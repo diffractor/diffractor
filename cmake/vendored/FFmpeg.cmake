@@ -69,9 +69,20 @@ if (TARGET diffractor_openmpt)
             "Name: libopenmpt\nDescription: Vendored libopenmpt\nVersion: 0.8.7\nCflags: -I${CMAKE_SOURCE_DIR}/third-party/libopenmpt\nLibs: -L$<TARGET_FILE_DIR:diffractor_openmpt> -ldiffractor_openmpt -lstdc++ -lm\n")
 endif ()
 
-# This fork is stripped: --disable-postproc, --disable-shared, --enable-static and --enable-zlib
-# are not options it offers. --disable-autodetect keeps the result independent of whatever happens
-# to be installed on the build machine.
+# This fork is stripped: --disable-postproc, --disable-shared and --enable-static are not options it
+# offers. --disable-autodetect keeps the result independent of whatever happens to be installed on
+# the build machine, at the price of having to name everything wanted.
+#
+# zlib is named back because --disable-autodetect had silently taken it, and with it the thirty-odd
+# decoders that depend on it -- APNG, EXR, TSCC, ZMBV and the screen-capture family are all present
+# in the checked-in Windows config and were absent here. It is the same zlib the application
+# resolves. bzlib and lzma are deliberately still off: the application uses the vendored copies of
+# those, configure would find the system ones, and two of either in one binary is worse than the
+# rare matroska and TIFF variants they decode. docs/linux.md records the gap.
+#
+# --disable-network to match the Windows config, which has never had it. Nothing in a local media
+# organizer opens a socket, and it removes the RTP, RTSP, SAP and SDP demuxers from the attack
+# surface along with the protocol layer beneath them.
 ExternalProject_Add(ffmpeg_external
         SOURCE_DIR "${_ff_stage}"
         DOWNLOAD_COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_ff_src}" "${_ff_stage}"
@@ -83,6 +94,8 @@ ExternalProject_Add(ffmpeg_external
         --disable-avdevice
         --disable-avfilter
         --disable-autodetect
+        --disable-network
+        --enable-zlib
         --enable-pic
         ${_ff_openmpt}
         BUILD_COMMAND make -j${_ff_jobs}
