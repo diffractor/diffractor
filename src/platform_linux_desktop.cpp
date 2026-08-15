@@ -20,6 +20,8 @@
 #include "model.h"
 #include "test_runner.h"
 
+#include <unistd.h>
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shell verbs. Some map to XDG portals; several have no counterpart.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -78,8 +80,7 @@ bool platform::eject(df::folder_path)
 // Deletion and file operations.
 //
 // can_recycle answers false, so the interface presents deletion as permanent rather than implying
-// a recovery that does not exist here. delete_items and move_or_copy refuse outright: silently
-// doing nothing while reporting success would be the worst of the available answers.
+// a recovery that does not exist here.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool platform::can_recycle(const std::vector<df::file_path>&, const std::vector<df::folder_path>&)
@@ -87,16 +88,164 @@ bool platform::can_recycle(const std::vector<df::file_path>&, const std::vector<
 	return false;
 }
 
-platform::file_op_result platform::delete_items(const std::vector<df::file_path>&,
-                                                const std::vector<df::folder_path>&, bool)
+namespace
 {
-	return {file_op_result_code::FAILED, "delete is not available in this build"};
+	// The shell appends " (2)", " (3)" and so on to a colliding name. Matching that keeps a
+	// collection that has moved between the two platforms looking like one collection.
+	constexpr int max_collision_attempts = 1000;
+
+	df::file_path next_free_file(const df::folder_path folder, const std::string_view name)
+	{
+		if (const auto first = folder.combine_file(name); !platform::exists(first)) return first;
+
+		const auto extension_at = df::find_ext(name);
+		const auto stem = name.substr(0, extension_at);
+		const auto extension = name.substr(extension_at);
+
+		for (auto attempt = 2; attempt < max_collision_attempts; ++attempt)
+		{
+			const auto candidate = folder.combine_file(std::format("{} ({}){}", stem, attempt, extension));
+			if (!platform::exists(candidate)) return candidate;
+		}
+
+		return {};
+	}
+
+	df::folder_path next_free_folder(const df::folder_path parent, const std::string_view name)
+	{
+		if (const auto first = parent.combine(name); !platform::exists(first)) return first;
+
+		for (auto attempt = 2; attempt < max_collision_attempts; ++attempt)
+		{
+			const auto candidate = parent.combine(std::format("{} ({})", name, attempt));
+			if (!platform::exists(candidate)) return candidate;
+		}
+
+		return {};
+	}
+
+	platform::file_op_result copy_folder_contents(const df::folder_path source, const df::folder_path destination)
+	{
+		if (const auto created = platform::create_folder(destination); created.failed()) return created;
+
+		// Hidden entries are part of the folder whatever the browser shows, so a copy that dropped
+		// them would be a quietly incomplete copy.
+		const auto contents = platform::iterate_file_items(source, true);
+
+		for (const auto& file : contents.files)
+		{
+			const auto result = platform::copy_file(source.combine_file(file.name),
+			                                        destination.combine_file(file.name), false, false);
+			if (result.failed()) return result;
+		}
+
+		for (const auto& folder : contents.folders)
+		{
+			const auto result = copy_folder_contents(source.combine(folder.name), destination.combine(folder.name));
+			if (result.failed()) return result;
+		}
+
+		return {platform::file_op_result_code::OK};
+	}
+
+	platform::file_op_result delete_folder_contents(const df::folder_path folder)
+	{
+		const auto contents = platform::iterate_file_items(folder, true);
+
+		for (const auto& file : contents.files)
+		{
+			const auto result = platform::delete_file(folder.combine_file(file.name));
+			if (result.failed()) return result;
+		}
+
+		for (const auto& child : contents.folders)
+		{
+			const auto result = delete_folder_contents(folder.combine(child.name));
+			if (result.failed()) return result;
+		}
+
+		// The interface has no delete_folder: on Windows a folder only ever leaves through the shell.
+		if (::rmdir(std::string(folder.text()).c_str()) != 0)
+		{
+			return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
+		return {platform::file_op_result_code::OK};
+	}
 }
 
-platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>&,
-                                                const std::vector<df::folder_path>&, df::folder_path, bool, bool)
+platform::file_op_result platform::delete_items(const std::vector<df::file_path>& files,
+                                                const std::vector<df::folder_path>& folders, bool)
 {
-	return {file_op_result_code::FAILED, "move and copy are not available in this build"};
+	// The undo flag is not honoured because can_recycle already answered false, so every caller has
+	// been told this delete is permanent before asking for it.
+	for (const auto& file : files)
+	{
+		if (const auto result = delete_file(file); result.failed()) return result;
+	}
+
+	for (const auto& folder : folders)
+	{
+		if (const auto result = delete_folder_contents(folder); result.failed()) return result;
+	}
+
+	return {file_op_result_code::OK};
+}
+
+platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>& files,
+                                                const std::vector<df::folder_path>& folders,
+                                                const df::folder_path target, const bool is_move,
+                                                const bool replace_existing)
+{
+	if (const auto created = create_folder(target); created.failed()) return created;
+
+	file_op_result result{file_op_result_code::OK};
+
+	for (const auto& file : files)
+	{
+		const auto destination = replace_existing
+			                         ? target.combine_file(file.name())
+			                         : next_free_file(target, file.name());
+
+		if (destination.is_empty())
+		{
+			return {file_op_result_code::FAILED, std::format("Could not find a free name for {}", file.str())};
+		}
+
+		const auto copied = copy_file(file, destination, false, false);
+		if (copied.failed()) return copied;
+
+		if (is_move)
+		{
+			if (const auto removed = delete_file(file); removed.failed()) return removed;
+		}
+
+		result.created_files.files.emplace_back(destination);
+	}
+
+	for (const auto& folder : folders)
+	{
+		const auto destination = replace_existing
+			                         ? target.combine(folder.name())
+			                         : next_free_folder(target, folder.name());
+
+		if (destination.is_empty())
+		{
+			return {file_op_result_code::FAILED, std::format("Could not find a free name for {}", folder.text())};
+		}
+
+		const auto copied = copy_folder_contents(folder, destination);
+		if (copied.failed()) return copied;
+
+		if (is_move)
+		{
+			if (const auto removed = delete_folder_contents(folder); removed.failed()) return removed;
+		}
+
+		result.created_files.folders.emplace_back(destination);
+	}
+
+	return result;
 }
 
 platform::file_op_result platform::replacement_flush_result(const bool flushed, std::string error_message)

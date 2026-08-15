@@ -106,6 +106,9 @@ static void should_fail_replace_when_flush_fails()
 	assert_equal(true, result.failed(), "failed flush stops replacement");
 	assert_equal("flush failed", result.error_message, "flush error preserved");
 
+#ifdef _WIN32
+	// Holding the replacement open is what makes the flush fail, and that is Windows' mandatory
+	// locking. A POSIX open descriptor denies nothing, so there is no failure here to observe.
 	const auto destination = _temps.next_path(".bin");
 	const auto replacement = _temps.next_path(".bin");
 	const df::blob original = {1, 2, 3};
@@ -120,8 +123,13 @@ static void should_fail_replace_when_flush_fails()
 	assert_equal(true, real_result.failed(), "real flush failure stops replacement");
 	assert_equal(true, !real_result.error_message.empty(), "real flush error reported");
 	assert_equal(true, df::blob_from_file(destination) == original, "destination unchanged after flush failure");
+#endif
 }
 
+#ifdef _WIN32
+// The failure this cleans up after is induced by holding the destination open, which denies the
+// write only where locking is mandatory. POSIX has no equivalent, so the failure cannot be staged
+// here and the cleanup it proves has no way to be observed.
 static void should_cleanup_failed_update_temps()
 {
 	const auto src_path = df::file_path(test_files_folder, "Test.jpg");
@@ -154,6 +162,7 @@ static void should_cleanup_failed_update_temps()
 	});
 	assert_equal(false, leaked, "failed update removes temporary files");
 }
+#endif
 
 static void should_settle_transport_stream_extension_by_header()
 {
@@ -1391,7 +1400,9 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should create original before replace"s, should_create_original_before_replace);
 	tests.add("Should report move or copy collision paths"s, should_report_move_or_copy_collision_paths);
 	tests.add("Should fail replace when flush fails"s, should_fail_replace_when_flush_fails);
+#ifdef _WIN32
 	tests.add("Should cleanup failed update temps"s, should_cleanup_failed_update_temps);
+#endif
 	tests.add("Should not rewrite unchanged file"s, should_not_rewrite_unchanged_file);
 	tests.add("Should return written image"s, should_return_written_image);
 	tests.add("Should hand over written handle"s, should_hand_over_written_handle);
