@@ -274,12 +274,58 @@ std::wstring platform::to_file_system_path(const df::folder_path path)
 	return str::utf8_to_utf16(path.text());
 }
 
-// Not yet ported: Linux has no single system normaliser, and the ICU dependency this needs has not
-// been taken on. Returning the text unchanged matches what a filesystem that does no normalisation
-// stores, which is the common case on ext4.
+// Linux has no system normaliser and ICU is a dependency this build has not taken on. Hangul is
+// the one script whose composition is arithmetic rather than table-driven, and it is the script the
+// reported problem is about (#219): macOS, Finder and some cameras write the decomposed jamo that a
+// Windows IME never produces. Every other script is returned unchanged, which is a partial answer -
+// but a correct one for the case that has been seen, and it carries no dependency.
 std::string platform::normalize_nfc(const std::string_view text)
 {
-	return {text.begin(), text.end()};
+	constexpr uint32_t l_base = 0x1100, v_base = 0x1161, t_base = 0x11A7, s_base = 0xAC00;
+	constexpr uint32_t l_count = 19, v_count = 21, t_count = 28;
+	constexpr uint32_t n_count = v_count * t_count;
+
+	std::vector<uint32_t> composed;
+	composed.reserve(text.size());
+
+	auto i = text.begin();
+
+	while (i < text.end())
+	{
+		const auto code_point = str::pop_utf8_char(i, text.end());
+
+		if (!composed.empty())
+		{
+			const auto previous = composed.back();
+
+			// A leading jamo followed by a vowel becomes the syllable that holds both.
+			if (previous >= l_base && previous < l_base + l_count &&
+				code_point >= v_base && code_point < v_base + v_count)
+			{
+				composed.back() = s_base + ((previous - l_base) * v_count + (code_point - v_base)) * t_count;
+				continue;
+			}
+
+			// A syllable with no trailing consonant absorbs one that follows it.
+			if (previous >= s_base && previous < s_base + l_count * n_count &&
+				(previous - s_base) % t_count == 0 &&
+				code_point > t_base && code_point < t_base + t_count)
+			{
+				composed.back() = previous + (code_point - t_base);
+				continue;
+			}
+		}
+
+		composed.emplace_back(code_point);
+	}
+
+	std::string result;
+	result.reserve(text.size());
+	auto inserter = std::back_inserter(result);
+
+	for (const auto code_point : composed) str::char32_to_utf8(inserter, code_point);
+
+	return result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -624,9 +670,44 @@ std::string platform::file_op_result::format_error(const std::string_view text, 
 // which have no Linux counterpart at all.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::vector<platform::folder_info> platform::select_folders(const df::item_selector&, bool)
+// A recursive browse shows files from every level and no folder rows at all, so the folders are
+// answered only for a scope that is one level deep. The wildcard names files, not folders.
+std::vector<platform::folder_info> platform::select_folders(const df::item_selector& selector, const bool show_hidden)
 {
-	return {};
+	if (selector.is_recursive()) return {};
+
+	return iterate_file_items(selector.folder(), show_hidden).folders;
+}
+
+std::vector<platform::file_info> platform::select_files(const df::item_selector& selector, const bool show_hidden)
+{
+	std::vector<file_info> results;
+
+	const auto recursive = selector.is_recursive();
+	const auto has_wildcard = selector.has_wildcard();
+
+	std::vector<df::folder_path> pending = {selector.folder()};
+
+	while (!pending.empty())
+	{
+		const auto folder = pending.back();
+		pending.pop_back();
+
+		const auto contents = iterate_file_items(folder, show_hidden);
+
+		for (const auto& file : contents.files)
+		{
+			if (has_wildcard && !str::wildcard_icmp(file.name, selector.wildcard())) continue;
+			results.emplace_back(file);
+		}
+
+		if (recursive)
+		{
+			for (const auto& child : contents.folders) pending.emplace_back(folder.combine(child.name));
+		}
+	}
+
+	return results;
 }
 
 bool platform::run(std::string_view)

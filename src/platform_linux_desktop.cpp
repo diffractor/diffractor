@@ -279,11 +279,6 @@ platform::file_op_result platform::write_shell_tags(df::file_path, const std::ve
 	return {file_op_result_code::FAILED, "shell tags are not available in this build"};
 }
 
-std::vector<platform::file_info> platform::select_files(const df::item_selector&, bool)
-{
-	return {};
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Dialogs, clipboard and drag. A toolkit supplies these; none is linked yet.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
