@@ -118,6 +118,24 @@ should become a platform-supplied hardware-decode descriptor.
 `error_atl_direct3d` string id in [app_text.h](../src/app_text.h) that names a Windows
 technology in user-visible text.
 
+### Two that compile clean on both and are wrong on one
+
+Neither of these fails to build, and neither is visible in a diff. They are recorded because
+each was found only by a failing test, and each had already been written more than once.
+
+**`abs()` on a floating-point value is `int abs(int)` under GCC.** MSVC puts the floating
+overloads in the global namespace, so unqualified `abs` on a `float` or `double` is silently
+correct there and truncates here. It has bitten three times: a GPS coordinate of 40.71417
+became 40; a colour distance summed as integers; and an alpha fade of 0.667 became 0, compared
+under its 0.001 completion threshold, so every fade on Linux finished in one step. Qualify it
+`std::abs`. `df::round` returns `int32_t`, so `abs(df::round(x))` is not an instance.
+
+**A clock is only as useful as the timestamps it is compared against.** `platform::now()`
+truncated to whole seconds while file times carry the nanoseconds ext4 records, so a file
+written during the current second was later than the scan that had just read it and
+`needs_scan` said yes forever. Anything producing a `df::date_t` must carry the same 100ns tick
+the file times do.
+
 ## Features with no Linux equivalent
 
 These are product decisions, not ports. Each needs an answer before the corresponding
@@ -150,22 +168,49 @@ define what recovery means.
 
 ## Build system
 
-There is no CMake or meson build for `src/`, and the vendored libraries have had their
-upstream build files removed. A Linux build therefore needs, in order:
+CMake now describes the whole tree and generates for both platforms: one target for `src/`, and
+one module per vendored library under `cmake/vendored/`, imported from the `.vcxproj` files by
+`tools/import_vcxproj.py`. Anything the Windows project could not express — a header its build
+generates, a flag a different compiler needs — lives beside it in `<name>.local.cmake`, which
+re-importing does not discard. All 23 vendored libraries build under GCC. This supersedes the
+hand-maintained `.vcxproj` assumption in the [third-party policy](third-party.md).
 
-1. A build description for `src/` itself — straightforward, one target, ~130 files.
-2. Build descriptions for 27 vendored libraries, including the two forks
-   (`diffractor/FFmpeg` and `diffractor/XMP-Toolkit-SDK`) whose value is precisely that
-   they carry Diffractor-specific patches, so they cannot be replaced with distro packages
-   without losing those patches. FFmpeg and XMP both have usable upstream build systems on
-   Linux; that is the path of least resistance for those two.
-3. Regenerated configuration headers. `jconfig.h`, `mz_config.h` and similar were generated
-   for MSVC and are checked in; Linux needs its own, kept separate rather than overwritten.
+The two forks are the exception to "one module per library". `diffractor/XMP-Toolkit-SDK` builds
+as a module like the rest; `diffractor/FFmpeg` does not, because restating which codecs exist
+would be a second source of truth for it. On Windows it compiles from `ffmpeg.vcxproj` against a
+`config-x64.h` that is checked in precisely because `configure` needs a shell; on Linux it is an
+`ExternalProject` running the fork's own `configure` and `make`.
 
-The pragmatic choice is CMake for the whole tree, generated for both platforms, replacing
-the `.vcxproj` files over time rather than in one step — but note that this contradicts the
-current [third-party policy](third-party.md), which assumes hand-maintained `.vcxproj`
-files. That policy would need updating as part of the port.
+### FFmpeg is configured twice, and the two answers differ
+
+Nothing keeps those two configurations in step, so a format can be supported on one platform and
+silently absent on the other. Comparing the enabled `CONFIG_*` switches in the two configurations
+is the only way to see it. Two gaps found that way and closed:
+
+- `--disable-autodetect` had declined zlib, and with it the thirty-odd decoders that depend on
+  it: APNG, EXR, TSCC, ZMBV and the screen-capture family.
+- libopenmpt was never asked for, so a tracked module scanned as no title, no encoder and no
+  sample rate at all.
+
+The comparison also ran the other way. This build carried RTP, RTSP, SAP and SDP demuxers that
+the Windows build has never had; nothing in a local media organizer opens a socket, so it is now
+configured `--disable-network`.
+
+One gap is left open deliberately. FFmpeg's bzlib and lzma stay off here: the application links
+the vendored bzip2 and lzma, while `configure` probes for the system ones with a bare `-lbz2` and
+`-llzma`, and two of either in one binary is a worse problem than the rare matroska and TIFF
+variants they decode. Closing it means the vendored archives reaching `configure` under their
+conventional names, the way libopenmpt now reaches it through a generated `.pc` file.
+
+### Feeding configure a vendored static library
+
+libopenmpt is the worked example, and both of its traps are easy to hit again. `configure` sorts a
+probe's arguments into compiler flags and libraries by looking for a `-l` prefix, so a library
+named by its archive path is placed ahead of the object it has to satisfy and `ld`, reading once,
+discards it: name it `-L<dir> -l<name>`. And `$<LINK_GROUP:RESCAN,...>` covers only the items
+written into it, while an interface target's own link libraries are emitted after the group has
+closed — which left `libavformat.a` behind `libopenmpt.a` on the final line. The FFmpeg archives
+are therefore published through a global property that the application appends into the group.
 
 Compiler portability is a smaller but real cost: the code is C++20 on MSVC and uses SSE2
 intrinsics directly in [util_simd.h](../src/util_simd.h) (already guarded, with an ARM NEON
