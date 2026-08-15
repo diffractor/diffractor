@@ -353,9 +353,12 @@ uint64_t platform::from_date(const df::day_t& day)
 
 df::date_t platform::now()
 {
-	const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+	// To the same 100ns tick the file times carry. Truncating this to whole seconds made a file
+	// written during the current second later than the scan that had just read it, so every
+	// freshly written file reported as needing a re-scan.
+	const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
 		std::chrono::system_clock::now().time_since_epoch()).count();
-	return df::date_t((static_cast<uint64_t>(seconds) + ft_epoch_to_unix_seconds) * ft_ticks_per_second);
+	return df::date_t(ft_epoch_to_unix_seconds * ft_ticks_per_second + static_cast<uint64_t>(ns) / 100u);
 }
 
 std::string platform::format_date(const df::date_t d)

@@ -1089,10 +1089,10 @@ namespace ui
 
 		float abs_sum() const
 		{
-			return abs(r) +
-				abs(g) +
-				abs(b) +
-				abs(a);
+			return std::abs(r) +
+				std::abs(g) +
+				std::abs(b) +
+				std::abs(a);
 		}
 
 		color& operator+=(const color other)
@@ -2002,7 +2002,7 @@ namespace ui
 		{
 			const auto dd = _target - _val;
 
-			if (!animations_enabled || abs(dd) < 0.001f)
+			if (!animations_enabled || std::abs(dd) < 0.001f)
 			{
 				const auto changed = _val != _target;
 				_val = _target;

@@ -75,7 +75,7 @@ public:
 
 	bool is_valid() const
 	{
-		return abs(_latitude) <= max_valid_latitude && abs(_longitude) < invalid_coordinate;
+		return std::abs(_latitude) <= max_valid_latitude && std::abs(_longitude) < invalid_coordinate;
 	}
 
 	double latitude() const
