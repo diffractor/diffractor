@@ -8,4 +8,8 @@
 if (NOT WIN32)
     set_source_files_properties("${CMAKE_SOURCE_DIR}/third-party/libebml/src/platform/win32/WinIOCallback.cpp"
             PROPERTIES HEADER_FILE_ONLY ON)
+
+    # See ebml-linux/ebml_pretty_longint.h. GCC syntax; MSVC would spell this /FI.
+    target_compile_options(diffractor_ebml PRIVATE
+            -include "${CMAKE_CURRENT_LIST_DIR}/ebml-linux/ebml_pretty_longint.h")
 endif ()
