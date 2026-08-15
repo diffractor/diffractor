@@ -80,20 +80,49 @@ if (TARGET diffractor_zlib)
             "${CMAKE_SOURCE_DIR}/third-party/ZLib" "")
 endif ()
 
+# bzlib and lzma have no pkg-config path in configure at all -- it probes them with a hard coded
+# -lbz2 and -llzma -- so the vendored archives are staged under the names it looks for. Naming the
+# system copies instead would put a second bzip2 and a second lzma in a binary that already links
+# the vendored ones.
+set(_ff_libdir "${CMAKE_BINARY_DIR}/third-party/ffmpeg/lib")
+set(_ff_compression "")
+
+if (TARGET diffractor_bzip2 AND TARGET diffractor_lzma)
+    set(_ff_compression
+            --enable-bzlib
+            --enable-lzma
+            "--extra-cflags=-I${CMAKE_SOURCE_DIR}/third-party/bzip2 -I${CMAKE_SOURCE_DIR}/third-party/liblzma/src/liblzma/api"
+            "--extra-ldflags=-L${_ff_libdir}")
+
+    add_custom_command(
+            OUTPUT "${_ff_libdir}/libbz2.a" "${_ff_libdir}/liblzma.a"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${_ff_libdir}"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:diffractor_bzip2>" "${_ff_libdir}/libbz2.a"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:diffractor_lzma>" "${_ff_libdir}/liblzma.a"
+            DEPENDS diffractor_bzip2 diffractor_lzma
+            COMMENT "Staging vendored bzip2 and lzma as libbz2.a and liblzma.a for FFmpeg's configure")
+
+    add_custom_target(ffmpeg_compression_libs
+            DEPENDS "${_ff_libdir}/libbz2.a" "${_ff_libdir}/liblzma.a")
+endif ()
+
 # This fork is stripped: --disable-postproc, --disable-shared and --enable-static are not options it
 # offers. --disable-autodetect keeps the result independent of whatever happens to be installed on
 # the build machine, at the price of having to name everything wanted.
 #
 # zlib is named back because --disable-autodetect had silently taken it, and with it the thirty-odd
 # decoders that depend on it -- APNG, EXR, TSCC, ZMBV and the screen-capture family are all present
-# in the checked-in Windows config and were absent here. It is the same zlib the application
-# resolves. bzlib and lzma are deliberately still off: the application uses the vendored copies of
-# those, configure would find the system ones, and two of either in one binary is worse than the
-# rare matroska and TIFF variants they decode. docs/linux.md records the gap.
+# in the checked-in Windows config and were absent here.
 #
 # --disable-network to match the Windows config, which has never had it. Nothing in a local media
 # organizer opens a socket, and it removes the RTP, RTSP, SAP and SDP demuxers from the attack
 # surface along with the protocol layer beneath them.
+#
+# Diffractor is a broad-support reader: every decoder and demuxer is wanted, and nothing that writes
+# a media stream is. The encoder, muxer, filter, device and protocol switches below are the Windows
+# configure line from docs/third-party.md, which this had not been matching -- the whole encoder and
+# muxer set was being compiled in here. avif is the one intentional muxer, and file the one
+# intentional protocol.
 ExternalProject_Add(ffmpeg_external
         SOURCE_DIR "${_ff_stage}"
         DOWNLOAD_COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_ff_src}" "${_ff_stage}"
@@ -106,7 +135,16 @@ ExternalProject_Add(ffmpeg_external
         --disable-avfilter
         --disable-autodetect
         --disable-network
+        --disable-encoders
+        --disable-muxers
+        --enable-muxer=avif
+        --disable-devices
+        --disable-filters
+        --disable-protocols
+        --enable-protocol=file
+        --enable-small
         --enable-zlib
+        ${_ff_compression}
         --enable-pic
         ${_ff_openmpt}
         BUILD_COMMAND make -j${_ff_jobs}
@@ -136,7 +174,7 @@ set_property(GLOBAL PROPERTY DIFFRACTOR_GROUPED_ARCHIVES "${_ff_archives}")
 
 # configure links a probe against the archives named in the .pc files, so they have to be on disk
 # before the external project starts rather than merely before the application links.
-foreach (_ff_dep IN ITEMS diffractor_openmpt diffractor_zlib)
+foreach (_ff_dep IN ITEMS diffractor_openmpt diffractor_zlib ffmpeg_compression_libs)
     if (TARGET ${_ff_dep})
         add_dependencies(ffmpeg_external ${_ff_dep})
     endif ()

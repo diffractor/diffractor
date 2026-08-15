@@ -185,32 +185,50 @@ would be a second source of truth for it. On Windows it compiles from `ffmpeg.vc
 
 Nothing keeps those two configurations in step, so a format can be supported on one platform and
 silently absent on the other. Comparing the enabled `CONFIG_*` switches in the two configurations
-is the only way to see it. Two gaps found that way and closed:
+is the only way to see it, and it should be run after any FFmpeg change. It found four things:
 
 - `--disable-autodetect` had declined zlib, and with it the thirty-odd decoders that depend on
   it: APNG, EXR, TSCC, ZMBV and the screen-capture family.
 - libopenmpt was never asked for, so a tracked module scanned as no title, no encoder and no
   sample rate at all.
+- This build carried RTP, RTSP, SAP and SDP demuxers that the Windows build has never had.
+  Nothing in a local media organizer opens a socket, so it is now `--disable-network`.
+- Running the comparison the other way after the first three were fixed showed the real one: the
+  **entire encoder and muxer set** was being compiled in here. Diffractor is a broad-support
+  reader and the Windows configure line has always said `--disable-encoders --disable-muxers
+  --enable-muxer=avif --disable-protocols --enable-protocol=file`; this had simply never been
+  matched. Doing so took 65 MB off the binary.
 
-The comparison also ran the other way. This build carried RTP, RTSP, SAP and SDP demuxers that
-the Windows build has never had; nothing in a local media organizer opens a socket, so it is now
-configured `--disable-network`.
-
-One gap is left open deliberately. FFmpeg's bzlib and lzma stay off here: the application links
-the vendored bzip2 and lzma, while `configure` probes for the system ones with a bare `-lbz2` and
-`-llzma`, and two of either in one binary is a worse problem than the rare matroska and TIFF
-variants they decode. Closing it means the vendored archives reaching `configure` under their
-conventional names, the way libopenmpt now reaches it through a generated `.pc` file.
+What remains is 27 switches on the Windows side, all of them platform — the DXVA2 and D3D11VA
+hardware accelerators, Media Foundation, SChannel — and one on the Linux side, `CONFIG_ICONV`,
+which is part of glibc rather than a dependency. Decoder and demuxer coverage is identical.
 
 ### Feeding configure a vendored static library
 
-libopenmpt is the worked example, and both of its traps are easy to hit again. `configure` sorts a
-probe's arguments into compiler flags and libraries by looking for a `-l` prefix, so a library
-named by its archive path is placed ahead of the object it has to satisfy and `ld`, reading once,
-discards it: name it `-L<dir> -l<name>`. And `$<LINK_GROUP:RESCAN,...>` covers only the items
-written into it, while an interface target's own link libraries are emitted after the group has
-closed — which left `libavformat.a` behind `libopenmpt.a` on the final line. The FFmpeg archives
-are therefore published through a global property that the application appends into the group.
+Every compression and music library FFmpeg links is the same copy the application links, which
+takes two different mechanisms because configure offers two. zlib and libopenmpt are found through
+pkg-config, so the build generates a `.pc` for each describing the archive it has just produced.
+bzlib and lzma have no pkg-config path at all — configure probes them with a hard coded `-lbz2`
+and `-llzma` — so those archives are staged under exactly those names and reached with
+`--extra-cflags`/`--extra-ldflags`. Naming the system copies instead would put a second bzip2 and
+a second lzma into a binary that already links the vendored ones; the result is verifiable, and
+worth verifying, with `nm`:
+
+    inflate defined 1 time(s)
+    BZ2_bzDecompress defined 1 time(s)
+    lzma_code defined 1 time(s)
+
+Two traps, both of which cost a build cycle. `configure` sorts a probe's arguments into compiler
+flags and libraries by looking for a `-l` prefix, so a library named by its archive path is placed
+ahead of the object it has to satisfy and `ld`, reading once, discards it: name it
+`-L<dir> -l<name>`. And `$<LINK_GROUP:RESCAN,...>` covers only the items written into it, while an
+interface target's own link libraries are emitted after the group has closed — which left
+`libavformat.a` behind `libopenmpt.a` on the final line. The FFmpeg archives are therefore
+published through a global property that the application appends into the group.
+
+A last one worth knowing: the vendored zlib is **zlib-ng**, not zlib. Before this, configure was
+probing the system zlib's headers while the link resolved against zlib-ng beside it — two
+implementations agreeing only by ABI convention.
 
 Compiler portability is a smaller but real cost: the code is C++20 on MSVC and uses SSE2
 intrinsics directly in [util_simd.h](../src/util_simd.h) (already guarded, with an ARM NEON
