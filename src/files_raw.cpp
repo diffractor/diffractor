@@ -25,7 +25,7 @@
 // prebuilt SDK library was not compiled with, so the redefinition is left in place and only silenced.
 #pragma warning(push)
 #pragma warning(disable : 4005) // macro redefinition
-#include <LibRaw/libraw.h>
+#include <libraw/libraw.h>
 #pragma warning(pop)
 
 // LibRaw hands DNG 1.7 JPEG-XL images (TIFF compression 52546) to the SDK only while qDNGSupportJXL
@@ -36,6 +36,20 @@
 #error "qDNGSupportJXL is not visible - LibRaw will reject JPEG XL DNG files"
 #endif
 static_assert(dngVersion_Current >= dngVersion_1_7_0_0, "DNG SDK predates JPEG XL DNG support");
+
+// LibRaw declares the wide-path overloads of open_file only under LIBRAW_WIN32_UNICODEPATHS, which
+// is a Windows build. Elsewhere it takes the byte path, and the file system is UTF-8 already.
+namespace
+{
+	auto libraw_path(const df::file_path path)
+	{
+#ifdef _WIN32
+		return platform::to_file_system_path(path);
+#else
+		return std::string(path.str());
+#endif
+	}
+}
 
 struct id2hr_t
 {
@@ -1280,7 +1294,7 @@ file_scan_result files::scan_raw(const df::file_path path, const std::string_vie
                                  const sizei max, const scan_intent intent)
 {
 	file_scan_result result;
-	const auto w = platform::to_file_system_path(path);
+	const auto w = libraw_path(path);
 	const raw_scan_lease processor;
 
 	if (processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
@@ -1336,7 +1350,7 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 {
 	file_load_result result;
 
-	const auto w = platform::to_file_system_path(path);
+	const auto w = libraw_path(path);
 	const auto rp = create_decode_processor();
 
 	if (rp.processor->open_file(w.c_str()) == LIBRAW_SUCCESS)
@@ -1461,7 +1475,7 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 						for (auto y = 0; y < S.height; y++)
 						{
-							auto* bufp = std::bit_cast<COLORREF*>(pixel_buffer + y * stride);
+							auto* bufp = std::bit_cast<ui::color32*>(pixel_buffer + y * stride);
 
 							for (auto x = 0; x < S.width; x++)
 							{

@@ -649,6 +649,30 @@ std::string platform::format_time(const df::date_t date)
 	return format_date_time(date);
 }
 
+df::date_t platform::dos_date_to_ts(const uint16_t dos_date, const uint16_t dos_time)
+{
+	// The MS-DOS packing an archive entry carries: two-second resolution, and a year counted from
+	// 1980. It records local time, so mktime is the right conversion rather than timegm.
+	struct tm parts = {};
+	parts.tm_mday = dos_date & 0x1f;
+	parts.tm_mon = ((dos_date >> 5) & 0x0f) - 1;
+	parts.tm_year = ((dos_date >> 9) & 0x7f) + 80;
+	parts.tm_sec = (dos_time & 0x1f) * 2;
+	parts.tm_min = (dos_time >> 5) & 0x3f;
+	parts.tm_hour = (dos_time >> 11) & 0x1f;
+	parts.tm_isdst = -1;
+
+	// An entry can carry an out-of-range date; report "no date" rather than the value mktime would
+	// normalise it into.
+	if (parts.tm_mday < 1 || parts.tm_mon < 0 || parts.tm_mon > 11) return {};
+	if (parts.tm_hour > 23 || parts.tm_min > 59 || parts.tm_sec > 59) return {};
+
+	const auto when = mktime(&parts);
+	if (when == static_cast<time_t>(-1)) return {};
+
+	return df::date_t((static_cast<uint64_t>(when) + ft_epoch_to_unix_seconds) * ft_ticks_per_second);
+}
+
 // Opening a location in the desktop's handler is an XDG portal call; see docs/linux.md.
 bool platform::open(df::file_path)
 {

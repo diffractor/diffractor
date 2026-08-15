@@ -36,9 +36,12 @@
 #include <cstdarg>
 #include <cerrno>
 #include <clocale>
+#include <ctime>
 #include <cwctype>
 #include <locale.h>
 #include <malloc.h>
+#include <string.h>
+#include <strings.h>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -299,6 +302,28 @@ inline int _towlower_l(const int c, const _locale_t loc)
 inline int _towupper_l(const int c, const _locale_t loc)
 {
 	return static_cast<int>(towupper_l(static_cast<wint_t>(c), loc));
+}
+
+inline int _strnicmp(const char* a, const char* b, const size_t count)
+{
+	return strncasecmp(a, b, count);
+}
+
+inline int _stricmp(const char* a, const char* b)
+{
+	return strcasecmp(a, b);
+}
+
+// MSVC takes the destination first and returns an errno_t; POSIX takes it last and returns a
+// pointer. Only the argument order actually differs, so the failure is mapped rather than invented.
+inline int localtime_s(struct tm* result, const time_t* time)
+{
+	return localtime_r(time, result) == nullptr ? EINVAL : 0;
+}
+
+inline int gmtime_s(struct tm* result, const time_t* time)
+{
+	return gmtime_r(time, result) == nullptr ? EINVAL : 0;
 }
 
 #endif // _MSC_VER

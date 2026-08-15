@@ -1,11 +1,20 @@
-#ifndef _UNISTD_H
-#define _UNISTD_H    1
-
 /* This file intended to serve as a drop-in replacement for
  *  unistd.h on Windows.
  *  Please add functionality as neeeded.
  *  Original file from: http://stackoverflow.com/a/826027
  */
+
+#ifndef _WIN32
+
+/* Include/ has to stay on the include path for utf8-cpp, so this file is found on every platform
+ * and shadows the real unistd.h. Hand straight back to it - and before the guard below is set,
+ * since glibc's header spells its guard _UNISTD_H too and would otherwise be skipped entirely. */
+#include_next <unistd.h>
+
+#else
+
+#ifndef _UNISTD_H
+#define _UNISTD_H    1
 
 #include <stdlib.h>
 #include <io.h>
@@ -52,3 +61,5 @@
 
 
 #endif /* unistd.h  */
+
+#endif /* _WIN32 */

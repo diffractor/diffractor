@@ -15,11 +15,6 @@ find_package(PkgConfig QUIET)
 # them statically would move CVE patching from the distribution onto us.
 option(DIFFRACTOR_STATIC_VENDORED "Build vendored third-party libraries as static archives" ON)
 
-# The shipped configuration is fully vendored, so that every platform decodes with the same library
-# versions. Modules imported from a .vcxproj are held back from other toolchains until each is made
-# to build there (see MSVC_ONLY); this asks for them anyway, which is how that work is measured.
-option(DIFFRACTOR_VENDORED_EVERYWHERE "Use vendored libraries even where they are unproven" OFF)
-
 set(DIFFRACTOR_RESOLVED_SYSTEM "" CACHE INTERNAL "")
 set(DIFFRACTOR_RESOLVED_VENDORED "" CACHE INTERNAL "")
 set(DIFFRACTOR_RESOLVED_MISSING "" CACHE INTERNAL "")
@@ -29,24 +24,15 @@ set(DIFFRACTOR_RESOLVED_MISSING "" CACHE INTERNAL "")
 #     VENDORED_MODULE <module>       owned cmake/ module that defines diffractor::<name>
 #     VENDORED_DIR    <dir>          in-tree copy, relative to the project root
 #     [FORK]                         never resolvable from the system
-#     [MSVC_ONLY]                    the vendored module is an import of a .vcxproj and carries
-#                                    that project's Windows configuration, so it is not offered
-#                                    to another toolchain until it has been made to build there
 #     [OPTIONAL]                     absence is reported, not fatal
 # )
 #
 # Defines the imported target diffractor::<name> when the dependency resolves.
 function(diffractor_dependency NAME)
-    cmake_parse_arguments(DEP "FORK;OPTIONAL;MSVC_ONLY" "VENDORED_DIR;VENDORED_MODULE" "PKG_CONFIG" ${ARGN})
+    cmake_parse_arguments(DEP "FORK;OPTIONAL" "VENDORED_DIR;VENDORED_MODULE" "PKG_CONFIG" ${ARGN})
 
     string(TOUPPER "${NAME}" UPPER)
     set(TARGET_NAME "diffractor::${NAME}")
-
-    # Held back only until the import is made to build here.
-    set(HOLD_BACK OFF)
-    if (DEP_MSVC_ONLY AND NOT MSVC AND NOT DIFFRACTOR_VENDORED_EVERYWHERE)
-        set(HOLD_BACK ON)
-    endif ()
 
     if (DEP_FORK)
         # No option is declared: a system copy of a fork silently discards the patches that are
@@ -72,7 +58,7 @@ function(diffractor_dependency NAME)
 
     # An owned module knows how to build the vendored copy -- usually by driving that library's own
     # build system rather than restating it.
-    if (DEP_VENDORED_MODULE AND NOT HOLD_BACK)
+    if (DEP_VENDORED_MODULE)
         include(${DEP_VENDORED_MODULE})
 
         if (TARGET ${TARGET_NAME})
@@ -82,10 +68,10 @@ function(diffractor_dependency NAME)
         endif ()
     endif ()
 
-    # Upstream's own CMakeLists, where the vendored copy still has one. Skipped for the same reason
-    # as the imported module: an upstream build that has never been run here is a claim, not a fact,
-    # and libheif's fails to configure outright.
-    if (DEP_VENDORED_DIR AND NOT HOLD_BACK
+    # Upstream's own CMakeLists, where the vendored copy still has one. A last resort, reached only
+    # if the owned module above failed to define the target: an upstream build that has never been
+    # run here is a claim rather than a fact, and libheif's fails to configure outright.
+    if (DEP_VENDORED_DIR
             AND EXISTS "${CMAKE_SOURCE_DIR}/${DEP_VENDORED_DIR}/CMakeLists.txt")
         add_subdirectory("${DEP_VENDORED_DIR}" "${CMAKE_BINARY_DIR}/third-party/${NAME}")
         set(DIFFRACTOR_RESOLVED_VENDORED

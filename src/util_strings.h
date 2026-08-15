@@ -893,6 +893,12 @@ namespace str
 #endif
 	std::string to_string(int64_t v);
 	std::string to_string(uint64_t v);
+	// The mirror of the `long` case above. Under LP64 uint64_t is `unsigned long`, so `unsigned long
+	// long` is a distinct type with no overload; under LLP64 the two are the same and this would
+	// redeclare one.
+#if DF_LONG_IS_INT64
+	std::string to_string(unsigned long long v);
+#endif
 	std::string to_string(double v, int num_digits);
 	std::string to_string(sizei v);
 

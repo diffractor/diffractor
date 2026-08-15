@@ -387,6 +387,36 @@ std::string platform::utf8_to_a(const std::string_view utf8)
 	return {utf8.begin(), utf8.end()};
 }
 
+std::string platform::user_language()
+{
+	// The environment holds this rather than a locale API, in the precedence the C library itself
+	// uses. Values look like "en_GB.UTF-8@euro"; the caller wants just the language and territory,
+	// in the same language_TERRITORY shape the Windows implementation returns.
+	const char* value = nullptr;
+
+	for (const auto* const name : {"LC_ALL", "LC_MESSAGES", "LANG"})
+	{
+		const auto* const candidate = std::getenv(name);
+
+		if (candidate != nullptr && *candidate != 0)
+		{
+			value = candidate;
+			break;
+		}
+	}
+
+	if (value == nullptr) return {};
+
+	std::string result(value);
+	const auto cut = result.find_first_of(".@");
+	if (cut != std::string::npos) result.erase(cut);
+
+	// "C" and "POSIX" name the absence of a locale, not a language.
+	if (result == "C" || result == "POSIX") return {};
+
+	return result;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Interning pool: address space is reserved up front and pages are committed as they are used, the
 // same shape as the Windows MEM_RESERVE / MEM_COMMIT pair.

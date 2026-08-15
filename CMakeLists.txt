@@ -66,11 +66,11 @@ endif ()
 # package is reported rather than fatal.
 # ---------------------------------------------------------------------------------------------
 
-# Every module below marked MSVC_ONLY was imported from a .vcxproj and carries that project's
-# Windows configuration. Linux resolves what it can from system packages and stubs the rest, and
-# each import earns its way onto another toolchain by being made to build there.
-diffractor_dependency(zlib PKG_CONFIG zlib VENDORED_MODULE vendored/zlib MSVC_ONLY VENDORED_DIR third-party/ZLib OPTIONAL)
-diffractor_dependency(png PKG_CONFIG libpng16 VENDORED_MODULE vendored/png MSVC_ONLY VENDORED_DIR third-party/libpng OPTIONAL)
+# Every module below was imported from a .vcxproj, so each began life carrying only that project's
+# Windows configuration. All of them now build under GCC too; what that took per library lives in
+# cmake/vendored/<name>.local.cmake.
+diffractor_dependency(zlib PKG_CONFIG zlib VENDORED_MODULE vendored/zlib VENDORED_DIR third-party/ZLib OPTIONAL)
+diffractor_dependency(png PKG_CONFIG libpng16 VENDORED_MODULE vendored/png VENDORED_DIR third-party/libpng OPTIONAL)
 
 # The system libjpeg-turbo is too old to be a substitute: files_jpeg.cpp uses the 12- and 16-bit
 # APIs added in 3.0, and Ubuntu 24.04 ships 2.1.5. Declared before the call so the option below
@@ -78,39 +78,39 @@ diffractor_dependency(png PKG_CONFIG libpng16 VENDORED_MODULE vendored/png MSVC_
 option(DIFFRACTOR_SYSTEM_JPEG "Use the system jpeg rather than the vendored copy" OFF)
 diffractor_dependency(jpeg PKG_CONFIG libjpeg VENDORED_MODULE vendored/LibJpeg OPTIONAL)
 
-diffractor_dependency(sqlite PKG_CONFIG sqlite3 VENDORED_MODULE vendored/sqlite MSVC_ONLY VENDORED_DIR third-party/sqlite OPTIONAL)
-diffractor_dependency(expat PKG_CONFIG expat VENDORED_MODULE vendored/expat MSVC_ONLY VENDORED_DIR third-party/expat OPTIONAL)
+diffractor_dependency(sqlite PKG_CONFIG sqlite3 VENDORED_MODULE vendored/sqlite VENDORED_DIR third-party/sqlite OPTIONAL)
+diffractor_dependency(expat PKG_CONFIG expat VENDORED_MODULE vendored/expat VENDORED_DIR third-party/expat OPTIONAL)
 # webp splits the muxer and demuxer into their own pkg-config modules; files_webp.cpp uses all three.
-diffractor_dependency(webp PKG_CONFIG libwebp libwebpmux libwebpdemux VENDORED_MODULE vendored/webp MSVC_ONLY VENDORED_DIR third-party/webp OPTIONAL)
-diffractor_dependency(archive PKG_CONFIG libarchive VENDORED_MODULE vendored/archive MSVC_ONLY VENDORED_DIR third-party/libarchive OPTIONAL)
-diffractor_dependency(exif PKG_CONFIG libexif VENDORED_MODULE vendored/exif MSVC_ONLY VENDORED_DIR third-party/libexif OPTIONAL)
+diffractor_dependency(webp PKG_CONFIG libwebp libwebpmux libwebpdemux VENDORED_MODULE vendored/webp VENDORED_DIR third-party/webp OPTIONAL)
+diffractor_dependency(archive PKG_CONFIG libarchive VENDORED_MODULE vendored/archive VENDORED_DIR third-party/libarchive OPTIONAL)
+diffractor_dependency(exif PKG_CONFIG libexif VENDORED_MODULE vendored/exif VENDORED_DIR third-party/libexif OPTIONAL)
 
 # Compression and support libraries. Nothing in src/ includes these directly: they are here because
 # the codecs above and below link them.
-diffractor_dependency(bzip2 VENDORED_MODULE vendored/bzip2 MSVC_ONLY VENDORED_DIR third-party/bzip2 OPTIONAL)
-diffractor_dependency(lzma VENDORED_MODULE vendored/lzma MSVC_ONLY VENDORED_DIR third-party/liblzma OPTIONAL)
-diffractor_dependency(brotli VENDORED_MODULE vendored/brotli MSVC_ONLY VENDORED_DIR third-party/brotli OPTIONAL)
-diffractor_dependency(highway VENDORED_MODULE vendored/highway MSVC_ONLY VENDORED_DIR third-party/highway OPTIONAL)
+diffractor_dependency(bzip2 VENDORED_MODULE vendored/bzip2 VENDORED_DIR third-party/bzip2 OPTIONAL)
+diffractor_dependency(lzma VENDORED_MODULE vendored/lzma VENDORED_DIR third-party/liblzma OPTIONAL)
+diffractor_dependency(brotli VENDORED_MODULE vendored/brotli VENDORED_DIR third-party/brotli OPTIONAL)
+diffractor_dependency(highway VENDORED_MODULE vendored/highway VENDORED_DIR third-party/highway OPTIONAL)
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard. Declared before the codecs because dng compiles against the XMP
 # toolkit, and a dependency can only be stated on a target that already exists.
 diffractor_dependency(xmp FORK VENDORED_MODULE vendored/Xmp VENDORED_DIR third-party/xmp OPTIONAL)
 diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg OPTIONAL)
 
-diffractor_dependency(skcms VENDORED_MODULE vendored/skcms MSVC_ONLY VENDORED_DIR third-party/skcms OPTIONAL)
-diffractor_dependency(de265 VENDORED_MODULE vendored/de265 MSVC_ONLY VENDORED_DIR third-party/libde265 OPTIONAL)
-diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d MSVC_ONLY VENDORED_DIR third-party/dav1d OPTIONAL)
-diffractor_dependency(dng VENDORED_MODULE vendored/dng MSVC_ONLY VENDORED_DIR third-party/dng OPTIONAL)
-diffractor_dependency(ebml VENDORED_MODULE vendored/ebml MSVC_ONLY VENDORED_DIR third-party/libebml OPTIONAL)
-diffractor_dependency(matroska VENDORED_MODULE vendored/matroska MSVC_ONLY VENDORED_DIR third-party/libmatroska OPTIONAL)
-diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt MSVC_ONLY VENDORED_DIR third-party/libopenmpt OPTIONAL)
+diffractor_dependency(skcms VENDORED_MODULE vendored/skcms VENDORED_DIR third-party/skcms OPTIONAL)
+diffractor_dependency(de265 VENDORED_MODULE vendored/de265 VENDORED_DIR third-party/libde265 OPTIONAL)
+diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d VENDORED_DIR third-party/dav1d OPTIONAL)
+diffractor_dependency(dng VENDORED_MODULE vendored/dng VENDORED_DIR third-party/dng OPTIONAL)
+diffractor_dependency(ebml VENDORED_MODULE vendored/ebml VENDORED_DIR third-party/libebml OPTIONAL)
+diffractor_dependency(matroska VENDORED_MODULE vendored/matroska VENDORED_DIR third-party/libmatroska OPTIONAL)
+diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt VENDORED_DIR third-party/libopenmpt OPTIONAL)
 
 # Codecs and utilities that gate a translation unit of their own.
-diffractor_dependency(heif VENDORED_MODULE vendored/heif MSVC_ONLY VENDORED_DIR third-party/libheif OPTIONAL)
-diffractor_dependency(jxl VENDORED_MODULE vendored/jxl MSVC_ONLY VENDORED_DIR third-party/libjx OPTIONAL)
-diffractor_dependency(raw VENDORED_MODULE vendored/raw MSVC_ONLY VENDORED_DIR third-party/LibRaw OPTIONAL)
-diffractor_dependency(hunspell VENDORED_MODULE vendored/hunspell MSVC_ONLY VENDORED_DIR third-party/hunspell OPTIONAL)
-diffractor_dependency(minizip VENDORED_MODULE vendored/minizip MSVC_ONLY VENDORED_DIR third-party/minizip OPTIONAL)
+diffractor_dependency(heif VENDORED_MODULE vendored/heif VENDORED_DIR third-party/libheif OPTIONAL)
+diffractor_dependency(jxl VENDORED_MODULE vendored/jxl VENDORED_DIR third-party/libjx OPTIONAL)
+diffractor_dependency(raw VENDORED_MODULE vendored/raw VENDORED_DIR third-party/LibRaw OPTIONAL)
+diffractor_dependency(hunspell VENDORED_MODULE vendored/hunspell VENDORED_DIR third-party/hunspell OPTIONAL)
+diffractor_dependency(minizip VENDORED_MODULE vendored/minizip VENDORED_DIR third-party/minizip OPTIONAL)
 
 diffractor_report_dependencies()
 
@@ -270,7 +270,6 @@ else ()
             src/platform_linux_desktop.cpp
             src/platform_linux_files.cpp
             src/platform_linux_settings.cpp
-            src/platform_linux_stubs.cpp
             src/platform_linux_ui.cpp
     )
 endif ()
@@ -307,7 +306,7 @@ if (WIN32)
             third-party/bzip2
             third-party/zlib
             third-party/xmp/public/include
-            third-party/libraw
+            third-party/LibRaw
             third-party/FFmpeg
     )
 endif ()
@@ -377,15 +376,28 @@ endif ()
 # Every resolved dependency is named here rather than relying on one library to pull in another.
 # These are static archives, and the support libraries have no translation unit of their own that
 # would otherwise put them on the line.
+set(DIFFRACTOR_LINK_DEPENDENCIES "")
+
 foreach (dep IN ITEMS
         zlib png jpeg sqlite expat webp archive exif ffmpeg xmp
         heif jxl raw hunspell minizip
         de265 dav1d dng ebml matroska openmpt
         bzip2 lzma brotli highway skcms)
     if (TARGET diffractor::${dep})
-        target_link_libraries(diffractor PRIVATE diffractor::${dep})
+        list(APPEND DIFFRACTOR_LINK_DEPENDENCIES diffractor::${dep})
     endif ()
 endforeach ()
+
+if (MSVC)
+    target_link_libraries(diffractor PRIVATE ${DIFFRACTOR_LINK_DEPENDENCIES})
+else ()
+    # These archives genuinely reference each other in both directions -- dng calls into jxl, raw
+    # into dng and jpeg, heif into jpeg, de265 and dav1d -- and GNU ld reads each archive once, in
+    # order, so a reference that points backwards along the line goes unresolved. MSVC's linker
+    # does not care about order, which is why one flat list was ever enough.
+    list(JOIN DIFFRACTOR_LINK_DEPENDENCIES "," _link_group)
+    target_link_libraries(diffractor PRIVATE "$<LINK_GROUP:RESCAN,${_link_group}>")
+endif ()
 
 diffractor_apply_app_policy(diffractor)
 

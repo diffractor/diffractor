@@ -839,6 +839,13 @@ std::string str::to_string(const uint64_t v)
 	return result;
 }
 
+#if DF_LONG_IS_INT64
+std::string str::to_string(const unsigned long long v)
+{
+	return to_string(static_cast<uint64_t>(v));
+}
+#endif
+
 std::string str::to_string(const double v, int num_digits)
 {
 	std::string result;
