@@ -584,6 +584,13 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 		}
 		else if (S_ISREG(st.st_mode))
 		{
+			// There is no cloud placeholder to detect here, but the online/offline model itself is
+			// portable, so the seam that stands in for one is honoured as it is on Windows.
+			if (test_offline_predicate && test_offline_predicate(folder.combine_file(name)))
+			{
+				attributes.is_offline = true;
+			}
+
 			result.files.emplace_back(file_info{folder, str::cache(name), attributes});
 		}
 	}

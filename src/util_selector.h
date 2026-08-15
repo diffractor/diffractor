@@ -87,7 +87,10 @@ namespace df
 		{
 			const auto len = sv.size();
 
-			if (len >= 2)
+			// The shortest selector is the shortest root: a drive letter and colon, or one separator.
+			constexpr size_t shortest = windows_path_semantics ? 2 : 1;
+
+			if (len >= shortest)
 			{
 				auto star_start = 0_z;
 				auto stars = count_ending_stars(sv, star_start);
@@ -109,7 +112,11 @@ namespace df
 						if (tail.find_first_of("*?") != std::string_view::npos)
 						{
 							_wildcard = tail;
-							root = sv.substr(0, last_slash);
+							// A separator in first position IS the root, so it has to be kept:
+							// dropping it turns "/*.jpg" into a relative path with no folder at all.
+							// "c:\*.jpg" keeps "c:", which normalises back to a drive root on its own.
+							const auto root_end = last_slash == 0 && !windows_path_semantics ? 1u : last_slash;
+							root = sv.substr(0, root_end);
 							stars = count_ending_stars(root, star_start);
 						}
 
@@ -137,13 +144,13 @@ namespace df
 
 			if (_recursive)
 			{
-				if (result.empty() || result.back() != '\\') result += '\\';
+				if (result.empty() || result.back() != preferred_path_sep) result += preferred_path_sep;
 				result += "**";
 			}
 
 			if (has_wildcard())
 			{
-				if (result.empty() || result.back() != '\\') result += '\\';
+				if (result.empty() || result.back() != preferred_path_sep) result += preferred_path_sep;
 				result += _wildcard;
 			}
 

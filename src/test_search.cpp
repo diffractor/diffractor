@@ -15,6 +15,34 @@
 #include "model_tokenizer.h"
 #include "app_match.h"
 
+// Path syntax is the vehicle in most of these tests, not the subject: what they constrain - where
+// the folder ends, what makes a browse recursive, which part is a wildcard, what a parent is - is
+// the same wherever Diffractor runs. This spells the same path for the platform under test, so a
+// drive root becomes the filesystem root and separators follow suit.
+static std::string as_platform_path(std::string_view windows_form)
+{
+	if constexpr (df::windows_path_semantics) return std::string(windows_form);
+
+	std::string result;
+
+	// A drive letter names nothing here, so the filesystem root stands in for the drive root.
+	if (windows_form.size() >= 2 && windows_form[1] == ':' &&
+		(windows_form[0] | 0x20) >= 'a' && (windows_form[0] | 0x20) <= 'z')
+	{
+		result = "/";
+		windows_form.remove_prefix(2);
+
+		if (!windows_form.empty() && (windows_form.front() == '\\' || windows_form.front() == '/'))
+		{
+			windows_form.remove_prefix(1);
+		}
+	}
+
+	for (const auto c : windows_form) result += c == '\\' ? '/' : c;
+
+	return result;
+}
+
 static void should_parse_searches()
 {
 	const auto date_filter = df::search_t::parse("2012-09-14");
@@ -291,11 +319,14 @@ static void should_preserve_and_auto_quote_search_input()
 	             "quotes preserved in search bar text");
 
 	// #139: a bare path containing spaces is auto-quoted.
-	assert_equal("\"C:\\My Photos\""s, base.parse_from_input("C:\\My Photos").text(),
+	const auto my_photos = as_platform_path("C:\\My Photos");
+	const auto photos = as_platform_path("C:\\Photos");
+
+	assert_equal("\"" + my_photos + "\"", base.parse_from_input(my_photos).text(),
 	             "path with spaces auto-quoted");
-	assert_equal("C:\\Photos"s, base.parse_from_input("C:\\Photos").text(),
+	assert_equal(photos, base.parse_from_input(photos).text(),
 	             "path without spaces left unquoted");
-	assert_equal("\"C:\\My Photos\""s, base.parse_from_input("\"C:\\My Photos\"").text(),
+	assert_equal("\"" + my_photos + "\"", base.parse_from_input("\"" + my_photos + "\"").text(),
 	             "already-quoted path not double-quoted");
 }
 
@@ -410,7 +441,7 @@ static void should_format_search_predictions()
 	             "existing separator is preserved");
 
 	assert_equal(true, search_icon("holiday") == icon_index::search, "plain text uses search icon");
-	assert_equal(true, search_icon("C:\\Photos") == icon_index::folder, "path uses folder icon");
+	assert_equal(true, search_icon(as_platform_path("C:\\Photos")) == icon_index::folder, "path uses folder icon");
 	assert_equal(true, search_icon("#holiday") == icon_index::tag, "tag uses tag icon");
 	assert_equal(true, search_icon("rating:4") == prop::rating.icon, "property uses property icon");
 	assert_equal(true, search_icon("2012-09-14") == icon_index::time, "date uses time icon");
@@ -487,30 +518,42 @@ static void assert_parse(const std::string_view selector, const std::string_view
 
 static void should_parse_selector()
 {
-	assert_parse("c:\\", "c:\\", false, "*.*");
-	assert_parse("c:\\**", "c:\\", true, "*.*");
-	assert_parse("c:\\**\\", "c:\\**", "c:\\", true, "*.*");
-	assert_parse("c:/**/", "c:\\**", "c:\\", true, "*.*");
-	assert_parse("c:\\*.jpg", "c:\\", false, "*.jpg");
-	assert_parse("c:\\temp\\*.jpg", "c:\\temp", false, "*.jpg");
-	assert_parse(R"(c:\temp\**\*.jpg)", "c:\\temp", true, "*.jpg");
-	assert_parse("c:\\temp\\***.jpg", "c:\\temp", false, "***.jpg");
-	assert_parse("c:\\temp\\?x.jpg", "c:\\temp", false, "?x.jpg");
+	const auto p = as_platform_path;
+
+	assert_parse(p("c:\\"), p("c:\\"), false, "*.*");
+	assert_parse(p("c:\\**"), p("c:\\"), true, "*.*");
+	assert_parse(p("c:\\**\\"), p("c:\\**"), p("c:\\"), true, "*.*");
+	assert_parse(p("c:/**/"), p("c:\\**"), p("c:\\"), true, "*.*");
+	assert_parse(p("c:\\*.jpg"), p("c:\\"), false, "*.jpg");
+	assert_parse(p("c:\\temp\\*.jpg"), p("c:\\temp"), false, "*.jpg");
+	assert_parse(p(R"(c:\temp\**\*.jpg)"), p("c:\\temp"), true, "*.jpg");
+	assert_parse(p("c:\\temp\\***.jpg"), p("c:\\temp"), false, "***.jpg");
+	assert_parse(p("c:\\temp\\?x.jpg"), p("c:\\temp"), false, "?x.jpg");
 }
 
 static void should_detect_folder_browse()
 {
 	// A plain folder path (with no search terms) is a folder browse. This drives the
 	// "Empty Folder" vs "Nothing found" message when the view has no items.
+	//
+	// parse_path only accepts a folder that exists, so this uses the fixtures folder rather than a
+	// system one that only happens to be there on one platform.
+	const std::string folder(test_files_folder.text());
+
+#ifdef _WIN32
+	// A UNC path is a Windows spelling; elsewhere a leading backslash is an ordinary name character.
 	assert_equal(true, df::search_t::parse("\\\\").is_empty(), "incomplete UNC root");
 	assert_equal(true, df::search_t::parse("\\\\server").is_empty(), "incomplete UNC server");
 	assert_equal(true, df::search_t::parse("\\\\server\\").is_empty(), "incomplete UNC server root");
-	assert_equal(true, df::search_t::parse("c:\\windows").is_folder(), "plain folder path");
-	assert_equal(true, df::search_t::parse("c:\\windows\\**").is_folder(), "recursive folder browse");
-	assert_equal(true, df::search_t::parse("c:\\windows\\*.jpg").is_folder(), "folder with wildcard, no terms");
+#endif
+	assert_equal(true, df::search_t::parse(folder).is_folder(), "plain folder path");
+	assert_equal(true, df::search_t::parse(folder + df::preferred_path_sep + "**").is_folder(),
+	             "recursive folder browse");
+	assert_equal(true, df::search_t::parse(folder + df::preferred_path_sep + "*.jpg").is_folder(),
+	             "folder with wildcard, no terms");
 
 	// A search - even one scoped to a folder - is not a folder browse.
-	assert_equal(false, df::search_t::parse("c:\\windows with:tag").is_folder(), "folder scoped search");
+	assert_equal(false, df::search_t::parse(folder + " with:tag").is_folder(), "folder scoped search");
 	assert_equal(false, df::search_t::parse("dog").is_folder(), "term with no selector");
 	assert_equal(false, df::search_t::parse("2014").is_folder(), "date term");
 	assert_equal(false, df::search_t().is_folder(), "empty search");
@@ -1040,10 +1083,10 @@ static void should_parse_search_input()
 
 static void should_parent()
 {
-	const auto folder = df::folder_path("c:\\windows\\system32");
-	assert_equal("c:\\windows", folder.parent().text(), "parent test");
-	assert_equal("c:\\", folder.parent().parent().text(), "parent test");
-	assert_equal("c:\\", folder.parent().parent().parent().text(), "parent test");
+	const auto folder = df::folder_path(as_platform_path("c:\\windows\\system32"));
+	assert_equal(as_platform_path("c:\\windows"), folder.parent().text(), "parent test");
+	assert_equal(as_platform_path("c:\\"), folder.parent().parent().text(), "parent test");
+	assert_equal(as_platform_path("c:\\"), folder.parent().parent().parent().text(), "parent test");
 
 	const auto base_folder = std::string(test_files_folder.text());
 	null_state_strategy ss;
@@ -1099,20 +1142,25 @@ static void should_parent()
 
 	// A drive root has nothing wider to show, so Parent reports no parent and the command is
 	// disabled rather than re-running the same query.
-	assert_equal(true, find_parent_search(df::search_t::parse("c:\\")).parent.is_empty(), "parent of drive root");
+	const auto root = as_platform_path("c:\\");
+	const auto windows = as_platform_path("c:\\windows");
+
+	assert_equal(true, find_parent_search(df::search_t::parse(root)).parent.is_empty(), "parent of drive root");
 
 	// A wildcard or recursive scope at a root still broadens - to the plain root folder.
-	assert_equal("c:\\", find_parent_search(df::search_t::parse("c:\\*.png")).parent.text(), "parent of root *.png");
-	assert_equal("c:\\", find_parent_search(df::search_t::parse("c:\\**")).parent.text(), "parent of root **");
+	assert_equal(root, find_parent_search(df::search_t::parse(as_platform_path("c:\\*.png"))).parent.text(),
+	             "parent of root *.png");
+	assert_equal(root, find_parent_search(df::search_t::parse(as_platform_path("c:\\**"))).parent.text(),
+	             "parent of root **");
 
 	// Terms are dropped one at a time, dates first, whether or not a folder selector is present.
-	const auto folder_photo_date = find_parent_search(df::search_t::parse("c:\\windows @photo 1972-may")).parent;
+	const auto folder_photo_date = find_parent_search(df::search_t::parse(windows + " @photo 1972-may")).parent;
 	assert_equal(true, folder_photo_date.has_media_type(), "parent keeps the media type");
 	assert_equal(true, folder_photo_date.has_selector(), "parent keeps the folder scope");
 	assert_equal(1972, folder_photo_date.find_date_parts().year, "parent steps the date first");
 	assert_equal(0, folder_photo_date.find_date_parts().month, "parent steps the date first");
 
-	assert_equal("c:\\windows", find_parent_search(df::search_t::parse("c:\\windows @photo")).parent.text(),
+	assert_equal(windows, find_parent_search(df::search_t::parse(windows + " @photo")).parent.text(),
 	             "parent then drops the media type");
 
 	// A place inside a state inside a country steps straight out to the country. Location terms are
@@ -1328,10 +1376,11 @@ static void should_parse_exclude_dot_folder_by_name()
 
 	// Exclude the same dot-folder by full path - the case the user confirmed works.
 	df::index_roots by_path;
-	parse_more_folders(by_path, "-c:\\photos\\.dtrash");
+	const auto dtrash = as_platform_path("c:\\photos\\.dtrash");
+	parse_more_folders(by_path, "-" + dtrash);
 
 	assert_equal(1_z, by_path.excludes.size(), "full path stored as exclude");
-	assert_equal(true, df::is_excluded(by_path, df::folder_path("c:\\photos\\.dtrash")),
+	assert_equal(true, df::is_excluded(by_path, df::folder_path(dtrash)),
 	             ".dtrash excluded by full path");
 }
 

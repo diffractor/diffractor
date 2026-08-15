@@ -1476,11 +1476,16 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	tests.add("Should update exif rating"s, should_update_exif_rating);
 	tests.add("Should update formatted description"s, should_update_formatted_text);
 	tests.add("Should update synopsis"s, should_update_synopsis);
-	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);
 
 	// Windows Explorer / Media Player tag interop (#123)
 	tests.add("Should read mp4 Xtra metadata gizmo.mp4"s, [] { should_read_mp4_xtra_metadata("gizmo.mp4", "xTag1"); });
 	tests.add("Should read mp4 Xtra metadata ipod.mov"s, [] { should_read_mp4_xtra_metadata("ipod.mov", "ipad"); });
+
+#ifdef _WIN32
+	// These write through the Windows property system and then ask it to read the result back, so
+	// they measure Diffractor against the shell itself. There is nothing to hold them to elsewhere:
+	// platform::write_shell_tags has no counterpart, and a test that skips asserts nothing and fails.
+	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);
 	tests.add("Should read asf WM/Category multi-value"s, should_read_asf_wm_categories);
 	tests.add("Should write windows tags via xmp gizmo.mp4"s, [] { should_write_windows_tags_via_xmp("gizmo.mp4"); });
 	tests.add("Should write windows tags via xmp ipod.mov"s, [] { should_write_windows_tags_via_xmp("ipod.mov"); });
@@ -1492,7 +1497,9 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 		tests.add(std::format("Should round-trip windows shell tags {}", name),
 		          [name] { should_roundtrip_windows_shell_tags(name); });
 	}
+#endif
 
+	// Unlike the above, this one asserts that the write is refused, which is true everywhere.
 	constexpr std::string_view shell_unsupported_files[] = {"Byzantium.avi", "gen.mpg"};
 	for (auto name : shell_unsupported_files)
 	{

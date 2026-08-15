@@ -55,7 +55,7 @@ namespace df
 
 	constexpr bool is_path(const char* s)
 	{
-		if (s == nullptr || s[0] == 0 || s[1] == 0) return false;
+		if (s == nullptr || s[0] == 0) return false;
 
 		if constexpr (!windows_path_semantics)
 		{
@@ -64,6 +64,8 @@ namespace df
 		}
 		else
 		{
+			if (s[1] == 0) return false;
+
 			if (s[1] == L':' && (is_path_sep(s[2]) || s[2] == 0))
 			{
 				const auto first_char = str::to_lower(s[0]);
@@ -76,8 +78,17 @@ namespace df
 
 	constexpr bool is_path(const std::string_view r)
 	{
-		if (r.size() < 3) return false;
-		return is_path(r.data());
+		// The shortest Windows path is a drive root, three characters; the shortest POSIX one is the
+		// filesystem root, which is a single separator.
+		if constexpr (!windows_path_semantics)
+		{
+			return !r.empty() && r[0] == '/';
+		}
+		else
+		{
+			if (r.size() < 3) return false;
+			return is_path(r.data());
+		}
 	}
 
 	constexpr std::string_view::size_type find_last_slash(const std::string_view path)
@@ -111,7 +122,9 @@ namespace df
 		static str::cached cached_normalized_folder(const std::string_view sv_in)
 		{
 			auto sv = sv_in;
-			while (sv.size() > 3 && str::is_slash(sv.back())) sv.remove_suffix(1);
+			// A root keeps its separator: "c:\" and "/" are the shortest folder each platform has.
+			constexpr size_t root_length = windows_path_semantics ? 3 : 1;
+			while (sv.size() > root_length && str::is_slash(sv.back())) sv.remove_suffix(1);
 
 			const auto has_wrong_slash = sv.find(foreign_path_sep) != std::string_view::npos;
 			const auto is_drive_missing_slash = windows_path_semantics && sv.size() == 2 && sv[1] == ':';
@@ -251,7 +264,19 @@ namespace df
 
 			assert_true(!str::is_slash(last_char(_s)));
 			const auto found_last_slash = find_last_slash();
-			if (found_last_slash == std::string_view::npos || found_last_slash < 2) return folder_path(_s);
+			if (found_last_slash == std::string_view::npos) return folder_path(_s);
+
+			if constexpr (!windows_path_semantics)
+			{
+				// A top-level folder's parent is the root, which is the separator itself rather than
+				// the empty string that dropping it would leave.
+				if (found_last_slash == 0) return folder_path("/");
+			}
+			else if (found_last_slash < 2)
+			{
+				return folder_path(_s);
+			}
+
 			return folder_path(_s.substr(0, found_last_slash));
 		}
 
@@ -283,7 +308,15 @@ namespace df
 
 		static bool is_root(const std::string_view sv)
 		{
-			return is_drive(sv);
+			if constexpr (!windows_path_semantics)
+			{
+				// There is one root and it is a single separator; a drive letter means nothing here.
+				return sv.size() == 1 && is_path_sep(sv[0]);
+			}
+			else
+			{
+				return is_drive(sv);
+			}
 		}
 
 		bool is_drive() const

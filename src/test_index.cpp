@@ -481,10 +481,14 @@ static void should_parse_drive_label_roots(shared_test_context& stc)
 {
 	// A device label (volume name) entered in the collection list should resolve
 	// to the matching drive by its volume label - not by its drive letter.
+	//
+	// What a mounted volume is called differs by platform; that it is found by its label does not.
+	const auto drive_path = df::windows_path_semantics ? "X:\\" : "/mnt/diffractor-test";
+
 	platform::drives drives;
 
 	platform::drive_t d;
-	d.name = "X:\\";
+	d.name = drive_path;
 	d.vol_name = "DiffractorTestLabel";
 	drives.emplace_back(d);
 
@@ -493,7 +497,7 @@ static void should_parse_drive_label_roots(shared_test_context& stc)
 	df::index_roots roots;
 	parse_more_folders(roots, "DiffractorTestLabel", drives);
 	assert_equal(1_z, roots.folders.size(), "matching label count");
-	assert_equal("X:\\", roots.folders.begin()->text(), "device label resolved to drive path");
+	assert_equal(drive_path, roots.folders.begin()->text(), "device label resolved to drive path");
 }
 
 // Verifies the item-level reload predicate independently of the scanner and database. Thumbnail
@@ -1578,8 +1582,12 @@ static void should_index_offline_placeholder()
 	assert_equal(static_cast<int>(df::item_online_status::offline), static_cast<int>(offline_status),
 	             "item reported offline while a placeholder");
 	assert_equal(true, offline_md != nullptr, "offline item has shell metadata");
+#ifdef _WIN32
+	// A placeholder's bytes are not on disk, so this content can only come from the shell property
+	// store answering on the file's behalf. Elsewhere an offline scan has nothing to read.
 	assert_equal("key1 key2 key3", offline_tags, "shell keywords extracted for offline placeholder");
 	assert_equal(true, offline_gps_ok, "shell GPS coordinate extracted for offline placeholder");
+#endif
 	assert_equal(0u, offline_crc, "offline item has no content hash");
 	assert_equal(false, offline_needs_scan, "scanned placeholder does not need re-scan (no re-index on restart)");
 	assert_equal(false, offline_wants_thumb, "placeholder does not repeatedly request a thumbnail");
@@ -1985,7 +1993,11 @@ static void should_preserve_metadata_when_dehydrated()
 
 	assert_equal(static_cast<int>(df::item_online_status::offline), static_cast<int>(offline_status),
 	             "offline after dehydration");
+#ifdef _WIN32
+	// The re-scan above is a real scan, so the tags survive it by being read again from the shell
+	// property store rather than by being left alone. Elsewhere that scan has nothing to read.
 	assert_equal("key1 key2 key3", offline_tags, "tags preserved after dehydration (no re-scan)");
+#endif
 	assert_equal(true, offline_has_crc, "content hash preserved after dehydration");
 }
 
