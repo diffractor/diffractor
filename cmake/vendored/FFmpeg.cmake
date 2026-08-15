@@ -51,13 +51,32 @@ if (_ff_jobs EQUAL 0)
     set(_ff_jobs 1)
 endif ()
 
+# The Windows build gets the libopenmpt demuxer from the checked in config.h; here configure has to
+# be told, and the only way it accepts is pkg-config. The vendored libopenmpt installs no .pc file,
+# so describe the archive this build already produces. Without this the demuxer is simply absent and
+# a tracked module scans as nothing at all rather than failing loudly.
+#
+# -L/-l rather than the archive's path: configure sorts its probe's arguments into compiler flags and
+# libraries by looking for a -l prefix, so a bare path is placed ahead of the object it has to
+# satisfy and ld, reading once, discards it.
+set(_ff_pkgconfig "${CMAKE_BINARY_DIR}/third-party/ffmpeg/pkgconfig")
+set(_ff_openmpt "")
+
+if (TARGET diffractor_openmpt)
+    set(_ff_openmpt --enable-libopenmpt)
+
+    file(GENERATE OUTPUT "${_ff_pkgconfig}/libopenmpt.pc" CONTENT
+            "Name: libopenmpt\nDescription: Vendored libopenmpt\nVersion: 0.8.7\nCflags: -I${CMAKE_SOURCE_DIR}/third-party/libopenmpt\nLibs: -L$<TARGET_FILE_DIR:diffractor_openmpt> -ldiffractor_openmpt -lstdc++ -lm\n")
+endif ()
+
 # This fork is stripped: --disable-postproc, --disable-shared, --enable-static and --enable-zlib
 # are not options it offers. --disable-autodetect keeps the result independent of whatever happens
 # to be installed on the build machine.
 ExternalProject_Add(ffmpeg_external
         SOURCE_DIR "${_ff_stage}"
         DOWNLOAD_COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_ff_src}" "${_ff_stage}"
-        CONFIGURE_COMMAND "${_ff_stage}/configure"
+        CONFIGURE_COMMAND "${CMAKE_COMMAND}" -E env "PKG_CONFIG_PATH=${_ff_pkgconfig}"
+        "${_ff_stage}/configure"
         --prefix=${_ff_prefix}
         --disable-programs
         --disable-doc
@@ -65,6 +84,7 @@ ExternalProject_Add(ffmpeg_external
         --disable-avfilter
         --disable-autodetect
         --enable-pic
+        ${_ff_openmpt}
         BUILD_COMMAND make -j${_ff_jobs}
         INSTALL_COMMAND make install
         BUILD_IN_SOURCE 1
@@ -82,7 +102,19 @@ file(MAKE_DIRECTORY "${_ff_prefix}/include")
 
 add_library(diffractor_ffmpeg INTERFACE)
 target_include_directories(diffractor_ffmpeg INTERFACE "${_ff_prefix}/include")
-target_link_libraries(diffractor_ffmpeg INTERFACE ${_ff_archives} m ${CMAKE_DL_LIBS})
+target_link_libraries(diffractor_ffmpeg INTERFACE m ${CMAKE_DL_LIBS})
+
+# The archives are handed to the application to place rather than carried on this target's link
+# interface. A rescan group only covers the items written into it, and an interface target's own
+# libraries are emitted after the group has closed -- which left libavformat behind libopenmpt on a
+# line ld reads once, so its calls into the tracked module loader went unresolved.
+set_property(GLOBAL PROPERTY DIFFRACTOR_GROUPED_ARCHIVES "${_ff_archives}")
+
+# configure links a probe against the archive named in the .pc file, so it has to be on disk before
+# the external project starts rather than merely before the application links.
+if (TARGET diffractor_openmpt)
+    add_dependencies(ffmpeg_external diffractor_openmpt)
+endif ()
 
 # An external project is not a CMake target on the link line, so the application has to be told to
 # wait for it explicitly.

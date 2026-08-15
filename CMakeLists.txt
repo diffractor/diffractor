@@ -91,6 +91,11 @@ diffractor_dependency(bzip2 VENDORED_MODULE vendored/bzip2 VENDORED_DIR third-pa
 diffractor_dependency(lzma VENDORED_MODULE vendored/lzma VENDORED_DIR third-party/liblzma OPTIONAL)
 diffractor_dependency(brotli VENDORED_MODULE vendored/brotli VENDORED_DIR third-party/brotli OPTIONAL)
 diffractor_dependency(highway VENDORED_MODULE vendored/highway VENDORED_DIR third-party/highway OPTIONAL)
+# Tracked music. Declared before the forks because FFmpeg's configure enables its libopenmpt
+# demuxer only when it can already see the library, and a dependency can only be stated on a target
+# that already exists.
+diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt VENDORED_DIR third-party/libopenmpt OPTIONAL)
+
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard. Declared before the codecs because dng compiles against the XMP
 # toolkit, and a dependency can only be stated on a target that already exists.
@@ -103,7 +108,6 @@ diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d VENDORED_DIR third-pa
 diffractor_dependency(dng VENDORED_MODULE vendored/dng VENDORED_DIR third-party/dng OPTIONAL)
 diffractor_dependency(ebml VENDORED_MODULE vendored/ebml VENDORED_DIR third-party/libebml OPTIONAL)
 diffractor_dependency(matroska VENDORED_MODULE vendored/matroska VENDORED_DIR third-party/libmatroska OPTIONAL)
-diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt VENDORED_DIR third-party/libopenmpt OPTIONAL)
 
 # Codecs and utilities that gate a translation unit of their own.
 diffractor_dependency(heif VENDORED_MODULE vendored/heif VENDORED_DIR third-party/libheif OPTIONAL)
@@ -418,6 +422,11 @@ foreach (dep IN ITEMS
         list(APPEND DIFFRACTOR_LINK_DEPENDENCIES diffractor::${dep})
     endif ()
 endforeach ()
+
+# Archives that belong on the line but have no CMake target: FFmpeg is built by its own make, and
+# naming them here is what puts them inside the rescan group below.
+get_property(_grouped_archives GLOBAL PROPERTY DIFFRACTOR_GROUPED_ARCHIVES)
+list(APPEND DIFFRACTOR_LINK_DEPENDENCIES ${_grouped_archives})
 
 if (MSVC)
     target_link_libraries(diffractor PRIVATE ${DIFFRACTOR_LINK_DEPENDENCIES})
