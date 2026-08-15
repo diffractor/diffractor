@@ -51,22 +51,33 @@ if (_ff_jobs EQUAL 0)
     set(_ff_jobs 1)
 endif ()
 
-# The Windows build gets the libopenmpt demuxer from the checked in config.h; here configure has to
-# be told, and the only way it accepts is pkg-config. The vendored libopenmpt installs no .pc file,
-# so describe the archive this build already produces. Without this the demuxer is simply absent and
-# a tracked module scans as nothing at all rather than failing loudly.
+# configure only accepts an external library through pkg-config, and the vendored copies install no
+# .pc file, so describe the archives this build already produces. Without this for libopenmpt the
+# demuxer is simply absent and a tracked module scans as nothing at all rather than failing loudly;
+# without it for zlib, configure probes the system copy's headers while the link resolves against
+# the vendored zlib-ng beside it, which is a different implementation agreeing by convention.
 #
 # -L/-l rather than the archive's path: configure sorts its probe's arguments into compiler flags and
 # libraries by looking for a -l prefix, so a bare path is placed ahead of the object it has to
 # satisfy and ld, reading once, discards it.
 set(_ff_pkgconfig "${CMAKE_BINARY_DIR}/third-party/ffmpeg/pkgconfig")
+
+function(_ff_describe_vendored pc_name target version include_dir extra_libs)
+    file(GENERATE OUTPUT "${_ff_pkgconfig}/${pc_name}.pc" CONTENT
+            "Name: ${pc_name}\nDescription: Vendored ${pc_name}\nVersion: ${version}\nCflags: -I${include_dir}\nLibs: -L$<TARGET_FILE_DIR:${target}> -l${target} ${extra_libs}\n")
+endfunction()
+
 set(_ff_openmpt "")
 
 if (TARGET diffractor_openmpt)
     set(_ff_openmpt --enable-libopenmpt)
+    _ff_describe_vendored(libopenmpt diffractor_openmpt 0.8.7
+            "${CMAKE_SOURCE_DIR}/third-party/libopenmpt" "-lstdc++ -lm")
+endif ()
 
-    file(GENERATE OUTPUT "${_ff_pkgconfig}/libopenmpt.pc" CONTENT
-            "Name: libopenmpt\nDescription: Vendored libopenmpt\nVersion: 0.8.7\nCflags: -I${CMAKE_SOURCE_DIR}/third-party/libopenmpt\nLibs: -L$<TARGET_FILE_DIR:diffractor_openmpt> -ldiffractor_openmpt -lstdc++ -lm\n")
+if (TARGET diffractor_zlib)
+    _ff_describe_vendored(zlib diffractor_zlib 1.3.1
+            "${CMAKE_SOURCE_DIR}/third-party/ZLib" "")
 endif ()
 
 # This fork is stripped: --disable-postproc, --disable-shared and --enable-static are not options it
@@ -123,11 +134,13 @@ target_link_libraries(diffractor_ffmpeg INTERFACE m ${CMAKE_DL_LIBS})
 # line ld reads once, so its calls into the tracked module loader went unresolved.
 set_property(GLOBAL PROPERTY DIFFRACTOR_GROUPED_ARCHIVES "${_ff_archives}")
 
-# configure links a probe against the archive named in the .pc file, so it has to be on disk before
-# the external project starts rather than merely before the application links.
-if (TARGET diffractor_openmpt)
-    add_dependencies(ffmpeg_external diffractor_openmpt)
-endif ()
+# configure links a probe against the archives named in the .pc files, so they have to be on disk
+# before the external project starts rather than merely before the application links.
+foreach (_ff_dep IN ITEMS diffractor_openmpt diffractor_zlib)
+    if (TARGET ${_ff_dep})
+        add_dependencies(ffmpeg_external ${_ff_dep})
+    endif ()
+endforeach ()
 
 # An external project is not a CMake target on the link line, so the application has to be told to
 # wait for it explicitly.

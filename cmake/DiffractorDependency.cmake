@@ -15,6 +15,12 @@ find_package(PkgConfig QUIET)
 # them statically would move CVE patching from the distribution onto us.
 option(DIFFRACTOR_STATIC_VENDORED "Build vendored third-party libraries as static archives" ON)
 
+# A shipped Diffractor is fully vendored: docs/third-party.md records the patches and the pinned
+# versions a distribution copy would silently discard, and the vendored zlib is zlib-ng rather than
+# zlib at all. System packages remain available per library, as a way to bring a new platform up
+# before its vendored modules build, not as the configuration anything ships in.
+option(DIFFRACTOR_PREFER_SYSTEM "Default each dependency to the system copy where one is offered" OFF)
+
 set(DIFFRACTOR_RESOLVED_SYSTEM "" CACHE INTERNAL "")
 set(DIFFRACTOR_RESOLVED_VENDORED "" CACHE INTERNAL "")
 set(DIFFRACTOR_RESOLVED_MISSING "" CACHE INTERNAL "")
@@ -40,7 +46,7 @@ function(diffractor_dependency NAME)
         set(USE_SYSTEM OFF)
     else ()
         option(DIFFRACTOR_SYSTEM_${UPPER}
-                "Use the system ${NAME} rather than the vendored copy" ON)
+                "Use the system ${NAME} rather than the vendored copy" ${DIFFRACTOR_PREFER_SYSTEM})
         set(USE_SYSTEM ${DIFFRACTOR_SYSTEM_${UPPER}})
     endif ()
 
