@@ -1070,7 +1070,7 @@ static void should_parse_search_input()
 	s.open(view, test_files_folder.text());
 	s.open(view, "**");
 
-	assert_equal(base_folder + "\\**"s, s.search().text(), "Parse **");
+	assert_equal(base_folder + df::preferred_path_sep + "**"s, s.search().text(), "Parse **");
 
 	s.open(view, test_files_folder.text());
 	s.open(view, "aaa");
@@ -1105,12 +1105,12 @@ static void should_parent()
 	s.open(view, base_folder + " test"s);
 	assert_equal(base_folder, s.parent_search().parent.text(), "parent test");
 
-	s.open(view, base_folder + "\\raw"s);
+	s.open(view, base_folder + df::preferred_path_sep + "raw"s);
 	const auto raw_parent = s.parent_search();
 	assert_equal(base_folder, raw_parent.parent.text(), "parent \\raw");
 	assert_equal("raw", raw_parent.name, "parent name \\raw");
 
-	s.open(view, base_folder + "\\*.png"s);
+	s.open(view, base_folder + df::preferred_path_sep + "*.png"s);
 	assert_equal(base_folder, s.parent_search().parent.text(), "parent *.png");
 
 	s.open(view, base_folder + " @photo"s);
@@ -1143,7 +1143,9 @@ static void should_parent()
 	// A drive root has nothing wider to show, so Parent reports no parent and the command is
 	// disabled rather than re-running the same query.
 	const auto root = as_platform_path("c:\\");
-	const auto windows = as_platform_path("c:\\windows");
+	// A folder scope only survives if the folder is real, so this uses the fixtures folder rather
+	// than a system one that only exists on one platform.
+	const std::string scope_folder(test_files_folder.text());
 
 	assert_equal(true, find_parent_search(df::search_t::parse(root)).parent.is_empty(), "parent of drive root");
 
@@ -1154,13 +1156,14 @@ static void should_parent()
 	             "parent of root **");
 
 	// Terms are dropped one at a time, dates first, whether or not a folder selector is present.
-	const auto folder_photo_date = find_parent_search(df::search_t::parse(windows + " @photo 1972-may")).parent;
+	const auto folder_photo_date = find_parent_search(
+		df::search_t::parse(scope_folder + " @photo 1972-may")).parent;
 	assert_equal(true, folder_photo_date.has_media_type(), "parent keeps the media type");
 	assert_equal(true, folder_photo_date.has_selector(), "parent keeps the folder scope");
 	assert_equal(1972, folder_photo_date.find_date_parts().year, "parent steps the date first");
 	assert_equal(0, folder_photo_date.find_date_parts().month, "parent steps the date first");
 
-	assert_equal(windows, find_parent_search(df::search_t::parse(windows + " @photo")).parent.text(),
+	assert_equal(scope_folder, find_parent_search(df::search_t::parse(scope_folder + " @photo")).parent.text(),
 	             "parent then drops the media type");
 
 	// A place inside a state inside a country steps straight out to the country. Location terms are
@@ -1194,11 +1197,12 @@ static void should_escape()
 	s.item_index.index_folders(test_token);
 
 	s.view_mode(view_type::items);
-	s.open(view, base_folder + "\\**"s);
+	s.open(view, base_folder + df::preferred_path_sep + "**"s);
 	s.is_full_screen = true;
 	assert_equal(true, s.escape(view), "fullscreen escape handled");
 	assert_equal(1, ss.toggle_full_screen_count, "fullscreen escape toggled fullscreen");
-	assert_equal(base_folder + "\\**"s, s.search().text(), "fullscreen escape preserves search");
+	assert_equal(base_folder + df::preferred_path_sep + "**"s, s.search().text(),
+	             "fullscreen escape preserves search");
 	s.is_full_screen = false;
 	s.escape(view);
 	assert_equal(base_folder, s.search().text(), "parent escape **");

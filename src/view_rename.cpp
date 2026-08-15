@@ -118,6 +118,54 @@ void rename_view::run()
 			}
 		}
 
+		// The plan treats a destination held by a file this run renames away as free, so the run has
+		// to free it rather than fail on it. The occupant moves to a temporary name in its own folder
+		// and the row that owns it renames from there; anything still parked when the run ends goes
+		// back where it came from. The test matches the one the plan used, or the run would park a
+		// path the plan never counted as free.
+		std::set<std::string, df::iless> vacating;
+
+		for (const auto& rename : renames)
+		{
+			const auto source_key = rename_path_key(rename.source, rename.is_folder);
+			if (rename.noop || str::icmp(source_key, rename_path_key(rename.destination, rename.is_folder)) == 0)
+				continue;
+
+			vacating.emplace(source_key);
+			for (const auto& [source, destination] : rename.sidecars)
+				if (source.icmp(destination) != 0) vacating.emplace(source.pack());
+		}
+
+		struct parked_path
+		{
+			df::file_path original;
+			df::file_path temporary;
+			bool is_folder = false;
+		};
+
+		std::map<std::string, parked_path, df::iless> parked;
+
+		auto current_path = [&parked](const df::file_path path, const bool is_folder)
+		{
+			const auto found = parked.find(rename_path_key(path, is_folder));
+			return found == parked.end() ? path : found->second.temporary;
+		};
+
+		auto free_destination = [&](const df::file_path destination, const bool is_folder)
+		{
+			const platform::file_op_result nothing_to_do{platform::file_op_result_code::OK, {}, {}};
+			const auto key = rename_path_key(destination, is_folder);
+
+			if (!vacating.contains(key) || parked.contains(key)) return nothing_to_do;
+			if (!rename_path_exists(destination, is_folder)) return nothing_to_do;
+
+			const auto temporary = platform::temp_file(is_folder ? std::string_view{} : destination.extension(),
+			                                           destination.folder());
+			auto result = move_rename_path(destination, temporary, true, is_folder);
+			if (result.success()) parked.emplace(key, parked_path{destination, temporary, is_folder});
+			return result;
+		};
+
 		for (const auto& rename : renames)
 		{
 			results->start_item(rename.original_name);
@@ -137,15 +185,25 @@ void rename_view::run()
 			for (auto index = 0_z; index < rename.sidecars.size(); ++index)
 			{
 				const auto& [source, destination] = rename.sidecars[index];
-				result = move_rename_path(source, destination, rename.policy != collision_policy::replace);
+				result = free_destination(destination, false);
 				if (result.failed()) break;
+				result = move_rename_path(current_path(source, false), destination,
+				                          rename.policy != collision_policy::replace);
+				if (result.failed()) break;
+				parked.erase(rename_path_key(source, false));
 				// Only paths this run created are rolled back: under Replace the write can land on a
-				// destination that already existed, and moving it back would destroy the original.
-				if (!rename.sidecar_destinations_exist[index]) moved_sidecars.emplace_back(source, destination);
+				// destination that already existed, and moving it back would destroy the original. A
+				// destination this run emptied itself is one it created, so it does roll back.
+				if (!rename.sidecar_destinations_exist[index] || vacating.contains(destination.pack()))
+					moved_sidecars.emplace_back(source, destination);
 			}
+			if (result.success()) result = free_destination(rename.destination, rename.is_folder);
 			if (result.success())
-				result = move_rename_path(rename.source, rename.destination,
+			{
+				result = move_rename_path(current_path(rename.source, rename.is_folder), rename.destination,
 				                          rename.policy != collision_policy::replace, rename.is_folder);
+				if (result.success()) parked.erase(rename_path_key(rename.source, rename.is_folder));
+			}
 			if (result.failed())
 			{
 				for (auto sidecar = moved_sidecars.rbegin(); sidecar != moved_sidecars.rend(); ++sidecar)
@@ -159,9 +217,42 @@ void rename_view::run()
 			results->end_item(rename.original_name, to_status(result.code));
 		}
 
+		// A row that failed or never ran leaves its source parked, so put it back under its own name.
+		for (const auto& [key, entry] : parked)
+		{
+			// A row that did complete can have taken that name. Landing beside it is best effort: if
+			// that name is taken too the item keeps the temporary one, which is where it already was.
+			if (move_rename_path(entry.temporary, entry.original, true, entry.is_folder).failed())
+				move_rename_path(entry.temporary, next_free_destination(entry.original), true, entry.is_folder);
+			scan_folders.emplace(entry.original.folder());
+		}
+
 		index.queue_scan_folders(std::move(scan_folders));
 		rr.complete();
 	});
+}
+
+std::string rename_view::run_blocked_reason() const
+{
+	// While a run is in flight, or before there is a plan to judge, the toolbar and the status
+	// already state the situation; naming a second cause on top of that would be noise.
+	if (progress().active || !_analysis_valid || _renames.empty()) return {};
+
+	// A name the file system will not accept blocks the run whatever the collision policy is, and
+	// the row alone cannot say which character is at fault.
+	const auto unusable = std::ranges::find_if(_renames, [](const rename_item& item)
+	{
+		return !item.valid && !item.collides;
+	});
+	if (unusable != _renames.end()) return str_format(tt.error_invalid_path_fmt.sv(), unusable->new_name);
+
+	// Block Run refuses a collision the other policies resolve, and a destination claimed twice by
+	// the plan refuses under every policy. Both are counted the same way.
+	const auto unresolved = count_rename_collisions(_renames, collision_policy::block_run);
+	if (unresolved > 0 && !can_rename_items(_renames))
+		return format_collision_summary(collision_policy::block_run, unresolved);
+
+	return {};
 }
 
 void rename_view::refresh()
@@ -215,6 +306,23 @@ void rename_view::refresh()
 			                   view->_renames = std::move(renames);
 			                   view->_analysis_valid = true;
 			                   view->_status = completion_status;
+
+			                   // A dimmed Run is only honest if the view says what would make it work,
+			                   // and a resolved collision is part of what Review promises.
+			                   const auto collisions = count_rename_collisions(
+				                   view->_renames, setting.rename.collision);
+			                   if (const auto summary = format_collision_summary(setting.rename.collision, collisions);
+				                   !summary.empty())
+			                   {
+				                   view->_status += "   ";
+				                   view->_status += summary;
+			                   }
+			                   else if (const auto blocked = view->run_blocked_reason(); !blocked.empty())
+			                   {
+				                   view->_status += "   ";
+				                   view->_status += blocked;
+			                   }
+
 			                   view->_state.invalidate_view(
 				                   view_invalid::view_layout | view_invalid::controller | view_invalid::status |
 				                   view_invalid::command_state);

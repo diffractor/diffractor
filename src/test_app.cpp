@@ -22,6 +22,7 @@
 #include "app_commands.h"
 #include "app_search.h"
 #include "ui_dialog.h"
+#include "view_rename.h"
 #include "view_tags.h"
 
 static void should_persist_to_ini_file()
@@ -127,13 +128,16 @@ static void should_reject_unusable_rename_targets()
 	const auto empty_template = calc_item_renames(items, "", 1, collision_policy::block_run);
 	assert_equal(false, can_rename_items(empty_template), "an empty template names nothing");
 
-	// Windows drops a trailing space, so the file would not carry the name the preview shows.
+#ifdef _WIN32
+	// Windows drops a trailing space, so the file would not carry the name the preview shows, and a
+	// device name is not a file at all. Neither is true of a filesystem that takes the name as given.
 	const auto trailing_space = calc_item_renames(items, "photo ", 1, collision_policy::block_run);
 	assert_equal("photo ", trailing_space.front().new_name, "the preview shows the template result");
 	assert_equal(false, can_rename_items(trailing_space), "a trailing space is rejected");
 
 	const auto device_name = calc_item_renames(items, "con", 1, collision_policy::block_run);
 	assert_equal(false, can_rename_items(device_name), "a reserved device name is rejected");
+#endif
 
 	const auto usable = calc_item_renames(items, "photo", 1, collision_policy::block_run);
 	assert_equal(true, can_rename_items(usable), "an ordinary name is still accepted");
@@ -150,6 +154,84 @@ static void should_reject_duplicate_rename_targets()
 	assert_equal(false, renames.front().valid, "first duplicate target invalid");
 	assert_equal(false, renames.back().valid, "second duplicate target invalid");
 }
+
+static std::vector<rename_source> make_rename_sources(const df::folder_path root,
+                                                     const std::vector<std::string>& names)
+{
+	const df::blob contents = {1};
+	std::vector<rename_source> sources;
+	for (const auto& name : names)
+	{
+		const auto path = root.combine_file(name + ".jpg");
+		df::blob_save_to_file(contents, path);
+		rename_source source;
+		source.source = path;
+		source.original_name = name;
+		sources.emplace_back(std::move(source));
+	}
+	return sources;
+}
+
+static void should_plan_the_default_rename_template()
+{
+	const auto root = _temps.next_folder("rename-default");
+	const auto sources = make_rename_sources(root, {"alpha", "beta", "gamma"});
+
+	const auto renames = calc_item_renames(sources, "Item ###", 1, collision_policy::block_run);
+	assert_equal(3_z, renames.size(), "one row per item");
+	assert_equal("Item 001", renames.front().new_name, "first row uses the start sequence");
+	assert_equal(false, renames.front().collides, "a free destination does not collide");
+	assert_equal(true, renames.front().valid, "a free destination is valid");
+	assert_equal(true, can_rename_items(renames), "the default template can run");
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	const auto with_sidecar = root.combine_file("with-sidecar.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), with_sidecar, false, false);
+	platform::copy_file(df::file_path(test_files_folder, "IMG_0604.xmp"), with_sidecar.extension(".xmp"), false, false);
+
+	df::item_set items;
+	for (const auto& source : sources) items.add(load_item(index, source.source, false));
+	items.add(load_item(index, with_sidecar, false));
+
+	const auto item_renames = calc_item_renames(items, "Item ###", 1, collision_policy::block_run);
+	assert_equal(4_z, item_renames.size(), "one row per indexed item");
+	for (const auto& rename : item_renames)
+		assert_equal(true, rename.valid, std::format("{} is valid", rename.new_name));
+	assert_equal(true, can_rename_items(item_renames), "indexed items can run the default template");
+}
+
+static void should_rename_a_set_onto_names_it_is_vacating()
+{
+	const auto root = _temps.next_folder("rename-rotate");
+	auto sources = make_rename_sources(root, {"Item 001", "Item 002", "Item 003"});
+	std::ranges::reverse(sources);
+
+	const auto renames = calc_item_renames(sources, "Item ###", 1, collision_policy::block_run);
+	assert_equal(true, can_rename_items(renames), "a set may be renamed onto its own names");
+	assert_equal(0, count_rename_collisions(renames, collision_policy::block_run), "no row collides");
+
+	// A case-only rename frees nothing, so a second row cannot be cleared to take that name.
+	const auto shadowed = make_rename_sources(root, {"only"});
+	const auto case_only = calc_item_renames(shadowed, "ONLY", 1, collision_policy::block_run);
+	assert_equal(true, can_rename_items(case_only), "a case-only rename is not a collision");
+}
+
+static void should_cascade_skipped_rename_rows()
+{
+	const auto root = _temps.next_folder("rename-cascade");
+	// Item 001 is not part of the plan, so the row that wants it can only be skipped - which leaves
+	// Item 002 where it is, so the row that was cleared to take Item 002 has to be skipped too.
+	const auto occupied = make_rename_sources(root, {"Item 001"});
+	const auto sources = make_rename_sources(root, {"Item 002", "beta"});
+
+	const auto renames = calc_item_renames(sources, "Item ###", 1, collision_policy::skip);
+	assert_equal(true, renames.front().skipped, "the blocked row is skipped");
+	assert_equal(true, renames.back().skipped, "the row waiting on it is skipped too");
+	assert_equal(false, can_rename_items(renames), "a plan that would write nothing cannot run");
+}
+
 
 static void should_group_rename_sidecar_collisions()
 {
@@ -201,6 +283,8 @@ static void should_adjust_item_dates_from_snapshot()
 	             "undated item uses new start");
 }
 
+#ifdef _WIN32
+// The numbers are MAPI's own result codes, so there is nothing to classify where MAPI is absent.
 static void should_classify_mapi_results()
 {
 	assert_equal(true, platform::classify_mapi_send_result(0) == platform::mapi_send_result::sent, "MAPI success");
@@ -209,6 +293,7 @@ static void should_classify_mapi_results()
 	assert_equal(true, platform::classify_mapi_send_result(3) == platform::mapi_send_result::failed,
 	             "MAPI login failure");
 }
+#endif
 
 // Records what a run reported for each row so revalidation decisions can be asserted.
 struct recording_status final : df::status_i
@@ -1467,6 +1552,61 @@ struct browsing_fixture
 	}
 };
 
+// The plan clears a destination held by a file the same run renames away, so the run has to free it
+// rather than fail on it. Every row here wants the next row's current name.
+static void should_run_a_rename_onto_vacated_names()
+{
+	const auto root = _temps.next_folder("rename-run-chain");
+	for (const auto& name : {"Item 001.jpg"s, "Item 002.jpg"s, "Item 003.jpg"s})
+		platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), root.combine_file(name), false, false);
+
+	browsing_fixture f(root);
+	f.state.select_all(f.view);
+	f.state.update_selection();
+	assert_equal(3_z, f.state.selected_items().size(), "the fixture folder is selected");
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "Item ###";
+	setting.rename.start_seq = "2";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a chained rename can run");
+	view->run();
+
+	assert_equal(false, root.combine_file("Item 001.jpg").exists(), "the vacated name is gone");
+	for (const auto& name : {"Item 002.jpg"s, "Item 003.jpg"s, "Item 004.jpg"s})
+		assert_equal(true, root.combine_file(name).exists(), std::format("{} was written", name));
+}
+
+// A case-only rename frees nothing, so the run must not park the file it is renaming within.
+static void should_run_a_case_only_rename()
+{
+	const auto root = _temps.next_folder("rename-run-case");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), root.combine_file("photo.jpg"), false, false);
+
+	browsing_fixture f(root);
+	f.state.select_all(f.view);
+	f.state.update_selection();
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "PHOTO";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a case-only rename can run");
+	view->run();
+
+	const auto contents = platform::iterate_file_items(root, false);
+	assert_equal(1_z, contents.files.size(), "the folder still holds one file");
+	assert_equal("PHOTO.jpg", std::string(contents.files.front().name), "the file carries the new case");
+}
+
 // design.md: "Only photos, video, and audio take part, so a folder, document, or archive is stepped
 // over rather than stalling the sequence". The fixture folder holds all three kinds of passenger.
 static void should_step_over_items_that_cannot_play()
@@ -2172,10 +2312,17 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should reject duplicate rename targets"s, should_reject_duplicate_rename_targets);
 	tests.add("Should reject unusable rename targets"s, should_reject_unusable_rename_targets);
 	tests.add("Should group Rename sidecar collisions"s, should_group_rename_sidecar_collisions);
+	tests.add("Should plan the default rename template"s, should_plan_the_default_rename_template);
+	tests.add("Should rename a set onto names it is vacating"s, should_rename_a_set_onto_names_it_is_vacating);
+	tests.add("Should cascade skipped rename rows"s, should_cascade_skipped_rename_rows);
+	tests.add("Should run a rename onto vacated names"s, should_run_a_rename_onto_vacated_names);
+	tests.add("Should run a case only rename"s, should_run_a_case_only_rename);
 	tests.add("Should format rename"s, should_format_rename);
 	tests.add("Should plan unique convert outputs"s, should_plan_unique_convert_outputs);
 	tests.add("Should adjust item dates from snapshot"s, should_adjust_item_dates_from_snapshot);
+#ifdef _WIN32
 	tests.add("Should classify MAPI results"s, should_classify_mapi_results);
+#endif
 	tests.add("Should detect duplicate import destinations"s, should_detect_duplicate_import_destinations);
 	tests.add("Should revalidate import rows"s, should_revalidate_import_rows);
 	tests.add("Should revalidate replaced import destinations"s, should_revalidate_replaced_import_destinations);

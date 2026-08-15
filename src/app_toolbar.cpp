@@ -748,11 +748,13 @@ void app_frame::update_button_state(const bool resize)
 		command->disabled_reason = command->enable ? std::string{} : analyze_reason;
 	}
 
-	// A dimmed Run is only honest if it names what would make it work again. The batch view keeps
-	// that answer beside the test that produced it.
+	// A dimmed Run is only honest if it names what would make it work again. The batch and rename
+	// views keep that answer beside the test that produced it.
 	_commands[commands::tool_run]->disabled_reason = view_mode == view_type::batch && _view_batch
-		                                                 ? _view_batch->run_blocked_reason()
-		                                                 : std::string{};
+		                                                ? _view_batch->run_blocked_reason()
+		                                                : view_mode == view_type::rename && _view_rename
+		                                                ? _view_rename->run_blocked_reason()
+		                                                : std::string{};
 
 	// Tags refuses a run over its own results for the same reason, and has no Refresh button, so the
 	// reason is the only thing pointing at the edit that puts the view back into review.

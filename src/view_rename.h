@@ -56,6 +56,8 @@ public:
 	void run();
 	void refresh() override;
 	bool can_run() const { return _analysis_valid && can_rename_items(_renames); }
+	// What would make a dimmed Run work again, empty when nothing is wrong.
+	std::string run_blocked_reason() const;
 
 	std::string_view status() override
 	{
