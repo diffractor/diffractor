@@ -440,15 +440,75 @@ platform::file_op_result platform::copy_file(const df::file_path existing, const
 }
 
 platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
-                                                bool)
+                                                const bool create_originals)
 {
+	// The replacement's bytes have to be on the volume before it is swapped in, or a crash between
+	// the two leaves the destination naming an empty file.
+	{
+		const auto fd = ::open(existing.str().c_str(), O_RDONLY);
+		if (fd < 0) return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+
+		const auto flushed = ::fsync(fd) == 0;
+		const auto flush_errno = errno;
+		::close(fd);
+
+		if (!flushed) return {file_op_result_code::FAILED, std::string(::strerror(flush_errno))};
+	}
+
+	if (create_originals && exists(destination))
+	{
+		const auto base_name = std::string(destination.file_name_without_extension()) + ".original"s;
+		const auto extension = destination.extension();
+		df::file_path backup;
+
+		// A requested backup is part of the contract, so keep uniquifying rather than replacing the
+		// destination with no new recovery point when an earlier .original is already there.
+		for (auto attempt = 0; attempt < 1000 && backup.is_empty(); ++attempt)
+		{
+			const auto name = attempt == 0 ? base_name : std::format("{}.{}", base_name, attempt);
+			const auto candidate = df::file_path(existing.folder(), name, extension);
+
+			if (!exists(candidate)) backup = candidate;
+		}
+
+		if (backup.is_empty())
+		{
+			return {
+				file_op_result_code::FAILED,
+				std::format("Could not create a backup of {}", destination.str())
+			};
+		}
+
+		if (const auto backup_result = copy_file(destination, backup, true, false); backup_result.failed())
+		{
+			return backup_result;
+		}
+	}
+
+	// Opened before the rename on purpose: a descriptor follows the inode, so this keeps reading the
+	// bytes just written whatever later happens to the name. That is what Windows needs a rename by
+	// handle to achieve.
+	const auto fd = ::open(existing.str().c_str(), O_RDONLY);
+
 	// rename is atomic within a filesystem, which is the property the write pipeline depends on.
 	if (::rename(existing.str().c_str(), destination.str().c_str()) != 0)
 	{
-		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+		const auto rename_errno = errno;
+		if (fd >= 0) ::close(fd);
+		return {file_op_result_code::FAILED, std::string(::strerror(rename_errno))};
 	}
 
-	return {file_op_result_code::OK};
+	file_op_result result{file_op_result_code::OK};
+
+	if (fd >= 0)
+	{
+		struct stat st = {};
+		if (::fstat(fd, &st) == 0) result.modified = to_ticks(st.st_mtim);
+
+		result.coherent_handle = std::make_shared<posix_file>(fd, destination);
+	}
+
+	return result;
 }
 
 bool platform::wait_for_unlocked_write(const df::file_path path)
@@ -714,7 +774,7 @@ bool platform::is_valid_file_name(const std::string_view name)
 
 	// The only bytes a Linux filesystem refuses. The Windows implementation additionally rejects the
 	// reserved device names and trailing dots and spaces, none of which mean anything here.
-	return name.find('/') == std::string_view::npos && name.find('\\0') == std::string_view::npos;
+	return name.find('/') == std::string_view::npos && name.find('\0') == std::string_view::npos;
 }
 
 local_folders_result platform::local_folders()
@@ -745,7 +805,12 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 	const auto f = open_file(path, file_open_mode::sequential_scan);
 	if (!f) return 0;
 
-	uint32_t crc = 0;
+	const auto size = f->size();
+	uint64_t total_read = 0;
+
+	// crypto::crc32c seeds with CRCINIT and inverts on the way out; the incremental form does
+	// neither, so a chained call has to do both itself or it computes a different checksum.
+	uint32_t crc = crypto::CRCINIT;
 	std::vector<uint8_t> buffer(64 * 1024);
 
 	for (;;)
@@ -756,9 +821,12 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 		if (n == 0) break;
 
 		crc = crypto::crc32c(crc, buffer.data(), static_cast<size_t>(n));
+		total_read += n;
 	}
 
-	return crc;
+	// A file truncated by another process reads short without failing, and a partial checksum would
+	// be recorded as if it described the whole file.
+	return total_read == size ? ~crc : 0;
 }
 
 // WIC on Windows; the vendored codecs already cover these formats, so this becomes a files:: call

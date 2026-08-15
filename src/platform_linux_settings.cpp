@@ -24,6 +24,9 @@ namespace
 	public:
 		explicit ini_settings(df::folder_path folder) : _path(folder.combine_file(settings_file_name))
 		{
+			// Answers whether this run is starting a NEW settings root, so it is decided before the
+			// file is read and never revised by a later write.
+			_root_created = !platform::exists(_path);
 			load();
 		}
 
@@ -102,7 +105,6 @@ namespace
 			std::ifstream file(platform::to_stream_path(_path));
 			if (!file.is_open()) return;
 
-			_root_created = true;
 			std::string line;
 			std::string section;
 
@@ -149,7 +151,6 @@ namespace
 				file << '\n';
 			}
 
-			_root_created = true;
 			return file.good();
 		}
 
