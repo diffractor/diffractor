@@ -1104,6 +1104,4 @@ namespace platform
 
 	web_host_ptr connect_to_host(std::string_view host, bool secure = true, int port = 0);
 	web_response send_request(const web_host_ptr& host, const web_request& req);
-
-	ui::surface_ptr image_to_surface(df::cspan image_buffer_in, sizei target_extent);
 }

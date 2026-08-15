@@ -2370,6 +2370,149 @@ av_scaler::~av_scaler()
 	}
 }
 
+namespace
+{
+	// A whole encoded image is already in memory here, so the AVIOContext reads from the span rather
+	// than a file. ffmpeg still probes it, which is what settles the format.
+	struct memory_source
+	{
+		const uint8_t* data = nullptr;
+		int64_t size = 0;
+		int64_t pos = 0;
+	};
+
+	int memory_read(void* opaque, uint8_t* buffer, int wanted)
+	{
+		auto* const source = static_cast<memory_source*>(opaque);
+		const auto available = source->size - source->pos;
+
+		if (available <= 0) return AVERROR_EOF;
+
+		const auto count = std::min(static_cast<int64_t>(wanted), available);
+		std::memcpy(buffer, source->data + source->pos, static_cast<size_t>(count));
+		source->pos += count;
+		return static_cast<int>(count);
+	}
+
+	int64_t memory_seek(void* opaque, const int64_t offset, const int whence)
+	{
+		auto* const source = static_cast<memory_source*>(opaque);
+
+		// The probe asks for the size through this same callback.
+		if (whence == AVSEEK_SIZE) return source->size;
+
+		const auto base = whence == SEEK_CUR ? source->pos : whence == SEEK_END ? source->size : 0;
+		const auto target = base + offset;
+
+		if (target < 0 || target > source->size) return AVERROR(EINVAL);
+
+		source->pos = target;
+		return target;
+	}
+}
+
+ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const std::string_view extension_hint)
+{
+	if (data.data == nullptr || data.size == 0) return {};
+
+	memory_source source{data.data, static_cast<int64_t>(data.size), 0};
+
+	static constexpr int io_buffer_size = df::sixty_four_k;
+	auto* const io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
+	if (!io_buffer) return {};
+
+	auto* pb = avio_alloc_context(io_buffer, io_buffer_size, 0, &source, memory_read, nullptr, memory_seek);
+
+	if (!pb)
+	{
+		av_free(io_buffer);
+		return {};
+	}
+
+	auto* fc = avformat_alloc_context();
+
+	if (!fc)
+	{
+		av_freep(&pb->buffer);
+		avio_context_free(&pb);
+		return {};
+	}
+
+	fc->pb = pb;
+
+	// The probe reads the extension off this name. There is no file to open: pb already holds the
+	// bytes, and a format with a signature is found whether or not a name is given.
+	const auto probe_name = extension_hint.empty() ? std::string{} : std::format("image{}", extension_hint);
+
+	if (avformat_open_input(&fc, probe_name.empty() ? nullptr : probe_name.c_str(), nullptr, nullptr) != 0)
+	{
+		// open_input frees fc itself on failure, but not the context it was given.
+		av_freep(&pb->buffer);
+		avio_context_free(&pb);
+		return {};
+	}
+
+	const df::scope_exit close_input([&fc, &pb]
+	{
+		avformat_close_input(&fc);
+		if (pb) av_freep(&pb->buffer);
+		avio_context_free(&pb);
+	});
+
+	if (avformat_find_stream_info(fc, nullptr) < 0) return {};
+
+	const auto stream_index = av_find_best_stream(fc, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+	if (stream_index < 0) return {};
+
+	const auto* const params = fc->streams[stream_index]->codecpar;
+	const auto* const codec = avcodec_find_decoder(params->codec_id);
+	if (!codec) return {};
+
+	auto* cc = avcodec_alloc_context3(codec);
+	if (!cc) return {};
+
+	const df::scope_exit free_codec([&cc] { avcodec_free_context(&cc); });
+
+	if (avcodec_parameters_to_context(cc, params) < 0) return {};
+	if (avcodec_open2(cc, codec, nullptr) != 0) return {};
+
+	auto* frame = av_frame_alloc();
+	auto* packet = av_packet_alloc();
+
+	const df::scope_exit free_av([&frame, &packet]
+	{
+		if (frame) av_frame_free(&frame);
+		if (packet) av_packet_free(&packet);
+	});
+
+	if (!frame || !packet) return {};
+
+	// One frame is the whole image. An animation stops at its first, which is the frame the browser
+	// and the still viewer both show.
+	while (av_read_frame(fc, packet) >= 0)
+	{
+		const df::scope_exit unref([packet] { av_packet_unref(packet); });
+
+		if (packet->stream_index != stream_index) continue;
+		if (avcodec_send_packet(cc, packet) != 0) continue;
+
+		if (avcodec_receive_frame(cc, frame) == 0)
+		{
+			ui::surface_ptr result;
+			av_scaler scaler;
+
+			if (scaler.scale_frame(*frame, result, max_dim, 0.0, ui::orientation::top_left))
+			{
+				return result;
+			}
+
+			return {};
+		}
+	}
+
+	return {};
+}
+
 // swscale defaults to BT.601 limited range for any YUV source, which is wrong for most HD and for
 // anything full range, so the signalled matrix has to be pushed into the context explicitly.
 static void apply_colorspace_details(SwsContext* scaler, const ui::color_space cs)

@@ -1825,7 +1825,9 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 
 			if (is_empty(surface_result))
 			{
-				surface_result = platform::image_to_surface(image_buffer_in, target_extent);
+				// Everything without a decoder of its own - GIF, BMP, TIFF, TGA, SGI, the portable
+				// pixmaps, DPX - reaches ffmpeg, which carries all of them on every platform.
+				surface_result = av_decode_still(image_buffer_in, target_extent);
 			}
 		}
 	}
@@ -2377,8 +2379,8 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 
 						default:
 							// GIF, BMP and TIFF, plus the bitmap types we recognise by extension but
-							// not by signature (TGA, SGI, PPM, DPX), are decoded by the platform. Its
-							// scanner reads the geometry from the header without decoding.
+							// not by signature (TGA, SGI, PPM, DPX), are decoded by ffmpeg. scan_photo
+							// reads the geometry from the header without decoding.
 							{
 								const auto scanned = scan_photo(stream);
 								const sizei scanned_dimensions{
@@ -2391,7 +2393,7 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 									break;
 								}
 
-								result.s = image_to_surface(file, {});
+								result.s = av_decode_still(file, {}, path.extension());
 							}
 							break;
 						}

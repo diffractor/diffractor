@@ -917,13 +917,6 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 	return total_read == size ? ~crc : 0;
 }
 
-// WIC on Windows; the vendored codecs already cover these formats, so this becomes a files:: call
-// rather than a platform one when it is ported.
-ui::surface_ptr platform::image_to_surface(df::cspan, sizei)
-{
-	return {};
-}
-
 // Renders from a Windows-only font. Linux needs a bundled icon set, which is a visual design
 // decision rather than a port.
 ui::const_surface_ptr platform::create_segoe_md2_icon(wchar_t)

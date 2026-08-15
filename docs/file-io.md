@@ -567,8 +567,8 @@ its full frame and is judged on what it will actually allocate. Every other defe
 native size first and is judged on the whole thing. The budgets themselves are owned by
 [rendering.md](rendering.md#image-budgets).
 
-PSD, HEIF, JXL and the platform-decoded types (GIF, BMP, TIFF and the rest of the WIC set) decode
-during `files::load` rather than on demand, so they cannot be caught by the check above — the
+PSD, HEIF, JXL and the ffmpeg-decoded types (GIF, BMP, TIFF, TGA, SGI, the portable pixmaps and DPX)
+decode during `files::load` rather than on demand, so they cannot be caught by the check above — the
 allocation would already have happened. Each refuses at the point it first knows the geometry and
 before it allocates anything:
 
@@ -577,7 +577,7 @@ before it allocates anything:
 | PSD | `load_psd`, after the 26-byte header |
 | JXL | `load_jxl`, on `JXL_DEC_BASIC_INFO` |
 | HEIF | `load_heif`, on the primary image handle |
-| GIF, BMP, TIFF, other WIC types | `files::load`, from the `scan_photo` header geometry, with `platform::image_to_surface` re-checking after `IWICBitmapSource::GetSize` |
+| GIF, BMP, TIFF, TGA, SGI, the portable pixmaps, DPX | `files::load`, from the `scan_photo` header geometry, before `av_decode_still` is asked for the pixels |
 
 `reject_over_budget_source` performs all four checks and fills a `load_diagnostic`, which
 `files::load` turns into `file_load_result::reason` and `source_dimensions`. That is what lets a

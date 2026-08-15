@@ -1177,6 +1177,39 @@ static void should_convert_raw_to_jpeg()
 	assert_equal(expected->height, actual->height, "height");
 }
 
+// Diffractor reads these and cannot write any of them, so there is no round trip to lean on: the
+// fixtures are written by tools/make_test_images.py and the decode is checked against what that
+// script drew. A gradient with a red corner is what makes a transposed, mirrored or channel-swapped
+// decode fail here rather than merely look wrong later.
+static void should_decode_a_read_only_format(const std::string_view name)
+{
+	files ff;
+	const auto path = test_formats_folder.combine_file(name);
+	const auto loaded = ff.load(path, false);
+
+	// These decode during load rather than on demand, so the surface is what comes back.
+	const auto surface = loaded.s;
+	assert_equal(true, is_valid(surface), std::format("{} decoded", name));
+
+	if (!is_valid(surface)) return;
+
+	assert_equal(32, surface->dimensions().cx, std::format("{} width", name));
+	assert_equal(24, surface->dimensions().cy, std::format("{} height", name));
+
+	// The greyscale fixture carries one channel, so only the geometry above is comparable.
+	if (name.ends_with(".pgm")) return;
+
+	// Read by memory position: a surface is BGRA in memory, while ui::color32 spells the same bytes
+	// the other way round, so naming the channels here is what keeps the check legible.
+	const auto* const first = surface->pixels_line(0);
+	const auto* const last = surface->pixels_line(surface->dimensions().cy - 1) +
+		static_cast<size_t>(surface->dimensions().cx - 1) * 4;
+
+	assert_equal(true, first[2] > 200 && first[1] < 60 && first[0] < 60,
+	             std::format("{} top left is the red corner", name));
+	assert_equal(true, last[0] > 100 && last[0] < 160, std::format("{} carries the blue channel", name));
+}
+
 static void should_save(const std::string_view ext, const bool should_support_metadata)
 {
 	const auto save_path = _temps.next_path(ext);
@@ -1409,6 +1442,15 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should save .png"s, [] { should_save(".png", true); });
 	tests.add("Should save .jpg"s, [] { should_save(".jpg", true); });
 	tests.add("Should save .webp"s, [] { should_save(".webp", true); });
+
+	constexpr std::string_view read_only_formats[] = {
+		"gradient.bmp", "gradient.tga", "gradient.sgi", "gradient.pcx", "gradient.ppm", "gradient.pgm"
+	};
+
+	for (auto name : read_only_formats)
+	{
+		tests.add(std::format("Should decode {}", name), [name] { should_decode_a_read_only_format(name); });
+	}
 
 	//
 	// Format detection

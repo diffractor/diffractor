@@ -204,6 +204,14 @@ public:
 	                 ui::orientation orientation);
 };
 
+// Decodes one still image from encoded bytes. This is the path for the formats Diffractor reads but
+// has no dedicated decoder for - GIF, BMP, TIFF, TGA, SGI, the portable pixmaps, DPX - all of which
+// ffmpeg carries on every platform. Returns null when the bytes are not an image it knows.
+//
+// TGA, SGI, the portable pixmaps and DPX have no signature worth probing, so a caller that knows the
+// file name passes its extension: that is the only thing that can name the format for those.
+ui::surface_ptr av_decode_still(df::cspan data, sizei max_dim, std::string_view extension_hint = {});
+
 
 template <typename T>
 class av_queue final : public df::no_copy
