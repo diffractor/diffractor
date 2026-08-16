@@ -463,8 +463,8 @@ static void should_convert_utf8()
 	constexpr wchar_t icon_old_text[2] = {static_cast<wchar_t>(icon_index::fit), 0};
 	const auto icon_old = str::utf16_to_utf8(icon_old_text);
 	assert_equal(icon_old, icon_new, "icon_to_utf8 matches old approach");
-	assert_equal(false, icon_is_mirrored(icon_index::rotate_clockwise), "clockwise icon is not mirrored");
-	assert_equal(true, icon_is_mirrored(icon_index::rotate_anticlockwise), "anticlockwise icon is mirrored");
+	assert_equal(true, icon_index::rotate_clockwise != icon_index::rotate_anticlockwise,
+	             "the two rotations are different glyphs");
 
 	// Verify char32_to_utf8 round-trips for icon code points
 	std::string char32_result;

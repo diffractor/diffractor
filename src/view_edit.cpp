@@ -1028,14 +1028,14 @@ public:
 		const auto rating = _hover ? _hover_rating : _rating;
 		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
 
-		wchar_t text[6] = {};
+		std::string text;
 
 		for (auto i = 0; i < 5; i++)
 		{
-			text[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
+			text += icon_to_utf8(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
-		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_face::icons,
+		dc.draw_text(text, logical_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line, clr, bg);
 	}
 

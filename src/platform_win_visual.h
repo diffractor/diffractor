@@ -246,7 +246,6 @@ struct factories
 	font_renderer_ptr create_font_face(const wchar_t* font_name, int font_height) const;
 	font_renderer_ptr create_icon_font_face(int font_height);
 	font_renderer_ptr font_face(ui::style::font_face font, int base_font_size);
-
 	void reset();
 	void reset_fonts();
 
@@ -262,6 +261,18 @@ struct factories
 	void unregister_fonts() const;
 	void destroy();
 };
+
+// The bundled icon font's family name, and its DirectWrite collection. The font is embedded as a
+// resource rather than installed, so the system font collection does not contain it.
+const wchar_t* icon_font_family();
+HRESULT create_icon_font_collection(IDWriteFactory* dwrite_factory, IDWriteFontCollection** result);
+
+// Fluent draws its icons smaller within the em than Segoe MDL2 did - across the icons this app
+// actually uses, 6.8% shorter and 9.4% narrower - so the em is raised to compensate. 11/10 is the
+// most that is safe: it makes the tallest Fluent glyph exactly as tall as the tallest Segoe one
+// was, so nothing can overflow a layout box that did not already overflow.
+constexpr int icon_font_scale_num = 11;
+constexpr int icon_font_scale_den = 10;
 
 
 using factories_ptr = std::shared_ptr<factories>;

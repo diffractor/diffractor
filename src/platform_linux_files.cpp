@@ -264,21 +264,21 @@ namespace
 // Paths
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-std::wstring platform::to_file_system_path(const df::file_path path)
+// The file system takes the UTF-8 bytes as they are, so there is no extended form to add and
+// nothing to convert: both of these answer the string the path already holds.
+platform::native_path platform::to_file_system_path(const df::file_path path)
 {
-	return str::utf8_to_utf16(path.str());
+	return path.str();
 }
 
-// The file system takes the bytes as they are, so there is no extended form to add and nothing
-// to convert. This is the same string the path already holds.
 std::string platform::to_utf8_file_system_path(const df::file_path path)
 {
 	return path.str();
 }
 
-std::wstring platform::to_file_system_path(const df::folder_path path)
+platform::native_path platform::to_file_system_path(const df::folder_path path)
 {
-	return str::utf8_to_utf16(path.text());
+	return std::string(path.text());
 }
 
 // Linux has no system normaliser and ICU is a dependency this build has not taken on. Hangul is
@@ -924,9 +924,9 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 	return total_read == size ? ~crc : 0;
 }
 
-// Renders from a Windows-only font. Linux needs a bundled icon set, which is a visual design
-// decision rather than a port.
-ui::const_surface_ptr platform::create_segoe_md2_icon(wchar_t)
+// Rasterising a glyph needs the text stack, which is Stage 3 of the port. The icon font itself is
+// bundled and platform-neutral, so this is the only part that is still owed.
+ui::const_surface_ptr platform::create_icon_surface(char32_t)
 {
 	return {};
 }

@@ -41,7 +41,7 @@ std::string file_group::display_name(const bool is_plural) const
 
 ui::const_surface_ptr file_type::default_thumbnail() const
 {
-	return platform::create_segoe_md2_icon(static_cast<wchar_t>(group->icon));
+	return platform::create_icon_surface(static_cast<char32_t>(group->icon));
 }
 
 struct file_type_config

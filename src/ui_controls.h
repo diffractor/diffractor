@@ -822,14 +822,14 @@ public:
 		const auto rating = is_hover ? last_hover_rating : displayed_rating();
 		const auto clr = ui::color(dc.colors.foreground, _can_edit ? dc.colors.alpha : dc.colors.alpha / 4.0f);
 
-		wchar_t text[6] = {};
+		std::string text;
 
 		for (auto i = 0; i < 5; i++)
 		{
-			text[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
+			text += icon_to_utf8(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
-		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_face::icons,
+		dc.draw_text(text, logical_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center, clr, bg);
 	}
 
@@ -916,25 +916,25 @@ public:
 		auto reject_bounds = logical_bounds;
 		reject_bounds.right = reject_bounds.left + cxy;
 
-		constexpr wchar_t reject_text[2] = {static_cast<wchar_t>(rate_label_reject.icon), 0};
+		const auto reject_text = icon_to_utf8(rate_label_reject.icon);
 		const auto reject_clr = rating < 0
 			                        ? ui::color(rate_label_reject.clr, dc.colors.alpha)
 			                        : ui::color(dc.colors.foreground, dc.colors.alpha / 3.0f);
 
-		dc.draw_text(str::utf16_to_utf8(reject_text), reject_bounds, ui::style::font_face::icons,
+		dc.draw_text(reject_text, reject_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center, reject_clr, bg);
 
-		wchar_t stars[6] = {};
+		std::string stars;
 
 		for (auto i = 0; i < 5; i++)
 		{
-			stars[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
+			stars += icon_to_utf8(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
 		auto star_bounds = logical_bounds;
 		star_bounds.left = logical_bounds.left + cxy;
 
-		dc.draw_text(str::utf16_to_utf8(stars), star_bounds, ui::style::font_face::icons,
+		dc.draw_text(stars, star_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center,
 		             ui::color(dc.colors.foreground, dc.colors.alpha), bg);
 	}

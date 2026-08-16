@@ -208,8 +208,7 @@ public:
 			r.left = x;
 			r.right = x + cx;
 
-			const std::wstring text(icon_repeat, static_cast<wchar_t>(icon));
-			icon_layout.lazy_load(dc, str::utf16_to_utf8(text), ui::style::text_style::single_line_center,
+			icon_layout.lazy_load(dc, icon_to_utf8(icon, icon_repeat), ui::style::text_style::single_line_center,
 			                      ui::style::font_face::icons);
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
 			x += cx + dc.padding1;
@@ -363,8 +362,7 @@ public:
 			auto r = logical_bounds;
 			r.right = r.left + dc.icon_cxy;
 			r.bottom -= graph_height;
-			const std::wstring text(1, static_cast<wchar_t>(icon));
-			icon_layout.lazy_load(dc, str::utf16_to_utf8(text), ui::style::text_style::single_line_center,
+			icon_layout.lazy_load(dc, icon_to_utf8(icon), ui::style::text_style::single_line_center,
 			                      ui::style::font_face::icons);
 			dc.draw_text(icon_layout.tf, r, draw_clr, {});
 			x += dc.icon_cxy + dc.padding1;

@@ -1378,8 +1378,6 @@ namespace ui
 		virtual void draw_rect_gradient(recti bounds, color c_centre, color c_corner) = 0;
 		virtual void draw_text(std::string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
-		virtual void draw_text_mirrored(std::string_view text, recti bounds, style::font_face font,
-		                                style::text_style style, color c, color bg) = 0;
 		virtual void draw_text(std::string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
 		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;

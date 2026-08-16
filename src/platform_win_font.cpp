@@ -25,7 +25,10 @@ InterfaceType* SafeAcquire(InterfaceType* newObject)
 }
 
 static constexpr uint32_t icon_font_collection_id = 19;
-static constexpr auto icon_font_name = L"Segoe MDL2 Assets";
+
+// The bundled icon font, not a system one: it is loaded from IDF_ICONS through the custom
+// collection below, so this must be the family name inside that file.
+static constexpr auto icon_font_name = L"FluentSystemIcons-Resizable";
 
 class resource_font_file_stream final : public IDWriteFontFileStream
 {
@@ -479,7 +482,6 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 		&icon_font_collection_id,
 		sizeof(icon_font_collection_id),
 		&custom_collection);
-
 	if (SUCCEEDED(hr))
 	{
 		result = create_font_renderer(dwrite.Get(), custom_collection.Get(), icon_font_name, font_height);
@@ -505,6 +507,28 @@ font_renderer_ptr factories::create_icon_font_face(const int font_height)
 font_renderer_ptr factories::create_font_face(const wchar_t* font_name, const int font_height) const
 {
 	return create_font_renderer(dwrite.Get(), font_collection.Get(), font_name, font_height);
+}
+
+const wchar_t* icon_font_family()
+{
+	return icon_font_name;
+}
+
+// The icon font is embedded rather than installed, so anything laying out an icon glyph has to be
+// given this collection - the system one does not contain it. Registering the loader here as well
+// as in register_fonts() is what lets a caller with its own factory work before the app's fonts
+// are up; the factory is a shared singleton, so the second registration is the expected no-op.
+HRESULT create_icon_font_collection(IDWriteFactory* dwrite_factory, IDWriteFontCollection** result)
+{
+	const auto registered = dwrite_factory->RegisterFontCollectionLoader(&font_collection_loader);
+
+	if (FAILED(registered) && registered != DWRITE_E_ALREADYREGISTERED)
+	{
+		return registered;
+	}
+
+	return dwrite_factory->CreateCustomFontCollection(&font_collection_loader, &icon_font_collection_id,
+	                                                  sizeof(icon_font_collection_id), result);
 }
 
 void factories::register_fonts() const
@@ -629,10 +653,10 @@ font_renderer_ptr factories::font_face(const ui::style::font_face type, const in
 		result = create_font_face(L"Consolas", base_font_size * 4 / 5);
 		break;
 	case ui::style::font_face::icons:
-		result = create_icon_font_face(base_font_size);
+		result = create_icon_font_face(df::mul_div(base_font_size, icon_font_scale_num, icon_font_scale_den));
 		break;
 	case ui::style::font_face::small_icons:
-		result = create_icon_font_face(base_font_size * 10 / 16);
+		result = create_icon_font_face(df::mul_div(base_font_size, icon_font_scale_num * 10, icon_font_scale_den * 16));
 		break;
 	case ui::style::font_face::title:
 		result = create_font_face(L"Calibri", base_font_size * 3 / 2);

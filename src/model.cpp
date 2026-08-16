@@ -2568,7 +2568,7 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 
 				const auto icon = ft->icon;
 				auto split = std::make_shared<split_element>(
-					platform::create_segoe_md2_icon(static_cast<wchar_t>(icon)), table, flex_item::center);
+					platform::create_icon_surface(static_cast<char32_t>(icon)), table, flex_item::center);
 				split->padding = {4, 4};
 				split->margin = {4, 4};
 				result->add(split);
@@ -2778,7 +2778,7 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 
 			auto icon = file_type::folder.icon;
 			if (item_count > 0) icon = icon_index::recursive;
-			result->add(std::make_shared<split_element>(platform::create_segoe_md2_icon(static_cast<wchar_t>(icon)),
+			result->add(std::make_shared<split_element>(platform::create_icon_surface(static_cast<char32_t>(icon)),
 			                                            elements, flex_item::center));
 			result->add(std::make_shared<divider_element>());
 

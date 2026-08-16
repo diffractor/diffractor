@@ -13,8 +13,7 @@
 
 inline view_element_ptr make_icon_link_element2(const icon_index i, commands cmd, const view_element_options& style_in)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	auto element = std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
+	auto element = std::make_shared<link_element>(icon_to_utf8(i), cmd, ui::style::font_face::icons,
 	                                              ui::style::text_style::single_line_center, style_in, true);
 	return element;
 }

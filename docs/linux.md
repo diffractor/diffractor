@@ -176,40 +176,39 @@ The one place a mount's own rule is authoritative is a write, and collision chec
 filesystem directly rather than the index — which is correct on both platforms anyway, since the
 answer has to hold at the moment of the write.
 
-**`wchar_t` is assumed to be UTF-16.** It is 16-bit on Windows and 32-bit on Linux, so
-this miscompiles or silently mis-decodes rather than failing to build. What remains is the icon
-cluster: [app_sidebar.h](../src/app_sidebar.h), [files_core.cpp](../src/files_core.cpp),
-[model.cpp](../src/model.cpp), [ui_controls.h](../src/ui_controls.h),
-[ui_elements.h](../src/ui_elements.h), [view_edit.cpp](../src/view_edit.cpp) and
-[view_media.h](../src/view_media.h) all build icon strings from `wchar_t` code points, and
-`platform::create_segoe_md2_icon` takes one. That should be done together with the
-[icon font replacement](#features-with-no-linux-equivalent), since both change the same call
-sites, and the code point type is `char32_t`.
+**`wchar_t` is assumed to be UTF-16.** It is 16-bit on Windows and 32-bit on Linux, so this
+miscompiles or silently mis-decodes rather than failing to build. The sweep is done. Icon code
+points are `char32_t` and reach the drawing layer as UTF-8 through `icon_to_utf8`;
+[metadata_exif.cpp](../src/metadata_exif.cpp) and [metadata_icc.cpp](../src/metadata_icc.cpp) read
+their genuinely UTF-16 payloads as `char16_t`; and the character predicates behind `str::split` —
+`is_quote`, `is_separator`, `is_artist_separator`, `is_genre_separator`, `is_white_space`,
+`is_slash` and `df::is_path_sep` — take `char`, which is what a UTF-8 `string_view` was always
+handing them. That last one was not cosmetic: promoting a `char` to `wchar_t` turns byte 0xC3 into
+65475 on Windows and −61 on Linux, and `is_range_separator` was passing that to `iswpunct`, where a
+negative argument collides with `WEOF`.
 
-Two parts of this are done and are the worked examples. [metadata_exif.cpp](../src/metadata_exif.cpp)
-and [metadata_icc.cpp](../src/metadata_icc.cpp) read their genuinely UTF-16 payloads as
-`char16_t` through the `std::u16string_view` overloads of `str::utf16_to_utf8` and
-`str::strip_and_cache`. And the character predicates behind `str::split` — `is_quote`,
-`is_separator`, `is_artist_separator`, `is_genre_separator`, `is_white_space`, `is_slash` and
-`df::is_path_sep` — now take `char`, which is what a UTF-8 `string_view` was always handing
-them. That one was not cosmetic: promoting a `char` to `wchar_t` turns byte 0xC3 into 65475 on
-Windows and −61 on Linux, and `is_range_separator` was passing that value to `iswpunct`, where
-a negative argument collides with `WEOF`.
+What the gate finds now is 11 files rather than 28, and most are not defects.
+[util_strings.h](../src/util_strings.h), [util_strings.cpp](../src/util_strings.cpp),
+[test.h](../src/test.h) and [test_util.cpp](../src/test_util.cpp) are the UTF-16 boundary itself and
+the tests that pin it. What is still owed is small: `s_app_name_l` in [app.cpp](../src/app.cpp) and
+[pch.h](../src/pch.h) is a Windows-only wide constant; [util_path.h](../src/util_path.h) and
+[util_map.h](../src/util_map.h) carry `wstring_view` convenience overloads used only from Windows;
+and [platform.h](../src/platform.h) still declares the `utf16_to_utf8` pair, which is a genuine
+platform service but reads as a Windows one.
 
-**`std::wstring` is in the platform interface.** `platform::to_file_system_path`,
-`create_segoe_md2_icon(wchar_t)` and the `probe_drag_data_object` result still put a Windows
-string type in [platform.h](../src/platform.h). `to_shell_path` no longer does: there is no
-cross-platform notion of a shell path and it had no caller outside `platform_win*`, so it is
-now declared in [platform_win.h](../src/platform_win.h). `to_utf8_file_system_path` is the
-shape the rest should follow — the path a native API would be given, carrying the `\\?\` prefix
-where Windows needs it, but typed as UTF-8 so a portable caller can hold it. It replaced a
-UTF-8 → UTF-16 → UTF-8 round trip in [metadata_xmp.cpp](../src/metadata_xmp.cpp) that existed
-only to reach the extended form.
+**`std::wstring` is out of the platform interface.** `to_file_system_path` now answers
+`platform::native_path` — UTF-16 with the `\\?\` prefix on Windows, the UTF-8 bytes elsewhere —
+which portable callers pass straight to a native API without inspecting. That removed the `#ifdef`
+from [files_raw.cpp](../src/files_raw.cpp) and made the Linux implementation honest, where it had
+been converting UTF-8 into a 32-bit `wstring` nothing wanted. `to_utf8_file_system_path` covers the
+third-party libraries that take a byte path everywhere, replacing a UTF-8 → UTF-16 → UTF-8 round
+trip in [metadata_xmp.cpp](../src/metadata_xmp.cpp). `to_shell_path` and the drag-data-object probe
+are now declared in [platform_win.h](../src/platform_win.h), where they belong: neither has a
+cross-platform meaning, and neither had a caller outside `platform_win*`.
 
-Two callers still need a real answer rather than a type change, because the library beneath them
-differs per platform: [files_raw.cpp](../src/files_raw.cpp) picks a LibRaw overload behind an
-`#ifdef`, and [files_core.cpp](../src/files_core.cpp) calls `archive_read_open_filename_w`,
-which has no Linux counterpart under that name.
+One caller still needs a per-platform answer rather than a type change:
+[files_core.cpp](../src/files_core.cpp) calls `archive_read_open_filename_w`, which has no Linux
+counterpart under that name.
 
 **D3D11VA no longer leaks into the media layer.** [av_format.cpp](../src/av_format.cpp) asks
 `av_platform_hw_decode_target()` for the device type and pixel format the renderer can present,
@@ -289,33 +288,43 @@ Feature by feature:
 - **Minidumps.** DbgHelp crash capture has no equivalent; a Linux port needs a different
   crash-report format and a different reader for
   [crash-dump analysis](../src/util_crash_files_db.h).
-- **Segoe MDL2 icons — replaced on both platforms by Fluent UI System Icons.** Segoe MDL2
+- **Segoe MDL2 icons — replaced on both platforms by Fluent UI System Icons. Done.** Segoe MDL2
   Assets and its Windows 11 successor Segoe Fluent Icons are Windows system fonts whose licence
-  does not permit redistribution to another platform, so this could never have been a Linux
-  build option. Microsoft's own [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
-  are MIT-licensed, freely redistributable, and share the design language, which makes them the
-  replacement that changes the least. Adopting them on **both** platforms rather than only on
-  Linux is the point: it gives one bundled icon set everywhere, turns `create_segoe_md2_icon`
-  from a platform call into a portable glyph lookup, and ends the dependence on which Windows
-  version supplies which glyph. This is `User-visible behavior`.
+  does not permit redistribution to another platform, so this could never have been a Linux build
+  option. It was also not a Windows one: `segmdl2.ttf` was checked in and embedded as `IDF_ICONS`
+  in the shipped binary, which is the same problem a year earlier. Microsoft's own
+  [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) are MIT-licensed
+  and share the design language, so they change the picture least while being redistributable.
 
-  The mapping is done and lives in [tools/fluent_icons.py](../tools/fluent_icons.py): all 156
-  entries of [app_icons.h](../src/app_icons.h) are paired with a named Fluent icon, and the code
-  points are *generated* from the font's own JSON rather than hand-written, because the font build
-  assigns them sequentially and they move between releases. Names are the reviewable artifact;
-  a code point is never edited by hand. Every name resolves against the current release.
+  The swap was cheaper than expected because the bundling already existed: the font is loaded from
+  a resource through a custom DirectWrite collection in
+  [platform_win_font.cpp](../src/platform_win_font.cpp), so only the file, the family name and the
+  code points changed. One gap had to be closed — `create_segoe_md2_icon` laid out its glyph
+  against the *system* collection, which worked only because the old font was a system font; it now
+  takes the bundled collection through `create_icon_font_collection`.
 
-  Three substitutions are judgement calls and are commented as such: `tape` and `disk` both become
-  `storage` because Fluent has no cassette; `sdcard` becomes `sim`, the nearest removable-card
-  shape; and `facebook`, `flickr` and `twitter` become `share`, because Fluent carries no
-  third-party brand marks. Two are strict improvements the old font could not express:
+  The 150 code points in [app_icons.h](../src/app_icons.h) are generated by
+  [tools/fluent_icons.py](../tools/fluent_icons.py) from the font's own JSON. Names are the
+  reviewable artifact; a code point is never hand-edited, because the font build assigns them
+  sequentially and they move between releases.
+
+  Three of the old entries were deleted rather than mapped: `facebook`, `flickr` and `twitter` had
+  no call site anywhere, and Fluent carries no third-party brand marks. Two substitutions are
+  judgement calls — `tape` and `disk` both become `storage` because Fluent has no cassette, and
+  `sdcard` becomes `sim`. Two are strictly better than what the old font could express:
   `rotate_anticlockwise` was the clockwise glyph with a `| 0x10000` flag meaning "draw it
-  mirrored", and `edit_cut` and `edit_copy` shared one code point so they drew identically.
+  mirrored", and `edit_cut` and `edit_copy` shared a code point, so cut and copy drew identically.
 
-  What remains: vendoring the font itself, `char32_t` for the code points, and replacing
-  `create_segoe_md2_icon` with the portable lookup. The font is a binary asset and a new
-  third-party dependency, so it is a [third-party policy](third-party.md) decision rather than
-  something to slip in.
+  Still owed: subsetting the font, which carries about 4,000 glyphs where 150 are used and costs
+  roughly 1.5 MB against a 200 KB predecessor.
+
+  Two things fell out of the swap. Fluent draws smaller within the em than Segoe did — across the
+  icons this app actually uses, 6.8% shorter and 9.4% narrower — so the icon em is raised by 11/10,
+  which is the most that is safe: it makes the tallest Fluent glyph exactly as tall as the tallest
+  Segoe one was, so nothing can overflow a box that did not already overflow. And the mirroring
+  path is gone: `icon_is_mirrored`, `ui::draw_context::draw_text_mirrored` and the
+  `_horizontal_mirror` plumbing in both backends existed only to draw `rotate_clockwise` backwards,
+  and the bundled font has a real counterclockwise glyph.
 - **Packaging.** The MSIX/WinStore configuration and the NSIS installer have no Linux
   counterpart; see [Distributions and delivery](#distributions-and-delivery).
 
@@ -716,16 +725,16 @@ Each stage ends in something falsifiable. No stage depends on a later one. Stage
 Stage 0 is partly done, and what remains of it is listed under
 [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code).
 
-**Stage 0 — Make the boundary provable (Windows only). Partly done.**
-Done: the `char16_t` conversions, the `char` predicates behind `str::split`, the hardware-decode
-descriptor that replaced the D3D11VA selection, and `to_shell_path` becoming Windows-private.
-Still owed: `char32_t` for icon code points, the rest of the UTF-8-only platform interface, and
+**Stage 0 — Make the boundary provable (Windows only). Mostly done.**
+Done: the `char16_t` and `char32_t` conversions, the `char` predicates behind `str::split`, the
+hardware-decode descriptor that replaced the D3D11VA selection, `native_path` and the move of
+`to_shell_path` and the drag probe into `platform_win.h`, and the icon font. Still owed:
 case-sensitive path identity built as a compile-time property with file-type matching separated
-from it. Splitting the CPU rasterizer from its GDI present path is also still owed, and so is the
-cross-machine scene capture the Stage 2 gate needs. The icon-font change belongs here too, though
-it is `User-visible behavior` rather than `Internal`. *Gate:* `.\dd.ps1 test` green on Windows,
-and a search of `src/` for `wchar_t`, `std::wstring` and Win32 types finds hits only under
-`platform_win*`.
+from it; splitting the CPU rasterizer from its GDI present path; the cross-machine scene capture
+the Stage 2 gate needs; and the small residue listed under
+[Windows assumptions](#windows-assumptions-still-in-portable-code). *Gate:* `.\dd.ps1 test` green
+on Windows, and a search of `src/` for `wchar_t`, `std::wstring` and Win32 types finds hits only
+under `platform_win*` — today that search finds 11 files, down from 28.
 
 **Stage 0b — Retire the native controls (Windows only). Not started.**
 [Controls](#controls), in the order given there, each step shipped on Windows. Runs in

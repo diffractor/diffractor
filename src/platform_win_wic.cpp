@@ -12,6 +12,7 @@
 #include "pch.h"
 
 #include "platform_win.h"
+#include "platform_win_visual.h"
 #include <wincodec.h>
 #include <dwrite.h>
 
@@ -463,9 +464,9 @@ namespace
 	};
 }
 
-ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
+ui::const_surface_ptr platform::create_icon_surface(const char32_t ch)
 {
-	static std::unordered_map<wchar_t, ui::const_surface_ptr> cache;
+	static std::unordered_map<char32_t, ui::const_surface_ptr> cache;
 	const auto found = cache.find(ch);
 
 	if (found != cache.end())
@@ -485,6 +486,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 	surface_result->make_blank(); // transparent background
 
 	ComPtr<IDWriteFactory> dwrite_factory;
+	ComPtr<IDWriteFontCollection> icon_collection;
 	ComPtr<IDWriteTextFormat> text_format;
 	ComPtr<IDWriteTextLayout> text_layout;
 
@@ -493,8 +495,14 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 	if (SUCCEEDED(hr))
 	{
-		hr = dwrite_factory->CreateTextFormat(L"Segoe MDL2 Assets", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-		                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 148, L"",
+		hr = create_icon_font_collection(dwrite_factory.Get(), &icon_collection);
+	}
+
+	if (SUCCEEDED(hr))
+	{
+		hr = dwrite_factory->CreateTextFormat(icon_font_family(), icon_collection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
+		                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+		                                      df::mul_div(148, icon_font_scale_num, icon_font_scale_den), L"",
 		                                      &text_format);
 	}
 
@@ -503,8 +511,12 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 		text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 		text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-		const wchar_t icon_text[2] = {ch, 0};
-		hr = dwrite_factory->CreateTextLayout(icon_text, 1, text_format.Get(), static_cast<float>(cxy),
+		// DirectWrite takes UTF-16, so the code point is encoded here rather than at the call site.
+		std::string utf8;
+		str::char32_to_utf8(std::back_inserter(utf8), static_cast<uint32_t>(ch));
+		const auto icon_text = str::utf8_to_utf16(utf8);
+		hr = dwrite_factory->CreateTextLayout(icon_text.c_str(), static_cast<uint32_t>(icon_text.size()),
+		                                      text_format.Get(), static_cast<float>(cxy),
 		                                      static_cast<float>(cxy), &text_layout);
 	}
 

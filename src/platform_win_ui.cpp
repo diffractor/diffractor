@@ -725,12 +725,12 @@ static HFONT create_font(const ui::style::font_face type, const int base_font_si
 		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Consolas");
 		break;
 	case ui::style::font_face::icons:
-		lf.lfHeight = -base_font_size;
-		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Segoe MDL2 Assets");
+		lf.lfHeight = -df::mul_div(base_font_size, icon_font_scale_num, icon_font_scale_den);
+		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"FluentSystemIcons-Resizable");
 		break;
 	case ui::style::font_face::small_icons:
-		lf.lfHeight = -df::mul_div(base_font_size, 10, 16);
-		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Segoe MDL2 Assets");
+		lf.lfHeight = -df::mul_div(base_font_size, icon_font_scale_num * 10, icon_font_scale_den * 16);
+		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"FluentSystemIcons-Resizable");
 		break;
 	case ui::style::font_face::title:
 		lf.lfHeight = -df::mul_div(base_font_size, 3, 2);

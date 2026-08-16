@@ -684,7 +684,6 @@ class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 
 	ui::color _clr;
 	std::vector<ui::text_highlight_t> _highlights;
-	bool _horizontal_mirror = false;
 
 	coords find_glyph(uint16_t c, const DWRITE_GLYPH_RUN* glyph_run);
 	void create_a8_texture(int xy);
@@ -720,8 +719,7 @@ public:
 		return _font;
 	}
 
-	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg,
-	               bool horizontal_mirror = false);
+	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg);
 
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::text_style style, ui::color clr, ui::color bg);
@@ -1043,8 +1041,6 @@ public:
 	void draw_rect_gradient(recti bounds, ui::color c_centre, ui::color c_corner) override;
 	void draw_text(std::string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
-	void draw_text_mirrored(std::string_view text, recti bounds, ui::style::font_face font,
-	                        ui::style::text_style style, ui::color c, ui::color bg) override;
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
@@ -3064,18 +3060,15 @@ void d3d11_text_renderer::reset()
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const recti bounds,
-                                    const ui::style::text_style style, const ui::color c, const ui::color bg,
-                                    const bool horizontal_mirror)
+                                    const ui::style::text_style style, const ui::color c, const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = c;
-	_horizontal_mirror = horizontal_mirror;
 
 	if (_font)
 	{
 		_font->draw(_canvas.get(), this, text, bounds, style, c, bg);
 	}
-	_horizontal_mirror = false;
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const std::vector<ui::text_highlight_t>& highlights,
@@ -3245,12 +3238,10 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 				const auto right_color = i == limit_char ? ui::color{} : clr;
 				const auto pos = vertex_count;
 
-				const auto texture_left = _horizontal_mirror ? tx2 : tx1;
-				const auto texture_right = _horizontal_mirror ? tx1 : tx2;
-				vertices[vertex_count++].set(bl / screen_scale, pointd(texture_left, ty2) / tex_scale, left_color);
-				vertices[vertex_count++].set(tl / screen_scale, pointd(texture_left, ty1) / tex_scale, left_color);
-				vertices[vertex_count++].set(br / screen_scale, pointd(texture_right, ty2) / tex_scale, right_color);
-				vertices[vertex_count++].set(tr / screen_scale, pointd(texture_right, ty1) / tex_scale, right_color);
+				vertices[vertex_count++].set(bl / screen_scale, pointd(tx1, ty2) / tex_scale, left_color);
+				vertices[vertex_count++].set(tl / screen_scale, pointd(tx1, ty1) / tex_scale, left_color);
+				vertices[vertex_count++].set(br / screen_scale, pointd(tx2, ty2) / tex_scale, right_color);
+				vertices[vertex_count++].set(tr / screen_scale, pointd(tx2, ty1) / tex_scale, right_color);
 
 				indexes[index_count++] = pos + 0;
 				indexes[index_count++] = pos + 1;
@@ -3323,20 +3314,6 @@ void d3d11_draw_context_impl::draw_text(const std::string_view textA, const rect
 	if (clr.a >= 0.01f && _clip_bounds.intersects(bounds))
 	{
 		_font[font].draw_text(textA, bounds, style, clr, bg);
-	}
-}
-
-void d3d11_draw_context_impl::draw_text_mirrored(const std::string_view text, const recti bounds,
-                                                 const ui::style::font_face font,
-                                                 const ui::style::text_style style, const ui::color clr,
-                                                 const ui::color bg)
-{
-	df::scope_rendering_func rf(__FUNCTION__);
-	df::assert_true(ui::is_ui_thread());
-
-	if (clr.a >= 0.01f && _clip_bounds.intersects(bounds))
-	{
-		_font[font].draw_text(text, bounds, style, clr, bg, true);
 	}
 }
 

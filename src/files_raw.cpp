@@ -37,17 +37,13 @@
 #endif
 static_assert(dngVersion_Current >= dngVersion_1_7_0_0, "DNG SDK predates JPEG XL DNG support");
 
-// LibRaw declares the wide-path overloads of open_file only under LIBRAW_WIN32_UNICODEPATHS, which
-// is a Windows build. Elsewhere it takes the byte path, and the file system is UTF-8 already.
+// LibRaw takes the native path: the wide overloads exist only under LIBRAW_WIN32_UNICODEPATHS, and
+// elsewhere it takes the byte path, which is what platform::native_path already answers.
 namespace
 {
 	auto libraw_path(const df::file_path path)
 	{
-#ifdef _WIN32
 		return platform::to_file_system_path(path);
-#else
-		return std::string(path.str());
-#endif
 	}
 }
 

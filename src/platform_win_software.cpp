@@ -570,8 +570,7 @@ public:
 	}
 
 	// Blend an 8-bit alpha glyph bitmap using colour clr.
-	void blend_glyph(const int px, const int py, const render_char_result& g, const ui::color clr,
-	                 const bool horizontal_mirror = false) const
+	void blend_glyph(const int px, const int py, const render_char_result& g, const ui::color clr) const
 	{
 		if (g.is_empty()) return;
 
@@ -581,19 +580,6 @@ public:
 
 		for (auto y = r.top; y < r.bottom; ++y)
 		{
-			if (horizontal_mirror)
-			{
-				const auto* src = g.pixels.data() + static_cast<ptrdiff_t>(y - py) * g.cx +
-					(g.cx - 1 - (r.left - px));
-				auto* p = pixel(r.left, y);
-				for (auto x = r.left; x < r.right; ++x, p += 4, --src)
-				{
-					const auto a = *src;
-					if (a) blend_over(p, clr, a / 255.0f, _opaque);
-				}
-				continue;
-			}
-
 			const auto* src = g.pixels.data() + static_cast<ptrdiff_t>(y - py) * g.cx + (r.left - px);
 			auto* p = pixel(r.left, y);
 			auto x = r.left;
@@ -2014,8 +2000,6 @@ public:
 
 	void draw_text(std::string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
-	void draw_text_mirrored(std::string_view text, recti bounds, ui::style::font_face font,
-	                        ui::style::text_style style, ui::color c, ui::color bg) override;
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
@@ -2061,7 +2045,6 @@ class software_text_renderer final : public df::no_copy, public IDWriteTextRende
 
 	ui::color _clr;
 	std::vector<ui::text_highlight_t> _highlights;
-	bool _horizontal_mirror = false;
 
 	std::atomic<int> _ref_count = 0;
 
@@ -2078,13 +2061,11 @@ public:
 	font_renderer_ptr font() const { return _font; }
 
 	void draw_text(const std::string_view text, const recti bounds, const ui::style::text_style style,
-	               const ui::color c, const ui::color bg, const bool horizontal_mirror = false)
+	               const ui::color c, const ui::color bg)
 	{
 		_clr = c;
 		_highlights.clear();
-		_horizontal_mirror = horizontal_mirror;
 		_font->draw(_ctx, this, text, bounds, style, c, bg);
-		_horizontal_mirror = false;
 	}
 
 	void draw_text(const std::string_view text, const std::vector<ui::text_highlight_t>& highlights, const recti bounds,
@@ -2230,7 +2211,7 @@ public:
 				}
 
 				const auto& g = glyph(c, glyphRun);
-				_ctx->_canvas.blend_glyph(df::round(sx), df::round(sy), g, clr, _horizontal_mirror);
+				_ctx->_canvas.blend_glyph(df::round(sx), df::round(sy), g, clr);
 			}
 
 			tx += ax;
@@ -2278,19 +2259,6 @@ void software_draw_context::draw_text(const std::string_view text, const recti b
 		if (!_canvas._clip.intersects(bounds)) return;
 		auto* const tr = renderer_for(font);
 		if (tr) tr->draw_text(text, bounds, style, c, bg);
-	});
-}
-
-void software_draw_context::draw_text_mirrored(const std::string_view text, const recti bounds,
-                                               const ui::style::font_face font,
-                                               const ui::style::text_style style, const ui::color c,
-                                               const ui::color bg)
-{
-	record_or_run([this, text = std::string(text), bounds, font, style, c, bg]
-	{
-		if (!_canvas._clip.intersects(bounds)) return;
-		auto* const tr = renderer_for(font);
-		if (tr) tr->draw_text(text, bounds, style, c, bg, true);
 	});
 }
 
@@ -2420,7 +2388,7 @@ platform::software_tiling_probe platform::probe_software_tiling()
 		                            ui::color(0.95f, 0.35f, 0.15f, 0.9f), ui::color(0.05f, 0.55f, 0.85f, 0.4f));
 		canvas.fill_triangle({13.5, 97.25}, {121.75, 71.5}, {87.25, 137.75}, ui::color(0.6f, 0.2f, 0.8f, 0.55f));
 		canvas.blend_glyph(57, 19, glyph, ui::color(1.0f, 1.0f, 0.4f, 0.85f));
-		canvas.blend_glyph(131, 88, glyph, ui::color(0.2f, 0.9f, 1.0f, 0.7f), true);
+		canvas.blend_glyph(131, 88, glyph, ui::color(0.2f, 0.9f, 1.0f, 0.7f));
 		canvas.blit_surface(*source, source_rect, recti(63, 29, 187, 119), 0.75f,
 		                    ui::texture_sampler::bilinear, true);
 		canvas.blit_surface(*source, source_rect, recti(9, 83, 101, 133), 0.6f,

@@ -115,7 +115,7 @@ IDB_SHADOW              PNG                     "Res\\shadow.png"
 IDB_INVERSE_SHADOW      PNG                     "Res\\inverse_shadow.png"
 IDB_MAP                 PNG                      "Res\\map-hires.png"
 
-IDF_ICONS               BINARY                 "Res\\segmdl2.ttf"
+IDF_ICONS               BINARY                 "Res\\FluentSystemIcons-Resizable.ttf"
 
 
 /////////////////////////////////////////////////////////////////////////////

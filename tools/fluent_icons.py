@@ -35,6 +35,9 @@ ICONS_HEADER = REPO_ROOT / "src" / "app_icons.h"
 #
 # Where a row carries a comment, the substitution is not a like-for-like match and is the judgement
 # call worth reviewing. Everything else is the same idea drawn in a different hand.
+#
+# facebook, flickr and twitter are absent deliberately: they were in the old enum, had no call site
+# anywhere, and Fluent carries no third-party brand marks. They were deleted rather than mapped.
 ICONS: dict[str, tuple[str, bool]] = {
     "add": ("add", False),
     "remove": ("subtract", False),
@@ -64,9 +67,7 @@ ICONS: dict[str, tuple[str, bool]] = {
     "document": ("document", False),
     "edit": ("edit", False),
     "eject": ("arrow_eject", False),
-    "facebook": ("share", False),  # Fluent carries no third-party brand marks
     "flag": ("flag", False),
-    "flickr": ("share", False),  # as above
     "folder": ("folder", False),
     "fullscreen": ("full_screen_maximize", False),
     "fullscreen_exit": ("full_screen_minimize", False),
@@ -125,7 +126,6 @@ ICONS: dict[str, tuple[str, bool]] = {
     "tag": ("tag", False),
     "rename": ("rename", False),
     "time": ("clock", False),
-    "twitter": ("share", False),  # as above
     "video": ("video", False),
     "movies": ("movies_and_tv", False),
     "zoom_in": ("zoom_in", False),

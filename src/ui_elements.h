@@ -887,10 +887,9 @@ public:
 
 inline std::string icon_to_utf8(const icon_index i)
 {
-	// Mask to 16 bits to strip the 0x10000 flag bit used for mirroring
-	// (e.g. rotate_anticlockwise) and get the base font glyph code point
-	const wchar_t text[2] = {static_cast<wchar_t>(static_cast<uint32_t>(i) & 0xFFFF), 0};
-	return str::utf16_to_utf8(text);
+	std::string result;
+	str::char32_to_utf8(std::back_inserter(result), static_cast<uint32_t>(i));
+	return result;
 }
 
 inline std::string icon_to_utf8(const icon_index i, const size_t repeat)
@@ -900,11 +899,6 @@ inline std::string icon_to_utf8(const icon_index i, const size_t repeat)
 	text.reserve(single.size() * repeat);
 	for (size_t n = 0; n < repeat; ++n) text += single;
 	return text;
-}
-
-inline bool icon_is_mirrored(const icon_index i)
-{
-	return (static_cast<uint32_t>(i) & 0x10000) != 0;
 }
 
 inline view_element_ptr make_icon_element(const icon_index i, const view_element_options& options)
@@ -936,14 +930,7 @@ inline view_element_ptr make_icon_link_element(const icon_index i, const size_t 
 inline void xdraw_icon(ui::draw_context& dc, const icon_index i, const recti bounds, const ui::color c,
                        const ui::color bg, const ui::style::font_face font = ui::style::font_face::icons)
 {
-	if (icon_is_mirrored(i))
-	{
-		dc.draw_text_mirrored(icon_to_utf8(i), bounds, font, ui::style::text_style::single_line_center, c, bg);
-	}
-	else
-	{
-		dc.draw_text(icon_to_utf8(i), bounds, font, ui::style::text_style::single_line_center, c, bg);
-	}
+	dc.draw_text(icon_to_utf8(i), bounds, font, ui::style::text_style::single_line_center, c, bg);
 }
 
 class surface_element final : public view_element

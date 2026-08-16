@@ -86,6 +86,24 @@ namespace platform
 {
 	file_ptr make_file_from_handle(HANDLE h);
 
+	// What a shell drag source actually advertises. Windows-only by nature: the formats it names
+	// are clipboard format ids, and the paths come back in the shell's own UTF-16.
+	struct data_object_probe
+	{
+		std::vector<uint32_t> enum_formats; // cfFormat ids, in EnumFormatEtc (source-preference) order
+		int hdrop_enum_index = -1; // position of CF_HDROP within enum_formats (-1 = absent)
+		int shell_id_list_enum_index = -1; // position of CFSTR_SHELLIDLIST within enum_formats (-1 = absent)
+		bool advertises_hdrop = false; // QueryGetData(CF_HDROP)
+		bool advertises_shell_id_list = false; // QueryGetData(CFSTR_SHELLIDLIST)
+		int hdrop_count = -1; // files parsed from CF_HDROP (-1 = no data returned)
+		int shell_id_list_count = -1; // CIDA cidl from CFSTR_SHELLIDLIST (-1 = no data returned)
+		std::vector<std::wstring> hdrop_paths;
+		std::vector<std::wstring> shell_id_list_paths;
+	};
+
+	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
+	                                         const std::vector<df::folder_path>& folders);
+
 	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
 	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
 	// There is no cross-platform notion of a shell path, so this is Windows-private.

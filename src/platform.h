@@ -252,8 +252,17 @@ namespace platform
 		read_write,
 	};
 
-	std::wstring to_file_system_path(df::file_path path);
-	std::wstring to_file_system_path(df::folder_path path);
+	// The path form the OS and native third-party libraries take. Windows needs UTF-16, with the
+	// \\?\ prefix once the path is long; elsewhere the file system takes the UTF-8 bytes as they
+	// are. Portable callers pass it straight through and never inspect it.
+#ifdef _WIN32
+	using native_path = std::wstring;
+#else
+	using native_path = std::string;
+#endif
+
+	native_path to_file_system_path(df::file_path path);
+	native_path to_file_system_path(df::folder_path path);
 
 	// The same path a native API would be given, as UTF-8, for the third-party libraries that take a
 	// byte path on every platform. On Windows this still carries the \\?\ prefix for a long path, so
@@ -288,7 +297,9 @@ namespace platform
 	file_ptr open_file(df::file_path path, file_open_mode mode);
 	uint32_t file_crc32(df::file_path path);
 	uint32_t file_crc32(df::file_path path, const df::cancel_token& token);
-	ui::const_surface_ptr create_segoe_md2_icon(wchar_t ch);
+	// Rasterises one glyph of the bundled icon font to a surface, for the places that need an image
+	// rather than drawn text. Takes a code point, so it does not depend on the size of wchar_t.
+	ui::const_surface_ptr create_icon_surface(char32_t ch);
 	bool eject(df::folder_path path);
 
 	enum class file_op_result_code
@@ -595,21 +606,6 @@ namespace platform
 	// are advertised (and in what order) and confirm that each file-bearing format
 	// independently resolves to the cached items exactly once. Used to reason about
 	// duplicate-import behaviour in third-party drop targets (e.g. Adobe Premiere).
-	struct data_object_probe
-	{
-		std::vector<uint32_t> enum_formats; // cfFormat ids, in EnumFormatEtc (source-preference) order
-		int hdrop_enum_index = -1; // position of CF_HDROP within enum_formats (-1 = absent)
-		int shell_id_list_enum_index = -1; // position of CFSTR_SHELLIDLIST within enum_formats (-1 = absent)
-		bool advertises_hdrop = false; // QueryGetData(CF_HDROP)
-		bool advertises_shell_id_list = false; // QueryGetData(CFSTR_SHELLIDLIST)
-		int hdrop_count = -1; // files parsed from CF_HDROP (-1 = no data returned)
-		int shell_id_list_count = -1; // CIDA cidl from CFSTR_SHELLIDLIST (-1 = no data returned)
-		std::vector<std::wstring> hdrop_paths;
-		std::vector<std::wstring> shell_id_list_paths;
-	};
-
-	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
-	                                         const std::vector<df::folder_path>& folders);
 
 	// Test-only probe of the double-buffered paint applied to native common controls. The buffering
 	// relies on the control drawing itself on demand into a supplied device context. If a control
