@@ -39,10 +39,12 @@ jobs:
         sudo apt-get install -y build-essential cmake ninja-build pkg-config ccache nasm
 
     # FFmpeg and the 25 vendored CMake modules are most of the build time and change rarely.
+    # CCACHE_DIR is set rather than assumed: ccache 4.x defaults to ~/.cache/ccache, not ~/.ccache,
+    # so caching the older path would silently cache nothing.
     - name: Cache compiler output
       uses: actions/cache@v4
       with:
-        path: ~/.ccache
+        path: ~/.cache/ccache
         key: ccache-${{ runner.os }}-${{ matrix.config }}-${{ github.sha }}
         restore-keys: |
           ccache-${{ runner.os }}-${{ matrix.config }}-

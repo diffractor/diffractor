@@ -460,3 +460,20 @@ Scenarios 2, 6, 7, 8, 9, and the presence half of 1 verify the 1.27.0 scope. The
 - Summary needs common/Mixed user state, one headline total size, actions below the information, and no Previous/Next controls.
 - Folder facts must use existing published summaries only; no layout or paint path may scan the filesystem.
 - The side-by-side media surface, comparison hit testing, zoom linking, and pair CRC work still key off cardinality and must move to the eligibility predicate.
+
+## Where this lives
+
+| Panel subject | Source |
+|---|---|
+| Form classification, region order, and the panel build | [view_items.cpp](../src/view_items.cpp) — the selection detail pane, including the verbose metadata block tree |
+| The building blocks a region is made of | [ui_elements.h](../src/ui_elements.h) — text, icons, links, dividers, thumbnails, tables |
+| Rating, label and other grading controls | [ui_controls.h](../src/ui_controls.h), [ui_controls.cpp](../src/ui_controls.cpp) |
+| Wrapping, grow/shrink, minimums, alignment, gaps, density | [ui_flex.cpp](../src/ui_flex.cpp) |
+| The regions the panel shares with the browser and media column | [view_items.h](../src/view_items.h) |
+| What a property is called and how it is formatted | [model_property.h](../src/model_property.h), [model_property.cpp](../src/model_property.cpp) |
+| Tag presentation and comparison | [model_tags.h](../src/model_tags.h) — `tag_set` |
+
+The panel is the clearest case of the rule that a paint path may not scan: folder facts come from
+published summaries only. Layout is measured through a stub measure context in the tests, so
+`/test:*layout*` and `/test:*selection*` do not depend on the machine's fonts or DPI — keep new
+layout decisions expressible that way rather than reachable only from a real device.

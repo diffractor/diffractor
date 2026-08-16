@@ -502,3 +502,21 @@ Deferred to a future release, with their sections: §2.4, §2.6, §3.4 and the c
 - No location resolution, gazetteer read, or node computation runs on the UI thread, and none runs inside a paint path.
 
 Regression coverage lives with the subject in `src/test_locations.cpp` (`should_find_location`, the map-area tests, the sidebar map grouping); see [testing](testing.md) for the taxonomy.
+
+## Where this lives
+
+| Location subject | Source |
+|---|---|
+| Coordinates, places, distance, memoized attribution | [model_location.h](../src/model_location.h) — `gps_coordinate`, `location_t`, `attribution_cell` |
+| The gazetteer: loading, indexing, reverse geocoding, autocomplete | [model_locations.h](../src/model_locations.h), [model_locations.cpp](../src/model_locations.cpp) — `location_cache` |
+| Nearest-place and visible-marker queries | [util_kdtree.h](../src/util_kdtree.h) |
+| Visit derivation: cluster, name, segment, score, classify, select | [model_visits.h](../src/model_visits.h), [model_visits.cpp](../src/model_visits.cpp) |
+| Tile fetch, coordinate math, panning, clustering, crosshair | [ui_map_common.h](../src/ui_map_common.h) — `map_engine`; [ui_map.h](../src/ui_map.h), [view_map.h](../src/view_map.h) |
+| The downloaded-tile store and its bounded prune | [model_tile_cache.h](../src/model_tile_cache.h), [model_tile_cache.cpp](../src/model_tile_cache.cpp) |
+| Assigning a location to items | [view_locate.cpp](../src/view_locate.cpp) |
+| `loc:` and `area:` terms in a query | [model_search.cpp](../src/model_search.cpp), [model_search.h](../src/model_search.h) |
+| The gazetteer source data | `exe/location-places.txt`, `exe/location-countries.txt`, `exe/location-states.txt`, built by `tools/generate_locations.py` |
+
+The gazetteer is 24 MB and is loaded once per test run and shared, so a location test must not
+assume a private index. The tile store owns the only SQLite connection outside the index database,
+pinned to the tile-database thread — see [implementation](implementation.md#sqlite-connection-ownership).

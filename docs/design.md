@@ -379,3 +379,25 @@ Network features independently disclose trigger, transmitted data, recipient, pu
 - All command entry points behave alike and invariants have regression tests.
 
 Collection membership belongs in [collections.md](collections.md). Location behavior belongs in [locations.md](locations.md). Zoom behavior belongs in [zoom.md](zoom.md). Implementation structure belongs in [implementation.md](implementation.md). GitHub issues own design gaps and planned changes.
+
+## Where this lives
+
+This document owns meaning, not structure. These anchors exist so a reader can route from a behavior to the code that implements it without searching; [implementation.md](implementation.md) owns the architecture behind them, and the source owns the exact API.
+
+| Design subject | Source |
+|---|---|
+| Scope, contents, navigation history, the view/mode transitions | [model.h](../src/model.h), [model.cpp](../src/model.cpp) — `view_state` |
+| Command availability, targeting, keyboard | [app_commands.h](../src/app_commands.h) — `default_keyboard_accelerators`; [app_commands.cpp](../src/app_commands.cpp) |
+| The address box editing session and completions | [app_search.h](../src/app_search.h) — `search_edit_session`, `make_search_auto_complete` |
+| Query parsing and matching | [model_search.cpp](../src/model_search.cpp), [model_tokenizer.h](../src/model_tokenizer.h), [util_selector.h](../src/util_selector.h) — `item_selector` |
+| Items: listing, tiles, control bar, selection panel | [view_items.h](../src/view_items.h) — `command_bar_element`; [view_items.cpp](../src/view_items.cpp), [view_list.h](../src/view_list.h), [ui_flex.cpp](../src/ui_flex.cpp) |
+| Fullscreen, Play, Slideshow, Repeat, resume | [view_media.h](../src/view_media.h); [av_player.h](../src/av_player.h) — `should_resume_at`, `position_to_save`; [util_interfaces.h](../src/util_interfaces.h) — `calc_playback_advance` |
+| Guided operations, Scope through Results | [view_import.cpp](../src/view_import.cpp), [view_sync.cpp](../src/view_sync.cpp), [view_rename.cpp](../src/view_rename.cpp), [view_batch.cpp](../src/view_batch.cpp), [view_tags.cpp](../src/view_tags.cpp), [app_util.cpp](../src/app_util.cpp) |
+| Collision policy, Recycle versus Permanent delete | [app_util.cpp](../src/app_util.cpp); [platform.h](../src/platform.h) — `can_recycle` |
+| The application mark and lockup | [render_surface.cpp](../src/render_surface.cpp) — `ui::surface::fill_logo`; [app_sidebar.h](../src/app_sidebar.h); `tools/generate_store_assets.py` |
+| Sidebar navigation and summaries | [app_sidebar.h](../src/app_sidebar.h) |
+| Durable preferences | [app_settings.h](../src/app_settings.h), [app_settings.cpp](../src/app_settings.cpp) |
+| Crash-loop protection and the degraded start | [util_crash_files_db.h](../src/util_crash_files_db.h), [app_toolbar.cpp](../src/app_toolbar.cpp) |
+| Alpha transitions and the animation gate | [ui.h](../src/ui.h) — `ui::animate_alpha`, `ui::animations_enabled` |
+
+Most of this behavior is reachable headless: `view_state` runs with null strategies, so selection, filtering, grouping, sibling navigation and the browsing sequence are testable without a window. See [testing.md](testing.md).

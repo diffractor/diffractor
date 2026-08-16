@@ -22,11 +22,10 @@ enum class icon_index
 	remove = 0xF1A3, // ic_fluent_subtract_20_regular
 	add2 = 0xE00F, // ic_fluent_add_circle_20_regular
 	remove2 = 0xF1A5, // ic_fluent_subtract_circle_20_regular
-	audio = 0xF109, // ic_fluent_speaker_2_20_regular
+	audio = 0xF0E9, // ic_fluent_sound_wave_circle_20_regular
 	music_note = 0xEC90, // ic_fluent_music_note_2_20_regular
 	usb = 0xF4C7, // ic_fluent_usb_stick_20_regular
 	hard_drive = 0xE9EF, // ic_fluent_hard_drive_20_regular
-	tape = 0xF18B, // ic_fluent_storage_20_regular
 	back = 0xE115, // ic_fluent_arrow_left_20_regular
 	back_image = 0xEA58, // ic_fluent_image_arrow_back_20_regular
 	back_folder = 0xE8EF, // ic_fluent_folder_arrow_left_20_regular
@@ -65,7 +64,6 @@ enum class icon_index
 	network = 0xF005, // ic_fluent_server_20_regular
 	open_items = 0xECF6, // ic_fluent_open_folder_20_regular
 	open_one = 0xECF4, // ic_fluent_open_20_regular
-	move_to = 0xE8F1, // ic_fluent_folder_arrow_right_20_regular
 	more = 0xEC72, // ic_fluent_more_horizontal_20_regular
 	new_folder = 0xE8ED, // ic_fluent_folder_add_20_regular
 	settings = 0xF00F, // ic_fluent_settings_20_regular
@@ -92,8 +90,8 @@ enum class icon_index
 	recursive = 0xE0ED, // ic_fluent_arrow_expand_all_20_regular
 	mute = 0xF113, // ic_fluent_speaker_mute_20_regular
 	volume0 = 0xF105, // ic_fluent_speaker_0_20_regular
-	volume1 = 0xF105, // ic_fluent_speaker_0_20_regular
-	volume2 = 0xF107, // ic_fluent_speaker_1_20_regular
+	volume1 = 0xF107, // ic_fluent_speaker_1_20_regular
+	volume2 = 0xF109, // ic_fluent_speaker_2_20_regular
 	volume3 = 0xF109, // ic_fluent_speaker_2_20_regular
 	repair = 0xF5FD, // ic_fluent_wrench_20_regular
 	star = 0xF15D, // ic_fluent_star_20_regular
@@ -129,7 +127,7 @@ enum class icon_index
 	maximize = 0xEC2A, // ic_fluent_maximize_20_regular
 	restore = 0xF149, // ic_fluent_square_multiple_20_regular
 	close = 0xE6D3, // ic_fluent_dismiss_20_regular
-	move_to_folder = 0xE8F1, // ic_fluent_folder_arrow_right_20_regular
+	move_to_folder = 0xE919, // ic_fluent_folder_swap_20_regular
 	copy_to_folder = 0xE5DB, // ic_fluent_copy_arrow_right_20_regular
 	person = 0xEDB3, // ic_fluent_person_20_regular
 	download = 0xE0DD, // ic_fluent_arrow_download_20_regular

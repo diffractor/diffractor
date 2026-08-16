@@ -477,3 +477,17 @@ post-release work:
 - Source-pixel coordinate/colour readout and the high-magnification pixel grid remain the
     optional Study additions described in §9; they are not part of the version 1.27
     interface.
+
+## Where this lives
+
+| Zoom subject | Source |
+|---|---|
+| Scale, source-space centre, anchoring, bounds, navigator timing | [model_zoom.h](../src/model_zoom.h) — `zoom_scale_mode`, `fit_scale`, `fit_variant_scale`, `clamp_center` |
+| The magnified surface, pan input, comparison | [view_media.h](../src/view_media.h), [ui.cpp](../src/ui.cpp) |
+| Rendering tiers and the decode that feeds them | [render_surface.cpp](../src/render_surface.cpp), [files_core.cpp](../src/files_core.cpp) — and [file-io.md](file-io.md) for the decode ladder |
+| Zoom mode as a mode, and what it suppresses | [model.h](../src/model.h) — `view_state` |
+
+The model is deliberately pure: [model_zoom.h](../src/model_zoom.h) has no window, no surface and no
+file access, which is why `/test:*zoom*` runs in microseconds and covers fit, stepping, anchoring,
+panning and navigator visibility directly. A zoom rule that cannot be expressed against that header
+is usually a rule about the media surface instead — check where it belongs before adding state.

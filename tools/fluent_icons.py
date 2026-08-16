@@ -38,16 +38,18 @@ ICONS_HEADER = REPO_ROOT / "src" / "app_icons.h"
 #
 # facebook, flickr and twitter are absent deliberately: they were in the old enum, had no call site
 # anywhere, and Fluent carries no third-party brand marks. They were deleted rather than mapped.
+# tape and move_to are absent for the same reason - no call site - and both were colliding with a
+# used icon under the new font.
 ICONS: dict[str, tuple[str, bool]] = {
     "add": ("add", False),
     "remove": ("subtract", False),
     "add2": ("add_circle", False),
     "remove2": ("subtract_circle", False),
-    "audio": ("speaker_2", False),
+    # Not a volume level: this marks an audio stream, so it must stay distinct from volume3.
+    "audio": ("sound_wave_circle", False),
     "music_note": ("music_note_2", False),
     "usb": ("usb_stick", False),
     "hard_drive": ("hard_drive", False),
-    "tape": ("storage", False),  # no cassette in Fluent; storage is the nearest device sense
     "back": ("arrow_left", False),
     "back_image": ("image_arrow_back", False),
     "back_folder": ("folder_arrow_left", False),
@@ -86,7 +88,6 @@ ICONS: dict[str, tuple[str, bool]] = {
     "network": ("server", False),
     "open_items": ("open_folder", False),
     "open_one": ("open", False),
-    "move_to": ("folder_arrow_right", False),
     "more": ("more_horizontal", False),
     "new_folder": ("folder_add", False),
     "settings": ("settings", False),
@@ -115,9 +116,11 @@ ICONS: dict[str, tuple[str, bool]] = {
     # MDL2 gave recursive and data the same code point, which made them indistinguishable.
     "recursive": ("arrow_expand_all", False),
     "mute": ("speaker_mute", False),
+    # Segoe had four volume levels and Fluent has three, so one pair has to collapse. It collapses
+    # at the loud end: telling "silent" from "quiet" carries more than telling "loud" from "louder".
     "volume0": ("speaker_0", False),
-    "volume1": ("speaker_0", False),
-    "volume2": ("speaker_1", False),
+    "volume1": ("speaker_1", False),
+    "volume2": ("speaker_2", False),
     "volume3": ("speaker_2", False),
     "repair": ("wrench", False),
     "star": ("star", False),
@@ -153,7 +156,9 @@ ICONS: dict[str, tuple[str, bool]] = {
     "maximize": ("maximize", False),
     "restore": ("square_multiple", False),
     "close": ("dismiss", False),
-    "move_to_folder": ("folder_arrow_right", False),
+    # Distinct from next_folder: one moves files, the other navigates, and folder_arrow_right is
+    # already the navigation pair with back_folder.
+    "move_to_folder": ("folder_swap", False),
     "copy_to_folder": ("copy_arrow_right", False),
     "person": ("person", False),
     "download": ("arrow_download", False),

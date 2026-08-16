@@ -1,4 +1,7 @@
-﻿#pragma once
+﻿// Purpose: Assertion helpers and the failure type every test file asserts through.
+// Holds no test itself; the taxonomy is documented in docs/testing.md.
+
+#pragma once
 
 #include <source_location>
 

@@ -97,3 +97,21 @@ Recorded so they are not rediscovered as surprises:
 - `ui_dialog.h`, `ui_text_view.h` and `ui_plasma.h` have no coverage. The suite has no `ui::draw_context`, so anything whose only output is pixels on a real device is verified by eye.
 - View-level behavior for `view_locate`, `view_tags`, `view_batch`, `view_items` and `view_media` is covered only through their planning helpers.
 - Nothing drives `view_state::tick` end to end; `calc_playback_advance` covers the decision, not the player calls around it.
+
+## Where this lives
+
+The taxonomy table above is the routing for tests. The runner and its supporting pieces are:
+
+| Piece | Source |
+|---|---|
+| Assertion helpers and the failure type | [test.h](../src/test.h) |
+| Shared fixtures, index building, the shared gazetteer, the null AV host | [test_fixtures.h](../src/test_fixtures.h), [test_fixtures.cpp](../src/test_fixtures.cpp) |
+| Registration and the console runner | [test_runner.h](../src/test_runner.h), [test_runner.cpp](../src/test_runner.cpp) |
+| The `/test`, `/test-temp:` and `/validate-po` entry points | [app_command_line.h](../src/app_command_line.h), [app_validate_po.cpp](../src/app_validate_po.cpp) |
+
+Beyond the suite, `.\dd.ps1 test` also runs `tools/lint_repo.ps1`, which enforces the mechanically
+checkable subset of [AGENTS.md](../AGENTS.md) — platform containment, SQLite ownership, application
+threads, frame accessors, and the integrity of every link and `src/` anchor in this documentation
+set. `tools/lint_repo_selftest.ps1` applies this document's own standard to that lint: it breaks each
+rule in turn and asserts the rule fires, so a lint rule cannot quietly stop matching and report PASS
+forever.

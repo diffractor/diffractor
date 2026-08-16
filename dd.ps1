@@ -15,7 +15,7 @@
     - run32      : Run the recently built diffractor32.exe (32-bit)
     - cpu        : Run diffractor64.exe using CPU software rendering
     - build      : Bump the build number and build Release x64 (diffractor64.exe)
-    - test       : Run unit tests and validate translation (.po) files
+    - test       : Lint the repository, run unit tests and validate translation (.po) files
     - bean       : Run unit tests with the temp folder on the bean NAS (\\bean.local\home\tmp)
     - bump-build : Increment the build number (e.g., 1187 -> 1188)
     - bump-ver   : Increment the minor version (e.g., 1.26.2 -> 1.26.3)
@@ -46,7 +46,7 @@
 
 .EXAMPLE
     .\dd.ps1 test
-    Run unit tests and validate translation (.po) files
+    Lint the repository, run unit tests and validate translation (.po) files
 
 .EXAMPLE
     .\dd.ps1 bump-build
@@ -280,7 +280,7 @@ function Show-Usage {
     Write-Host "  run32        Run the recently built diffractor32.exe (32-bit)"
     Write-Host "  cpu          Run diffractor64.exe using CPU software rendering"
     Write-Host "  build        Bump the build number and build Release x64 (diffractor64.exe)"
-    Write-Host "  test         Run unit tests and validate translation (.po) files"
+    Write-Host "  test         Lint, run unit tests and validate translation (.po) files"
     Write-Host "  bean         Run unit tests with the temp folder on the bean NAS (\\bean.local\home\tmp)"
     Write-Host "  code         Open VS Code with Developer Command Prompt environment"
     Write-Host "  loc          Regenerate location database files from geonames"
@@ -305,7 +305,7 @@ function Show-Usage {
     Write-Host "  .\dd.ps1 run          Run diffractor64.exe"
     Write-Host "  .\dd.ps1 run32        Run diffractor32.exe"
     Write-Host "  .\dd.ps1 cpu          Run diffractor64.exe using CPU software rendering"
-    Write-Host "  .\dd.ps1 test         Run unit tests and validate .po files"
+    Write-Host "  .\dd.ps1 test         Lint, run unit tests and validate .po files"
     Write-Host ""
 }
 
@@ -891,13 +891,23 @@ function Invoke-Tests {
         [string]$Exe
     )
 
-    # Release builds gate on the exe they are about to ship; plain `dd test` builds one.
-    $testExe = if ($Exe) { $Exe } else { Build-App }
-
     Write-Host ""
     Write-Host "============================================================================" -ForegroundColor Cyan
-    Write-Host "Running Tests and Validating Translation Files" -ForegroundColor Cyan
+    Write-Host "Running Lint, Tests and Validating Translation Files" -ForegroundColor Cyan
     Write-Host "============================================================================" -ForegroundColor Cyan
+
+    # Lint before the build: it is the cheapest gate in the repository, and it catches
+    # boundary violations (platform code outside platform*, raw threads, SQLite outside its
+    # owner, stale doc anchors) that a passing unit test cannot see. Running it first means a
+    # boundary failure costs seconds rather than a full Release build.
+    Write-Host ""
+    Write-Host "Linting repository (AGENTS.md boundaries and doc integrity)..." -ForegroundColor Yellow
+    Write-Host ""
+    & pwsh -NoProfile -File (Join-Path $ToolsDir "lint_repo.ps1") | Out-Host
+    $lintResult = $LASTEXITCODE
+
+    # Release builds gate on the exe they are about to ship; plain `dd test` builds one.
+    $testExe = if ($Exe) { $Exe } else { Build-App }
 
     # Build the test arguments. When a temp path is supplied, the file-I/O tests do their
     # scratch work there (e.g. \\bean.local\home\tmp to exercise the SMB read-after-write paths).
@@ -933,14 +943,17 @@ function Invoke-Tests {
     $transResult = $LASTEXITCODE
 
     Write-Host ""
-    if ($testResult -eq 0 -and $poResult -eq 0 -and $transResult -eq 0) {
+    if ($lintResult -eq 0 -and $testResult -eq 0 -and $poResult -eq 0 -and $transResult -eq 0) {
         Write-Host "============================================================================" -ForegroundColor Green
-        Write-Host "All tests passed and .po files are valid!" -ForegroundColor Green
+        Write-Host "Lint is clean, all tests passed and .po files are valid!" -ForegroundColor Green
         Write-Host "============================================================================" -ForegroundColor Green
         Write-Host ""
     }
     else {
         Write-Host "============================================================================" -ForegroundColor Red
+        if ($lintResult -ne 0) {
+            Write-Host "Repository lint FAILED (exit code $lintResult)." -ForegroundColor Red
+        }
         if ($testResult -ne 0) {
             Write-Host "Unit tests FAILED (exit code $testResult)." -ForegroundColor Red
         }

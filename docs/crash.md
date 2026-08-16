@@ -166,3 +166,19 @@ that says this configuration took that path. Two out of three is a hypothesis.
   done. They are reproducible from the store at any time.
 - If the root cause is a setting, a driver, or a fallback that did not fire, record the
   invariant in the owning document so the next reader does not re-derive it.
+
+## Where this lives
+
+| Crash-handling subject | Source |
+|---|---|
+| Exception filter, dump writing, report contents | [app_toolbar.cpp](../src/app_toolbar.cpp) |
+| The open-file list a fault records, and its bounds | [util_crash_files_db.h](../src/util_crash_files_db.h) |
+| The graphics crash guard and hardware-acceleration fallback | [platform_win_settings.cpp](../src/platform_win_settings.cpp) |
+| The degraded start after two unsettled launches | [app.cpp](../src/app.cpp), [app_settings.cpp](../src/app_settings.cpp) |
+| Diagnostic log and session counters | [util_log.h](../src/util_log.h), [util.h](../src/util.h) |
+| Symbol store tooling | `tools/symstore.exe`, `tools/symsrv.dll` |
+
+The guard's own behavior is tested — the crash-guard recovery session and DXGI device loss are in
+[test_platform_win.cpp](../src/test_platform_win.cpp), the only test file permitted system headers.
+What is *not* tested is the faulting path itself, so treat a change to the exception filter as
+unverified by the suite and say so.

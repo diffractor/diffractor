@@ -256,3 +256,30 @@ diffractor64-d.exe /test:*search* | Out-Host
 Add regression tests for search semantics, navigation restoration, operation targets, snapshot revalidation, partial failure, and cancellation. Where a test belongs, what the runner enforces, and what a test must not do are owned by [testing](testing.md). Performance changes validate throughput and UI latency under concurrent indexing and navigation.
 
 Desktop and Store packages share the codebase; Store builds omit application-owned updates. Packaging, signing, dependencies, and prerequisites are maintained in [README.md](../README.md) and build scripts. Do not edit vendored `third-party/` source.
+
+## Where this lives
+
+The `src/` prefixes are the map; these are the entry points behind each layer described above.
+
+| Layer | Source |
+|---|---|
+| Process entry, frame lifecycle, init and exit | [app.cpp](../src/app.cpp), [app.h](../src/app.h), [app_toolbar.cpp](../src/app_toolbar.cpp) |
+| Layout, event processing, input, queue management | [app_workers.cpp](../src/app_workers.cpp) |
+| View state, navigation, selection, grouping, filtering | [model.h](../src/model.h), [model.cpp](../src/model.cpp) — `view_state` |
+| Items and item sets | [model_items.h](../src/model_items.h), [model_items.cpp](../src/model_items.cpp) — `df::item_element` |
+| Indexing, scanning, summaries, predictions, presence | [model_index.h](../src/model_index.h), [model_index.cpp](../src/model_index.cpp) — `index_state` |
+| The inverted index and its set operations | [model_postings.h](../src/model_postings.h) |
+| SQLite storage, batch writes, packing | [model_db.h](../src/model_db.h), [model_db.cpp](../src/model_db.cpp), [model_db_pack.h](../src/model_db_pack.h) |
+| The map tile store, on its own connection and thread | [model_tile_cache.h](../src/model_tile_cache.h), [model_tile_cache.cpp](../src/model_tile_cache.cpp) |
+| Query parsing and record matching | [model_search.h](../src/model_search.h), [model_search.cpp](../src/model_search.cpp), [model_tokenizer.h](../src/model_tokenizer.h) |
+| Platform abstraction: files, threads, queues, network, shell | [platform.h](../src/platform.h) and the `platform_win*` / `platform_linux*` implementations |
+| View framework, elements, controllers, hosting | [ui_view.h](../src/ui_view.h), [ui_elements.h](../src/ui_elements.h), [ui_controllers.h](../src/ui_controllers.h) |
+| Session performance counters | [util.h](../src/util.h) — `df::ui_perf`, `df::gpu_perf`, `df::db_perf`, `df::query_perf`, `df::file_perf`, `df::thumbnail_perf`, `df::queue_counters` |
+| Crash-loop protection | [util_crash_files_db.h](../src/util_crash_files_db.h) |
+
+The boundaries this document defines are partly enforced: `tools/lint_repo.ps1` fails a build where
+system headers or Windows handle types appear outside `platform*`, where `sqlite3_*` appears outside
+its two owning modules, where an application thread is created directly, or where a `const_pointer_cast`
+publishes a worker result. The rules needing type or call-graph knowledge — no I/O under an index
+lock, no UI-owned object captured by a worker — remain review rules, because a lint that guessed at
+them would produce false positives and be turned off.

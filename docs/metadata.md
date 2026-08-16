@@ -159,3 +159,23 @@ and writing take different code paths — reads come from FFmpeg, writes from th
 - **Reads are wider than writes.** Every container above is read through FFmpeg but written
   through the XMP toolkit, and the toolkit reconciles a smaller set. A property Diffractor
   displays is not necessarily one it can store back to the same tag.
+
+## Where this lives
+
+| Standard or stage | Source |
+|---|---|
+| EXIF read and write | [metadata_exif.h](../src/metadata_exif.h), [metadata_exif.cpp](../src/metadata_exif.cpp) |
+| IPTC read | [metadata_iptc.h](../src/metadata_iptc.h), [metadata_iptc.cpp](../src/metadata_iptc.cpp) |
+| XMP read and write, sidecars | [metadata_xmp.h](../src/metadata_xmp.h), [metadata_xmp.cpp](../src/metadata_xmp.cpp) |
+| ICC profile interpretation | [metadata_icc.h](../src/metadata_icc.h), [metadata_icc.cpp](../src/metadata_icc.cpp) |
+| Container tags read through FFmpeg | [av_format.cpp](../src/av_format.cpp) |
+| Which properties exist, and how each is named and formatted | [model_property.h](../src/model_property.h), [model_property.cpp](../src/model_property.cpp) |
+| Keyword tag sets | [model_tags.h](../src/model_tags.h), [model_tags.cpp](../src/model_tags.cpp) — `tag_set` |
+| Per-format scanning and dispatch | [files_core.cpp](../src/files_core.cpp), [files_scan_photo.cpp](../src/files_scan_photo.cpp), and the `files_*` decoder for the format |
+| How a write reaches disk | [file-io.md](file-io.md), [app_util.cpp](../src/app_util.cpp) |
+
+The mapping table above is the authority for *which tag*; the source is the authority for the exact
+tag constant. [app_gen_docs.cpp](../src/app_gen_docs.cpp) generates the published format and codec
+list from the live dispatch tables, so that page cannot drift from the code — this document's
+mapping is maintained by hand and can, which is why `/test:*metadata*` and `/test:*tag*` matter here
+more than elsewhere.

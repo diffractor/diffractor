@@ -724,3 +724,28 @@ simpler code), but the only thing that justifies changing the default is measure
 latency/stall data showing it does not hurt UI smoothness on weak/hybrid GPUs. If
 the numbers hold across that hardware matrix, flip the default and delete the
 bridge.
+
+## Where this lives
+
+| Rendering subject | Source |
+|---|---|
+| The portable drawing abstraction: colours, surfaces, textures, contexts | [ui.h](../src/ui.h), [ui.cpp](../src/ui.cpp) |
+| The hardware backend, shaders, shared-texture handoff, device loss | [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) |
+| The CPU backend and its fixed 512-square tile walk | [platform_win_software.cpp](../src/platform_win_software.cpp) |
+| Text layout, glyph rasterisation, measurement | [platform_win_font.cpp](../src/platform_win_font.cpp) |
+| Surface allocation, scaling, cropping, format conversion, the mark | [render_surface.cpp](../src/render_surface.cpp) |
+| Tone curves, saturation, vibrance, contrast, brightness | [render_color.cpp](../src/render_color.cpp) |
+| Pixel-level transforms and differences | [render_image.cpp](../src/render_image.cpp) |
+| SSE/AVX/NEON paths behind the above | [util_simd.h](../src/util_simd.h) |
+| Demux, decode, scaling, resampling, hardware acceleration | [av_format.h](../src/av_format.h), [av_format.cpp](../src/av_format.cpp) |
+| Playback session, A/V sync, transport | [av_player.h](../src/av_player.h) |
+| Audio output and buffering | [av_sound.h](../src/av_sound.h), [platform_win_sound.cpp](../src/platform_win_sound.cpp) |
+| The spectrum visualizer | [av_visualizer.h](../src/av_visualizer.h) |
+| Visual styles, DWM composition, theming | [platform_win_visual.h](../src/platform_win_visual.h) |
+| Session GPU counters | [util.h](../src/util.h) — `df::gpu_perf`; see [implementation](implementation.md#session-diagnostics) |
+
+The two backends must agree. `/test:*surface*` and `/test:*colour*` cover the software paths
+directly — `Should area downscale packed surfaces` compares the AVX2 and SSE2 results byte for byte,
+which is what proves the AVX2 path is live at all — but nothing in the suite drives a real device,
+so a change to [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) is verified by running both
+`.\dd.ps1 run` and `.\dd.ps1 cpu` and comparing.

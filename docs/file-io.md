@@ -1230,3 +1230,22 @@ cache behaviour is sufficient for that release; these do not block it.
   repeat work when stepping back. It retains by form rather than by recency, so what remains
   budgeted is only the decoded pixels of formats with no compressed representation. Eviction within
   that remainder is still by recency and does not yet rank candidates by viewport distance.
+
+## Where this lives
+
+| I/O subject | Source |
+|---|---|
+| Format detection, dispatch, load and save coordination | [files.h](../src/files.h), [files_core.cpp](../src/files_core.cpp) |
+| Header scanning for dimensions, orientation, embedded thumbnails | [files_scan_photo.cpp](../src/files_scan_photo.cpp), [files_structs.h](../src/files_structs.h) |
+| Per-format decode and encode | [files_jpeg.cpp](../src/files_jpeg.cpp), [files_png.cpp](../src/files_png.cpp), [files_webp.cpp](../src/files_webp.cpp), [files_heif.cpp](../src/files_heif.cpp), [files_jxl.cpp](../src/files_jxl.cpp), [files_psd.cpp](../src/files_psd.cpp), [files_raw.cpp](../src/files_raw.cpp), [files_commodore.cpp](../src/files_commodore.cpp) |
+| The fallback decoder for formats with no specialised path | [platform_win_wic.cpp](../src/platform_win_wic.cpp) |
+| Staging, replacement, originals, collisions, rollback | [app_util.cpp](../src/app_util.cpp) — `import_copy`, `sync_copy` and the rename planning beside them |
+| Buffered reads, whole-file loads, in-place insert and replace | [util_file.h](../src/util_file.h); memory mapping is `platform::map_file` in [platform.h](../src/platform.h) |
+| Path handling and extended-path syntax | [util_path.h](../src/util_path.h) — `file_path`, `folder_path`; [platform_win_files.cpp](../src/platform_win_files.cpp) |
+| Metadata written into the file or a sidecar | [metadata.md](metadata.md), [metadata_xmp.cpp](../src/metadata_xmp.cpp) |
+| Archive reading and writing | [util_zip.h](../src/util_zip.h), [util_zip.cpp](../src/util_zip.cpp) |
+
+Run-time revalidation is the part most easily lost in a refactor: each row of a guided operation is
+revalidated against its own files immediately before that row acts, not once for the whole plan.
+[view_import.cpp](../src/view_import.cpp) and [view_sync.cpp](../src/view_sync.cpp) state why in
+their own `// Purpose:` headers, and `/test:*collision*` and `/test:*sidecar*` are the checks.

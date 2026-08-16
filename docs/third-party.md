@@ -310,3 +310,21 @@ reports unresolved x86 kernels, the fix is rule 2, not a new stub file.
 > **ARM64:** `config-arm64.{h,asm}` are **not** currently generated (no aarch64-mingw toolchain was
 > used). The dispatcher still references them, so an ARM64 build would fail until they are produced;
 > x64/x86 are unaffected.
+
+## Where this lives
+
+Vendored source is under `third-party/` and is **never edited**. Everything Diffractor owns about a
+dependency lives in one of these:
+
+| Concern | Location |
+|---|---|
+| Build configuration and integration patches | `cmake/vendored`, [DiffractorDependency.cmake](../cmake/DiffractorDependency.cmake) |
+| Compiler policy applied to vendored targets | [DiffractorCompilerPolicy.cmake](../cmake/DiffractorCompilerPolicy.cmake) |
+| The owned wrapper over each library | the `files_*` decoder, [av_format.cpp](../src/av_format.cpp), [metadata_xmp.cpp](../src/metadata_xmp.cpp), [util_spell.cpp](../src/util_spell.cpp), [util_zip.cpp](../src/util_zip.cpp) |
+| FFmpeg configuration comparison | `tools/compare_ffmpeg_config.py` |
+| The stubs used when a dependency is absent | `src/platform_linux_*_stubs.cpp` — alternatives to the real implementation, never built alongside it |
+
+An upgrade is proven by the wrapper's tests, not by the library's: `/test:*metadata*`,
+`/test:*video*`, `/test:*audio*` and the format tests in [test_files.cpp](../src/test_files.cpp) are
+what catch a rebase that drops an integration patch. Several patches above exist precisely because
+they are invisible until a specific test fails.
