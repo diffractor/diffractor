@@ -210,9 +210,9 @@ list(APPEND DIFFRACTOR_PORTABLE_SOURCES
         src/app_validate_po.cpp
 )
 
-# Codec and utility translation units, each gated on the library it needs. Where the library is
-# absent, platform_linux_stubs.cpp supplies the same symbols -- so when one of these libraries is
-# first resolved on Linux, the matching block must come out of that file or the two will collide.
+# Codec and utility translation units, each gated on the library it needs. There is no longer a
+# stand-in file behind these: every vendored library resolves, so a configuration that dropped one
+# would be missing the translation unit and its symbols rather than getting a failing stub.
 if (TARGET diffractor::heif)
     list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/files_heif.cpp)
 endif ()

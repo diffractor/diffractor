@@ -8,8 +8,8 @@
 
 // Purpose: Linux file system implementation of the platform file interface: opening, attributes,
 // enumeration, copy/move/delete, temporary files and memory mapping. The Windows counterpart is
-// platform_win_files.cpp; the shell integration it also carries has no equivalent here and is
-// stubbed in platform_linux_stubs.cpp.
+// platform_win_files.cpp; the shell integration it also carries has no equivalent here, and the
+// part of it that maps to a real operation lives in platform_linux_desktop.cpp.
 
 #include "pch.h"
 

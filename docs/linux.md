@@ -10,37 +10,82 @@ that belongs to [rendering.md](rendering.md). User-facing behavior belongs to
 [design.md](design.md); where a Linux difference would change what a user can predict,
 this document names the decision and defers the answer there.
 
+## Current state
+
+The portable core builds and passes its full test suite on Linux, headless, in both Debug and
+Release. What exists is the build, the core, and the file and settings half of the platform
+layer. What does not exist is a window, a renderer surface, text shaping, or any desktop
+integration — everything from [Stage 2](#staged-plan) onward.
+
+| | Windows | Linux |
+|---|---|---|
+| Tests | 753 Debug (CMake/Ninja), 759 Release (MSBuild) | **735, Debug and Release** |
+| Build | `df.sln` and CMake | CMake + Ninja, GCC 13 |
+| Vendored libraries | 26 | **26, all building under GCC** |
+| Release binary | 40 MB | 94 MB |
+
+The test-count difference is not a coverage gap. Six tests are guarded `#ifndef _DEBUG`, and
+`_DEBUG` is an MSVC macro that GCC never defines, so Linux runs them in *both* configurations
+while the Windows Debug build skips them. Those six include the five decoder-robustness tests,
+which feed malformed input through the shared decode path.
+
+The Linux platform layer is about 2,400 lines across five files, against `platform_win*`'s
+25,180:
+
+| File | What it covers |
+|---|---|
+| `platform_linux.cpp` | Process entry, locks, events, known folders (XDG), dates, locale, SIMD detection |
+| `platform_linux_files.cpp` | I/O, attributes, enumeration, copy/move/delete, temp files, mapping, NFC normalisation |
+| `platform_linux_desktop.cpp` | Delete, move and copy as real operations; the rest of the shell surface stands in |
+| `platform_linux_settings.cpp` | The INI backend, which is the only one here |
+| `platform_linux_ui.cpp` | Style palette, key table, UI-thread identity — no window, no message loop |
+
+`platform_linux_av_stubs.cpp` and `platform_linux_xmp_stubs.cpp` are a further 345 lines and are
+not gaps: they are alternatives to `av_format.cpp` and `metadata_xmp.cpp` for a build configured
+without those forks, and exactly one of each pair is ever compiled.
+
+**What is done beyond the build:** indexing, search, metadata, the decode ladder, ratings,
+renaming, collections and the location index all pass on Linux; delete, move and copy are real
+operations with collision renaming; and `platform::image_to_surface` — the WIC entry point — is
+gone from both platforms, replaced by `av_decode_still` in [av_format.cpp](../src/av_format.cpp),
+so there is now one image decoder rather than one per platform.
+
+**What is unchanged:** every item in
+[Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code) is
+still open. The port fixed the specific defects those assumptions caused — a mis-decoded EXIF
+string, a truncated coordinate — without removing the assumptions themselves. `wchar_t` and
+`std::wstring` still appear in 28 files outside `platform_win*`, `av_format.cpp` still selects
+`AV_HWDEVICE_TYPE_D3D11VA` directly, and path comparison is still case-insensitive everywhere.
+
 ## Verdict
 
-The port is realistic and the boundary is genuinely clean, but "swap in a Linux set of
-files" understates the work by roughly half.
-
-Three findings drive that:
+The port is realistic and the boundary is genuinely clean. Two of the three findings that
+originally drove that assessment still hold; the third has been resolved.
 
 1. **The boundary holds.** `platform_win.h` is included by `platform_win*.cpp` and
    `test_platform_win.cpp` and by nothing else. A search of `src/` for Win32 types
    (`HWND`, `HRESULT`, `windows.h`, `IUnknown`, `WINAPI`, `_WIN32`) finds essentially
    nothing outside `platform_win*` — the exceptions are listed in
    [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code)
-   and are all small. This is the expensive property to establish and it is already there.
+   and are all small. This is the expensive property to establish and it was already there;
+   the headless Linux build is the proof.
 
 2. **The split is favourable but the platform layer is dense.** `platform_win*` is
-   ~20,500 lines against ~117,400 lines elsewhere: about 15% of `src/`. But it is not 15%
+   ~25,200 lines against ~147,700 lines elsewhere: about 15% of `src/`. But it is not 15%
    of the effort, because a large part of it is a Windows *desktop integration* surface
-   (shell, WIC, DirectWrite, WASAPI, D3D11) where the Linux replacement is a different
-   library with a different model, not a renamed call.
+   (shell, DirectWrite, WASAPI, D3D11) where the Linux replacement is a different
+   library with a different model, not a renamed call. The 2,400 lines of `platform_linux*`
+   written so far cover the cheap half.
 
-3. **The build system is the underestimated cost.** 27 libraries are vendored in
-   `third-party/` and every one of them is built from a hand-written `.vcxproj`; upstream
-   build files were deliberately stripped (only `libarchive`, `libde265`, `libheif`,
-   `LibJpeg` and `xmp` still carry any CMake, and only `dav1d` carries meson). None of
-   that builds on Linux today. See [third-party.md](third-party.md) for the vendoring policy
-   this collides with.
+3. ~~**The build system is the underestimated cost.**~~ **Resolved.** It was the largest single
+   piece of work in the port, and it is done: CMake describes the whole tree and generates for
+   both platforms, and all 26 vendored libraries build under GCC. See
+   [build system](#build-system). The [third-party policy](third-party.md) has been updated to
+   match.
 
-The realistic shape is: a portable core that is close to ready, a renderer that has an
-unusually good migration path because the CPU backend already exists, a text and window
-layer that is new code, and a long tail of Windows shell features that need product
-decisions rather than ports.
+The realistic shape of what remains is: a renderer that has an unusually good migration path
+because the CPU backend already exists, a text and window layer that is new code, and a long
+tail of Windows shell features that need product decisions rather than ports.
 
 ## What each layer costs
 
@@ -55,7 +100,7 @@ The platform layer, largest first, with what replaces it:
 | `platform_win.cpp` | 1,678 | Locks, events, known folders, dates, number/locale format, drives, eject | pthreads/futex, XDG base dirs, `std::chrono`, ICU or `std::locale` | Low–medium |
 | `platform_win_font.cpp` | 831 | DirectWrite faces, fallback, metrics | FreeType + HarfBuzz + fontconfig | Medium–high |
 | `platform_win_sound.cpp` | 598 | WASAPI render client | PipeWire (or PulseAudio/ALSA) | Medium |
-| `platform_win_wic.cpp` | 572 | WIC encode/decode for clipboard and save | Existing vendored codecs already cover the formats | Low |
+| `platform_win_wic.cpp` | 523 | WIC encode for clipboard and save | Decoding already left: `image_to_surface` is gone and both platforms use `av_decode_still` | **Done, for decode** |
 | `platform_win_settings.cpp` | 452 | Registry and INI stores | INI store already exists and is portable in shape | **Low** |
 | `platform_win_web.cpp` | 330 | WinInet HTTP client | libcurl | Low |
 
@@ -77,9 +122,10 @@ browser to port.
 
 ## Windows assumptions still in portable code
 
-These are the real blockers, and every one of them can be fixed on Windows before any
-Linux file exists. They are `Internal` changes under the [pre-flight gate](../AGENTS.md#mandatory-pre-flight-validation):
-no observable behavior changes, and `.\dd.ps1 test` proves it.
+These are the real blockers, and every one of them is still open. The headless Linux build
+works around the specific defects they caused rather than removing the assumption, so each is
+still owed. All are `Internal` changes under the [pre-flight gate](../AGENTS.md#mandatory-pre-flight-validation):
+no observable behavior changes, and `.\dd.ps1 test` proves it on Windows.
 
 **Path semantics are Windows semantics, in portable code.**
 [util_path.h](../src/util_path.h) is not a platform file, but it encodes drive letters and
@@ -172,8 +218,16 @@ CMake now describes the whole tree and generates for both platforms: one target 
 one module per vendored library under `cmake/vendored/`, imported from the `.vcxproj` files by
 `tools/import_vcxproj.py`. Anything the Windows project could not express — a header its build
 generates, a flag a different compiler needs — lives beside it in `<name>.local.cmake`, which
-re-importing does not discard. All 23 vendored libraries build under GCC. This supersedes the
+re-importing does not discard. All 26 vendored libraries build under GCC, and a fully vendored
+build is the default: `DIFFRACTOR_PREFER_SYSTEM` is `OFF`, so a system package is a way to bring
+a new platform up rather than something a release picks up by accident. This supersedes the
 hand-maintained `.vcxproj` assumption in the [third-party policy](third-party.md).
+
+Two modules had never been built off Windows and only failed once vendoring was forced: sqlite
+states `SQLITE_WIN32_MALLOC` unconditionally, and off Windows the allocator behind it compiles to
+nothing, leaving `sqlite3MemSetDefault` undefined; expat had `HAVE_GETRANDOM` defined but not
+`random_getrandom.c` compiled, so the define moved the call site without supplying the callee.
+Both are `.local.cmake` deltas, which a re-import keeps.
 
 The two forks are the exception to "one module per library". `diffractor/XMP-Toolkit-SDK` builds
 as a module like the rest; `diffractor/FFmpeg` does not, because restating which codecs exist
@@ -244,7 +298,7 @@ services the platform layer will newly depend on, and those cut across distribut
 than along them.
 
 Everything in `third-party/` is already built from source and pinned by the superproject, so
-the 27 vendored libraries are distribution-invariant by construction; that is exactly the
+the 26 vendored libraries are distribution-invariant by construction; that is exactly the
 property the [third-party policy](third-party.md) exists to protect. The variance is in the
 *new* system dependencies the port acquires: SDL3, FreeType, HarfBuzz, fontconfig, libcurl,
 an audio server, a GPU driver stack, and an XDG portal implementation.
@@ -352,6 +406,12 @@ real session on real hardware.
 
 Install Ubuntu LTS there rather than a rolling distribution: it is the version-floor leg of
 the CI matrix anyway, so the development machine enforces the floor for free.
+
+One trap if the source is mirrored into the Linux filesystem rather than built over `/mnt/c`
+(worth doing — an ext4 mirror builds several times faster): `rsync -a` without `--delete`
+leaves files that have been deleted on the Windows side sitting in the mirror. A file that no
+longer exists can then still be read, or still be compiled if anything names it. Verify a
+deletion against `git ls-files`, not against the mirror.
 
 ## Toolkit choice
 
@@ -508,29 +568,30 @@ equivalent.
 
 ## Staged plan
 
-Each stage ends in something falsifiable. No stage depends on a later one.
+Each stage ends in something falsifiable. No stage depends on a later one. Stage 1 is complete;
+Stage 0 is partly done, and what remains of it is listed under
+[Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code).
 
-**Stage 0 — Make the boundary provable (Windows only).**
-Fix everything in [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code):
-`char16_t`/`char32_t` for UTF-16 and code points, UTF-8-only platform interface, the
-D3D11VA descriptor, and a decision on path case sensitivity. Split the CPU rasterizer from
-its GDI present path. *Gate:* `.\dd.ps1 test` green on Windows, and a search of `src/` for
-`wchar_t`, `std::wstring` and Win32 types finds hits only under `platform_win*`.
+**Stage 0 — Make the boundary provable (Windows only). Partly done.**
+Still owed: `char16_t`/`char32_t` for UTF-16 and code points, a UTF-8-only platform interface,
+the D3D11VA descriptor, and a decision on path case sensitivity. Splitting the CPU rasterizer
+from its GDI present path is also still owed. *Gate:* `.\dd.ps1 test` green on Windows, and a
+search of `src/` for `wchar_t`, `std::wstring` and Win32 types finds hits only under
+`platform_win*` — today that search still finds 28 files.
 
-**Stage 0b — Retire the native controls (Windows only).**
+**Stage 0b — Retire the native controls (Windows only). Not started.**
 [Controls](#controls), in the order given there, each step shipped on Windows. Runs in
 parallel with Stage 1 and gates Stage 4. *Gate:* per step, `.\dd.ps1 test` green and the
 converted control judged against [design.md](design.md); on completion,
 `probe_buffered_control_paint` and `control_base::handle()` are gone.
 
-**Stage 1 — Headless core on Linux.**
-Build the portable core plus a minimal `platform_linux*` implementing files, settings,
-dates, locks, events and threads, and run the test suite. This is the highest-value
-milestone: it proves that indexing, search, metadata, and the decode ladder are portable,
-and it needs no UI at all. It also forces the third-party build system to exist.
-*Gate:* the `/test:` suites that do not require a window pass on Linux.
+**Stage 1 — Headless core on Linux. Done, and past its gate.**
+The gate asked only for the suites that do not require a window. What passes is the *entire*
+suite — 735 of 735, in Debug and Release — so indexing, search, metadata and the decode ladder
+are proven portable, and the third-party build exists for all 26 libraries. The platform layer
+written to get there is the five files listed under [current state](#current-state).
 
-**Stage 2 — Pixels.**
+**Stage 2 — Pixels. Not started.**
 A Linux window that owns a BGRA buffer, presenting the already-portable CPU rasterizer.
 *Gate:* the same scene rendered on Windows software and Linux software matches, using the
 capture/compare approach [rendering.md](rendering.md) describes for backend parity.
@@ -566,8 +627,12 @@ single piece of the port and software decode is a working fallback until it land
 - **Feature parity is not achievable** for the shell-integration list, so the port implies
   a Linux build that does less. That is a product decision, and it should be made
   explicitly rather than discovered at Stage 4.
-- **Two build systems in parallel** will drift. Every third-party upgrade becomes two
-  pieces of work until the `.vcxproj` files are retired.
+- **Two build systems in parallel** will drift, and already have. Twice: the FFmpeg
+  configurations diverged on four separate switches, each silently changing which formats
+  decode; and the hand-derived Windows source list was compiling two `#include`-only templates
+  and two `HOSTPROGS` table generators, one of which put a `main()` into a static library.
+  Neither is visible without deliberately comparing the two descriptions. Every third-party
+  upgrade is two pieces of work until the `.vcxproj` files are retired.
 - **Losing UI Automation** when the native controls go is the change most likely to be
   noticed by someone who cannot see it happen. It is reversible only by implementing
   accessibility directly, on both platforms.
@@ -584,13 +649,20 @@ single piece of the port and software decode is a working fallback until it land
 These need answers before the stages they block:
 
 1. Is the Linux build case-sensitive in its path model, or does it preserve the current
-   case-insensitive matching? (Blocks Stage 0.)
+   case-insensitive matching? (Blocks Stage 0. Still open, and still the highest-risk item:
+   `file_path::icmp` is unchanged.)
 2. Does deletion on Linux use XDG trash, and does "recoverable" mean the same thing to a
    user as it does on Windows? (Blocks Stage 4; belongs to [design.md](design.md).)
-3. Is CMake adopted for the whole tree, or only for the Linux build? (Blocks Stage 1.)
+3. ~~Is CMake adopted for the whole tree, or only for the Linux build?~~ **Answered: the whole
+   tree, generating for both platforms.** The `.vcxproj` files remain the source the vendored
+   modules are imported from, so the two descriptions have to be kept in step until they are
+   retired.
 4. Which of the shell-integration features are dropped on Linux versus reimplemented?
 5. Are the native controls retired in favour of drawn ones, and if so what is the
    accessibility commitment that replaces UI Automation? (Blocks Stage 0b; belongs to
    [design.md](design.md).)
 6. Which display server is targeted first — Wayland, X11, or both through SDL3?
 7. What replaces the Segoe MDL2 icon font, and does the visual design change with it?
+8. Is the FFmpeg configuration comparison a release step? It has found four divergences so
+   far, each silent, and nothing else detects them. See
+   [FFmpeg is configured twice](#ffmpeg-is-configured-twice-and-the-two-answers-differ).
