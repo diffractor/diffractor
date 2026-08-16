@@ -517,7 +517,7 @@ static void should_convert_utf8()
 static void should_split()
 {
 	constexpr auto to_be_split = "H:\\2-Archief VIDEO privé\\Eigen video's\nF:\\1-Archief FOTOGRAFIE privé";
-	const auto parts = str::split(to_be_split, false, [](const wchar_t c) { return c == '\n' || c == '\r'; });
+	const auto parts = str::split(to_be_split, false, [](const char c) { return c == '\n' || c == '\r'; });
 
 	assert_equal("H:\\2-Archief VIDEO privé\\Eigen video's", parts[0], "Split 1");
 	assert_equal("F:\\1-Archief FOTOGRAFIE privé", parts[1], "Split 2");

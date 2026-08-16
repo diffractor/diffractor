@@ -26,7 +26,7 @@ namespace
 	{
 		std::string result;
 
-		for (const auto part : str::split(extensions, false, [](const wchar_t c) { return c == ','; }))
+		for (const auto part : str::split(extensions, false, [](const char c) { return c == ','; }))
 		{
 			const auto trimmed = str::trim(part);
 			if (trimmed.empty()) continue;

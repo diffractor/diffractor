@@ -106,6 +106,21 @@ struct av_frame_d3d
 };
 
 av_frame_d3d av_get_d3d_info(const av_frame_ptr& frame_in);
+
+// The hardware decoder whose surfaces the renderer can present, answered by the platform layer.
+// A hwaccel is installed only for this exact pair, so a decoder can never hand back a surface
+// format the pipeline has no way to show. device_type is an AVHWDeviceType, kept as an int so
+// this header does not have to pull in libavutil/hwcontext.h; AV_HWDEVICE_TYPE_NONE is zero.
+struct av_hw_decode_target
+{
+	int device_type = 0;
+	AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
+
+	bool is_available() const { return device_type != 0 && pix_fmt != AV_PIX_FMT_NONE; }
+};
+
+av_hw_decode_target av_platform_hw_decode_target();
+
 double av_time_from_frame(const av_frame_ptr& f);
 int av_seek_gen_from_frame(const av_frame_ptr& f);
 bool av_frame_is_eof(const av_frame_ptr& f);

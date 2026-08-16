@@ -566,13 +566,13 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 	return result;
 }
 
-bool str::is_quote(const wchar_t c)
+bool str::is_quote(const char c)
 {
-	return c == L'\"' || c == L'\'';
+	return c == '\"' || c == '\'';
 }
 
 void str::split2(const std::string_view text, const bool detect_quotes,
-                 const std::function<void(std::string_view)>& inserter, const std::function<bool(wchar_t)>& pred)
+                 const std::function<void(std::string_view)>& inserter, const std::function<bool(char)>& pred)
 {
 	if (!text.empty())
 	{
@@ -1117,9 +1117,12 @@ static const df::hash_set<std::string_view, df::ihash, df::ieq> unwanted_english
 	"and",
 };
 
-static bool is_range_separator(const wchar_t c)
+// Applied to the bytes of a UTF-8 string, so the classification must be the narrow one: passing a
+// negative char to the wide predicates is a WEOF collision off Windows.
+static bool is_range_separator(const char c)
 {
-	return iswpunct(c) || iswspace(c);
+	const auto uc = static_cast<unsigned char>(c);
+	return std::ispunct(uc) || std::isspace(uc);
 }
 
 static bool is_num(const std::string_view text)

@@ -192,9 +192,6 @@ def cmd_test(args: argparse.Namespace) -> None:
     binary = BUILD_DIR / "diffractor"
     if not binary.exists():
         sys.exit(f"{binary} does not exist. Run './dd build' first.")
-    # The headless test runner is not in the Linux build yet: run_console_tests needs
-    # view_state and index_state, which need translation units that do not compile. See
-    # docs/linux.md for what remains.
     sys.exit(run([str(binary), "/test", *args.rest], check=False))
 
 

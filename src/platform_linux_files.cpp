@@ -269,6 +269,13 @@ std::wstring platform::to_file_system_path(const df::file_path path)
 	return str::utf8_to_utf16(path.str());
 }
 
+// The file system takes the bytes as they are, so there is no extended form to add and nothing
+// to convert. This is the same string the path already holds.
+std::string platform::to_utf8_file_system_path(const df::file_path path)
+{
+	return path.str();
+}
+
 std::wstring platform::to_file_system_path(const df::folder_path path)
 {
 	return str::utf8_to_utf16(path.text());

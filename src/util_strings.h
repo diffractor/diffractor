@@ -721,13 +721,13 @@ namespace str
 	std::string_view trim(std::string_view r);
 	std::wstring_view trim(std::wstring_view r);
 
-	bool is_quote(wchar_t c);
+	bool is_quote(char c);
 	bool is_num(std::string_view sv);
 	bool is_probably_num(std::string_view sv);
 	bool starts(std::string_view text, std::string_view sub_string);
 	bool ends(std::string_view text, std::string_view sub_string);
 
-	constexpr int last_char(const std::string_view sv)
+	constexpr char last_char(const std::string_view sv)
 	{
 		if (sv.empty()) return 0;
 		return sv.back();
@@ -783,31 +783,33 @@ namespace str
 	std::string print(const char* szFormat, ...);
 	std::string print(std::string_view format, ...);
 
-	constexpr bool is_separator(const wchar_t c)
+	// These predicates are applied to the bytes of a UTF-8 string_view, so the unit is char. A
+	// continuation byte is negative and matches nothing here, which is what separating on ASCII wants.
+	constexpr bool is_separator(const char c)
 	{
-		return c == L';' || c == L',' || c == L' ' || c == L'\t' || c == L'\r' || c == L'\n';
+		return c == ';' || c == ',' || c == ' ' || c == '\t' || c == '\r' || c == '\n';
 	}
 
-	constexpr bool is_artist_separator(const wchar_t c)
+	constexpr bool is_artist_separator(const char c)
 	{
-		return c == L';' || c == L',' || c == L'\t' || c == L'\r' || c == L'\n' || c == L'\\' || c == L'/';
+		return c == ';' || c == ',' || c == '\t' || c == '\r' || c == '\n' || c == '\\' || c == '/';
 	}
 
 	// Genre names may contain spaces, '&' and '/' (e.g. "Action & Adventure", "R&B/Soul"),
 	// so only ';' (plus control whitespace) separates multiple genre values.
-	constexpr bool is_genre_separator(const wchar_t c)
+	constexpr bool is_genre_separator(const char c)
 	{
-		return c == L';' || c == L'\t' || c == L'\r' || c == L'\n';
+		return c == ';' || c == '\t' || c == '\r' || c == '\n';
 	}
 
-	constexpr bool is_white_space(const wchar_t c)
+	constexpr bool is_white_space(const char c)
 	{
-		return c == L' ' || c == L'\t';
+		return c == ' ' || c == '\t';
 	}
 
-	constexpr bool is_slash(const wchar_t c)
+	constexpr bool is_slash(const char c)
 	{
-		return c == L'\\' || c == L'/';
+		return c == '\\' || c == '/';
 	}
 
 	constexpr bool is_exclude(const std::string_view r)
@@ -910,10 +912,10 @@ namespace str
 	}
 
 	void split2(std::string_view text, bool detect_quotes, const std::function<void(std::string_view)>& inserter,
-	            const std::function<bool(wchar_t)>& pred = is_separator);
+	            const std::function<bool(char)>& pred = is_separator);
 
 	inline std::vector<std::string_view> split(const std::string_view text, const bool detect_quotes,
-	                                           const std::function<bool(wchar_t)>& pred = is_separator)
+	                                           const std::function<bool(char)>& pred = is_separator)
 	{
 		std::vector<std::string_view> results;
 		split2(text, detect_quotes, [&results](const std::string_view part) { results.emplace_back(part); }, pred);

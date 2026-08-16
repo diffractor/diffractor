@@ -48,9 +48,9 @@ namespace df
 	constexpr bool windows_path_semantics = false;
 #endif
 
-	constexpr bool is_path_sep(const wchar_t c)
+	constexpr bool is_path_sep(const char c)
 	{
-		return c == L'\\' || c == L'/';
+		return c == '\\' || c == '/';
 	}
 
 	constexpr bool is_path(const char* s)

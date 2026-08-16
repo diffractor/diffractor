@@ -615,7 +615,7 @@ size_t av_queued_payload_bytes(const av_frame_ptr& f)
 	// A hardware frame's own buffer is a handle, not pixels. What it costs is the pool surface it
 	// keeps checked out, and that pool is allocated in full when the stream opens, so charging the
 	// surface is what makes one read-ahead budget size both the queue and the pool.
-	if (frm.format == AV_PIX_FMT_D3D11 && frm.hw_frames_ctx)
+	if (frm.hw_frames_ctx)
 	{
 		const auto* const ctx = std::bit_cast<const AVHWFramesContext*>(frm.hw_frames_ctx->data);
 		const auto bytes = av_image_get_buffer_size(ctx->sw_format, ctx->width, ctx->height, 1);
@@ -1461,16 +1461,18 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 static AVPixelFormat get_hw_format(AVCodecContext* ctx,
                                    const AVPixelFormat* pix_fmts)
 {
+	const auto wanted = av_platform_hw_decode_target().pix_fmt;
+
 	for (const AVPixelFormat* p = pix_fmts; *p != AV_PIX_FMT_NONE; p++)
 	{
-		if (*p == AV_PIX_FMT_D3D11)
+		if (*p == wanted)
 			return *p;
 	}
 
-	// The decoder offered no D3D11 surface format. Returning NONE aborts this
-	// decode; the caller only installs this callback once a D3D11VA device is
-	// live, so this indicates a driver/codec mismatch rather than a normal path.
-	df::log(__FUNCTION__, "Failed to get D3D11 HW surface format");
+	// The decoder offered no surface format the renderer can present. Returning NONE aborts this
+	// decode; the caller only installs this callback once the platform's device is live, so this
+	// indicates a driver/codec mismatch rather than a normal path.
+	df::log(__FUNCTION__, "Failed to get hardware surface format");
 	return AV_PIX_FMT_NONE;
 }
 
@@ -1543,14 +1545,15 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 				vc->workaround_bugs = FF_BUG_AUTODETECT;
 				vc->thread_type = FF_THREAD_FRAME;
 
-				if (can_use_hw)
+				const auto hw_target = av_platform_hw_decode_target();
+
+				if (can_use_hw && hw_target.is_available())
 				{
-					// Only the D3D11VA path is wired into the renderer: decoded frames must
-					// arrive as AV_PIX_FMT_D3D11 array textures so update() can share them
-					// with the render device. Scan every advertised hw config (they are not
-					// ordered, and a non-matching config must not abort the search) and pick
-					// the D3D11VA one. Other hwaccels (e.g. dxva2) are skipped so we never
-					// install get_hw_format for a surface format the pipeline cannot present.
+					// Only the platform's own hardware path is wired into the renderer: decoded
+					// frames must arrive in a surface format update() can share with the render
+					// device. Scan every advertised hw config (they are not ordered, and a
+					// non-matching config must not abort the search) and pick that one. Others are
+					// skipped so we never install get_hw_format for a format we cannot present.
 					for (int i = 0;; i++)
 					{
 						const auto* hw_config = avcodec_get_hw_config(video_codec, i);
@@ -1561,8 +1564,8 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 						}
 
 						if ((hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) &&
-							hw_config->pix_fmt == AV_PIX_FMT_D3D11 &&
-							hw_config->device_type == AV_HWDEVICE_TYPE_D3D11VA)
+							hw_config->pix_fmt == hw_target.pix_fmt &&
+							static_cast<int>(hw_config->device_type) == hw_target.device_type)
 						{
 							const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx,
 							                                        hw_config->device_type,
@@ -1572,7 +1575,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 							{
 								vc->get_format = get_hw_format;
 
-								// The whole pool is one D3D11 texture array created when the stream
+								// The whole pool is one texture array created when the stream
 								// opens, so every surface is paid for whether or not it is used.
 								// FFmpeg already provisions the decoder's own reference frames; these
 								// are the extra surfaces this app checks out - the read-ahead queue,
@@ -2661,7 +2664,7 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 	// so the software copy has no matrix or range signalling of its own.
 	const auto cs = av_frame_color_space(frame_in->frm);
 
-	if (frame->format == AV_PIX_FMT_D3D11)
+	if (frame->hw_frames_ctx)
 	{
 		sw_frame = av_frame_alloc();
 

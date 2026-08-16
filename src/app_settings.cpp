@@ -1113,5 +1113,5 @@ void settings_t::write() const
 
 std::vector<std::string_view> split_collection_folders(const std::string_view text)
 {
-	return str::split(text, true, [](const wchar_t c) { return c == '\n' || c == '\r'; });
+	return str::split(text, true, [](const char c) { return c == '\n' || c == '\r'; });
 }

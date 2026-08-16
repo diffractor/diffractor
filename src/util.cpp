@@ -509,7 +509,7 @@ std::string df::file_size::str() const
 
 df::version::version(const std::string_view version)
 {
-	const auto parts = str::split(version, true, [](const wchar_t c) { return c == '.'; });
+	const auto parts = str::split(version, true, [](const char c) { return c == '.'; });
 
 	if (!parts.empty())
 	{

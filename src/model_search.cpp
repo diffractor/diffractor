@@ -857,7 +857,7 @@ df::date_parts month_and_day(const std::string_view s)
 {
 	df::date_parts result;
 	const auto parts = str::split(
-		s, true, [](const wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+		s, true, [](const char c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
 
 	if (parts.size() == 2)
 	{
@@ -882,7 +882,7 @@ df::date_parts year_and_month(const std::string_view s)
 {
 	df::date_parts result;
 	const auto parts = str::split(
-		s, true, [](const wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+		s, true, [](const char c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
 
 	if (parts.size() == 2)
 	{

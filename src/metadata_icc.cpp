@@ -147,12 +147,13 @@ public:
 			offset -= 4;
 			if (len < 2 || offset > d.size() || len > d.size() - offset) return {};
 
-			std::wstring utf16;
+			// The payload is UTF-16BE, so the code unit is two bytes on every platform.
+			std::u16string utf16;
 			utf16.reserve(len / 2);
 
 			for (size_t i = 0; i + 1 < len; i += 2)
 			{
-				utf16.push_back(static_cast<wchar_t>(d[offset + i] << 8 | d[offset + i + 1]));
+				utf16.push_back(static_cast<char16_t>(d[offset + i] << 8 | d[offset + i + 1]));
 			}
 
 			return str::utf16_to_utf8(utf16);

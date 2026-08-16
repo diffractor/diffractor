@@ -3192,7 +3192,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	custom_index->add(std::make_shared<text_element>(tt.collection_options_more_folders));
 
 	auto more_folders_parts = str::split(collection_settings.more_folders, true,
-	                                     [](const wchar_t c) { return c == '\n' || c == '\r'; });
+	                                     [](const char c) { return c == '\n' || c == '\r'; });
 	auto more_folders_text = str::combine(more_folders_parts, "\r\n", false);
 
 	custom_index->add(
@@ -3219,7 +3219,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	{
 		// apply changes
 		more_folders_parts = str::split(more_folders_text, false,
-		                                [](const wchar_t c) { return c == '\n' || c == '\r'; });
+		                                [](const char c) { return c == '\n' || c == '\r'; });
 		collection_settings.more_folders = str::combine(more_folders_parts, "\n", true);
 		setting.collection = collection_settings;
 	}

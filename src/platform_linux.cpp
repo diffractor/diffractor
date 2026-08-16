@@ -13,6 +13,7 @@
 #include "pch.h"
 
 #include "app_text.h"
+#include "av_format.h"
 #include "files.h"
 #include "model.h"
 #include "test_runner.h"
@@ -26,6 +27,18 @@
 #include <sys/random.h>
 #include <linux/limits.h>
 #include <ctime>
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Media
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// No hardware decode until there is a renderer to present its surfaces. VAAPI belongs here, and
+// only once the GPU backend can import an NV12 surface - a decoder whose output cannot be shown
+// is slower than software, not faster.
+av_hw_decode_target av_platform_hw_decode_target()
+{
+	return {};
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Paths and time

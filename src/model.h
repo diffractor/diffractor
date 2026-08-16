@@ -1547,7 +1547,7 @@ inline filter_t media_filter_from_string(const std::string_view text)
 {
 	filter_t result;
 
-	for (const auto part : str::split(text, false, [](const wchar_t c) { return c == ','; }))
+	for (const auto part : str::split(text, false, [](const char c) { return c == ','; }))
 	{
 		if (const auto* const group = parse_file_group(std::string(part)))
 		{

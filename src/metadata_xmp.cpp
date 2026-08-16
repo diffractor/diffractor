@@ -797,9 +797,8 @@ bool metadata_xmp::has_embedded_xmp(const df::file_path path)
 		}
 
 		SXMPFiles f;
-		const auto w = platform::to_file_system_path(path);
 
-		if (!f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+		if (!f.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(path)), kXMP_UnknownFile,
 		                kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
 		{
 			return false;
@@ -844,11 +843,10 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 		if (is_embedded_src)
 		{
 			SXMPFiles f;
-			const auto w = platform::to_file_system_path(src_path);
 			// Read only - the source is never modified here. If it cannot be read the existing
 			// packet is unknown, and applying the edits to an empty one would write away every
 			// property the file already holds.
-			if (f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+			if (f.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(src_path)), kXMP_UnknownFile,
 			               kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
 			{
 				f.GetXMP(&xmp);
@@ -902,9 +900,9 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 		if (is_embedded_dst)
 		{
 			SXMPFiles xmp_dst_file;
-			const auto w = platform::to_file_system_path(update_path);
 
-			if (xmp_dst_file.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+			if (xmp_dst_file.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(update_path)),
+			                          kXMP_UnknownFile,
 			                          kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
 				const auto can_put = xmp_dst_file.CanPutXMP(xmp);

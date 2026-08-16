@@ -940,7 +940,7 @@ namespace ui
 			if (_multiline)
 			{
 				const auto lines = str::split(existing_last_path, true,
-				                              [](const wchar_t c) { return c == '\n' || c == '\r'; });
+				                              [](const char c) { return c == '\n' || c == '\r'; });
 
 				if (!lines.empty())
 				{

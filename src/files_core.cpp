@@ -3114,7 +3114,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 			str::split2(kv.value, true, [this](const std::string_view text)
 			            {
 				            windows_categories.emplace_back(str::cache(str::trim(text)));
-			            }, [](const wchar_t c) { return c == L';'; });
+			            }, [](const char c) { return c == ';'; });
 		}
 		else if (is_key(kv.key, "location-eng") || is_key(kv.key, "location") || is_key(
 			kv.key, "com.apple.quicktime.location.ISO6709"))

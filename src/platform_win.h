@@ -86,6 +86,12 @@ namespace platform
 {
 	file_ptr make_file_from_handle(HANDLE h);
 
+	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
+	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
+	// There is no cross-platform notion of a shell path, so this is Windows-private.
+	std::wstring to_shell_path(df::file_path path);
+	std::wstring to_shell_path(df::folder_path path);
+
 	// Brings a saved window rect back onto a display. Size is preserved where it fits and clamped to
 	// the work area where it does not; the position is nudged inside.
 	recti fit_window_to_work_area(recti saved, recti work_area);

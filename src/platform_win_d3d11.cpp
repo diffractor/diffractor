@@ -2325,6 +2325,14 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 }
 
 
+// The one hardware decoder this renderer can present from. Frames must arrive as D3D11 array
+// textures for update() to share them with the render device, so any other hwaccel the codec
+// advertises - dxva2 among them - is deliberately not selected.
+av_hw_decode_target av_platform_hw_decode_target()
+{
+	return {AV_HWDEVICE_TYPE_D3D11VA, AV_PIX_FMT_D3D11};
+}
+
 // Scoped hold of the FFmpeg D3D11VA device lock. The producer-side copy must run under it,
 // but it is released as early as possible (and on every error path) so decoding on the worker
 // thread is not serialised behind the render-device work that follows.

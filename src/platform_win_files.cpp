@@ -549,6 +549,11 @@ std::wstring platform::to_file_system_path(const df::file_path path)
 	return result;
 };
 
+std::string platform::to_utf8_file_system_path(const df::file_path path)
+{
+	return str::utf16_to_utf8(to_file_system_path(path));
+}
+
 std::wstring platform::to_shell_path(const df::file_path path)
 {
 	return str::utf8_to_utf16(path.pack());

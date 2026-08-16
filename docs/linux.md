@@ -50,12 +50,13 @@ operations with collision renaming; and `platform::image_to_surface` — the WIC
 gone from both platforms, replaced by `av_decode_still` in [av_format.cpp](../src/av_format.cpp),
 so there is now one image decoder rather than one per platform.
 
-**What is unchanged:** every item in
+**What is unchanged:** part of
 [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code) is
 still open. The port fixed the specific defects those assumptions caused — a mis-decoded EXIF
-string, a truncated coordinate — without removing the assumptions themselves. `wchar_t` and
-`std::wstring` still appear in 28 files outside `platform_win*`, `av_format.cpp` still selects
-`AV_HWDEVICE_TYPE_D3D11VA` directly, and path comparison is still case-insensitive everywhere.
+string, a truncated coordinate — without always removing the assumption itself. What remains is
+the icon code points, the last of the `std::wstring` in the platform interface, and path identity,
+which is still case-insensitive everywhere. The [decisions](#decisions) that blocked this work are
+now answered, so what is left is implementation rather than deliberation.
 
 ## Verdict
 
@@ -93,9 +94,9 @@ The platform layer, largest first, with what replaces it:
 
 | File | LOC | What it is | Linux replacement | Difficulty |
 |---|---|---|---|---|
-| `platform_win_ui.cpp` | 7,678 | Window class, message loop, native controls, dialogs, menus, clipboard, drag/drop, DPI, monitors, `wWinMain` | Window/input/clipboard/DnD toolkit + own control implementations | **High** — the single biggest item |
+| `platform_win_ui.cpp` | 7,678 | Window class, message loop, native controls, dialogs, menus, clipboard, drag/drop, DPI, monitors, `wWinMain` | SDL3 for window/input/clipboard/DnD/file dialogs, plus the drawn controls from [Stage 0b](#staged-plan) | **High** — the single biggest item |
 | `platform_win_d3d11.cpp` | 2,976 | GPU backend, batching, glyph atlas, video textures | Vulkan or OpenGL 3.3, plus 12 HLSL shaders → GLSL/SPIR-V | High |
-| `platform_win_files.cpp` | 2,896 | File I/O, attributes, enumeration, shell copy/move/delete, thumbnails, shell tags | POSIX I/O + XDG desktop portals for trash/open | Medium, with feature gaps |
+| `platform_win_files.cpp` | 2,896 | File I/O, attributes, enumeration, shell copy/move/delete, thumbnails, shell tags | POSIX I/O + XDG trash, with the portal variant for Flatpak | Medium, with feature gaps |
 | `platform_win_software.cpp` | 2,094 | CPU rasterizer + GDI present | Mostly portable already; only the present path is Windows | **Low** — see below |
 | `platform_win.cpp` | 1,678 | Locks, events, known folders, dates, number/locale format, drives, eject | pthreads/futex, XDG base dirs, `std::chrono`, ICU or `std::locale` | Low–medium |
 | `platform_win_font.cpp` | 831 | DirectWrite faces, fallback, metrics | FreeType + HarfBuzz + fontconfig | Medium–high |
@@ -122,47 +123,106 @@ browser to port.
 
 ## Windows assumptions still in portable code
 
-These are the real blockers, and every one of them is still open. The headless Linux build
-works around the specific defects they caused rather than removing the assumption, so each is
-still owed. All are `Internal` changes under the [pre-flight gate](../AGENTS.md#mandatory-pre-flight-validation):
-no observable behavior changes, and `.\dd.ps1 test` proves it on Windows.
+These are the real blockers. The headless Linux build works around the specific defects they
+caused rather than removing the assumption, so each is still owed. All are `Internal` changes
+under the [pre-flight gate](../AGENTS.md#mandatory-pre-flight-validation): no observable behavior
+changes, and `.\dd.ps1 test` proves it on Windows.
 
 **Path semantics are Windows semantics, in portable code.**
-[util_path.h](../src/util_path.h) is not a platform file, but it encodes drive letters and
-UNC prefixes in `is_path`, the Windows illegal-character set in `is_illegal_name`, and —
-most consequentially — case-insensitive comparison in `folder_path::compare` and
-`file_path::icmp`. Case-insensitivity is load-bearing: it reaches the index, the search
-postings, deduplication, and every "is this the same file" decision. On a case-sensitive
-filesystem, `Photo.JPG` and `photo.jpg` are two files, and the index must agree with the
-filesystem or it will silently merge or lose items. This needs a deliberate answer, not a
-compile fix, and it is the highest-risk item in the whole port.
+[util_path.h](../src/util_path.h) is not a platform file, but it encodes path spelling and path
+identity for both platforms. Spelling is already conditional: `windows_path_semantics` selects
+the separator, and `is_path` and `is_root` branch on it so a drive letter means nothing off
+Windows. `is_illegal_name` still applies the Windows character set unconditionally, and identity
+is still case-insensitive everywhere.
+
+Case-insensitivity is load-bearing, and it is deeper than `folder_path::compare` and
+`file_path::icmp` suggest, because it is baked into the **hash** rather than only the comparison.
+[util_strings.h](../src/util_strings.h) stores a case-folded `ihash` inside each interned string
+record, computed once at intern time; [df::ihash](../src/util_map.h) reads that value and
+`df::ieq` compares with `icmp`. Every index structure is keyed on that pair — `items_by_folder_t`,
+`index_item_info_map` and `index_folder_info_map` in [model_items.h](../src/model_items.h), the
+term map in [model_postings.h](../src/model_postings.h), the collision and dedup sets in
+[app_util.cpp](../src/app_util.cpp), and the crash database in
+[util_crash_files_db.h](../src/util_crash_files_db.h).
+
+That rules out a per-mount rule, which is otherwise the theoretically correct answer. A hash
+functor receives only the key, so making the rule depend on the path's location would mean
+consulting the filesystem inside every hash probe — on paths that run on the UI thread and under
+the index lock. Pre-computing both hashes does not help, because the functor still has to choose
+between them.
+
+**The answer is a compile-time property, joining `windows_path_semantics`:** case-sensitive
+comparison and hashing on Linux, unchanged on Windows. The decisive argument is that no existing
+data is at risk in either direction — Linux has no index yet, and Windows keeps its current rule,
+so unlike a runtime rule this one never has to be right about a database that already exists. It
+is also what a Linux user expects, since every other tool on the system reports `Photo.JPG` and
+`photo.jpg` as two files, and an index that merges them targets the wrong file on a rename or a
+delete.
+
+Two things make the residual risk much smaller than it looks:
+
+- **Identity and type are different questions, and only identity follows the filesystem.**
+  "Is this the same file?" must match the filesystem; "is this a JPEG?" must stay
+  case-insensitive on both platforms. `file_type_by_extension` in
+  [av_format.h](../src/av_format.h) and `file_group_by_name` in [files.h](../src/files.h) are
+  correct as they stand and must not be swept along with the change. The codebase conflates the
+  two today only because both reach for `df::ihash` and `df::ieq`.
+- **A case-sensitive index over a case-insensitive mount can only disagree where a path is
+  constructed rather than enumerated**, because both spellings of one entry can never be
+  enumerated. That bounds the exposure to sidecar and extension lookups (case-insensitive by the
+  rule above), user-typed paths, and paths persisted in collections and saved searches.
+
+The one place a mount's own rule is authoritative is a write, and collision checks should ask the
+filesystem directly rather than the index — which is correct on both platforms anyway, since the
+answer has to hold at the moment of the write.
 
 **`wchar_t` is assumed to be UTF-16.** It is 16-bit on Windows and 32-bit on Linux, so
-this miscompiles or silently mis-decodes rather than failing to build:
-- [metadata_exif.cpp](../src/metadata_exif.cpp) `bit_cast`s raw EXIF bytes to `const wchar_t*`
-  and copies into `std::wstring` by `sizeof(wchar_t)`.
-- [metadata_icc.cpp](../src/metadata_icc.cpp) assembles UTF-16BE code units into a
-  `std::wstring`.
-- [app_sidebar.h](../src/app_sidebar.h) and [files_core.cpp](../src/files_core.cpp) build
-  icon strings from `wchar_t` code points.
-- Several `str::split` predicates take `wchar_t` where they only ever see ASCII.
+this miscompiles or silently mis-decodes rather than failing to build. What remains is the icon
+cluster: [app_sidebar.h](../src/app_sidebar.h), [files_core.cpp](../src/files_core.cpp),
+[model.cpp](../src/model.cpp), [ui_controls.h](../src/ui_controls.h),
+[ui_elements.h](../src/ui_elements.h), [view_edit.cpp](../src/view_edit.cpp) and
+[view_media.h](../src/view_media.h) all build icon strings from `wchar_t` code points, and
+`platform::create_segoe_md2_icon` takes one. That should be done together with the
+[icon font replacement](#features-with-no-linux-equivalent), since both change the same call
+sites, and the code point type is `char32_t`.
 
-The fix is `char16_t` for genuine UTF-16 data and `char32_t` for code points, which is
-strictly better on Windows too.
+Two parts of this are done and are the worked examples. [metadata_exif.cpp](../src/metadata_exif.cpp)
+and [metadata_icc.cpp](../src/metadata_icc.cpp) read their genuinely UTF-16 payloads as
+`char16_t` through the `std::u16string_view` overloads of `str::utf16_to_utf8` and
+`str::strip_and_cache`. And the character predicates behind `str::split` — `is_quote`,
+`is_separator`, `is_artist_separator`, `is_genre_separator`, `is_white_space`, `is_slash` and
+`df::is_path_sep` — now take `char`, which is what a UTF-8 `string_view` was always handing
+them. That one was not cosmetic: promoting a `char` to `wchar_t` turns byte 0xC3 into 65475 on
+Windows and −61 on Linux, and `is_range_separator` was passing that value to `iswpunct`, where
+a negative argument collides with `WEOF`.
 
 **`std::wstring` is in the platform interface.** `platform::to_file_system_path`,
-`to_shell_path`, `create_segoe_md2_icon(wchar_t)` and the `probe_drag_data_object` result
-put a Windows string type in [platform.h](../src/platform.h). These should become
-platform-private, with the cross-platform interface speaking UTF-8 `df::file_path` only.
+`create_segoe_md2_icon(wchar_t)` and the `probe_drag_data_object` result still put a Windows
+string type in [platform.h](../src/platform.h). `to_shell_path` no longer does: there is no
+cross-platform notion of a shell path and it had no caller outside `platform_win*`, so it is
+now declared in [platform_win.h](../src/platform_win.h). `to_utf8_file_system_path` is the
+shape the rest should follow — the path a native API would be given, carrying the `\\?\` prefix
+where Windows needs it, but typed as UTF-8 so a portable caller can hold it. It replaced a
+UTF-8 → UTF-16 → UTF-8 round trip in [metadata_xmp.cpp](../src/metadata_xmp.cpp) that existed
+only to reach the extended form.
 
-**D3D11VA leaks into the media layer.** [av_format.cpp](../src/av_format.cpp) selects
-`AV_HWDEVICE_TYPE_D3D11VA` directly. That is platform-specific code outside a `platform*`
-file — a boundary violation today, and the natural place for the VAAPI branch tomorrow. It
-should become a platform-supplied hardware-decode descriptor.
+Two callers still need a real answer rather than a type change, because the library beneath them
+differs per platform: [files_raw.cpp](../src/files_raw.cpp) picks a LibRaw overload behind an
+`#ifdef`, and [files_core.cpp](../src/files_core.cpp) calls `archive_read_open_filename_w`,
+which has no Linux counterpart under that name.
 
-**Small residue.** `__declspec(selectany)` in [util_date.h](../src/util_date.h), and the
-`error_atl_direct3d` string id in [app_text.h](../src/app_text.h) that names a Windows
-technology in user-visible text.
+**D3D11VA no longer leaks into the media layer.** [av_format.cpp](../src/av_format.cpp) asks
+`av_platform_hw_decode_target()` for the device type and pixel format the renderer can present,
+and installs a hwaccel only for that exact pair; [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp)
+answers D3D11VA, and [platform_linux.cpp](../src/platform_linux.cpp) answers none until there is
+a backend that can import an NV12 surface. That is where the VAAPI branch goes. The tests for
+whether a decoded frame is a hardware frame now ask `hw_frames_ctx` rather than naming a pixel
+format, which is both platform-free and what FFmpeg means by the question. One reference remains:
+`av_get_d3d_info` hands a `ID3D11Texture2D*` to the D3D renderer, which is what the function is
+for, and it cannot move to `platform_win_d3d11.cpp` while `av_frame` is defined in the .cpp.
+
+**Small residue.** The `error_atl_direct3d` string id in [app_text.h](../src/app_text.h) names a
+Windows technology in user-visible text. The `__declspec(selectany)` that was here is gone.
 
 ### Two that compile clean on both and are wrong on one
 
@@ -184,31 +244,65 @@ the file times do.
 
 ## Features with no Linux equivalent
 
-These are product decisions, not ports. Each needs an answer before the corresponding
-platform function can be written, and several touch [design.md](design.md) because they
-define what recovery means.
+These are product decisions, not ports. The governing answer is now settled: **anything without
+an obvious Linux equivalent is dropped on Linux and continues unchanged on Windows**, and a
+dropped feature waits for a user to ask for it rather than being guessed at. Two consequences
+follow, and both belong to [design.md](design.md):
 
-- **Recycle Bin.** `delete_items(allow_undo)` and `can_recycle` are the backbone of
-  recoverable deletion. The XDG trash specification is close but not identical (per-volume
-  trash directories, no equivalent of the "this path bypasses the bin" query). Recovery is
-  a design promise, so this is a `User-visible behavior` decision.
+- **Capability queries become runtime rather than compile-time.** Whether trash, wallpaper or
+  show-in-file-browser works depends on the portal backend present at run time, not on what was
+  linked. The `can_recycle`-style queries the app already has are the right shape for this.
+- **The UI hides an unavailable affordance rather than failing it.** A command that is present
+  and errors is a defect report; a command that is absent is a feature request, which is the
+  feedback this policy is trying to collect.
+
+Feature by feature:
+
+- **Recoverable deletion uses the XDG trash specification.** `delete_items(allow_undo)` and
+  `can_recycle` are the backbone of recoverable deletion, and the answer is that a Linux user
+  gets what every other Linux application gives them: Delete moves to the trash, Shift+Delete
+  deletes permanently after confirmation, and the file appears in the desktop's own Trash and
+  restores to its original location from there. That last part is why the specification's
+  `.trashinfo` record — original path and deletion time, written alongside the file — is not
+  optional; without it the file is merely in a folder. Because trashing is a rename, it is
+  confined to one filesystem, so every other volume has its own `.Trash-$uid` at its mount root
+  and a cross-volume delete offers permanent deletion rather than silently copying. `can_recycle`
+  therefore becomes a real runtime query, answering false for read-only mounts, some network
+  mounts, and any volume with no writable trash directory. Two implementations sit behind one
+  platform function: the specification directly, which needs no desktop session, and
+  `org.freedesktop.portal.Trash`, which is the only route available inside the recommended
+  Flatpak.
 - **Shell metadata and thumbnails.** `read_shell_metadata`, `write_shell_tags`,
   `get_cached_file_properties` and `get_shell_thumbnail` depend on Windows property
   handlers, including the cloud-placeholder path that fetches a thumbnail without
-  hydrating a file. There is no Linux counterpart; the app's own metadata and thumbnail
-  pipeline would have to cover these cases outright.
+  hydrating a file. There is no Linux counterpart, so these are dropped: the app's own metadata
+  and thumbnail pipeline covers these cases on Linux outright.
 - **Cloud placeholders.** OneDrive Files On-Demand offline detection has no direct
-  analogue. The `test_offline_predicate` seam survives; the real detection does not.
+  analogue and is dropped. The `test_offline_predicate` seam survives; the real detection does
+  not.
 - **Shell verbs.** `set_desktop_wallpaper`, `show_file_properties`, `print`, `has_burner` /
   `burn_to_cd`, `scan` (WIA), `assoc_handlers`, `show_in_file_browser`, `resolve_link`
-  (`.lnk`), `eject`, `scan_drives`. Some map to XDG desktop portals, some to nothing.
+  (`.lnk`), `eject`, `scan_drives`. All dropped on Linux for now. A few have obvious portal
+  equivalents and may return on request; `resolve_link` is meaningless off Windows and will not.
 - **Registry and crash guards.** `create_registry_settings` and the crash-guard markers
   move to the INI store; the guard semantics themselves are portable.
 - **Minidumps.** DbgHelp crash capture has no equivalent; a Linux port needs a different
   crash-report format and a different reader for
   [crash-dump analysis](../src/util_crash_files_db.h).
-- **Segoe MDL2 icons.** `create_segoe_md2_icon` renders from a Windows-only font. Linux
-  needs a bundled icon font or vector icon set, which is a visual-design decision.
+- **Segoe MDL2 icons — replaced on both platforms by Fluent UI System Icons.** Segoe MDL2
+  Assets and its Windows 11 successor Segoe Fluent Icons are Windows system fonts whose licence
+  does not permit redistribution to another platform, so this could never have been a Linux
+  build option. Microsoft's own [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
+  are MIT-licensed, freely redistributable, and share the design language, which makes them the
+  replacement that changes the least. Adopting them on **both** platforms rather than only on
+  Linux is the point: it gives one bundled icon set everywhere, turns `create_segoe_md2_icon`
+  from a platform call into a portable glyph lookup, and ends the dependence on which Windows
+  version supplies which glyph. The surface is bounded and already indirected — roughly 156 named
+  entries in [app_icons.h](../src/app_icons.h), all Private Use Area code points reached through
+  `icon_index` rather than raw values — so the work is a mapping review, one row per icon,
+  choosing regular or filled and confirming an equivalent exists. Do it on Windows first, where
+  the current appearance is available for comparison, and together with the `char32_t` icon
+  conversion, since both touch the same call sites. This is `User-visible behavior`.
 - **Packaging.** The MSIX/WinStore configuration and the NSIS installer have no Linux
   counterpart; see [Distributions and delivery](#distributions-and-delivery).
 
@@ -256,6 +350,14 @@ is the only way to see it, and it should be run after any FFmpeg change. It foun
 What remains is 27 switches on the Windows side, all of them platform — the DXVA2 and D3D11VA
 hardware accelerators, Media Foundation, SChannel — and one on the Linux side, `CONFIG_ICONV`,
 which is part of glibc rather than a dependency. Decoder and demuxer coverage is identical.
+
+[tools/compare_ffmpeg_config.py](../tools/compare_ffmpeg_config.py) is that comparison, run by
+CI on the Release leg. It diffs the enabled `CONFIG_*` switches in the checked-in
+`config-x64.h` against the `config.h` the Linux build generates, against a checked-in record of
+the divergences that are platform by nature. Any change to that set fails — in either direction,
+because a divergence that has silently disappeared makes the record a lie as surely as a new one
+does — and `--update` re-records it once someone has looked. A decoder or demuxer appearing in
+that record is a defect rather than a divergence.
 
 ### Feeding configure a vendored static library
 
@@ -329,9 +431,11 @@ Two of the axes are sharper than the table suggests:
 - **Case sensitivity is per-mount, not per-system.** The
   [case-insensitivity problem](#windows-assumptions-still-in-portable-code) does not become a
   per-distribution constant on Linux; a single collection can span a case-sensitive ext4
-  home, a case-folded directory, and a mounted NTFS volume. That rules out a build-time
-  answer in [util_path.h](../src/util_path.h) — the comparison rule has to be a property of
-  the path's location, or the index will disagree with the filesystem on one of them.
+  home, a case-folded directory, and a mounted NTFS volume. The build-time answer is
+  nevertheless the one taken, because a per-mount rule would have to reach the filesystem from
+  inside a hash probe. What absorbs the difference instead is that the index is case-sensitive
+  while file-type matching is not, and that collision checks ask the filesystem at the moment of
+  the write rather than asking the index.
 - **Feature availability is a runtime query.** Whether trash, wallpaper or show-in-file-browser
   works depends on the portal backend present at run time, not on what was linked. The
   `can_recycle`-style capability queries the app already has are the right shape for this;
@@ -349,7 +453,7 @@ packaging also multiplies every axis above by the number of targets.
 **Flatpak** pins a Freedesktop SDK runtime, which collapses the libc, C++ runtime, ABI and
 dependency-age rows to one known set and keeps `third-party/` vendored as-is. It also makes
 portals the only interface to the host — which is already what the
-[toolkit recommendation](#toolkit-choice) assumes, so the sandbox enforces a constraint the
+[toolkit choice](#toolkit-choice) assumes, so the sandbox enforces a constraint the
 port wants rather than adding one. Display server and GPU stack remain host-supplied, as they
 must.
 
@@ -417,23 +521,37 @@ deletion against `git ls-files`, not against the mirror.
 
 The app draws its own UI. Only six control types are OS widgets — `edit`, `toolbar`,
 `trackbar`, `button`, `date_time_control` and the unused `web_window` — and the section on
-[controls](#controls) below argues they should stop being OS widgets on both platforms.
-That means the toolkit needs to supply a window, an input stream, a pixel target, a
+[controls](#controls) below records the decision that they stop being OS widgets on both
+platforms. That means the toolkit needs to supply a window, an input stream, a pixel target, a
 clipboard, drag and drop, and text input with IME — not a widget set.
 
-Two credible options:
+**Decided: SDL3, on Linux only.** The alternative was GTK4, which is stronger on IME, portals
+and accessibility and gives a native feel for the six widget types — but it is a heavier
+dependency whose rendering model wants to own the frame loop, which fits the app's own
+`WM_PAINT`-driven lifecycle badly, and its advantage in native widgets is worthless once the
+[controls](#controls) are drawn. SDL3 keeps the existing frame lifecycle intact and avoids
+re-implementing the control-paint contract (`probe_buffered_control_paint`) that only exists to
+make native Windows controls behave.
 
-- **SDL3.** Covers window, input, clipboard, drag/drop, audio and GPU context in one
-  dependency, on both X11 and Wayland. Weakest on IME, accessibility and native file
-  dialogs; those come from XDG desktop portals separately.
-- **GTK4.** Strongest on IME, portals, file dialogs and accessibility, and gives a native
-  feel for the six widget types. Heavier dependency, and its rendering model wants to own
-  the frame loop, which fits the app's own `WM_PAINT`-driven lifecycle less naturally.
+What SDL3 supplies, on both X11 and Wayland from one code path, is more of Stage 4 than the
+toolkit comparison above suggested: window, input, clipboard, drag-and-drop file events, audio,
+text input with IME including the candidate-window area, and — new in SDL3 — native file dialogs,
+which resolve to the desktop portal on Linux. Its licence is zlib, so vendoring it raises nothing
+against the LGPL application.
 
-The recommendation is SDL3 for the window and input layer with XDG portals for dialogs,
-trash and file-manager integration, and the app's own drawn controls — because it keeps the
-existing frame lifecycle intact and avoids re-implementing the control-paint contract
-(`probe_buffered_control_paint`) that only exists to make native Windows controls behave.
+Two constraints come with that choice:
+
+- **Linux only.** The Windows platform layer works, and routing it through SDL would be risk
+  with no user-visible gain. A later macOS port would get the window and input layer nearly free
+  and nothing else; that is not a reason to change Windows now.
+- **SDL is not the whole platform.** Text shaping, trash, and the surviving shell verbs remain
+  ours.
+
+One bonus worth weighing at Stage 5 rather than now: SDL_GPU abstracts Vulkan, Metal and D3D12
+behind a single shader pipeline, which would answer the "Vulkan or OpenGL 3.3" question and
+collapse two shader sources into one. It has no D3D11 backend, so it does not replace
+[platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) — adopting it for Linux alone means three
+backends, not two.
 
 Text is the exception: FreeType, HarfBuzz and fontconfig are needed regardless of toolkit,
 and [platform.h](../src/platform.h) already states the contracts the port must satisfy —
@@ -486,7 +604,7 @@ Two of the hard inputs are already Diffractor's rather than the OS's:
 
 The only control with no in-tree precedent is `date_time_control`.
 
-### Recommendation: retire the native controls, on Windows first
+### Decided: retire the native controls, on Windows first
 
 Convert each `control_base` subclass to a `view_element` drawn into the same scene as the
 rest of the UI, and do it on Windows before any Linux file exists. This is the highest
@@ -536,16 +654,17 @@ This is the real cost, and it is owed on Windows as much as on Linux:
 5. **Context menus.** The edit's cut/copy/paste/spelling menu and `frame::track_menu` are
    native popup menus today. They are command lists, so they can be drawn in-scene, but
    that is another piece of new UI.
-6. **Accessibility.** Native controls expose themselves to screen readers through UI
-   Automation for free. Drawn controls expose nothing unless UIA is implemented on Windows
-   and AT-SPI on Linux. This is a genuine regression and a product decision, not an
-   implementation detail — it belongs in [design.md](design.md) before the edit conversion,
-   not after.
+6. **Accessibility — explicitly not replaced.** Native controls expose themselves to screen
+   readers through UI Automation for free, and drawn controls expose nothing unless UIA is
+   implemented on Windows and AT-SPI on Linux. Neither will be: the decision is to accept the
+   loss rather than take on an accessibility stack, on both platforms. It is recorded here
+   because it is a real regression on Windows for anyone using a screen reader, and because it
+   is reversible only by implementing accessibility directly.
 7. **Mnemonics and accelerators** (`&Cancel` and friends in
    [app_text.h](../src/app_text.h)), currently resolved by the dialog manager.
 
-Items 1, 4, 5 and 7 are bounded UI work. Item 2 is the schedule risk. Item 6 is the one
-that can make the answer "no".
+Items 1, 4, 5 and 7 are bounded UI work. Item 2 is the schedule risk. Item 6 was the one that
+could have made the answer "no", and has been answered instead.
 
 ### The alternative, and why it is worse
 
@@ -573,11 +692,15 @@ Stage 0 is partly done, and what remains of it is listed under
 [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code).
 
 **Stage 0 — Make the boundary provable (Windows only). Partly done.**
-Still owed: `char16_t`/`char32_t` for UTF-16 and code points, a UTF-8-only platform interface,
-the D3D11VA descriptor, and a decision on path case sensitivity. Splitting the CPU rasterizer
-from its GDI present path is also still owed. *Gate:* `.\dd.ps1 test` green on Windows, and a
-search of `src/` for `wchar_t`, `std::wstring` and Win32 types finds hits only under
-`platform_win*` — today that search still finds 28 files.
+Done: the `char16_t` conversions, the `char` predicates behind `str::split`, the hardware-decode
+descriptor that replaced the D3D11VA selection, and `to_shell_path` becoming Windows-private.
+Still owed: `char32_t` for icon code points, the rest of the UTF-8-only platform interface, and
+case-sensitive path identity built as a compile-time property with file-type matching separated
+from it. Splitting the CPU rasterizer from its GDI present path is also still owed, and so is the
+cross-machine scene capture the Stage 2 gate needs. The icon-font change belongs here too, though
+it is `User-visible behavior` rather than `Internal`. *Gate:* `.\dd.ps1 test` green on Windows,
+and a search of `src/` for `wchar_t`, `std::wstring` and Win32 types finds hits only under
+`platform_win*`.
 
 **Stage 0b — Retire the native controls (Windows only). Not started.**
 [Controls](#controls), in the order given there, each step shipped on Windows. Runs in
@@ -594,7 +717,11 @@ written to get there is the five files listed under [current state](#current-sta
 **Stage 2 — Pixels. Not started.**
 A Linux window that owns a BGRA buffer, presenting the already-portable CPU rasterizer.
 *Gate:* the same scene rendered on Windows software and Linux software matches, using the
-capture/compare approach [rendering.md](rendering.md) describes for backend parity.
+capture/compare approach [rendering.md](rendering.md) describes for backend parity. That gate is
+not executable yet: `probe_software_tiling` compares two renderings inside one process, and
+nothing produces a comparable artifact across machines. Build that harness on Windows during
+Stage 0, while the reference implementation is the only one, or the gate is an aspiration when
+Stage 2 arrives.
 
 **Stage 3 — Text.**
 FreeType/HarfBuzz/fontconfig behind `measure_context` and `text_layout`.
@@ -607,8 +734,9 @@ portal-backed file dialogs and trash. *Gate:* the view and command tests pass; t
 and recovery behave as [design.md](design.md) requires.
 
 **Stage 5 — GPU backend.**
-Vulkan or OpenGL 3.3, with the 12 HLSL shaders ported. The colour and YUV maths must match
-exactly; the parity list in [rendering.md](rendering.md) is the checklist.
+Vulkan or OpenGL 3.3, with the 12 HLSL shaders ported — or SDL_GPU, which would supply one
+shader pipeline instead of two at the cost of a third backend. The colour and YUV maths must
+match exactly; the parity list in [rendering.md](rendering.md) is the checklist.
 *Gate:* GPU and software backends match on Linux to the same tolerance they match on
 Windows.
 
@@ -619,14 +747,21 @@ single piece of the port and software decode is a working fallback until it land
 ## Risks
 
 - **Path case sensitivity** is the one that can corrupt data rather than merely fail. It
-  reaches the index, dedup, and collision handling. Resolve it in Stage 0, on Windows,
-  where the existing tests can judge the answer.
+  reaches the index, dedup, and collision handling, and it is baked into the interned string
+  hash rather than only into a comparison function. The rule is decided; the risk is now in the
+  execution, so do it in Stage 0 on Windows where the existing tests can judge the answer, and
+  keep identity separate from file-type matching.
+- **Nothing guarded Stage 1 until recently.** CI was Windows and MSBuild only, so no commit built
+  CMake or Linux and the 735 could rot silently between one deliberate check and the next.
+  [linux.yml](../.github/workflows/linux.yml) now builds Debug and Release on Ubuntu LTS, runs the
+  suite, and runs the configuration comparison below. The remaining hole is CMake on Windows,
+  which is still only built by hand.
 - **Backend parity across three renderers** (Windows GPU, portable CPU, Linux GPU) triples
   the surface the parity contract has to hold over. Keeping the CPU rasterizer as the
   shared reference limits this.
 - **Feature parity is not achievable** for the shell-integration list, so the port implies
-  a Linux build that does less. That is a product decision, and it should be made
-  explicitly rather than discovered at Stage 4.
+  a Linux build that does less. That is settled policy now rather than an open risk; what
+  remains is making sure an unavailable command is hidden rather than shown and failing.
 - **Two build systems in parallel** will drift, and already have. Twice: the FFmpeg
   configurations diverged on four separate switches, each silently changing which formats
   decode; and the hand-derived Windows source list was compiling two `#include`-only templates
@@ -634,8 +769,8 @@ single piece of the port and software decode is a working fallback until it land
   Neither is visible without deliberately comparing the two descriptions. Every third-party
   upgrade is two pieces of work until the `.vcxproj` files are retired.
 - **Losing UI Automation** when the native controls go is the change most likely to be
-  noticed by someone who cannot see it happen. It is reversible only by implementing
-  accessibility directly, on both platforms.
+  noticed by someone who cannot see it happen. This is now an accepted cost rather than an open
+  question, and it applies to Windows as much as to Linux.
 - **IME and complex text input** is the single deepest piece of new UI work, and it has no
   partial credit: an edit that cannot compose Japanese or Korean is not shippable in a
   product that already ships those translations.
@@ -644,25 +779,54 @@ single piece of the port and software decode is a working fallback until it land
   reproduce that shape; splitting it by concern is worth doing before it is mirrored.
   Stage 0b removes a large part of it outright.
 
-## Open decisions
+## Decisions
 
-These need answers before the stages they block:
+Every question that blocked a stage has an answer. What follows is the record; the reasoning
+lives in the section each one links to.
 
-1. Is the Linux build case-sensitive in its path model, or does it preserve the current
-   case-insensitive matching? (Blocks Stage 0. Still open, and still the highest-risk item:
-   `file_path::icmp` is unchanged.)
-2. Does deletion on Linux use XDG trash, and does "recoverable" mean the same thing to a
-   user as it does on Windows? (Blocks Stage 4; belongs to [design.md](design.md).)
+1. ~~Is the Linux build case-sensitive in its path model, or does it preserve the current
+   case-insensitive matching?~~ **Answered: case-sensitive on Linux, unchanged on Windows, as a
+   compile-time property beside `windows_path_semantics`.** Per-mount is the theoretically
+   correct answer and is not affordable, because the case-folded hash is stored in the interned
+   string record and a hash functor cannot consult the filesystem. Identity follows the
+   filesystem; file-type and extension matching stays case-insensitive on both platforms. See
+   [path semantics](#windows-assumptions-still-in-portable-code). Blocks Stage 0, and remains
+   the highest-risk item to execute: `file_path::icmp` is unchanged.
+2. ~~Does deletion on Linux use XDG trash, and does "recoverable" mean the same thing to a
+   user as it does on Windows?~~ **Answered: yes, the XDG trash specification, including the
+   `.trashinfo` record that makes restore work from the user's own file manager.** Cross-volume
+   deletes offer permanent deletion rather than copying, and `can_recycle` becomes a runtime
+   query. See [features with no Linux equivalent](#features-with-no-linux-equivalent). Blocks
+   Stage 4; the user-facing half belongs to [design.md](design.md).
 3. ~~Is CMake adopted for the whole tree, or only for the Linux build?~~ **Answered: the whole
    tree, generating for both platforms.** The `.vcxproj` files remain the source the vendored
    modules are imported from, so the two descriptions have to be kept in step until they are
    retired.
-4. Which of the shell-integration features are dropped on Linux versus reimplemented?
-5. Are the native controls retired in favour of drawn ones, and if so what is the
-   accessibility commitment that replaces UI Automation? (Blocks Stage 0b; belongs to
-   [design.md](design.md).)
-6. Which display server is targeted first — Wayland, X11, or both through SDL3?
-7. What replaces the Segoe MDL2 icon font, and does the visual design change with it?
-8. Is the FFmpeg configuration comparison a release step? It has found four divergences so
-   far, each silent, and nothing else detects them. See
+4. ~~Which of the shell-integration features are dropped on Linux versus reimplemented?~~
+   **Answered: anything without an obvious Linux equivalent is dropped, and waits for a user to
+   ask.** Windows is unchanged. An unavailable command is hidden, not shown and failing. See
+   [features with no Linux equivalent](#features-with-no-linux-equivalent).
+5. ~~Are the native controls retired in favour of drawn ones, and if so what is the
+   accessibility commitment that replaces UI Automation?~~ **Answered: retired in favour of
+   drawn controls, with no accessibility stack replacing UI Automation on either platform.**
+   The loss is accepted deliberately. See [controls](#controls). Blocks Stage 0b.
+6. ~~Which display server is targeted first — Wayland, X11, or both through SDL3?~~
+   **Answered: SDL3, on Linux only, which makes Wayland and X11 a runtime backend choice rather
+   than two code paths.** Windows keeps its own platform layer. See
+   [toolkit choice](#toolkit-choice).
+7. ~~What replaces the Segoe MDL2 icon font, and does the visual design change with it?~~
+   **Answered: Fluent UI System Icons, bundled, on both platforms.** Segoe MDL2 cannot be
+   redistributed off Windows at all. The visual design changes slightly on Windows too, which is
+   the point — one icon set everywhere. See
+   [features with no Linux equivalent](#features-with-no-linux-equivalent).
+8. ~~Is the FFmpeg configuration comparison a release step?~~ **Answered: yes, and mechanized.**
+   It has found four divergences so far, each silent, and nothing else detects them, so it is
+   [tools/compare_ffmpeg_config.py](../tools/compare_ffmpeg_config.py) run by CI rather than a
+   manual step that would lapse. The guard is not "no divergence" but "no divergence that has not
+   been accounted for": the platform switches are recorded beside the fork, and any change to that
+   set fails until someone looks. See
    [FFmpeg is configured twice](#ffmpeg-is-configured-twice-and-the-two-answers-differ).
+
+The work these unblock is ordered under the [staged plan](#staged-plan). One item there is owed to
+no decision and is still unowned: the cross-machine scene capture that makes the Stage 2 gate
+executable.

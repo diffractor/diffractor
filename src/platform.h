@@ -255,15 +255,15 @@ namespace platform
 	std::wstring to_file_system_path(df::file_path path);
 	std::wstring to_file_system_path(df::folder_path path);
 
+	// The same path a native API would be given, as UTF-8, for the third-party libraries that take a
+	// byte path on every platform. On Windows this still carries the \\?\ prefix for a long path, so
+	// it is not interchangeable with df::file_path::str().
+	std::string to_utf8_file_system_path(df::file_path path);
+
 	// std::fstream accepts a std::filesystem::path everywhere, but only MSVC accepts a std::wstring.
 	// Going through this keeps stream call sites free of any assumption about the native encoding.
 	std::filesystem::path to_stream_path(df::file_path path);
 	std::filesystem::path to_stream_path(df::folder_path path);
-
-	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
-	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
-	std::wstring to_shell_path(df::file_path path);
-	std::wstring to_shell_path(df::folder_path path);
 
 	enum class known_folder
 	{
