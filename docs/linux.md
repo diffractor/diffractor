@@ -297,12 +297,25 @@ Feature by feature:
   replacement that changes the least. Adopting them on **both** platforms rather than only on
   Linux is the point: it gives one bundled icon set everywhere, turns `create_segoe_md2_icon`
   from a platform call into a portable glyph lookup, and ends the dependence on which Windows
-  version supplies which glyph. The surface is bounded and already indirected — roughly 156 named
-  entries in [app_icons.h](../src/app_icons.h), all Private Use Area code points reached through
-  `icon_index` rather than raw values — so the work is a mapping review, one row per icon,
-  choosing regular or filled and confirming an equivalent exists. Do it on Windows first, where
-  the current appearance is available for comparison, and together with the `char32_t` icon
-  conversion, since both touch the same call sites. This is `User-visible behavior`.
+  version supplies which glyph. This is `User-visible behavior`.
+
+  The mapping is done and lives in [tools/fluent_icons.py](../tools/fluent_icons.py): all 156
+  entries of [app_icons.h](../src/app_icons.h) are paired with a named Fluent icon, and the code
+  points are *generated* from the font's own JSON rather than hand-written, because the font build
+  assigns them sequentially and they move between releases. Names are the reviewable artifact;
+  a code point is never edited by hand. Every name resolves against the current release.
+
+  Three substitutions are judgement calls and are commented as such: `tape` and `disk` both become
+  `storage` because Fluent has no cassette; `sdcard` becomes `sim`, the nearest removable-card
+  shape; and `facebook`, `flickr` and `twitter` become `share`, because Fluent carries no
+  third-party brand marks. Two are strict improvements the old font could not express:
+  `rotate_anticlockwise` was the clockwise glyph with a `| 0x10000` flag meaning "draw it
+  mirrored", and `edit_cut` and `edit_copy` shared one code point so they drew identically.
+
+  What remains: vendoring the font itself, `char32_t` for the code points, and replacing
+  `create_segoe_md2_icon` with the portable lookup. The font is a binary asset and a new
+  third-party dependency, so it is a [third-party policy](third-party.md) decision rather than
+  something to slip in.
 - **Packaging.** The MSIX/WinStore configuration and the NSIS installer have no Linux
   counterpart; see [Distributions and delivery](#distributions-and-delivery).
 
@@ -352,12 +365,24 @@ hardware accelerators, Media Foundation, SChannel — and one on the Linux side,
 which is part of glibc rather than a dependency. Decoder and demuxer coverage is identical.
 
 [tools/compare_ffmpeg_config.py](../tools/compare_ffmpeg_config.py) is that comparison, run by
-CI on the Release leg. It diffs the enabled `CONFIG_*` switches in the checked-in
-`config-x64.h` against the `config.h` the Linux build generates, against a checked-in record of
-the divergences that are platform by nature. Any change to that set fails — in either direction,
-because a divergence that has silently disappeared makes the record a lie as surely as a new one
-does — and `--update` re-records it once someone has looked. A decoder or demuxer appearing in
-that record is a defect rather than a divergence.
+CI on the Release leg. It diffs the enabled `CONFIG_*` switches against a checked-in record of the
+divergences that are platform by nature, and fails on any change — in either direction, because a
+divergence that has silently disappeared makes the record a lie as surely as a new one does.
+`--update` re-records it once someone has looked.
+
+It has to read **two** headers per side, and reading only the first would miss the whole point:
+FFmpeg puts every decoder, demuxer, encoder and muxer switch in `config_components.h`, and
+`config.h` carries only the library-level ones. Windows checks in one `config-x64.h` per
+architecture beside a shared `config_components.h`; Linux generates both into the build staging
+directory, which also holds a copy of the Windows headers that must not be read as if they were
+its own.
+
+The recorded set is [third-party/ffmpeg-config-divergence.txt](../third-party/ffmpeg-config-divergence.txt):
+27 Windows switches and one Linux one, with no decoder, demuxer, encoder or muxer among them.
+One entry deserves a second look whenever it is re-recorded. `CONFIG_AVDEVICE` is there because
+Linux passes `--disable-avdevice` while the Windows configuration builds it for Media Foundation;
+that is defensible, but it is a decision rather than a fact about the platform, and it is the one
+line in that file that could equally well be an oversight.
 
 ### Feeding configure a vendored static library
 
