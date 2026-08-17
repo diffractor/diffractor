@@ -67,7 +67,7 @@ enum class icon_index
 	more = 0xEC72, // ic_fluent_more_horizontal_20_regular
 	new_folder = 0xE8ED, // ic_fluent_folder_add_20_regular
 	settings = 0xF00F, // ic_fluent_settings_20_regular
-	parent = 0xE8F3, // ic_fluent_folder_arrow_up_20_regular
+	parent = 0xE1A7, // ic_fluent_arrow_up_20_regular
 	pause = 0xED5B, // ic_fluent_pause_20_regular
 	photo = 0xEA52, // ic_fluent_image_20_regular
 	play = 0xEE8D, // ic_fluent_play_20_regular

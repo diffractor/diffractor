@@ -59,6 +59,7 @@ void app_frame::create_toolbars()
 #endif
 		find_command(commands::browse_back),
 		find_command(commands::browse_forward),
+		find_command(commands::browse_parent),
 		find_command(commands::refresh),
 	};
 
@@ -66,7 +67,6 @@ void app_frame::create_toolbars()
 	{
 		find_command(commands::favorite),
 		find_command(commands::options_collection),
-		find_command(commands::browse_parent),
 		find_command(commands::browse_previous_folder),
 		find_command(commands::browse_next_folder),
 		find_command(commands::advanced_search),

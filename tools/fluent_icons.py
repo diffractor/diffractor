@@ -91,7 +91,7 @@ ICONS: dict[str, tuple[str, bool]] = {
     "more": ("more_horizontal", False),
     "new_folder": ("folder_add", False),
     "settings": ("settings", False),
-    "parent": ("folder_arrow_up", False),
+    "parent": ("arrow_up", False),
     "pause": ("pause", False),
     "photo": ("image", False),
     "play": ("play", False),
