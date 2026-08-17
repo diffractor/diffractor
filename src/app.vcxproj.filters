@@ -78,6 +78,9 @@
     <ClCompile Include="crypto_aes256.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="render_software.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="render_surface.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

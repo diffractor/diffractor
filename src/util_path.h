@@ -48,6 +48,50 @@ namespace df
 	constexpr bool windows_path_semantics = false;
 #endif
 
+	// Whether two spellings that differ only in case name one file. This is a compile-time property
+	// rather than a per-mount one because a hash functor receives only the key, so consulting the
+	// filesystem would mean I/O inside every hash probe - on the UI thread and under the index lock.
+	// Identity is a different question from type: file_type_by_extension and file_group_by_name stay
+	// case-insensitive on both platforms and must not be swept along with this.
+	constexpr bool case_insensitive_path_identity = windows_path_semantics;
+
+	// Compares one interned path component against another under that rule. Interning is exact, so
+	// one id is one spelling and identity never needs a comparison at all. Ordering folds case on
+	// both platforms; the exact compare only breaks a tie between two spellings of one name, which
+	// keeps a case-sensitive listing in the order a reader expects while still telling them apart.
+	inline int compare_path_text(const str::cached l, const str::cached r)
+	{
+		if (l.id == r.id) return 0;
+		const auto folded = str::icmp(l, r);
+		if constexpr (case_insensitive_path_identity) return folded;
+		return folded != 0 ? folded : str::cmp(l, r);
+	}
+
+	// The hash that goes with it. Case-folded identity reads the hash stored at intern time;
+	// case-sensitive identity is exactly id equality, so the id itself is a perfect hash and no
+	// second value has to be stored. The multiply spreads what are otherwise dense pool offsets.
+	inline size_t path_text_hash(const str::cached s)
+	{
+		if constexpr (case_insensitive_path_identity) return s.ihash();
+		return s.id * 2654435761u;
+	}
+
+	// The same rule for a path that is not interned: a key the rename planner builds, or a name read
+	// back from an enumeration. Prefer the folder_path and file_path comparisons where a path has
+	// already been parsed - this exists for the places that only ever hold the spelling.
+	inline int compare_path_key(const std::string_view l, const std::string_view r)
+	{
+		const auto folded = str::icmp(l, r);
+		if constexpr (case_insensitive_path_identity) return folded;
+		return folded != 0 ? folded : str::cmp(l, r);
+	}
+
+	inline bool path_text_starts(const std::string_view path, const std::string_view prefix)
+	{
+		if constexpr (case_insensitive_path_identity) return str::starts(path, prefix);
+		return path.starts_with(prefix);
+	}
+
 	constexpr bool is_path_sep(const char c)
 	{
 		return c == '\\' || c == '/';
@@ -110,7 +154,9 @@ namespace df
 			return true;
 		}
 
-		constexpr auto illegal = "\\/:*?\"<>|";
+		// The reserved set belongs to the filesystem. Off Windows only the separator is reserved, and
+		// applying the Win32 set there would refuse to name files that already exist beside them.
+		constexpr auto illegal = windows_path_semantics ? "\\/:*?\"<>|" : "/";
 
 		return name.find_first_of(illegal) != std::string_view::npos;
 	}
@@ -190,12 +236,6 @@ namespace df
 		folder_path& operator=(const folder_path&) noexcept = default;
 		folder_path(folder_path&&) noexcept = default;
 		folder_path& operator=(folder_path&&) noexcept = default;
-
-		folder_path(const std::wstring_view w)
-		{
-			_s = cached_normalized_folder(str::utf16_to_utf8(w));
-			assert_true(is_valid());
-		}
 
 		folder_path(const std::string_view sr) noexcept
 		{
@@ -351,20 +391,13 @@ namespace df
 			return folder_path(result);
 		}
 
-		folder_path combine(const std::wstring_view part) const
-		{
-			return combine(str::utf16_to_utf8(part));
-		}
-
 		file_path combine_file(std::string_view part) const;
 		file_path combine_file(str::cached part) const;
-		file_path combine_file(std::wstring_view part) const;
 		file_path combine_file_ext(std::string_view part, std::string_view ext) const;
 
 		int compare(const folder_path other) const
 		{
-			// Interned storage: one id means one string, so the fold only runs for a real difference.
-			return _s.id == other._s.id ? 0 : icmp(_s, other._s);
+			return compare_path_text(_s, other._s);
 		}
 
 		constexpr std::string_view::size_type find_last_slash() const
@@ -404,12 +437,6 @@ namespace df
 		str::cached _name;
 
 	public:
-		file_path(const std::wstring_view sv) noexcept
-		{
-			un_pack(str::utf16_to_utf8(sv));
-			assert_true(is_valid());
-		}
-
 		file_path(const std::string_view sv) noexcept
 		{
 			un_pack(sv);
@@ -488,7 +515,7 @@ namespace df
 		{
 			const auto diff = _folder.compare(other._folder);
 			if (diff != 0) return diff;
-			return _name.id == other._name.id ? 0 : str::icmp(_name, other._name);
+			return compare_path_text(_name, other._name);
 		}
 
 		bool operator==(const file_path other) const

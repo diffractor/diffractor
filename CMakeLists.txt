@@ -168,6 +168,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/model_tile_cache.cpp
         src/render_color.cpp
         src/render_image.cpp
+        src/render_software.cpp
         src/render_surface.cpp
         src/ui.cpp
         src/ui_controls.cpp
@@ -449,4 +450,34 @@ target_link_libraries(diffractor PRIVATE Threads::Threads)
 get_property(DIFFRACTOR_EXTERNAL_TARGETS GLOBAL PROPERTY DIFFRACTOR_EXTERNAL_TARGETS)
 if (DIFFRACTOR_EXTERNAL_TARGETS)
     add_dependencies(diffractor ${DIFFRACTOR_EXTERNAL_TARGETS})
+endif ()
+
+# Fixtures, catalogs and dictionaries are read from the folder holding the running binary
+# (platform::known_folder::running_app_folder), which is the install layout on both platforms and
+# exe/ in this tree. The MSBuild build already links into exe/, so only a CMake build needs this,
+# and without it every fixture test fails on a missing file rather than on its subject.
+#
+# Linked rather than copied: exe/test alone is around 100 MB, and a copy would go stale the moment
+# a fixture changed. Windows is left out because a directory symlink there needs a privilege an
+# ordinary build does not have.
+if (NOT WIN32)
+    foreach (_runtime_entry IN ITEMS
+            test
+            test-formats
+            languages
+            dictionaries
+            location-countries.txt
+            location-places.txt
+            location-states.txt)
+        set(_runtime_link "${CMAKE_CURRENT_BINARY_DIR}/${_runtime_entry}")
+
+        if (NOT IS_SYMLINK "${_runtime_link}" AND NOT EXISTS "${_runtime_link}")
+            file(CREATE_LINK "${CMAKE_CURRENT_SOURCE_DIR}/exe/${_runtime_entry}" "${_runtime_link}"
+                    RESULT _runtime_link_result SYMBOLIC)
+
+            if (NOT _runtime_link_result EQUAL 0)
+                message(WARNING "Could not stage exe/${_runtime_entry}: ${_runtime_link_result}")
+            endif ()
+        endif ()
+    endforeach ()
 endif ()

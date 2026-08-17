@@ -215,8 +215,10 @@ public:
 	                   bool high_quality = true);
 	bool convert_yuv_surface(const ui::surface& surface_in, const ui::surface_ptr& surface_out);
 	bool scale_surface(const av_frame_ptr& frame, const ui::surface_ptr& surface_out);
+	// container_sar carries the demuxer's stream aspect ratio, which is the only place an MP4 pasp
+	// box surfaces - FFmpeg never copies it onto the codec parameters or the decoded frame.
 	bool scale_frame(const AVFrame& frame, ui::surface_ptr& surface, sizei max_dim, double time,
-	                 ui::orientation orientation);
+	                 ui::orientation orientation, av_rational container_sar = {});
 };
 
 // Decodes one still image from encoded bytes. This is the path for the formats Diffractor reads but

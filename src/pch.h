@@ -87,4 +87,3 @@ constexpr float M_PIF = 3.14159265358979f;
 extern const std::string_view s_app_name;
 extern const std::string_view s_app_version;
 extern const std::string_view g_app_build;
-extern const wchar_t* s_app_name_l;

@@ -28,7 +28,7 @@ static platform::file_op_result move_rename_path(const df::file_path source, con
 		// A folder path packs with a trailing separator and an empty name, so the equality and
 		// case-only tests have to run against the folders rather than the packed file paths.
 		if (source_folder.text() == destination_folder.text()) return {platform::file_op_result_code::OK, {}, {}};
-		if (str::icmp(source_folder.text(), destination_folder.text()) != 0)
+		if (source_folder.compare(destination_folder) != 0)
 			return platform::move_file(source_folder, destination_folder);
 
 		// The swap has to stage in the parent, which is destination.folder() for a folder row;
@@ -123,12 +123,12 @@ void rename_view::run()
 		// and the row that owns it renames from there; anything still parked when the run ends goes
 		// back where it came from. The test matches the one the plan used, or the run would park a
 		// path the plan never counted as free.
-		std::set<std::string, df::iless> vacating;
+		std::set<std::string, df::path_key_less> vacating;
 
 		for (const auto& rename : renames)
 		{
 			const auto source_key = rename_path_key(rename.source, rename.is_folder);
-			if (rename.noop || str::icmp(source_key, rename_path_key(rename.destination, rename.is_folder)) == 0)
+			if (rename.noop || df::compare_path_key(source_key, rename_path_key(rename.destination, rename.is_folder)) == 0)
 				continue;
 
 			vacating.emplace(source_key);
@@ -143,7 +143,7 @@ void rename_view::run()
 			bool is_folder = false;
 		};
 
-		std::map<std::string, parked_path, df::iless> parked;
+		std::map<std::string, parked_path, df::path_key_less> parked;
 
 		auto current_path = [&parked](const df::file_path path, const bool is_folder)
 		{

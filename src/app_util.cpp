@@ -320,7 +320,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 
 	// Every path this plan moves away from. A destination held by one of them is free by the time
 	// the run reaches it, so renaming a set onto the names it is vacating is not a collision.
-	std::set<std::string, df::iless> vacated;
+	std::set<std::string, df::path_key_less> vacated;
 	auto seq = start;
 
 	const auto assign_sidecars = [](rename_item& rename, const rename_source& i, const df::file_path primary)
@@ -359,8 +359,9 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 		rename.noop = source_key == destination_key;
 		assign_sidecars(rename, i, rename.destination);
 
-		// A case-only rename does not free the path it renames within, so it vacates nothing.
-		if (str::icmp(source_key, destination_key) != 0)
+		// A case-only rename does not free the path it renames within, so it vacates nothing - but only
+		// where the filesystem agrees the two spellings are one path.
+		if (df::compare_path_key(source_key, destination_key) != 0)
 		{
 			vacated.emplace(source_key);
 
@@ -386,7 +387,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 			const auto destination_key = rename_path_key(rename.destination, rename.is_folder);
 			rename.destination_exists = rename_path_exists(rename.destination, rename.is_folder);
 
-			if (str::icmp(source_key, destination_key) != 0 && rename.destination_exists &&
+			if (df::compare_path_key(source_key, destination_key) != 0 && rename.destination_exists &&
 				!vacated.contains(destination_key))
 				return true;
 
@@ -438,7 +439,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 	{
 		// Skip resolves a collision by leaving the source where it is, so it no longer frees that
 		// path for whatever row was cleared to take it, and settling that can cascade.
-		std::map<std::string, size_t, df::iless> wanted;
+		std::map<std::string, size_t, df::path_key_less> wanted;
 
 		for (auto index = 0_z; index < results.size(); ++index)
 		{
@@ -477,7 +478,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 
 	// Two rows targeting the same new name is a collision the policy cannot resolve
 	// safely without reordering, so it always blocks.
-	std::map<std::string, int, df::iless> destination_counts;
+	std::map<std::string, int, df::path_key_less> destination_counts;
 
 	for (const auto& rename : results)
 	{
@@ -1061,7 +1062,7 @@ static bool path_contains(const df::folder_path parent, const df::folder_path ch
 	const auto parent_text = parent.text().sv();
 	const auto child_text = child.text().sv();
 	if (parent_text.size() >= child_text.size()) return parent == child;
-	return str::icmp(parent_text, child_text.substr(0, parent_text.size())) == 0 &&
+	return df::path_text_starts(child_text, parent_text) &&
 		df::is_path_sep(child_text[parent_text.size()]);
 }
 
@@ -1110,8 +1111,8 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 
 	// Which local root owns each relative folder, and the relative folders claimed by more than one
 	// root. A relative folder claimed twice cannot name a local destination for a remote-only file.
-	std::map<std::string, df::folder_path, df::iless> local_roots_by_relative;
-	std::set<std::string, df::iless> ambiguous_relatives;
+	std::map<std::string, df::folder_path, df::path_key_less> local_roots_by_relative;
+	std::set<std::string, df::path_key_less> ambiguous_relatives;
 
 	std::vector<sync_analysis_folder> local_folders_to_scan;
 
@@ -1480,7 +1481,7 @@ std::vector<std::string> check_overwrite(const df::folder_path write_folder, con
 	const auto contents = platform::iterate_file_items(write_folder, true);
 	if (!contents.success) return {};
 
-	std::set<std::string, df::iless> existing;
+	std::set<std::string, df::path_key_less> existing;
 	for (const auto& f : contents.files) existing.emplace(f.name.str());
 	for (const auto& f : contents.folders) existing.emplace(f.name.str());
 

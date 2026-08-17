@@ -189,6 +189,14 @@ Fixed 2026-08-12. `temp_file_created` and its siblings mean *"this path may have
 - **`rollback_file_created` is the exception and must not be hoisted the same way.** It also gates restoring the user's destination from that copy, so claiming it early could restore from a partial file — strictly worse than the leak. Its cleanup is unconditional instead, guarded only by `rollback_holds_sole_original`, which is the one case where the temp file is the user's last surviving original and must survive under its meaningless name.
 - `jpeg_encoder::setup` opens with `jpeg_abort_compress` for the same reason `jpeg_decoder_x::read_header` opens with `jpeg_abort_decompress`: `files` holds one long-lived encoder, `handle_error_exit` throws out of libjpeg, and an encode abandoned mid-scan leaves `global_state` at `CSTATE_SCANNING`, after which every later encode fails for the process lifetime — taking thumbnails and Convert down together. Guarded by `Should reuse jpeg encoder after abandoned encode`, whose negative case fails with `Improper call to JPEG library in state 101`.
 
+### 2.8 A path key never folds case unconditionally
+
+Landed 2026-08-16, for the [Linux port](linux.md#windows-assumptions-still-in-portable-code). Path identity follows the filesystem: `df::case_insensitive_path_identity` is true on Windows and false elsewhere, and `folder_path::compare`, `file_path::icmp`, `df::path_text_hash` and `df::compare_path_key` are the only places that read it.
+
+The trap is that the folding comparators it replaces are still there and still correct for what they are for. `df::iless`, `df::ihash`'s text overloads and `str::icmp` answer questions about *type and vocabulary* — is this a JPEG, is this the same tag, is this the sidecar for that file — and those must fold on both platforms. A new path-keyed container that reaches for `df::iless` because it is the one that is spelled like a path comparison compiles, passes on Windows, and silently merges two Linux files into one. Path keys take `df::path_key_less`, or `df::ihash`/`df::ieq` with a `folder_path` or `file_path` key.
+
+Two behaviors fall out of the rule rather than being chosen: a case-only rename vacates the name it renames away from where the two spellings are two paths and does not where they are one, and the temporary-file dance in `move_rename_path` exists only for the second case. Guarded by `Should follow the filesystem for path identity`, which asserts the hash and the comparison agree — a disagreement puts one file in two buckets — and that file-type matching does *not* follow the rule.
+
 
 ---
 

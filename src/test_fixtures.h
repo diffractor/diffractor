@@ -29,7 +29,7 @@ inline const auto test_files_folder = known_path(platform::known_folder::test_fi
 // Beside the test folder, not in it: expected_cached_item_count below counts what is in there.
 inline const auto test_formats_folder = test_files_folder.parent().combine("test-formats");
 inline constexpr sizei thumbnail_max_dimension = {256, 256};
-inline constexpr int expected_cached_item_count = 47;
+inline constexpr int expected_cached_item_count = 49;
 
 inline constexpr auto long_text =
 	"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "

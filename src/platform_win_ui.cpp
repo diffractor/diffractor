@@ -3865,13 +3865,13 @@ void frame_base::handle_render(const recti damage)
 			on_render(ctx);
 		}
 
-		const auto hr = ctx->render();
+		const auto presented = ctx->render();
 
-		if (FAILED(hr))
+		if (presented.failed)
 		{
 			// A failed render means the back buffer holds nothing worth showing, so skip the
 			// present. handle_device_loss ignores non device-loss results.
-			handle_device_loss(hr, "render");
+			handle_device_loss(presented.backend_code, "render");
 			return;
 		}
 	}
@@ -4380,11 +4380,11 @@ public:
 			// textures this re-present exists to show changed outside it.
 			_draw_ctx->reset_damage();
 
-			const auto hr = _draw_ctx->render();
+			const auto presented = _draw_ctx->render();
 
-			if (FAILED(hr))
+			if (presented.failed)
 			{
-				handle_device_loss(hr, "redraw");
+				handle_device_loss(presented.backend_code, "redraw");
 				return;
 			}
 
@@ -8256,7 +8256,7 @@ static void show_fatal_error(const std::string_view message)
 	s += L"\n\n";
 	s += str::utf8_to_utf16(message);
 
-	::MessageBox(nullptr, s.c_str(), s_app_name_l, MB_OK | MB_ICONHAND);
+	::MessageBox(nullptr, s.c_str(), str::utf8_to_utf16(s_app_name).c_str(), MB_OK | MB_ICONHAND);
 }
 
 // The app's own failure dialog needs a window and a running message loop. Startup failures happen
@@ -9121,7 +9121,7 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 		}
 	}
 
-	SetWindowText(result->m_hWnd, s_app_name_l);
+	SetWindowText(result->m_hWnd, str::utf8_to_utf16(s_app_name).c_str());
 	// The window icon drives Alt+Tab and the title bar. The package AppList assets only cover
 	// Start and the taskbar, so without this the Store build falls back to the 32px window class
 	// icon upscaled. Set it in both builds.

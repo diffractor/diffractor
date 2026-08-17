@@ -473,6 +473,9 @@ namespace platform
 	bool browse_for_folder(df::folder_path& path);
 	bool prompt_for_save_path(df::file_path& path);
 
+	// The operating system's own UTF-16 conversion. Nothing in the app calls these: str::utf16_to_utf8
+	// and str::utf8_to_utf16 are the conversions it uses, and these exist so a test can check those
+	// against an implementation we did not write.
 	std::string utf16_to_utf8(std::wstring_view text);
 	std::wstring utf8_to_utf16(std::string_view text);
 
@@ -623,20 +626,14 @@ namespace platform
 
 	control_paint_probe probe_buffered_control_paint();
 
-	// Test-only probe of the software renderer's tiled rasterisation. The backend replays the
-	// retained scene once per fixed scratch tile, which is only sound while every primitive derives
-	// its colour, coverage and source mapping from its own bounds and treats the clip purely as a
-	// write mask. A primitive that read the clip instead would seam at tile edges, so the probe
-	// draws one representative scene whole and again tile by tile and compares the two.
+	// Test-only probe of the software backend's scratch buffer. The scratch tile stops being
+	// reallocated once it reaches its final size, so growing the client no longer reallocates
+	// anything. These record how much of a grown client the canvas will actually accept writes for,
+	// summed over the tiles the real loop walks, against the buffer that stayed behind - which must
+	// not have grown with the window. Whether tiling itself is seamless is a question about the
+	// rasterizer rather than the platform, and is ui::probe_software_rasterizer.
 	struct software_tiling_probe
 	{
-		int painted_pixels = 0; // pixels the scene changed from the initial fill
-		int mismatched_pixels = 0; // pixels where the tiled result differs from the untiled one
-		int tiles = 0; // tiles the scene was rasterised in
-		// The scratch tile stops being reallocated once it reaches its final size, so growing the
-		// client no longer reallocates anything. These record how much of a grown client the canvas
-		// will actually accept writes for, summed over the tiles the real loop walks, against the
-		// buffer that stayed behind - which must not have grown with the window.
 		int grown_client_pixels = 0;
 		int grown_writable_pixels = 0;
 		int grown_buffer_pixels = 0;

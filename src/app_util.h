@@ -227,7 +227,7 @@ struct sync_analysis_folder
 	std::string relative;
 };
 
-using sync_analysis_items = std::map<std::string, sync_analysis_item, df::iless>;
+using sync_analysis_items = std::map<std::string, sync_analysis_item, df::path_key_less>;
 
 // Why an analysis could not be produced. Sync inputs are user supplied, so the common failures are
 // ordinary configuration mistakes and must be reported as such rather than as an internal fault.
@@ -240,7 +240,7 @@ enum class sync_invalid_reason
 	ambiguous_local_root,
 };
 
-struct sync_analysis_result : std::map<std::string, sync_analysis_items, df::iless>
+struct sync_analysis_result : std::map<std::string, sync_analysis_items, df::path_key_less>
 {
 	bool valid = true;
 	sync_invalid_reason reason = sync_invalid_reason::none;

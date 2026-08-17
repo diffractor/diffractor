@@ -1633,6 +1633,7 @@
     <ClCompile Include="platform_win.cpp" />
     <ClCompile Include="platform_win_software.cpp" />
     <ClCompile Include="platform_win_settings.cpp" />
+    <ClCompile Include="render_software.cpp" />
     <ClCompile Include="render_surface.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">pch.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='WinStore|x64'">pch.h</PrecompiledHeaderFile>
@@ -2244,6 +2245,7 @@
     <ClInclude Include="metadata_xmp.h" />
     <ClInclude Include="util_zip.h" />
     <ClInclude Include="platform_win_visual.h" />
+    <ClInclude Include="render_software.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\rgb_bicubic_ps.hlsl">

@@ -41,11 +41,11 @@ namespace df
 
 			if (_recursive)
 			{
-				is_match = starts(path.folder().text(), _root.text());
+				is_match = path_text_starts(path.folder().text(), _root.text());
 			}
 			else
 			{
-				is_match = icmp(path.folder().text(), _root.text()) == 0;
+				is_match = path.folder().compare(_root) == 0;
 			}
 
 			if (is_match && str::icmp(_wildcard, "*.*") != 0)

@@ -924,7 +924,7 @@ public:
 };
 
 
-class d3d11_draw_context_impl final : public draw_context_device,
+class d3d11_draw_context_impl final : public ui::draw_context_device,
                                       public std::enable_shared_from_this<d3d11_draw_context_impl>
 {
 public:
@@ -1032,7 +1032,7 @@ public:
 
 	void destroy() override;
 	void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) override;
-	HRESULT render() override;
+	ui::present_result render() override;
 	void release_back_buffer_references() override;
 
 	void clear(ui::color c) override;
@@ -1862,21 +1862,22 @@ void d3d11_draw_context_impl::release_back_buffer_references()
 	_back_buffer_rtv.Reset();
 }
 
-HRESULT d3d11_draw_context_impl::render()
+ui::present_result d3d11_draw_context_impl::render()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
 	if (!is_valid() || !_swap_chain)
 	{
-		return S_OK;
+		return {};
 	}
 
 	// Uploads anything staged since the last render. A redraw that only updated a texture
 	// stages nothing and re-draws the scene from the buffers built by the last paint.
 	build_index_and_vertex_buffers();
 
-	return draw_scene(_f->d3d_context);
+	const auto hr = draw_scene(_f->d3d_context);
+	return {FAILED(hr), hr};
 }
 
 

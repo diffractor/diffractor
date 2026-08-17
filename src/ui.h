@@ -1407,6 +1407,60 @@ namespace ui
 		virtual void restore_clip() = 0;
 	};
 
+	// The outcome of flushing a scene. `backend_code` is the graphics API's own result, carried so
+	// the window layer can log it and decide whether the device was lost; portable code reads only
+	// `failed`. A CPU backend has no device to lose and always succeeds.
+	struct present_result
+	{
+		bool failed = false;
+		int32_t backend_code = 0;
+	};
+
+	// A draw context backed by a graphics device and a window, rather than the drawing interface
+	// alone. Every backend implements this - the Direct3D one, the CPU rasterizer, and whatever a
+	// port adds - so it names no graphics API and no window type.
+	class draw_context_device : public draw_context
+	{
+	public:
+		virtual void destroy() = 0;
+		virtual void update_font_size(int base_font_size) = 0;
+
+		// damage is the region the window layer knows needs repainting; empty means the whole
+		// client. It is an optimisation hint only - a backend may redraw more, but the resulting
+		// pixels inside damage must not depend on how much was redrawn.
+		virtual void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) = 0;
+
+		virtual present_result render() = 0;
+
+		// Discards any damage limit, so the next render covers the whole client. Needed by callers
+		// that re-present an existing scene whose textures changed underneath it.
+		virtual void reset_damage()
+		{
+		}
+
+		virtual void resize(sizei size) = 0;
+		virtual bool is_valid() const = 0;
+
+		// Releases every reference this context holds on the swap-chain back buffer. Must be
+		// called before the buffers are resized - a still-bound render target view makes that fail.
+		// No-op on a CPU backend.
+		virtual void release_back_buffer_references()
+		{
+		}
+
+		// Software-rendering extensions (only implemented by the CPU backend used for layered
+		// bubble popups; no-ops on a hardware backend).
+		virtual void set_layer_alpha(int alpha)
+		{
+		}
+
+		virtual void draw_bubble_background(recti bounds, pointi focus_location, int padding, float radius)
+		{
+		}
+	};
+
+	using draw_context_device_ptr = std::shared_ptr<draw_context_device>;
+
 	class scoped_clip final : public df::no_copy
 	{
 		draw_context& _dc;

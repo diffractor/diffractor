@@ -125,6 +125,52 @@ static void should_icmp_natural()
 	assert_equal(true, str::icmp_natural("IMG_9999.png", "IMG_10000.png") < 0, "IMG sequence overflow");
 }
 
+static void should_follow_the_filesystem_for_path_identity()
+{
+	// The subject is identity, not spelling, so the literals use the running platform's root.
+	const auto root = df::folder_path(df::windows_path_semantics ? "c:\\photos" : "/photos");
+	const auto root_upper = df::folder_path(df::windows_path_semantics ? "C:\\PHOTOS" : "/PHOTOS");
+	const auto lower = root.combine_file("holiday.jpg");
+	const auto upper = root.combine_file("HOLIDAY.JPG");
+	const auto other = root.combine_file("apple.jpg");
+
+	// Case-folded where the filesystem folds, and two distinct files where it does not.
+	constexpr auto same = df::case_insensitive_path_identity;
+	assert_equal(same, root.compare(root_upper) == 0, "folder identity");
+	assert_equal(same, lower.icmp(upper) == 0, "file identity");
+	assert_equal(same, lower == upper, "file equality follows the comparison");
+
+	// A hash that disagreed with the comparison would leave one file in two buckets.
+	const df::ihash hash;
+	assert_equal(same, hash(lower) == hash(upper), "file hash agrees with file identity");
+	assert_equal(same, hash(root) == hash(root_upper), "folder hash agrees with folder identity");
+	assert_equal(true, hash(lower) == hash(root.combine_file("holiday.jpg")), "one path, one hash");
+
+	df::hash_set<df::file_path, df::ihash, df::ieq> paths;
+	paths.emplace(lower);
+	paths.emplace(upper);
+	assert_equal(same ? 1 : 2, static_cast<int>(paths.size()), "a set holds one entry per file");
+
+	// Ordering still folds case on both platforms, so a case variant sorts beside its twin rather
+	// than ahead of every lower-case name. A byte comparison would put "HOLIDAY.JPG" before
+	// "apple.jpg", which is what this asserts against.
+	assert_equal(true, lower.icmp(other) > 0, "ordering is lexicographic");
+	assert_equal(true, upper.icmp(other) > 0, "a case variant orders with its twin, not before it");
+
+	// Type is a different question and never follows the filesystem: an upper-case extension names
+	// the same format on every platform.
+	assert_equal(0, str::icmp(lower.extension(), upper.extension()), "extension matching stays folded");
+	const auto ft_lower = files::file_type_from_name(lower);
+	const auto ft_upper = files::file_type_from_name(upper);
+	assert_equal(true, ft_lower == ft_upper, "file type does not follow path identity");
+
+	// A key held as a string has to answer the same way, or the rename planner disagrees with the
+	// index about whether a destination is occupied.
+	assert_equal(same, df::compare_path_key(lower.pack(), upper.pack()) == 0, "packed key identity");
+	assert_equal(same, df::path_text_starts(root_upper.text(), root.text()), "prefix match identity");
+	assert_equal(true, df::path_text_starts(root.text(), root.text()), "a path contains itself");
+}
+
 static void should_group_elements_by_folder()
 {
 	struct element
@@ -149,17 +195,21 @@ static void should_group_elements_by_folder()
 		{df::folder_path(c), 6},
 	};
 
+	// Path identity follows the filesystem, so the case variant is a fourth folder where two
+	// spellings are two places and a member of the first group where they are one.
+	constexpr auto expected_groups = df::case_insensitive_path_identity ? 3 : 4;
+
 	df::folder_groups groups;
 	groups.build(elements,
 	             [](const element& e) { return e.folder; },
 	             [](const element& e) { return !e.skip; });
 
-	assert_equal(3, static_cast<int>(groups.groups().size()), "one group per distinct folder");
+	assert_equal(expected_groups, static_cast<int>(groups.groups().size()), "one group per distinct folder");
 
 	// Groups are in first-seen order and each keeps its elements in input order.
 	assert_equal(a, groups.groups()[0].folder.text().str(), "first group");
 	assert_equal(b, groups.groups()[1].folder.text().str(), "second group");
-	assert_equal(c, groups.groups()[2].folder.text().str(), "third group");
+	assert_equal(c, groups.groups()[expected_groups - 1].folder.text().str(), "last group");
 
 	const auto ids = [&](const size_t g)
 	{
@@ -168,13 +218,13 @@ static void should_group_elements_by_folder()
 		return result;
 	};
 
-	// Interning is case sensitive, so "C:\A" must still reach the group "c:\a" created.
-	assert_equal("135", ids(0), "case variants share one group");
+	assert_equal(df::case_insensitive_path_identity ? "135" : "13", ids(0), "case variant follows path identity");
 	assert_equal("2", ids(1), "excluded element is dropped");
-	assert_equal("6", ids(2), "single element group");
+	assert_equal("6", ids(expected_groups - 1), "single element group");
 
 	groups.build(elements, [](const element& e) { return e.folder; });
-	assert_equal(3, static_cast<int>(groups.groups().size()), "rebuild replaces the previous grouping");
+	assert_equal(expected_groups, static_cast<int>(groups.groups().size()),
+	             "rebuild replaces the previous grouping");
 	assert_equal("24", ids(1), "no predicate includes every element");
 
 	// Enough distinct folders to force the lookup tables to grow and rehash.
@@ -1265,6 +1315,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should abort result scope during exception"s, should_abort_result_scope_during_exception);
 	tests.add("Should cancel superseded tokens"s, should_cancel_superseded_tokens);
 	tests.add("Should group elements by folder"s, should_group_elements_by_folder);
+	tests.add("Should follow the filesystem for path identity"s, should_follow_the_filesystem_for_path_identity);
 	tests.add("Should report file presence"s, should_report_file_presence);
 	tests.add("Should map files"s, should_map_files);
 	tests.add("Should intern strings"s, should_intern_strings);

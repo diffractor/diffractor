@@ -2880,6 +2880,20 @@ file_update_result files::update(const df::file_path path_src, const df::file_pa
 	return result;
 }
 
+// libarchive wants the native path in the platform's own spelling, and the two entry points differ
+// in more than their character type: the wide one is what carries the \\?\ prefix a long Windows
+// path needs, while a POSIX path is bytes all the way down and has no wide form to convert to.
+// Overloading on platform::native_path lets the call site stay free of a conditional.
+static int archive_read_open_native(archive* a, const std::wstring& path, const size_t block_size)
+{
+	return archive_read_open_filename_w(a, path.c_str(), block_size);
+}
+
+static int archive_read_open_native(archive* a, const std::string& path, const size_t block_size)
+{
+	return archive_read_open_filename(a, path.c_str(), block_size);
+}
+
 std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 {
 	std::vector<archive_item> results;
@@ -2898,9 +2912,9 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 	archive_read_support_filter_all(a);
 	archive_read_support_format_all(a);
 
-	const auto w = platform::to_file_system_path(zip_file_path);
+	const auto native = platform::to_file_system_path(zip_file_path);
 
-	if (archive_read_open_filename_w(a, w.c_str(), 10240) == ARCHIVE_OK)
+	if (archive_read_open_native(a, native, 10240) == ARCHIVE_OK)
 	{
 		const df::scope_exit close_archive([a] { archive_read_close(a); });
 

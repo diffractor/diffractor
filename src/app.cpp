@@ -46,7 +46,6 @@
 #include "util_spell.h"
 
 
-const wchar_t* s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
 const std::string_view g_app_build = "1275";

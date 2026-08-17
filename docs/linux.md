@@ -19,7 +19,7 @@ integration — everything from [Stage 2](#staged-plan) onward.
 
 | | Windows | Linux |
 |---|---|---|
-| Tests | 753 Debug (CMake/Ninja), 759 Release (MSBuild) | **735, Debug and Release** |
+| Tests | 754 Debug (CMake/Ninja), 760 Release (MSBuild) | **736, Debug and Release** |
 | Build | `df.sln` and CMake | CMake + Ninja, GCC 13 |
 | Vendored libraries | 26 | **26, all building under GCC** |
 | Release binary | 40 MB | 94 MB |
@@ -54,9 +54,10 @@ so there is now one image decoder rather than one per platform.
 [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code) is
 still open. The port fixed the specific defects those assumptions caused — a mis-decoded EXIF
 string, a truncated coordinate — without always removing the assumption itself. What remains is
-the icon code points, the last of the `std::wstring` in the platform interface, and path identity,
-which is still case-insensitive everywhere. The [decisions](#decisions) that blocked this work are
-now answered, so what is left is implementation rather than deliberation.
+the last of the `std::wstring` in the platform interface and the small residue listed there. Path
+identity is no longer among them: it now follows the filesystem, case-sensitive on Linux and
+unchanged on Windows. The [decisions](#decisions) that blocked this work are answered, so what is
+left is implementation rather than deliberation.
 
 ## Verdict
 
@@ -97,7 +98,7 @@ The platform layer, largest first, with what replaces it:
 | `platform_win_ui.cpp` | 7,678 | Window class, message loop, native controls, dialogs, menus, clipboard, drag/drop, DPI, monitors, `wWinMain` | SDL3 for window/input/clipboard/DnD/file dialogs, plus the drawn controls from [Stage 0b](#staged-plan) | **High** — the single biggest item |
 | `platform_win_d3d11.cpp` | 2,976 | GPU backend, batching, glyph atlas, video textures | Vulkan or OpenGL 3.3, plus 12 HLSL shaders → GLSL/SPIR-V | High |
 | `platform_win_files.cpp` | 2,896 | File I/O, attributes, enumeration, shell copy/move/delete, thumbnails, shell tags | POSIX I/O + XDG trash, with the portal variant for Flatpak | Medium, with feature gaps |
-| `platform_win_software.cpp` | 2,094 | CPU rasterizer + GDI present | Mostly portable already; only the present path is Windows | **Low** — see below |
+| `platform_win_software.cpp` | 1,596 | GDI present, DirectWrite text, the retained scene | The rasterizer already moved out; what is left is the present target and text | **Low** — see below |
 | `platform_win.cpp` | 1,678 | Locks, events, known folders, dates, number/locale format, drives, eject | pthreads/futex, XDG base dirs, `std::chrono`, ICU or `std::locale` | Low–medium |
 | `platform_win_font.cpp` | 831 | DirectWrite faces, fallback, metrics | FreeType + HarfBuzz + fontconfig | Medium–high |
 | `platform_win_sound.cpp` | 598 | WASAPI render client | PipeWire (or PulseAudio/ALSA) | Medium |
@@ -107,12 +108,19 @@ The platform layer, largest first, with what replaces it:
 
 Two of these are much cheaper than their size suggests:
 
-- **The software backend is the shortest route to pixels.** It is a self-contained CPU
-  rasterizer that renders the same retained scene as the GPU backend and honours the same
-  parity contract. Only its final blit is Windows. Splitting the rasterizer from its
-  present path — a pure `Internal` refactor doable today on Windows, validated by the
-  existing `probe_software_tiling` — turns "write a Linux renderer" into "write a Linux
-  window that owns a BGRA buffer."
+- **The software backend is the shortest route to pixels, and the rasterizer is now portable
+  code.** It renders the same retained scene as the GPU backend and honours the same parity
+  contract; only its final blit was ever Windows. `software_canvas` and the pixel helpers live in
+  [render_software.h](../src/render_software.h) and name nothing of any platform — including of a
+  font, since `blend_glyph` takes an 8-bit coverage bitmap and leaves what produced it to the text
+  layer. `ui::software_present_target` is the split: the rasterizer asks for a BGRA buffer, walks
+  its tile across the damaged region and hands each finished tile back, and `gdi_present_target`
+  in [platform_win_software.cpp](../src/platform_win_software.cpp) is the only part of the CPU
+  backend that names a `HWND`, a `HDC` or a DIB section. `create_memory_present_target` presents
+  nothing, which is what a render with no window targets. What remains between here and Stage 2 is
+  a Linux window that owns a BGRA buffer, and text: `ui::draw_context_device` is portable now — its
+  `render()` answers a `ui::present_result` carrying a backend code rather than an `HRESULT` — so
+  the last thing holding `software_draw_context` on Windows is DirectWrite.
 - **Settings already have a portable backend.** `create_ini_file_settings()` exists
   alongside the registry store and is selected at runtime, so Linux persistence is a
   configuration decision, not new code.
@@ -128,53 +136,71 @@ caused rather than removing the assumption, so each is still owed. All are `Inte
 under the [pre-flight gate](../AGENTS.md#mandatory-pre-flight-validation): no observable behavior
 changes, and `.\dd.ps1 test` proves it on Windows.
 
-**Path semantics are Windows semantics, in portable code.**
+**Path identity follows the filesystem. Done.**
 [util_path.h](../src/util_path.h) is not a platform file, but it encodes path spelling and path
-identity for both platforms. Spelling is already conditional: `windows_path_semantics` selects
-the separator, and `is_path` and `is_root` branch on it so a drive letter means nothing off
-Windows. `is_illegal_name` still applies the Windows character set unconditionally, and identity
-is still case-insensitive everywhere.
+identity for both platforms. Spelling was already conditional: `windows_path_semantics` selects the
+separator, and `is_path` and `is_root` branch on it so a drive letter means nothing off Windows.
+`case_insensitive_path_identity` now joins it, and `is_illegal_name` applies the Win32 reserved
+character set only where it is reserved — off Windows every byte but the separator is a legal name,
+and refusing one would decline to name files that already exist beside it.
 
-Case-insensitivity is load-bearing, and it is deeper than `folder_path::compare` and
-`file_path::icmp` suggest, because it is baked into the **hash** rather than only the comparison.
+Case-insensitivity was load-bearing, and deeper than `folder_path::compare` and `file_path::icmp`
+suggested, because it was baked into the **hash** rather than only the comparison.
 [util_strings.h](../src/util_strings.h) stores a case-folded `ihash` inside each interned string
-record, computed once at intern time; [df::ihash](../src/util_map.h) reads that value and
-`df::ieq` compares with `icmp`. Every index structure is keyed on that pair — `items_by_folder_t`,
+record, computed once at intern time; [df::ihash](../src/util_map.h) read that value and `df::ieq`
+compared with `icmp`. Every index structure is keyed on that pair — `items_by_folder_t`,
 `index_item_info_map` and `index_folder_info_map` in [model_items.h](../src/model_items.h), the
 term map in [model_postings.h](../src/model_postings.h), the collision and dedup sets in
 [app_util.cpp](../src/app_util.cpp), and the crash database in
 [util_crash_files_db.h](../src/util_crash_files_db.h).
 
-That rules out a per-mount rule, which is otherwise the theoretically correct answer. A hash
+That ruled out a per-mount rule, which is otherwise the theoretically correct answer. A hash
 functor receives only the key, so making the rule depend on the path's location would mean
 consulting the filesystem inside every hash probe — on paths that run on the UI thread and under
-the index lock. Pre-computing both hashes does not help, because the functor still has to choose
-between them.
+the index lock.
 
-**The answer is a compile-time property, joining `windows_path_semantics`:** case-sensitive
-comparison and hashing on Linux, unchanged on Windows. The decisive argument is that no existing
-data is at risk in either direction — Linux has no index yet, and Windows keeps its current rule,
-so unlike a runtime rule this one never has to be right about a database that already exists. It
-is also what a Linux user expects, since every other tool on the system reports `Photo.JPG` and
-`photo.jpg` as two files, and an index that merges them targets the wrong file on a rename or a
-delete.
+**The answer taken is a compile-time property:** case-sensitive comparison and hashing on Linux,
+unchanged on Windows. The decisive argument was that no existing data is at risk in either
+direction — Linux has no index yet, and Windows keeps its current rule — so unlike a runtime rule
+this one never has to be right about a database that already exists. It is also what a Linux user
+expects, since every other tool on the system reports `Photo.JPG` and `photo.jpg` as two files, and
+an index that merges them targets the wrong file on a rename or a delete.
 
-Two things make the residual risk much smaller than it looks:
+The stored hash did not have to change, and no second hash had to be stored beside it. Interning is
+exact, so one id is one spelling: where identity is case-sensitive it *is* id equality, which makes
+the id its own perfect hash and makes the comparison free. `path_text_hash` and `compare_path_text`
+are that pair, and `df::ihash` and `df::ieq` reach them for their `file_path` and `folder_path`
+overloads only — their text overloads still fold case, because they answer questions about type and
+vocabulary rather than about which file this is. Ordering still folds case on both platforms; the
+exact comparison only breaks a tie between two spellings of one name, so a case-sensitive listing
+stays in the order a reader expects rather than putting every capital ahead of every lower-case
+name.
+
+Two things made the residual risk much smaller than it looked:
 
 - **Identity and type are different questions, and only identity follows the filesystem.**
   "Is this the same file?" must match the filesystem; "is this a JPEG?" must stay
   case-insensitive on both platforms. `file_type_by_extension` in
   [av_format.h](../src/av_format.h) and `file_group_by_name` in [files.h](../src/files.h) are
-  correct as they stand and must not be swept along with the change. The codebase conflates the
-  two today only because both reach for `df::ihash` and `df::ieq`.
+  keyed on `std::string_view` rather than on a path, so they were correct as they stood and were
+  deliberately not swept along. Sidecar matching is the same question and stays folded too.
 - **A case-sensitive index over a case-insensitive mount can only disagree where a path is
   constructed rather than enumerated**, because both spellings of one entry can never be
-  enumerated. That bounds the exposure to sidecar and extension lookups (case-insensitive by the
-  rule above), user-typed paths, and paths persisted in collections and saved searches.
+  enumerated. That bounds the exposure to sidecar and extension lookups, user-typed paths, and
+  paths persisted in collections and saved searches.
 
-The one place a mount's own rule is authoritative is a write, and collision checks should ask the
+The one place a mount's own rule is authoritative is a write, and collision checks ask the
 filesystem directly rather than the index — which is correct on both platforms anyway, since the
 answer has to hold at the moment of the write.
+
+A path spelled as a string rather than parsed needed the same rule, and this is where it was
+easiest to miss: the rename planner's `vacated`, `wanted` and duplicate-destination maps, the
+parked-path map the run uses to free a destination, sync's relative-folder maps, and
+`check_overwrite`'s enumeration of the destination folder were all `df::iless`, which folds
+unconditionally. They are `df::path_key_less` now. Two behaviors follow from it directly: a
+case-only rename vacates the name it renames away from on Linux and does not on Windows, and the
+temporary-file dance `move_rename_path` performs for a case-only rename is Windows-only, because
+elsewhere the two names are two paths and a plain move is correct.
 
 **`wchar_t` is assumed to be UTF-16.** It is 16-bit on Windows and 32-bit on Linux, so this
 miscompiles or silently mis-decodes rather than failing to build. The sweep is done. Icon code
@@ -187,14 +213,21 @@ handing them. That last one was not cosmetic: promoting a `char` to `wchar_t` tu
 65475 on Windows and −61 on Linux, and `is_range_separator` was passing that to `iswpunct`, where a
 negative argument collides with `WEOF`.
 
-What the gate finds now is 11 files rather than 28, and most are not defects.
+What the gate finds now is 9 files rather than 28, and none of them is a defect.
 [util_strings.h](../src/util_strings.h), [util_strings.cpp](../src/util_strings.cpp),
 [test.h](../src/test.h) and [test_util.cpp](../src/test_util.cpp) are the UTF-16 boundary itself and
-the tests that pin it. What is still owed is small: `s_app_name_l` in [app.cpp](../src/app.cpp) and
-[pch.h](../src/pch.h) is a Windows-only wide constant; [util_path.h](../src/util_path.h) and
-[util_map.h](../src/util_map.h) carry `wstring_view` convenience overloads used only from Windows;
-and [platform.h](../src/platform.h) still declares the `utf16_to_utf8` pair, which is a genuine
-platform service but reads as a Windows one.
+the tests that pin it; [test_platform_win.cpp](../src/test_platform_win.cpp) is the Windows-only
+test file; [platform.h](../src/platform.h) declares `native_path`, which *is* the native type, and
+the OS's own conversion pair, which nothing in the app calls and which exists so a test can check
+ours against an implementation we did not write; and the last two are a comment and the libarchive
+entry point `native_path` already resolves.
+
+What is gone since: the wide `s_app_name_l`, which had three Win32 call sites and now converts the
+narrow constant at each; and the `wstring_view` conveniences on `folder_path`, `file_path` and
+`df::ieq`. Those last had one live caller between them and a dozen implicit ones, all in
+`platform_win*`, so removing them turned an invisible conversion into `to_file_path` and
+`to_folder_path` in [platform_win.h](../src/platform_win.h) — named once, on the side of the
+boundary with a reason to know about it.
 
 **`std::wstring` is out of the platform interface.** `to_file_system_path` now answers
 `platform::native_path` — UTF-16 with the `\\?\` prefix on Windows, the UTF-8 bytes elsewhere —
@@ -206,9 +239,13 @@ trip in [metadata_xmp.cpp](../src/metadata_xmp.cpp). `to_shell_path` and the dra
 are now declared in [platform_win.h](../src/platform_win.h), where they belong: neither has a
 cross-platform meaning, and neither had a caller outside `platform_win*`.
 
-One caller still needs a per-platform answer rather than a type change:
-[files_core.cpp](../src/files_core.cpp) calls `archive_read_open_filename_w`, which has no Linux
-counterpart under that name.
+One caller needed a per-platform answer rather than a type change, and it is settled:
+[files_core.cpp](../src/files_core.cpp) opens an archive through libarchive, whose two entry points
+differ in more than their character type. The wide one is what carries the `\\?\` prefix a long
+Windows path needs; a POSIX path is bytes all the way down and has no wide form worth converting
+to. Overloading a file-local helper on `platform::native_path` picks the right one with no
+conditional at the call site — which matters because `native_path` had already made the old
+unconditional `archive_read_open_filename_w` fail to compile off Windows.
 
 **D3D11VA no longer leaks into the media layer.** [av_format.cpp](../src/av_format.cpp) asks
 `av_platform_hw_decode_target()` for the device type and pixel format the renderer can present,
@@ -354,6 +391,14 @@ states `SQLITE_WIN32_MALLOC` unconditionally, and off Windows the allocator behi
 nothing, leaving `sqlite3MemSetDefault` undefined; expat had `HAVE_GETRANDOM` defined but not
 `random_getrandom.c` compiled, so the define moved the call site without supplying the callee.
 Both are `.local.cmake` deltas, which a re-import keeps.
+
+The build also stages the runtime layout beside the binary. Fixtures, translation catalogs,
+dictionaries and the gazetteer are all found relative to
+`platform::known_folder::running_app_folder`, which is the install layout and `exe/` in this tree;
+a CMake build puts the binary in its own directory, where none of them are. They are symlinked
+rather than copied, because `exe/test` alone is around 100 MB and a copy would go stale the moment
+a fixture changed. Windows is excluded, because a directory symlink there needs a privilege an
+ordinary build does not have and the MSBuild build already links into `exe/`.
 
 The two forks are the exception to "one module per library". `diffractor/XMP-Toolkit-SDK` builds
 as a module like the rest; `diffractor/FFmpeg` does not, because restating which codecs exist
@@ -597,10 +642,42 @@ collapse two shader sources into one. It has no D3D11 backend, so it does not re
 [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) — adopting it for Linux alone means three
 backends, not two.
 
-Text is the exception: FreeType, HarfBuzz and fontconfig are needed regardless of toolkit,
-and [platform.h](../src/platform.h) already states the contracts the port must satisfy —
-`probe_glyph_fallback` and `probe_font_cache` are executable specifications for glyph
-fallback and face caching.
+Text is the exception, and it is Linux-only for the same reason SDL3 is: FreeType, HarfBuzz and
+fontconfig are needed regardless of toolkit, and Windows keeps DirectWrite. See
+[the text stack](#the-text-stack). [platform.h](../src/platform.h) already states the contracts the
+port must satisfy — `probe_glyph_fallback` and `probe_font_cache` are executable specifications for
+glyph fallback and face caching.
+
+## The text stack
+
+"Replace DirectWrite" sounds like one decision and is three, because a text stack does three
+separable jobs:
+
+| Job | Windows | Linux |
+|---|---|---|
+| Find a face, and a fallback face for a glyph the face lacks | DirectWrite over the system font stack | fontconfig |
+| Shape: Unicode to positioned glyph ids | DirectWrite | HarfBuzz |
+| Rasterise: a glyph id to a coverage bitmap | DirectWrite | FreeType |
+
+**Decided: FreeType, HarfBuzz and fontconfig on Linux only.** The first job is inherently a
+system service and could never have been shared — fontconfig on Windows would not resolve the
+user's chosen UI font and would not do font linking for CJK — so "one text stack everywhere" was
+never on the table. At most the second and third could be shared, and sharing those alone still
+leaves the two platforms selecting different *faces*, which is where most of the visible difference
+lives. Against that, replacing DirectWrite on Windows changes hinting, gamma and subpixel
+antialiasing on a platform that has no problem: a `User-visible behavior` change under the
+[pre-flight gate](../AGENTS.md#mandatory-pre-flight-validation), for no user benefit.
+
+The seam is already in the right place. `software_canvas::blend_glyph` takes an 8-bit coverage
+bitmap, so the rasterizer does not care which of the three produced it, and `ui::text_layout` and
+`measure_context` are the portable interfaces a second implementation fills.
+
+**The cost is not pixels, it is layout.** Two shapers means two sets of advances and two line
+breakers, so the same string can wrap differently: a dialog that fits on Windows may not fit on
+Linux. That is why the cross-machine parity scene in
+[rendering.md](rendering.md#the-software-tile) deliberately contains no text, and why any
+fixed-size text container is a portability risk that only a real Linux session will find. Prefer
+measured layout over fixed extents wherever a string is translated.
 
 ## Controls
 
@@ -735,16 +812,16 @@ Each stage ends in something falsifiable. No stage depends on a later one. Stage
 Stage 0 is partly done, and what remains of it is listed under
 [Windows assumptions still in portable code](#windows-assumptions-still-in-portable-code).
 
-**Stage 0 — Make the boundary provable (Windows only). Mostly done.**
-Done: the `char16_t` and `char32_t` conversions, the `char` predicates behind `str::split`, the
+**Stage 0 — Make the boundary provable (Windows only). Done.**
+The `char16_t` and `char32_t` conversions, the `char` predicates behind `str::split`, the
 hardware-decode descriptor that replaced the D3D11VA selection, `native_path` and the move of
-`to_shell_path` and the drag probe into `platform_win.h`, and the icon font. Still owed:
-case-sensitive path identity built as a compile-time property with file-type matching separated
-from it; splitting the CPU rasterizer from its GDI present path; the cross-machine scene capture
-the Stage 2 gate needs; and the small residue listed under
-[Windows assumptions](#windows-assumptions-still-in-portable-code). *Gate:* `.\dd.ps1 test` green
-on Windows, and a search of `src/` for `wchar_t`, `std::wstring` and Win32 types finds hits only
-under `platform_win*` — today that search finds 11 files, down from 28.
+`to_shell_path` and the drag probe into `platform_win.h`, the icon font, path identity as a
+compile-time property with file-type matching kept separate from it, the present-target seam that
+takes GDI out of the CPU rasterizer, the backend interface losing its `HRESULT`, and the
+cross-machine scene comparison the Stage 2 gate needs.
+*Gate:* `.\dd.ps1 test` green on Windows, and a search of `src/` for `wchar_t`, `std::wstring` and
+Win32 types finds hits only under `platform_win*` — that search now finds 9 files, down from 28,
+and every one of them is the UTF-16 boundary, its tests, or a native type named where it belongs.
 
 **Stage 0b — Retire the native controls (Windows only). Not started.**
 [Controls](#controls), in the order given there, each step shipped on Windows. Runs in
@@ -754,21 +831,28 @@ converted control judged against [design.md](design.md); on completion,
 
 **Stage 1 — Headless core on Linux. Done, and past its gate.**
 The gate asked only for the suites that do not require a window. What passes is the *entire*
-suite — 735 of 735, in Debug and Release — so indexing, search, metadata and the decode ladder
+suite — 736 of 736, in Debug and Release — so indexing, search, metadata and the decode ladder
 are proven portable, and the third-party build exists for all 26 libraries. The platform layer
 written to get there is the five files listed under [current state](#current-state).
 
-**Stage 2 — Pixels. Not started.**
-A Linux window that owns a BGRA buffer, presenting the already-portable CPU rasterizer.
-*Gate:* the same scene rendered on Windows software and Linux software matches, using the
-capture/compare approach [rendering.md](rendering.md) describes for backend parity. That gate is
-not executable yet: `probe_software_tiling` compares two renderings inside one process, and
-nothing produces a comparable artifact across machines. Build that harness on Windows during
-Stage 0, while the reference implementation is the only one, or the gate is an aspiration when
-Stage 2 arrives.
+**Stage 2 — Pixels. Not started, but its gate is already executable and green.**
+A Linux window that owns a BGRA buffer, presenting the already-portable CPU rasterizer. The
+interface it has to satisfy is `ui::software_present_target`, and `create_memory_present_target`
+is a working implementation that presents nothing, so what is left is the window rather than the
+renderer.
+*Gate:* the same scene rendered on Windows software and Linux software matches.
+`Should rasterise one scene to one answer on every platform` is that gate: it drives the
+rasterizer with no window and no font, and compares an even spread of the resulting pixels
+against a recorded set. It passes today under MSVC Debug, MSVC Release and GCC 13, which is the
+first time anything has compared the two platforms' rendering rather than asserting they agree.
+The comparison carries a tolerance deliberately — see [rendering.md](rendering.md), where the
+reason an exact hash cannot be the artifact is recorded.
 
-**Stage 3 — Text.**
-FreeType/HarfBuzz/fontconfig behind `measure_context` and `text_layout`.
+**Stage 3 — Text (Linux only).**
+FreeType, HarfBuzz and fontconfig behind `measure_context` and `text_layout`. Windows keeps
+DirectWrite; see [the text stack](#the-text-stack) for why this is the one layer with no shared
+implementation. This is the last thing holding `software_draw_context` on Windows, so it is what
+Stage 2 waits on.
 *Gate:* `probe_glyph_fallback` and `probe_font_cache` pass on Linux with the same contract
 they assert on Windows.
 
@@ -790,16 +874,20 @@ single piece of the port and software decode is a working fallback until it land
 
 ## Risks
 
-- **Path case sensitivity** is the one that can corrupt data rather than merely fail. It
-  reaches the index, dedup, and collision handling, and it is baked into the interned string
-  hash rather than only into a comparison function. The rule is decided; the risk is now in the
-  execution, so do it in Stage 0 on Windows where the existing tests can judge the answer, and
-  keep identity separate from file-type matching.
+- **Path case sensitivity** was the one that could corrupt data rather than merely fail, and it is
+  now landed rather than pending. It reaches the index, dedup and collision handling, and it was
+  baked into the interned string hash rather than only into a comparison function. What is left of
+  the risk is regression: `df::iless` and `str::icmp` still exist and still fold unconditionally,
+  so a new path-keyed container reaching for either re-creates the defect silently. Path keys take
+  `df::path_key_less`, `df::ihash`/`df::ieq` or the `folder_path` and `file_path` comparisons.
 - **Nothing guarded Stage 1 until recently.** CI was Windows and MSBuild only, so no commit built
-  CMake or Linux and the 735 could rot silently between one deliberate check and the next.
+  CMake or Linux and the suite could rot silently between one deliberate check and the next.
   [linux.yml](../.github/workflows/linux.yml) now builds Debug and Release on Ubuntu LTS, runs the
-  suite, and runs the configuration comparison below. The remaining hole is CMake on Windows,
-  which is still only built by hand.
+  suite, and runs the configuration comparison below. That gate was itself partly vacuous until the
+  build learned to stage `exe/` beside the binary: fixtures, catalogs and dictionaries are found
+  relative to the running binary, and a CMake build puts the binary somewhere none of them are, so
+  every fixture test failed on a missing file rather than on its subject. The remaining hole is
+  CMake on Windows, which is still only built by hand.
 - **Backend parity across three renderers** (Windows GPU, portable CPU, Linux GPU) triples
   the surface the parity contract has to hold over. Keeping the CPU rasterizer as the
   shared reference limits this.
@@ -829,13 +917,12 @@ Every question that blocked a stage has an answer. What follows is the record; t
 lives in the section each one links to.
 
 1. ~~Is the Linux build case-sensitive in its path model, or does it preserve the current
-   case-insensitive matching?~~ **Answered: case-sensitive on Linux, unchanged on Windows, as a
-   compile-time property beside `windows_path_semantics`.** Per-mount is the theoretically
-   correct answer and is not affordable, because the case-folded hash is stored in the interned
-   string record and a hash functor cannot consult the filesystem. Identity follows the
-   filesystem; file-type and extension matching stays case-insensitive on both platforms. See
-   [path semantics](#windows-assumptions-still-in-portable-code). Blocks Stage 0, and remains
-   the highest-risk item to execute: `file_path::icmp` is unchanged.
+   case-insensitive matching?~~ **Answered and landed: case-sensitive on Linux, unchanged on
+   Windows, as `case_insensitive_path_identity` beside `windows_path_semantics`.** Per-mount is the
+   theoretically correct answer and is not affordable, because the case-folded hash is stored in the
+   interned string record and a hash functor cannot consult the filesystem. Identity follows the
+   filesystem; file-type, extension and sidecar matching stay case-insensitive on both platforms.
+   See [path identity](#windows-assumptions-still-in-portable-code).
 2. ~~Does deletion on Linux use XDG trash, and does "recoverable" mean the same thing to a
    user as it does on Windows?~~ **Answered: yes, the XDG trash specification, including the
    `.trashinfo` record that makes restore work from the user's own file manager.** Cross-volume
@@ -870,10 +957,16 @@ lives in the section each one links to.
    been accounted for": the platform switches are recorded beside the fork, and any change to that
    set fails until someone looks. See
    [FFmpeg is configured twice](#ffmpeg-is-configured-twice-and-the-two-answers-differ).
+9. ~~Does the FreeType/HarfBuzz/fontconfig text stack replace DirectWrite on Windows too, or is it
+   Linux only?~~ **Answered: Linux only.** Face selection and fallback are a system service that
+   could never have been shared, so the choice was only ever about shaping and rasterisation, and
+   taking those from Windows changes how text looks there for no user benefit. The accepted cost is
+   that text can wrap differently on the two platforms, which is a layout risk rather than a
+   cosmetic one. See [the text stack](#the-text-stack). Blocks Stage 3, and through it Stage 2.
 
-The work these unblock is ordered under the [staged plan](#staged-plan). One item there is owed to
-no decision and is still unowned: the cross-machine scene capture that makes the Stage 2 gate
-executable.
+The work these unblock is ordered under the [staged plan](#staged-plan). The one item there that
+was owed to no decision — the cross-machine scene comparison that makes the Stage 2 gate
+executable — is done, and green.
 
 ## Where this lives
 
@@ -883,6 +976,7 @@ executable.
 | What exists today: entry point, files, settings, desktop, UI | [platform_linux.cpp](../src/platform_linux.cpp), [platform_linux_files.cpp](../src/platform_linux_files.cpp), [platform_linux_settings.cpp](../src/platform_linux_settings.cpp), [platform_linux_desktop.cpp](../src/platform_linux_desktop.cpp), [platform_linux_ui.cpp](../src/platform_linux_ui.cpp) |
 | Stand-ins for absent dependencies | [platform_linux_av_stubs.cpp](../src/platform_linux_av_stubs.cpp), [platform_linux_xmp_stubs.cpp](../src/platform_linux_xmp_stubs.cpp) — alternatives to the real implementation, never built alongside it |
 | Cross-platform compatibility shims | [platform_compat.h](../src/platform_compat.h) |
+| The CPU rasterizer, the seam a platform fills to show it, and the parity gate | [render_software.h](../src/render_software.h), [render_software.cpp](../src/render_software.cpp) |
 | The Windows implementation each of these mirrors | the `platform_win*` files |
 | The build | [CMakeLists.txt](../CMakeLists.txt), `cmake/`, `.github/workflows/linux.yml` |
 

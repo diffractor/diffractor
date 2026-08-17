@@ -1855,7 +1855,8 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 			}
 
 			if (!_scaler) _scaler = std::make_unique<av_scaler>();
-			success = _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation());
+			success = _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation(),
+			                               _video_stream_aspect_ratio);
 		}
 
 		av_frame_unref(&frame);
@@ -1957,7 +1958,8 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 		}
 	}
 
-	return found && _scaler->scale_frame(best.frm, dest_surface, max_dim, best_time, calc_orientation());
+	return found && _scaler->scale_frame(best.frm, dest_surface, max_dim, best_time, calc_orientation(),
+	                                     _video_stream_aspect_ratio);
 }
 
 bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
@@ -2702,7 +2704,7 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 }
 
 bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, const sizei max_dim, const double time,
-                            const ui::orientation orientation)
+                            const ui::orientation orientation, const av_rational container_sar)
 {
 	bool success = false;
 	const auto fmt = static_cast<AVPixelFormat>(frame.format);
@@ -2711,7 +2713,14 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 	// Correct for the pixel (sample) aspect ratio so anamorphic / non-square-pixel
 	// video is scaled to its display shape rather than the stored frame shape (#78).
 	auto disp_dims = src_dims;
-	const auto sar = frame.sample_aspect_ratio;
+	auto sar = frame.sample_aspect_ratio;
+
+	// A pasp box in an MP4 reaches AVStream::sample_aspect_ratio only, so a file whose bitstream
+	// VUI carries no aspect ratio hands the decoder a square-pixel frame the container contradicts.
+	if (sar.num == 0 || sar.den == 0 || sar.num == sar.den)
+	{
+		sar = {container_sar.num, container_sar.den};
+	}
 
 	if (sar.num > 0 && sar.den > 0 && sar.num != sar.den && frame.width > 0 && frame.height > 0)
 	{

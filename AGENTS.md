@@ -56,13 +56,14 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [Linux port](docs/linux.md) | Portability assessment, platform-boundary debt, staging and open decisions for a Linux build |
 | [README](README.md) | Product overview, build prerequisites, command line |
 | [release notes](docs/v-1.27.2.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
+| [next release](docs/v-1.27.3.md) | What the next release intends, and the design answers each subject owes before code |
 | [post-release context](docs/v-next.md) | Deferred work and why, validation not run, open issues, and invariants that must survive a re-sync or refactor |
 
 Move information to its owner; link rather than duplicate volatile detail. `tools/lint_repo.ps1` fails when a document has no owner row, when a link does not resolve, or when a `src/` path a document names no longer exists.
 
 Each document carries a **Where this lives** section naming the source that implements it. Those anchors are routing, not API documentation: they name files and stable symbols, never signatures or enumerations, which remain owned by the source.
 
-The two version documents are not work logs. The release notes state what a user can now do and which reported issues are closed; anything scoped out, unfinished, unvalidated, or merely explanatory belongs in post-release context. Neither records the sequence of attempts that produced a change.
+The three version documents are not work logs. The release notes state what a user can now do and which reported issues are closed. The next-release document holds subjects that are committed to but still owe a design answer, and a subject leaves it for the release notes only once it has shipped. Anything scoped out, unfinished, unvalidated, or attached to no release belongs in post-release context. None of them records the sequence of attempts that produced a change.
 
 ## Source directory map
 

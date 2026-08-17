@@ -1891,7 +1891,7 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_should_search("Created:2010-05-25", 0, 0, 0);
 	register_should_search("2009-11-15", 1, 1, 1);
 
-	register_should_search("@video", 12, 12, 12);
+	register_should_search("@video", 14, 14, 14);
 	register_should_search("@audio", 6, 6, 5);
 	register_should_search("@commodore", 1, 1, 0);
 	register_should_search("@archive", 1, 1, 1);
@@ -1934,7 +1934,7 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_should_search("with:Exposure @photo", 17, 17, 16);
 	register_should_search("with: Exposure @ photo", 17, 17, 16);
 	register_should_search("without:Exposure @photo", 12, 12, 12);
-	register_should_search("without:Exposure", 33, 33, 31);
+	register_should_search("without:Exposure", 35, 35, 33);
 	register_should_search("with:Exposure", 18, 18, 17);
 	register_should_search("with: Exposure", 18, 18, 17);
 	register_should_search("ExposureTime:1/20s", 1, 1, 1);
@@ -1950,14 +1950,14 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_should_search(">= iso:400 @photo", 3, 3, 3);
 
 	register_should_search("1:26", 1, 1, 1);
-	register_should_search("0:10", 5, 5, 5);
+	register_should_search("0:10", 6, 6, 6);
 	register_should_search("7:77", 0, 0, 0);
 	register_should_search("10:00", 0, 0, 0);
 
 	register_should_search("size:0.3mb", 5, 5, 5);
 	register_should_search("size:14kb", 1, 1, 1);
 	register_should_search("size:5.1mb", 1, 1, 1);
-	register_should_search(">size:1mb", 10, 10, 9);
+	register_should_search(">size:1mb", 11, 11, 10);
 
 	register_should_search("dog london", 1, 1, 1);
 	// locations.md 3.6: free text searches the stored field. The GPS-only Prague photo carries no
@@ -1965,7 +1965,7 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_should_search("prague", 4, 4, 4);
 	register_should_search("loc:prague", 5, 5, 5);
 	register_should_search("ipad", 1, 1, 1);
-	register_should_search("48kHz", 4, 4, 3);
+	register_should_search("48kHz", 5, 5, 4);
 	register_should_search("44.1kHz", 5, 5, 5);
 	register_should_search("dog or london", 4, 4, 4);
 	register_should_search("Rock", 3, 3, 3);
@@ -1993,8 +1993,8 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_should_search("d64", 1, 1, 0);
 	register_should_search("ace -retro", 1, 1, 1);
 	register_should_search("jpg", 15, 15, 15);
-	register_should_search("-jpg", 39, 38, 37);
-	register_should_search("-ext:jpg", 39, 38, 37);
+	register_should_search("-jpg", 41, 40, 39);
+	register_should_search("-ext:jpg", 41, 40, 39);
 
 	//
 	// Prediction and completion

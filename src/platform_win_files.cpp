@@ -1164,7 +1164,7 @@ static df::paths dest_file_list(const df::folder_path target, const wchar_t* con
 		{
 			if (*sz++ == 0)
 			{
-				auto src_path = df::file_path(std::wstring_view(sz_start, sz - sz_start - 1));
+				auto src_path = df::file_path(str::utf16_to_utf8(std::wstring_view(sz_start, sz - sz_start - 1)));
 				auto src_id = target.combine_file(src_path.name());
 				const auto found = name_mapping.find(src_id);
 				result.files.emplace_back(found == name_mapping.end() ? src_id : found->second);
@@ -1251,8 +1251,8 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 				for (auto i = 0u; i < s->uNumberOfMappings; i++)
 				{
 					const auto& nm = s->lpSHNameMapping[i];
-					name_mapping[df::file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
-						df::file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
+					name_mapping[to_file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
+						to_file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
 				}
 			}
 
@@ -1333,7 +1333,7 @@ df::file_path data_object_client::first_path() const
 	{
 		if (const locked_drop_files drop(stgMedium.hGlobal); drop.is_valid())
 		{
-			result = drop.is_wide() ? df::file_path(drop.wide_list()) : df::file_path(drop.narrow_list());
+			result = drop.is_wide() ? to_file_path(drop.wide_list()) : df::file_path(drop.narrow_list());
 		}
 
 		ReleaseStgMedium(&stgMedium);
@@ -1375,7 +1375,7 @@ data_object_client::description data_object_client::files_description() const
 			{
 				const auto* sz = drop.wide_list();
 				result.first_name = str::utf16_to_utf8(sz);
-				result.has_readonly |= (file_attributes(df::folder_path(sz)) & FILE_ATTRIBUTE_READONLY) != 0;
+				result.has_readonly |= (file_attributes(to_folder_path(sz)) & FILE_ATTRIBUTE_READONLY) != 0;
 
 				while (sz[0] != 0 || sz[1] != 0)
 				{
@@ -1493,7 +1493,7 @@ df::file_path platform::resolve_link(const df::file_path path)
 			{
 				wchar_t result_path[MAX_PATH];
 				const auto success = SUCCEEDED(psl->GetPath(result_path, MAX_PATH, nullptr, 0));
-				if (success) result = df::file_path(result_path);
+				if (success) result = to_file_path(result_path);
 			}
 		}
 	}
@@ -2243,7 +2243,7 @@ df::folder_path platform::temp_folder()
 		return known_path(known_folder::app_cache_data);
 	}
 
-	return df::folder_path(path);
+	return to_folder_path(path);
 }
 
 static int CALLBACK browse_callback_proc(const HWND hwnd, const uint32_t uMsg, LPARAM, const LPARAM pData)
@@ -2349,7 +2349,7 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	if (str::icmp(extension, L".webp") == 0) ofn.nFilterIndex = 3;
 
 	const auto success = GetSaveFileName(&ofn) != 0;
-	path = df::file_path(w);
+	path = df::file_path(str::utf16_to_utf8(w));
 	return success;
 }
 
@@ -2383,7 +2383,7 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 
 		if (SUCCEEDED(hr) && num_files > 0 && file_paths)
 		{
-			result.saved_file_path = df::file_path(file_paths[0]);
+			result.saved_file_path = to_file_path(file_paths[0]);
 			result.success = true;
 		}
 
@@ -3151,13 +3151,13 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 		{
 			auto mapped = mapped_name(str::utf8_to_utf16(source.pack()));
 			if (mapped.empty()) mapped = mapped_name(str::utf8_to_utf16(requested.pack()));
-			return mapped.empty() ? requested : df::file_path(std::wstring_view(mapped));
+			return mapped.empty() ? requested : df::file_path(str::utf16_to_utf8(mapped));
 		};
 		const auto mapped_folder = [&mapped_name](const df::folder_path source, const df::folder_path requested)
 		{
 			auto mapped = mapped_name(str::utf8_to_utf16(source.text()));
 			if (mapped.empty()) mapped = mapped_name(str::utf8_to_utf16(requested.text()));
-			return mapped.empty() ? requested : df::folder_path(std::wstring_view(mapped));
+			return mapped.empty() ? requested : df::folder_path(str::utf16_to_utf8(mapped));
 		};
 
 		for (const auto& file : files)

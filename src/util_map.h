@@ -46,17 +46,19 @@ namespace df
 
 	struct ihash
 	{
-		// Both parts are interned, so their case-insensitive hashes are already known.
+		// The two path overloads hash under path identity (util_path.h), which folds case only where
+		// the filesystem does. The text overloads below always fold, because they answer questions
+		// about type and vocabulary rather than about which file this is.
 		size_t operator()(const file_path path) const
 		{
-			const auto folder = path.folder().text().ihash();
-			const auto name = path.name().ihash();
+			const auto folder = path_text_hash(path.folder().text());
+			const auto name = path_text_hash(path.name());
 			return folder ^ (name + 0x9e3779b9u + (folder << 6) + (folder >> 2));
 		}
 
 		size_t operator()(const folder_path path) const
 		{
-			return path.text().ihash();
+			return path_text_hash(path.text());
 		}
 
 		size_t operator()(const str::cached s) const
@@ -88,6 +90,16 @@ namespace df
 		}
 	};
 
+	// Ordering for a path held only as a string, under the identity rule in util_path.h. Distinct
+	// from iless, which folds case unconditionally because it orders text rather than paths.
+	struct path_key_less
+	{
+		bool operator()(const std::string_view l, const std::string_view r) const
+		{
+			return compare_path_key(l, r) < 0;
+		}
+	};
+
 	struct ieq
 	{
 		bool operator()(const file_path l, const file_path r) const
@@ -106,11 +118,6 @@ namespace df
 			const auto rl = r.size();
 			if (ll != rl) return false;
 			if (ll == 0) return true;
-			return str::icmp(l, r) == 0;
-		}
-
-		bool operator()(const std::wstring_view l, const std::wstring_view r) const
-		{
 			return str::icmp(l, r) == 0;
 		}
 	};

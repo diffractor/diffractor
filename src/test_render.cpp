@@ -12,6 +12,7 @@
 #include "test.h"
 #include "util_simd.h"
 #include "av_format.h"
+#include "render_software.h"
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "ui_elements.h"
@@ -829,9 +830,75 @@ static void should_desaturate_to_grey()
 	}
 }
 
+static void should_rasterise_tiles_identically_to_the_whole_surface()
+{
+	const auto probe = ui::probe_software_rasterizer();
+
+	assert_equal(true, probe.tiles > 1, "the scene was split across tiles");
+	assert_equal(true, probe.painted_pixels > 1000, "the scene painted something to compare");
+	assert_equal(0, probe.mismatched_pixels, "tiled rasterisation matches the whole surface");
+}
+
+// The backend parity contract says the same scene is the same picture everywhere, and nothing
+// checked that across a machine: probe_software_rasterizer compares two renderings inside one
+// process, which cannot see one platform disagreeing with another. These samples are that artifact.
+//
+// Compared within a tolerance, not hashed. An exact digest of this scene is stable across MSVC and
+// GCC but *not* across MSVC Debug and Release, because the rasterizer is float arithmetic an
+// optimiser may reassociate - so an exact comparison fails for a reason this code does not own. A
+// structural break, which is what the gate is for, moves a sample far further than a rounding step:
+// a transposed, mirrored or channel-swapped blit, or a blend against the wrong background, changes
+// whole channels.
+static void should_rasterise_one_scene_to_one_answer_on_every_platform()
+{
+	// Recorded 2026-08-16 from MSVC x64 Debug, and holding unchanged under MSVC x64 Release and
+	// GCC 13 x86-64 in both configurations. Re-record from a run on both platforms when the scene
+	// or a primitive changes.
+	// The first and last samples are the untouched fill, which is how the scene is pinned to
+	// painting only inside itself.
+	static constexpr std::array<uint32_t, ui::rasterizer_sample_count> recorded{
+		0x40404040, 0xff543e8b, 0xff3366e6, 0xff8344a1, 0xff8344a1, 0xffe6d972,
+		0xff4e4b8e, 0xff2d3d7c, 0xff6ba8a5, 0xff719d69, 0xff6c7561, 0xff869a5a,
+		0xff5e954b, 0xff56a764, 0xff406e73, 0xff26377e, 0xff838387, 0xff5b8773,
+		0xff3bbe71, 0xff84a37b, 0xff9b888c, 0xff40703f, 0xff5c7440, 0x40404040,
+	};
+
+	constexpr int tolerance = 3;
+
+	const auto probe = ui::probe_software_rasterizer();
+
+	const auto format = [](const std::array<uint32_t, ui::rasterizer_sample_count>& s)
+	{
+		std::string result;
+		for (const auto v : s) result += std::format("0x{:08x}, ", v);
+		return result;
+	};
+
+	auto within = true;
+
+	for (auto i = 0; i < ui::rasterizer_sample_count; ++i)
+	{
+		for (auto shift = 0; shift < 32; shift += 8)
+		{
+			const auto expected = static_cast<int>((recorded[i] >> shift) & 0xff);
+			const auto actual = static_cast<int>((probe.samples[i] >> shift) & 0xff);
+			if (std::abs(expected - actual) > tolerance) within = false;
+		}
+	}
+
+	// Compared as text only once a sample is out of tolerance, so the failure carries the whole
+	// vector and can be pasted back as the new record rather than reassembled a channel at a time.
+	assert_equal(format(recorded), within ? format(recorded) : format(probe.samples),
+	             "the reference scene rasterises to the recorded pixels");
+}
+
 void register_render_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
+	tests.add("Should rasterise tiles identically to the whole surface"s,
+	          should_rasterise_tiles_identically_to_the_whole_surface);
+	tests.add("Should rasterise one scene to one answer on every platform"s,
+	          should_rasterise_one_scene_to_one_answer_on_every_platform);
 	tests.add("Should convert YUV surfaces for software rendering"s,
 	          should_convert_yuv_surfaces_for_software_rendering);
 	tests.add("Should area downscale packed surfaces"s, should_area_downscale_packed_surfaces);

@@ -16,7 +16,9 @@ scaling, indexing) off it, and using GPU resources deliberately.
 ## Backends
 
 Diffractor has two interchangeable draw backends behind a common
-`draw_context_device` interface:
+`ui::draw_context_device` interface ([../src/ui.h](../src/ui.h)), which names no graphics API and
+no window type - `render()` answers a `ui::present_result` carrying the backend's own code, and
+only the window layer knows how to read it:
 
 - **Direct3D 11 (GPU)** — the primary backend, in [../src/platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp).
   Used for the main window when a hardware D3D11 device is available.
@@ -218,10 +220,27 @@ because the main window is software rendered (only `view_frame` sets
 Tiling is sound only because **every primitive derives its colour, coverage and source
 mapping from its own bounds and treats the clip purely as a write mask** - so a tiled
 frame is pixel-identical to an untiled one. Any new primitive must keep that property:
-`clamp_to_clip` gives the iteration range, never the geometry. `probe_software_tiling`
-guards it by drawing one representative scene whole and again tile by tile and
-comparing, and it is the only content-independent proof of no seams (a screenshot diff
-of a live window is dominated by loading content).
+`clamp_to_clip` gives the iteration range, never the geometry. `probe_software_rasterizer`
+([../src/render_software.cpp](../src/render_software.cpp)) guards it by drawing one
+representative scene whole and again tile by tile and comparing, and it is the only
+content-independent proof of no seams (a screenshot diff of a live window is dominated by
+loading content).
+
+That probe is also the **cross-machine** parity artifact, because it takes no window and no
+font: it returns an even spread of pixels from the reference rendering, and
+`Should rasterise one scene to one answer on every platform` compares them against a recorded
+set. Two things about how that comparison is made are load-bearing:
+
+- **Within a tolerance, not hashed.** A hash of this scene is identical between MSVC and GCC
+  but *not* between MSVC Debug and Release: the rasterizer is float arithmetic an optimiser
+  may reassociate. An exact artifact therefore fails for a reason this code does not own. A
+  structural break - a transposed, mirrored or channel-swapped blit, a blend against the wrong
+  background - moves a sample much further than a rounding step, which is what the tolerance is
+  sized against and what mirroring one blit was used to confirm. The recorded samples hold
+  unchanged across all four builds: MSVC and GCC, Debug and Release.
+- **The scene contains no transcendental.** The rotated blit is a parallelogram written out
+  rather than produced by `quadd::rotate`, because `sin` and `cos` are the C library's answer
+  and would put its rounding inside a check about this rasterizer.
 
 Two consequences are easy to trip over:
 
@@ -238,6 +257,21 @@ Two consequences are easy to trip over:
 
 Layered windows cannot be tiled - `UpdateLayeredWindow` presents the whole surface -
 so they keep a full-client buffer and run as a single tile.
+
+**Where the buffer comes from and where a tile goes is not the rasterizer's business.**
+Those two answers sit behind `ui::software_present_target`
+([../src/render_software.h](../src/render_software.h)): acquire a BGRA buffer, begin a
+present, present each tile, end it. `gdi_present_target` is the Windows answer and is the
+only part of the CPU backend that names a `HWND`, a `HDC` or a DIB section - a DIB being
+simply a BGRA buffer GDI will also blit from, which is why presenting costs no copy. The
+seam exists because the rasterizer is the half worth carrying to another platform and the
+present is the half that is never portable; `create_memory_present_target` presents
+nothing at all, which is what a render with no window targets.
+
+`software_canvas` itself lives in that same portable header and names nothing of any
+platform, including of a font: `blend_glyph` takes an 8-bit coverage bitmap, because what
+produced the coverage belongs to the text layer, which is still per-platform. What remains
+Windows-shaped in the CPU backend is the present target and the DirectWrite text renderer.
 
 ### Native controls during resize
 
@@ -732,6 +766,7 @@ bridge.
 | The portable drawing abstraction: colours, surfaces, textures, contexts | [ui.h](../src/ui.h), [ui.cpp](../src/ui.cpp) |
 | The hardware backend, shaders, shared-texture handoff, device loss | [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) |
 | The CPU backend and its fixed 512-square tile walk | [platform_win_software.cpp](../src/platform_win_software.cpp) |
+| The rasterizer itself, the present seam, and the parity probe | [render_software.h](../src/render_software.h), [render_software.cpp](../src/render_software.cpp) |
 | Text layout, glyph rasterisation, measurement | [platform_win_font.cpp](../src/platform_win_font.cpp) |
 | Surface allocation, scaling, cropping, format conversion, the mark | [render_surface.cpp](../src/render_surface.cpp) |
 | Tone curves, saturation, vibrance, contrast, brightness | [render_color.cpp](../src/render_color.cpp) |
