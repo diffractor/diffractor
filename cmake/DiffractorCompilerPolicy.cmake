@@ -4,10 +4,10 @@
 # Purpose: The compiler and linker policy for every target, application and vendored alike. It is
 # stated once here rather than per target so that "are the flags right" is one file to review.
 #
-# The MSVC half is a transcription of src/app.vcxproj, annotated with the project setting each flag
-# comes from so the two can be compared line by line for as long as both exist. Once the vcxproj
-# files are deleted this file is the only record of them, so nothing here is guesswork: anything
-# that could not be traced to a setting was left out rather than invented.
+# The MSVC half began as a transcription of src/app.vcxproj, annotated with the project setting
+# each flag came from. That project is deleted, so this file is now the only record of it: nothing
+# here is guesswork, anything that could not be traced to a setting was left out rather than
+# invented, and what was traced and deliberately dropped is in tools/build-divergence.txt.
 
 include_guard(GLOBAL)
 
@@ -45,8 +45,14 @@ if (MSVC)
 
     # EnableEnhancedInstructionSet StreamingSIMDExtensions2. SSE2 is unconditional on x64, where
     # the switch is rejected rather than ignored, so it is only meaningful for the 32-bit build.
-    if (CMAKE_SIZEOF_VOID_P EQUAL 4)
-        add_compile_options(/arch:SSE2)
+    # Language-guarded like the switches above: nasm reads /arch:SSE2 as a second input file and
+    # fails with "more than one input file specified".
+    #
+    # This is the whole reason platform::has_avx2 exists: the baseline is SSE2 and anything above it
+    # is dispatched at run time. Raising it here would pass every test on every machine that runs
+    # tests and fault on the machines least able to say why.
+    if (DIFFRACTOR_TARGET_ARCH STREQUAL "x86")
+        add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/arch:SSE2>)
     endif ()
 
     # Optimization, InlineFunctionExpansion, BasicRuntimeChecks, ControlFlowGuard. Guard is on in
@@ -66,9 +72,10 @@ if (MSVC)
 
     # OptimizeReferences, EnableCOMDATFolding, LinkTimeCodeGeneration
     # UseFastLinkTimeCodeGeneration. Spelled out rather than using CMake's interprocedural
-    # optimisation property, which emits plain /LTCG and would not be the same build.
+    # optimisation property, which emits plain /LTCG and would not be the same build. SetChecksum
+    # is the /RELEASE flag, and it writes the PE checksum an installer can verify.
     foreach (kind EXE SHARED MODULE)
-        set(CMAKE_${kind}_LINKER_FLAGS_RELEASE "/OPT:REF /OPT:ICF /LTCG:incremental")
+        set(CMAKE_${kind}_LINKER_FLAGS_RELEASE "/OPT:REF /OPT:ICF /LTCG:incremental /RELEASE")
     endforeach ()
 else ()
     add_compile_options(
@@ -93,7 +100,19 @@ function(diffractor_apply_app_policy target)
 
         # CharacterSet Unicode. This is what makes RegCreateKeyEx and its like resolve to the wide
         # entry points the code passes wchar_t strings to.
+        #
+        # Two defines in the project are deliberately not carried: STRICT and
+        # _WINSOCK_DEPRECATED_NO_WARNINGS appear only in the Win32 configurations, and WIN32 itself
+        # appears everywhere except Win32 Release. That is drift between configurations of one
+        # product, not a 32-bit requirement. What is stated here is what the shipped x64 binary is
+        # built with, uniformly, which is the point of having one description.
         target_compile_definitions(${target} PRIVATE UNICODE _UNICODE)
+
+        # The Store configuration was Release plus this one define, and it disables the
+        # application-owned update path because the Store performs updates itself.
+        if (DIFFRACTOR_WINSTORE)
+            target_compile_definitions(${target} PRIVATE WINSTORE)
+        endif ()
 
         # PrecompiledHeader Use, pch.h. Not applied elsewhere: CMake's forced include reaches the
         # same header by a different path, which defeats #pragma once on a case-preserving

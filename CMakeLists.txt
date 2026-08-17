@@ -1,9 +1,9 @@
 # This file is part of the Diffractor photo and video organizer
 # Copyright 2026  Zac Walker
 #
-# Purpose: The build of Diffractor, for every platform. This is becoming the single source of
-# truth: df.sln and the .vcxproj files are being replaced by it, and the Visual Studio projects
-# that remain useful for debugging and profiling are generated from here on demand.
+# Purpose: The build of Diffractor, for every platform, and the only description of it. df.sln and
+# the .vcxproj files it named are deleted; the Visual Studio projects that remain useful for
+# debugging and profiling are generated from here on demand.
 #
 # The source list is deliberately explicit rather than a glob, so that what is built is reviewable
 # and a file cannot join the build by being dropped in a folder.
@@ -23,6 +23,35 @@ project(diffractor CXX C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# The architecture being built FOR. CMAKE_SYSTEM_PROCESSOR answers for the host on Windows, so it
+# cannot decide whether nasm applies or whether the 32-bit SSE2 switch is meaningful: a Win32 build
+# on an x64 machine and an ARM64 build both read as AMD64. The generator platform is the answer for
+# a Visual Studio generator; MSVC sets the compiler architecture id for Ninja.
+if (MSVC AND CMAKE_VS_PLATFORM_NAME)
+    set(_diffractor_arch "${CMAKE_VS_PLATFORM_NAME}")
+elseif (MSVC AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+    set(_diffractor_arch "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}")
+else ()
+    set(_diffractor_arch "${CMAKE_SYSTEM_PROCESSOR}")
+endif ()
+
+string(TOLOWER "${_diffractor_arch}" _diffractor_arch)
+
+if (_diffractor_arch MATCHES "^(x64|amd64|x86_64)$")
+    set(DIFFRACTOR_TARGET_ARCH x64)
+elseif (_diffractor_arch MATCHES "^(win32|x86|i[3-6]86)$")
+    set(DIFFRACTOR_TARGET_ARCH x86)
+elseif (_diffractor_arch MATCHES "^(arm64|aarch64)$")
+    set(DIFFRACTOR_TARGET_ARCH arm64)
+else ()
+    set(DIFFRACTOR_TARGET_ARCH "${_diffractor_arch}")
+endif ()
+
+# The Store configuration. In app.vcxproj it is a third configuration whose every setting matches
+# Release except one define, so it is an option over Release here rather than a configuration type
+# that would have to restate all of them. WINSTORE disables application-owned updates.
+option(DIFFRACTOR_WINSTORE "Build the Microsoft Store variant" OFF)
+
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug)
 endif ()
@@ -39,17 +68,21 @@ find_program(NASM_EXECUTABLE
         HINTS "${CMAKE_SOURCE_DIR}/tools"
         DOC "The nasm assembler")
 
-if (NASM_EXECUTABLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+if (NASM_EXECUTABLE AND DIFFRACTOR_TARGET_ARCH MATCHES "^(x64|x86)$")
     set(CMAKE_ASM_NASM_COMPILER "${NASM_EXECUTABLE}")
     enable_language(ASM_NASM)
 
-    if (WIN32)
+    if (WIN32 AND DIFFRACTOR_TARGET_ARCH STREQUAL "x64")
         set(CMAKE_ASM_NASM_OBJECT_FORMAT win64)
-    else ()
+    elseif (WIN32)
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT win32)
+    elseif (DIFFRACTOR_TARGET_ARCH STREQUAL "x64")
         set(CMAKE_ASM_NASM_OBJECT_FORMAT elf64)
+    else ()
+        set(CMAKE_ASM_NASM_OBJECT_FORMAT elf32)
     endif ()
 else ()
-    message(STATUS "nasm not found: the libraries that assemble their SIMD will not build")
+    message(STATUS "nasm not used for ${DIFFRACTOR_TARGET_ARCH}: the libraries that assemble their SIMD will not build")
 endif ()
 
 find_program(CCACHE_PROGRAM ccache)
@@ -454,13 +487,47 @@ endif ()
 
 # Fixtures, catalogs and dictionaries are read from the folder holding the running binary
 # (platform::known_folder::running_app_folder), which is the install layout on both platforms and
-# exe/ in this tree. The MSBuild build already links into exe/, so only a CMake build needs this,
-# and without it every fixture test fails on a missing file rather than on its subject.
+# exe/ in this tree.
 #
-# Linked rather than copied: exe/test alone is around 100 MB, and a copy would go stale the moment
-# a fixture changed. Windows is left out because a directory symlink there needs a privilege an
-# ordinary build does not have.
-if (NOT WIN32)
+# On Windows the binary goes there, under the name the rest of the toolchain expects: dd.ps1,
+# installer/diff.nsi, the MSIX staging and the symbol store all name diffractor64, diffractor32 or
+# diffractor rather than asking the build what it produced. Elsewhere the binary stays in the build
+# directory and the runtime files are linked beside it, because a directory symlink on Windows
+# needs a privilege an ordinary build does not have.
+if (WIN32)
+    if (DIFFRACTOR_TARGET_ARCH STREQUAL "x64")
+        set(_diffractor_stem diffractor64)
+    elseif (DIFFRACTOR_TARGET_ARCH STREQUAL "x86")
+        set(_diffractor_stem diffractor32)
+    else ()
+        set(_diffractor_stem diffractor-arm64)
+    endif ()
+
+    # The Store package ships one binary called diffractor.exe, whatever it was built from.
+    if (DIFFRACTOR_WINSTORE AND NOT DIFFRACTOR_TARGET_ARCH STREQUAL "arm64")
+        set(_diffractor_stem diffractor)
+    endif ()
+
+    set_target_properties(diffractor PROPERTIES
+            OUTPUT_NAME "${_diffractor_stem}"
+            OUTPUT_NAME_DEBUG "${_diffractor_stem}-d"
+            PDB_NAME "${_diffractor_stem}"
+            PDB_NAME_DEBUG "${_diffractor_stem}-d")
+
+    # Stated per configuration as well as once, or a multi-config generator appends Debug/ or
+    # Release/ to the directory and nothing downstream finds the binary.
+    foreach (_dir_property RUNTIME_OUTPUT_DIRECTORY PDB_OUTPUT_DIRECTORY)
+        set_target_properties(diffractor PROPERTIES
+                ${_dir_property} "${CMAKE_SOURCE_DIR}/exe"
+                ${_dir_property}_DEBUG "${CMAKE_SOURCE_DIR}/exe"
+                ${_dir_property}_RELEASE "${CMAKE_SOURCE_DIR}/exe"
+                ${_dir_property}_RELWITHDEBINFO "${CMAKE_SOURCE_DIR}/exe"
+                ${_dir_property}_MINSIZEREL "${CMAKE_SOURCE_DIR}/exe")
+    endforeach ()
+else ()
+    # Linked rather than copied: exe/test alone is around 100 MB, and a copy would go stale the
+    # moment a fixture changed. Without this every fixture test fails on a missing file rather than
+    # on its subject.
     foreach (_runtime_entry IN ITEMS
             test
             test-formats

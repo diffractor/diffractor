@@ -9,7 +9,7 @@ Diffractor relies on third-party libraries vendor-copied into `third-party/`.
 
 ## Dependencies
 
-No package manager is used. Source code for each library is copied into `third-party/` (or `Include/` for header-only libs) and built via custom `.vcxproj` files maintained in this repo. To update a dependency: download/clone the new source, replace the files in the corresponding folder, adjust the `.vcxproj` if source files were added/removed, and verify the build.
+No package manager is used. Source code for each library is copied into `third-party/` (or `Include/` for header-only libs) and built by an owned CMake module under `cmake/vendored/`. To update a dependency: download/clone the new source, replace the files in the corresponding folder, adjust the module's source list if files were added or removed, and verify the build on both architectures.
 
 | Library | Version | Folder | Type | Update Source |
 |---------|---------|--------|------|---------------|
@@ -53,21 +53,26 @@ When updating or re-vendor copying third-party libraries (e.g. `libjx`, `highway
    - Ensure test files containing static initializers or build system runner dependencies are removed if they are not needed for Diffractor.
    - Example: In `third-party/libjx/lib/jxl/`, `test_utils.cc` and `test_utils.h` instantiate Bazel `Runfiles::Create("")` statically on startup. These test files must be deleted when updating `libjx` to prevent `failed to find bazel workspace` stderr output.
 
-2. **Project File Integration**
-   - Diffractor uses Visual Studio solutions (`df.sln`) and `.vcxproj` project files under `third-party/`.
-   - Ensure newly added or removed source files in `third-party/` are reflected in the corresponding `.vcxproj` project file so MSBuild remains clean.
+2. **Build Description Integration**
+   - Each library is described by `cmake/vendored/<name>.cmake`, with anything that description cannot carry on its own — a generated header, a flag one compiler needs, an architecture-specific source list — in `cmake/vendored/<name>.local.cmake` beside it.
+   - Ensure newly added or removed source files in `third-party/` are reflected in the module's source list. The lists are explicit rather than globbed, so a file cannot join the build by being dropped in a folder.
+   - These modules began as imports from `.vcxproj` files that no longer exist; see [retiring MSBuild](linux.md#retiring-msbuild) and [tools/build-divergence.txt](../tools/build-divergence.txt) before changing anything in them that looks arbitrary. Two libraries build unoptimised in Release on purpose.
 
 3. **Verification**
-   - Always run MSBuild (`df.sln`) and run full test suites (`.\dd.ps1 test`) after vendor library updates.
-   - **Build Win32 as well as x64.** An incremental x64 build can reuse stale `.obj`s and silently
+   - Always run `.\dd.ps1 test` after a vendor library update.
+   - **Build Win32 as well as x64.** An incremental x64 build can reuse stale objects and silently
      skip recompiling replaced third-party sources, so a green x64 build (and passing tests) can hide
-     compile errors and clobbered integration patches. If in doubt, delete the library's
-     `intermediate/<Config>/<Platform>/<lib>` folders to force a fresh compile. Win32 objects rarely
-     exist yet, so a Win32 build is a good full-recompile smoke test of the new sources.
+     compile errors and clobbered integration patches. `.\dd.ps1 clean` or a fresh build directory
+     forces a full compile. A 32-bit build is also the only thing that exercises the i386 assembly
+     paths, which are a separate source list from the x86-64 ones.
+
+     ```powershell
+     python tools/dd.py build --config Release --arch x86
+     ```
 
 ## Library-specific upgrade notes
 
-These libraries are vendored with hand-maintained `.vcxproj` files and small Diffractor-specific
+These libraries are vendored with owned CMake modules and small Diffractor-specific
 shims. Upstream ships CMake/meson/autotools that generate some of these files; because Diffractor
 does not use those generators, a naive "delete folder and unzip" loses the shims. Copy the upstream
 source folders **over** the existing tree (do not delete first) and re-verify the items below.

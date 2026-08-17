@@ -80,7 +80,7 @@ Four recurring workflows are `.github/prompts/` slash commands rather than proce
 
 ## Working rules
 
-- Build with `df.sln`; normal validation is `.\dd.ps1 test`, which runs `tools/lint_repo.ps1`, the unit tests, and the translation checks. App source belongs in `src/`; temporary output belongs in `tmp/`.
+- Build and validate with `.\dd.ps1 test`, which runs `tools/lint_repo.ps1`, the unit tests, and the translation checks. CMake is the only description of the build on both platforms; `tools/dd.py` drives it. App source belongs in `src/`; temporary output belongs in `tmp/`.
 - System, OS, Windows API, and other platform-specific implementation code MUST exist only in `platform*.*` files. Other modules use platform abstractions.
 - Keep `// Purpose:` comments accurate in modified `src/*.h` and `src/*.cpp` files.
 - Preserve [product design](docs/design.md), especially targeting, recovery, navigation restoration, and preview-before-run.

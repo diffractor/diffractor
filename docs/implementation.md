@@ -241,7 +241,7 @@ Its placement is bounded on both sides. Later than `load_settings` and the graph
 
 ## Build and validation
 
-Always build `df.sln`. Normal validation is:
+The build is CMake on both platforms, driven through the `dd` gateway; see [retiring MSBuild](linux.md#retiring-msbuild). Normal validation is:
 
 ```powershell
 .\dd.ps1 test

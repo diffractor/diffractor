@@ -20,7 +20,7 @@ integration — everything from [Stage 2](#staged-plan) onward.
 | | Windows | Linux |
 |---|---|---|
 | Tests | 754 Debug (CMake/Ninja), 760 Release (MSBuild) | **736, Debug and Release** |
-| Build | `df.sln` and CMake | CMake + Ninja, GCC 13 |
+| Build | CMake + Ninja, MSVC | CMake + Ninja, GCC 13 |
 | Vendored libraries | 26 | **26, all building under GCC** |
 | Release binary | 40 MB | 94 MB |
 
@@ -377,34 +377,96 @@ Feature by feature:
 
 ## Build system
 
-CMake now describes the whole tree and generates for both platforms: one target for `src/`, and
-one module per vendored library under `cmake/vendored/`, imported from the `.vcxproj` files by
-`tools/import_vcxproj.py`. Anything the Windows project could not express — a header its build
-generates, a flag a different compiler needs — lives beside it in `<name>.local.cmake`, which
-re-importing does not discard. All 26 vendored libraries build under GCC, and a fully vendored
-build is the default: `DIFFRACTOR_PREFER_SYSTEM` is `OFF`, so a system package is a way to bring
-a new platform up rather than something a release picks up by accident. This supersedes the
-hand-maintained `.vcxproj` assumption in the [third-party policy](third-party.md).
+CMake describes the whole tree and generates for both platforms: one target for `src/`, and one
+module per vendored library under `cmake/vendored/`. Anything a module needs that its origin could
+not express — a header the build generates, a flag a different compiler needs, an architecture the
+import never saw — lives beside it in `<name>.local.cmake`. All 26 vendored libraries build under
+GCC, and a fully vendored build is the default: `DIFFRACTOR_PREFER_SYSTEM` is `OFF`, so a system
+package is a way to bring a new platform up rather than something a release picks up by accident.
+
+This is now the only description of the tree. The modules began as imports from the `.vcxproj`
+files, which [retiring MSBuild](#retiring-msbuild) deleted in 1.27.2; the [third-party
+policy](third-party.md) is written against CMake accordingly.
 
 Two modules had never been built off Windows and only failed once vendoring was forced: sqlite
 states `SQLITE_WIN32_MALLOC` unconditionally, and off Windows the allocator behind it compiles to
 nothing, leaving `sqlite3MemSetDefault` undefined; expat had `HAVE_GETRANDOM` defined but not
 `random_getrandom.c` compiled, so the define moved the call site without supplying the callee.
-Both are `.local.cmake` deltas, which a re-import keeps.
+Both are `.local.cmake` deltas.
 
 The build also stages the runtime layout beside the binary. Fixtures, translation catalogs,
 dictionaries and the gazetteer are all found relative to
-`platform::known_folder::running_app_folder`, which is the install layout and `exe/` in this tree;
-a CMake build puts the binary in its own directory, where none of them are. They are symlinked
-rather than copied, because `exe/test` alone is around 100 MB and a copy would go stale the moment
-a fixture changed. Windows is excluded, because a directory symlink there needs a privilege an
-ordinary build does not have and the MSBuild build already links into `exe/`.
+`platform::known_folder::running_app_folder`, which is the install layout and `exe/` in this tree.
+On Windows the binary is linked into `exe/` directly, under the name the installer and the package
+expect. Elsewhere it stays in the build directory and those entries are symlinked beside it —
+symlinked rather than copied, because `exe/test` alone is around 100 MB and a copy would go stale
+the moment a fixture changed, and not on Windows because a directory symlink there needs a
+privilege an ordinary build does not have.
 
 The two forks are the exception to "one module per library". `diffractor/XMP-Toolkit-SDK` builds
 as a module like the rest; `diffractor/FFmpeg` does not, because restating which codecs exist
-would be a second source of truth for it. On Windows it compiles from `ffmpeg.vcxproj` against a
-`config-x64.h` that is checked in precisely because `configure` needs a shell; on Linux it is an
-`ExternalProject` running the fork's own `configure` and `make`.
+would be a second source of truth for it. On Windows it compiles from a source list imported from
+the fork's own project file, against a `config-x64.h` or `config-x86.h` that is checked in
+precisely because `configure` needs a shell; on Linux it is an `ExternalProject` running the
+fork's own `configure` and `make`.
+
+### Retiring MSBuild
+
+**Done, in 1.27.2.** `df.sln`, `src/app.vcxproj` and the 26 vendored `.vcxproj` files are deleted,
+and `tools/import_vcxproj.py` with them, because its input is gone. CMake is the only description
+of the tree on both platforms. `tools/lint_repo.ps1` fails a tracked `.sln` or `.vcxproj`, so a
+second description cannot come back quietly; the two forks are excepted, since their project files
+belong to their own repositories.
+
+The Linux release is the reason for the timing. A build system carrying a shipped product for the
+first time on the release that also introduces a window would put two new things in one failure
+path; Windows exercises it for a release first.
+
+Four things had to be told to CMake, and each was a real difference rather than a formality:
+
+- **Binary identity.** MSBuild linked into `exe/` as `diffractor64-d`, `diffractor64`,
+  `diffractor32` and, for the Store, `diffractor`. `dd.ps1`, [diff.nsi](../installer/diff.nsi),
+  the MSIX staging and the symbol store all name those files rather than asking the build what it
+  produced, so CMake produces them under exactly those names in exactly that directory.
+- **The Store configuration** is Release plus `WINSTORE`, which disables application-owned
+  updates. It is `-DDIFFRACTOR_WINSTORE=ON` here rather than a third configuration type, because
+  every other setting in it was identical to Release.
+- **The target architecture.** `CMAKE_SYSTEM_PROCESSOR` answers for the *host* on Windows, so a
+  Win32 build on an x64 machine read as AMD64 and an ARM64 one would too. `DIFFRACTOR_TARGET_ARCH`
+  is derived from the generator platform or the MSVC architecture id, and everything
+  architecture-dependent — nasm, the object format, the SSE2 switch, the libjpeg SIMD directory —
+  asks that instead.
+- **Two libraries build unoptimised on purpose.** highway and jxl set `Optimization` to `Disabled`
+  in Release as well as Debug. That is not a formality: with the Release policy applied to them, a
+  JPEG XL file decodes to an empty image, and `Should scan jxl metadata` is what caught it.
+
+What the migration found is recorded in
+[tools/build-divergence.txt](../tools/build-divergence.txt), and it is worth reading before
+"tidying" anything above. It is a record rather than a check — there is no longer a second build to
+compare against — but at the point it was written the two builds compiled the same 88 translation
+units and agreed on every define, with the differences listed there and explained one by one.
+
+Three defects surfaced that were nothing to do with the build system, and would not have been
+found without it:
+
+- **The Linux CI matrix had been building Debug twice.** `tools/dd.py` took its trailing arguments
+  with `argparse.REMAINDER`, which swallows the script's own options, so `dd build --config Release`
+  silently built Debug. Both legs of [linux.yml](../.github/workflows/linux.yml) were therefore the
+  same build, and the Release figures recorded against them were not Release figures.
+- **The Store configuration did not compile at `HEAD`.** A `std::wstring_view` overload of
+  `df::folder_path` was removed during [Stage 0](#staged-plan), and the one call site behind
+  `#ifdef WINSTORE` went with nothing compiling it. Nothing had built that configuration since.
+- **Win32 was only ever described for x64.** The vendored modules were imported from the
+  `Release|x64` configuration, so the 32-bit build assembled the x86-64 libjpeg SIMD with `-f
+  win32`, pre-included FFmpeg's x64 nasm configuration, and omitted the `PREFIX` define that gives
+  every 32-bit symbol the leading underscore MSVC expects. Each was invisible until something
+  built it.
+
+The Visual Studio generator remains supported, because debugging and profiling are why anyone
+opens the IDE; `cmake -G "Visual Studio 18 2026" -A x64` generates projects on demand. The
+developer and CI path is Ninja, which `tools/dd.py` drives after capturing the `vcvarsall`
+environment, so both hosts use one generator and a failure on one is the same kind of failure as a
+failure on the other.
 
 ### FFmpeg is configured twice, and the two answers differ
 
@@ -886,20 +948,22 @@ single piece of the port and software decode is a working fallback until it land
   suite, and runs the configuration comparison below. That gate was itself partly vacuous until the
   build learned to stage `exe/` beside the binary: fixtures, catalogs and dictionaries are found
   relative to the running binary, and a CMake build puts the binary somewhere none of them are, so
-  every fixture test failed on a missing file rather than on its subject. The remaining hole is
-  CMake on Windows, which is still only built by hand.
+  every fixture test failed on a missing file rather than on its subject. The last hole — CMake on
+  Windows, configured by hand and built by no commit — is closed by
+  [windows.yml](../.github/workflows/windows.yml), which builds Debug and Release x64, Release
+  Win32 and the Store variant, and runs the suite on each.
 - **Backend parity across three renderers** (Windows GPU, portable CPU, Linux GPU) triples
   the surface the parity contract has to hold over. Keeping the CPU rasterizer as the
   shared reference limits this.
 - **Feature parity is not achievable** for the shell-integration list, so the port implies
   a Linux build that does less. That is settled policy now rather than an open risk; what
   remains is making sure an unavailable command is hidden rather than shown and failing.
-- **Two build systems in parallel** will drift, and already have. Twice: the FFmpeg
-  configurations diverged on four separate switches, each silently changing which formats
-  decode; and the hand-derived Windows source list was compiling two `#include`-only templates
-  and two `HOSTPROGS` table generators, one of which put a `main()` into a static library.
-  Neither is visible without deliberately comparing the two descriptions. Every third-party
-  upgrade is two pieces of work until the `.vcxproj` files are retired.
+- ~~**Two build systems in parallel**~~ **Closed.** They drifted twice: the FFmpeg configurations
+  diverged on four separate switches, each silently changing which formats decode; and the
+  hand-derived Windows source list was compiling two `#include`-only templates and two `HOSTPROGS`
+  table generators, one of which put a `main()` into a static library. Neither was visible without
+  deliberately comparing the two descriptions. There is now one, and a third-party upgrade is one
+  piece of work; see [retiring MSBuild](#retiring-msbuild).
 - **Losing UI Automation** when the native controls go is the change most likely to be
   noticed by someone who cannot see it happen. This is now an accepted cost rather than an open
   question, and it applies to Windows as much as to Linux.
@@ -929,10 +993,12 @@ lives in the section each one links to.
    deletes offer permanent deletion rather than copying, and `can_recycle` becomes a runtime
    query. See [features with no Linux equivalent](#features-with-no-linux-equivalent). Blocks
    Stage 4; the user-facing half belongs to [design.md](design.md).
-3. ~~Is CMake adopted for the whole tree, or only for the Linux build?~~ **Answered: the whole
-   tree, generating for both platforms.** The `.vcxproj` files remain the source the vendored
-   modules are imported from, so the two descriptions have to be kept in step until they are
-   retired.
+3. ~~Is CMake adopted for the whole tree, or only for the Linux build?~~ **Answered and landed: the
+   whole tree, generating for both platforms, and since 1.27.2 it is the only description.** The
+   `.vcxproj` files the vendored modules were imported from are deleted, and a lint rule keeps them
+   from returning. Windows moved onto CMake a release before Linux needs it, so that the build is
+   not a new variable on the release that also introduces a window. See
+   [retiring MSBuild](#retiring-msbuild).
 4. ~~Which of the shell-integration features are dropped on Linux versus reimplemented?~~
    **Answered: anything without an obvious Linux equivalent is dropped, and waits for a user to
    ask.** Windows is unchanged. An unavailable command is hidden, not shown and failing. See
@@ -978,7 +1044,8 @@ executable — is done, and green.
 | Cross-platform compatibility shims | [platform_compat.h](../src/platform_compat.h) |
 | The CPU rasterizer, the seam a platform fills to show it, and the parity gate | [render_software.h](../src/render_software.h), [render_software.cpp](../src/render_software.cpp) |
 | The Windows implementation each of these mirrors | the `platform_win*` files |
-| The build | [CMakeLists.txt](../CMakeLists.txt), `cmake/`, `.github/workflows/linux.yml` |
+| The build | [CMakeLists.txt](../CMakeLists.txt), `cmake/`, [dd.ps1](../dd.ps1), [tools/dd.py](../tools/dd.py), `.github/workflows/` |
+| What the MSBuild build did that CMake had to be told | [tools/build-divergence.txt](../tools/build-divergence.txt) |
 
 The debt catalogued above is measurable: `tools/lint_repo.ps1` fails when a system header or Windows
 handle type appears outside `platform*`, which is the boundary the port depends on. It cannot see a

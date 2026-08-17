@@ -1392,7 +1392,7 @@ static df::folder_path app_cache_data()
 							const wchar_t* path_buffer = WindowsGetStringRawBuffer(path_hstring, &path_length);
 							if (path_buffer && path_length > 0)
 							{
-								result = df::folder_path(std::wstring_view(path_buffer, path_length));
+								result = to_folder_path(std::wstring_view(path_buffer, path_length));
 							}
 							WindowsDeleteString(path_hstring);
 						}

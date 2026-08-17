@@ -294,7 +294,7 @@ function Show-Usage {
     Write-Host "  clean        Remove the CMake build directory"
     Write-Host "  info         Report host, build directory and detected tooling"
     Write-Host ""
-    Write-Host "  build / test / run use MSBuild on Windows and CMake/Ninja on Linux."
+    Write-Host "  build / test / run use CMake and Ninja on both hosts."
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\dd.ps1 desktop      Build desktop release (auto-increments build)"
@@ -329,7 +329,7 @@ function Get-VisualStudioPath {
 }
 
 function Test-VisualStudioEnvironment {
-    # MSBuild configures the toolchain from the solution, so locating the install is enough - vcvars is not required.
+    # Only the install location is needed. tools/dd.py runs vcvarsall itself for the compiler.
     $vsPath = Get-VisualStudioPath
 
     if (-not $vsPath) {
@@ -341,33 +341,47 @@ function Test-VisualStudioEnvironment {
     return $vsPath
 }
 
-function Get-MSBuildPath {
-    $vsDir = Test-VisualStudioEnvironment
-    $msbuildPath = Join-Path $vsDir "Msbuild\Current\Bin\msbuild.exe"
-    if (-not (Test-Path $msbuildPath)) {
-        Write-Host "Error: MSBuild not found at $msbuildPath" -ForegroundColor Red
-        exit 1
-    }
-    return $msbuildPath
+# The build. tools/dd.py owns CMake on both hosts, so this states what to build and nothing about
+# how. See docs/linux.md#retiring-msbuild.
+function Invoke-CMakeBuild {
+    param(
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Release",
+        [ValidateSet("x64", "x86", "arm64")]
+        [string]$Arch = "x64",
+        [switch]$WinStore
+    )
+
+    Write-Host ""
+    Write-Host "Building $Configuration | $Arch$(if ($WinStore) { ' | Store' })..." -ForegroundColor Yellow
+
+    $arguments = @("--config", $Configuration, "--arch", $Arch)
+    if ($WinStore) { $arguments += "--winstore" }
+
+    Invoke-DdPython -Action "build" -Arguments $arguments
 }
 
-function Invoke-MSBuild {
+# Where that build puts the binary. Every consumer below names the file rather than asking the
+# build, because the installer, the package and the symbol store all name it too.
+function Get-DiffractorExe {
     param(
-        [string]$Project,
-        [string]$Configuration,
-        [string]$Platform
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Release",
+        [ValidateSet("x64", "x86", "arm64")]
+        [string]$Arch = "x64",
+        [switch]$WinStore
     )
-    
-    $msbuild = Get-MSBuildPath
-    Write-Host ""
-    Write-Host "Building $Configuration | $Platform..." -ForegroundColor Yellow
-    
-    & $msbuild $Project /p:Configuration=$Configuration /p:Platform=$Platform /m | Out-Host
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error: Build failed for $Configuration | $Platform" -ForegroundColor Red
-        exit $LASTEXITCODE
+
+    $stem = switch ($Arch) {
+        "x64" { "diffractor64" }
+        "x86" { "diffractor32" }
+        default { "diffractor-arm64" }
     }
+
+    if ($WinStore -and $Arch -ne "arm64") { $stem = "diffractor" }
+    elseif ($Configuration -eq "Debug") { $stem = "$stem-d" }
+
+    return Join-Path $SourceFilesDir "$stem.exe"
 }
 
 function Invoke-SignTool {
@@ -416,23 +430,14 @@ function Add-ToSymbolStore {
 
 function Clear-IncrementalLink {
     # Release builds must ship a full link, so drop the incremental LTCG state (.iobj/.ipdb)
-    # and the previous binaries that let the linker patch instead of relink.
+    # and the previous binaries that let the linker patch instead of relink. /LTCG:incremental
+    # writes that state beside the output, which is exe/.
     param(
-        [string]$Configuration,
-        [string[]]$Platforms,
         [string[]]$Targets
     )
 
     Write-Host ""
     Write-Host "Removing incremental link artifacts for a full link..." -ForegroundColor Yellow
-
-    foreach ($platform in $Platforms) {
-        $intDir = Join-Path $ScriptDir "intermediate\$Configuration\$platform"
-        if (Test-Path $intDir) {
-            Get-ChildItem $intDir -Recurse -File -Include *.iobj, *.ipdb, *.ilk -ErrorAction SilentlyContinue |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-        }
-    }
 
     foreach ($target in $Targets) {
         # The .pdb is left alone: the compiler and linker share it, so deleting it would
@@ -471,16 +476,16 @@ function Build-Desktop {
         }
     }
 
-    Clear-IncrementalLink -Configuration "Release" -Platforms @("Win32", "x64") -Targets @("diffractor32", "diffractor64")
+    Clear-IncrementalLink -Targets @("diffractor32", "diffractor64")
     
     # Build Win32 and x64
-    Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "Win32"
-    Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "x64"
+    Invoke-CMakeBuild -Configuration "Release" -Arch "x86"
+    Invoke-CMakeBuild -Configuration "Release" -Arch "x64"
     
     # Sign executables
     Write-Host ""
-    $exe32 = Join-Path $SourceFilesDir "diffractor32.exe"
-    $exe64 = Join-Path $SourceFilesDir "diffractor64.exe"
+    $exe32 = Get-DiffractorExe -Configuration "Release" -Arch "x86"
+    $exe64 = Get-DiffractorExe -Configuration "Release" -Arch "x64"
 
     # Gate on the exact binary being shipped, before it is signed and packaged
     Invoke-Tests -Exe $exe64
@@ -591,7 +596,11 @@ function Invoke-DdPython {
 
     $python = Get-PythonExe
     $script = Join-Path $ToolsDir "dd.py"
-    & $python $script $Action @Arguments
+
+    # Out-Host, not the pipeline: a function returns everything it does not consume, so without
+    # this the backend's output becomes part of Build-App's return value and the caller gets an
+    # array of log lines with the path at the end.
+    & $python $script $Action @Arguments | Out-Host
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -650,14 +659,13 @@ function Build-Store {
         Remove-Item $PackageRoot -Recurse -Force
     }
 
-    Clear-IncrementalLink -Configuration "WinStore" -Platforms @("x64") -Targets @("diffractor")
+    Clear-IncrementalLink -Targets @("diffractor")
     
-    # Build WinStore configuration
-    # Invoke-MSBuild -Project "src\app.vcxproj" -Configuration "WinStore" -Platform "x64"
-    Invoke-MSBuild -Project "df.sln" -Configuration "WinStore" -Platform "x64"
+    # Build the Store variant: Release plus the WINSTORE define
+    Invoke-CMakeBuild -Configuration "Release" -Arch "x64" -WinStore
     
     # Gate on the exact binary being shipped, before it is signed and packaged
-    $storeExe = Join-Path $SourceFilesDir "diffractor.exe"
+    $storeExe = Get-DiffractorExe -Arch "x64" -WinStore
     Invoke-Tests -Exe $storeExe
 
     # Sign executable
@@ -851,8 +859,9 @@ function Build-App {
 
     # Build the Release executable if it is missing or out of date relative to the
     # source files. Returns the path to the executable for $Platform.
-    $exeName = if ($Platform -eq "Win32") { "diffractor32.exe" } else { "diffractor64.exe" }
-    $exe = Join-Path $SourceFilesDir $exeName
+    $arch = if ($Platform -eq "Win32") { "x86" } else { "x64" }
+    $exe = Get-DiffractorExe -Configuration "Release" -Arch $arch
+    $exeName = Split-Path $exe -Leaf
 
     $needBuild = $false
     if (-not (Test-Path $exe)) {
@@ -871,7 +880,7 @@ function Build-App {
     }
 
     if ($needBuild) {
-        Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform $Platform
+        Invoke-CMakeBuild -Configuration "Release" -Arch $arch
     }
     else {
         Write-Host "$exeName is up to date." -ForegroundColor Green
@@ -1333,7 +1342,6 @@ switch ($Command) {
     "clean" { Invoke-DdPython -Action "clean" -Arguments $Rest }
     "info" { Invoke-DdPython -Action "info" -Arguments $Rest }
 
-    # Same verb, different build system per host.
     "build" {
         if ($IsLinuxHost) { Invoke-DdPython -Action "build" -Arguments $Rest }
         else { Invoke-BumpBuild; Build-App | Out-Null }

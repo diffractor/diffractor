@@ -17,16 +17,17 @@ if (NOT EXISTS "${_ff_src}/configure")
     return()
 endif ()
 
-# On Windows the fork is not configured at all: config-x64.h and config.asm are checked in for
-# exactly this, because FFmpeg's configure needs a shell. The source list therefore comes from
-# ffmpeg.vcxproj, the same way the other vendored libraries do.
+# On Windows the fork is not configured at all: config-x64.h, config-x86.h and their nasm
+# counterparts are checked in for exactly this, because FFmpeg's configure needs a shell. The
+# source list lives in ffmpeg_msvc.cmake, with what it could not carry beside it in
+# ffmpeg_msvc.local.cmake.
 if (MSVC)
     include(vendored/ffmpeg_msvc OPTIONAL RESULT_VARIABLE _ff_msvc)
 
     if (TARGET diffractor_ffmpeg_msvc)
         add_library(diffractor::ffmpeg ALIAS diffractor_ffmpeg_msvc)
     else ()
-        message(STATUS "ffmpeg: no MSVC module yet; run tools/import_vcxproj.py")
+        message(STATUS "ffmpeg: cmake/vendored/ffmpeg_msvc.cmake is missing; media support will be absent")
     endif ()
 
     return()
