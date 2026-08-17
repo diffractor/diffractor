@@ -152,10 +152,16 @@ diffractor_dependency(minizip VENDORED_MODULE vendored/minizip VENDORED_DIR thir
 diffractor_report_dependencies()
 
 # files_core.cpp includes libarchive by the shape of the vendored tree
-# ("libarchive/libarchive/archive.h"), which the system package does not provide. Forwarding
-# headers cost nothing and avoid changing the source. Not needed where the vendored tree itself is
-# on the include path, which is what Windows does.
-if (TARGET diffractor::archive AND NOT WIN32)
+# ("libarchive/libarchive/archive.h"). Where the vendored copy is what was resolved, putting
+# third-party/ on the include path makes that path resolve directly, which is what Windows does.
+#
+# The system package installs a bare <archive.h> instead and knows nothing of that shape, so it
+# needs forwarding headers. Those must not be used for the vendored build: <archive.h> is then
+# whatever the machine happens to have installed, or nothing at all -- a fully vendored CI image
+# has no libarchive-dev, and the forwarding header fails to resolve rather than falling back.
+if (TARGET diffractor_archive AND NOT WIN32)
+    set(DIFFRACTOR_COMPAT_INCLUDE "${CMAKE_SOURCE_DIR}/third-party")
+elseif (TARGET diffractor::archive AND NOT WIN32)
     set(DIFFRACTOR_COMPAT_INCLUDE "${CMAKE_BINARY_DIR}/compat")
     file(WRITE "${DIFFRACTOR_COMPAT_INCLUDE}/libarchive/libarchive/archive.h" "#include <archive.h>\n")
     file(WRITE "${DIFFRACTOR_COMPAT_INCLUDE}/libarchive/libarchive/archive_entry.h" "#include <archive_entry.h>\n")
