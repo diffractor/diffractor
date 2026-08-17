@@ -132,8 +132,12 @@ diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt VENDORED_DIR thir
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard. Declared before the codecs because dng compiles against the XMP
 # toolkit, and a dependency can only be stated on a target that already exists.
-diffractor_dependency(xmp FORK VENDORED_MODULE vendored/Xmp VENDORED_DIR third-party/xmp OPTIONAL)
-diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg OPTIONAL)
+#
+# Neither is OPTIONAL: metadata and media are not features Diffractor is valid without, so a
+# configuration that cannot build them fails here rather than producing an application that
+# reports every media file and every XMP property as absent.
+diffractor_dependency(xmp FORK VENDORED_MODULE vendored/Xmp VENDORED_DIR third-party/xmp)
+diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR third-party/FFmpeg)
 
 diffractor_dependency(skcms VENDORED_MODULE vendored/skcms VENDORED_DIR third-party/skcms OPTIONAL)
 diffractor_dependency(de265 VENDORED_MODULE vendored/de265 VENDORED_DIR third-party/libde265 OPTIONAL)
@@ -229,20 +233,12 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/view_tags.cpp
 )
 
-# av_format.cpp and platform_linux_av_stubs.cpp define the same symbols and are alternatives: one
-# drives the FFmpeg fork, the other reports every media operation as failed. metadata_xmp.cpp and
-# platform_linux_xmp_stubs.cpp stand in the same relation over the Adobe toolkit fork.
-if (TARGET diffractor::ffmpeg)
-    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/av_format.cpp)
-else ()
-    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/platform_linux_av_stubs.cpp)
-endif ()
-
-if (TARGET diffractor::xmp)
-    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/metadata_xmp.cpp)
-else ()
-    list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/platform_linux_xmp_stubs.cpp)
-endif ()
+# Unconditional: the FFmpeg and XMP forks are required dependencies, so configuration has already
+# failed above if either is absent.
+list(APPEND DIFFRACTOR_PORTABLE_SOURCES
+        src/av_format.cpp
+        src/metadata_xmp.cpp
+)
 
 # Tools rather than tests: neither has a library dependency, so neither is conditional.
 list(APPEND DIFFRACTOR_PORTABLE_SOURCES
@@ -250,9 +246,9 @@ list(APPEND DIFFRACTOR_PORTABLE_SOURCES
         src/app_validate_po.cpp
 )
 
-# Codec and utility translation units, each gated on the library it needs. There is no longer a
-# stand-in file behind these: every vendored library resolves, so a configuration that dropped one
-# would be missing the translation unit and its symbols rather than getting a failing stub.
+# Codec and utility translation units, each gated on the library it needs. There is no stand-in
+# file behind these: a configuration that dropped one is missing the translation unit and its
+# symbols rather than getting a failing stub.
 if (TARGET diffractor::heif)
     list(APPEND DIFFRACTOR_PORTABLE_SOURCES src/files_heif.cpp)
 endif ()

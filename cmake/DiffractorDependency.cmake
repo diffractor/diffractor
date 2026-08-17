@@ -88,6 +88,13 @@ function(diffractor_dependency NAME)
     set(DIFFRACTOR_RESOLVED_MISSING "${DIFFRACTOR_RESOLVED_MISSING};${NAME}" CACHE INTERNAL "")
 
     if (NOT DEP_OPTIONAL)
+        if (DEP_FORK)
+            message(FATAL_ERROR
+                    "Fork '${NAME}' did not resolve, and it has no system or stubbed alternative.\n"
+                    "  vendored: ${DEP_VENDORED_DIR}\n"
+                    "Run 'git submodule update --init --recursive'.")
+        endif ()
+
         message(FATAL_ERROR
                 "Dependency '${NAME}' did not resolve.\n"
                 "  system:   ${DEP_PKG_CONFIG} (pkg-config)\n"
@@ -114,7 +121,7 @@ function(diffractor_report_dependencies)
 
     foreach (d IN LISTS DIFFRACTOR_RESOLVED_MISSING)
         if (d)
-            message(STATUS "  MISSING   ${d}  (stubbed)")
+            message(STATUS "  MISSING   ${d}")
         endif ()
     endforeach ()
 

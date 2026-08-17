@@ -27,7 +27,7 @@ if (MSVC)
     if (TARGET diffractor_ffmpeg_msvc)
         add_library(diffractor::ffmpeg ALIAS diffractor_ffmpeg_msvc)
     else ()
-        message(STATUS "ffmpeg: cmake/vendored/ffmpeg_msvc.cmake is missing; media support will be absent")
+        message(FATAL_ERROR "ffmpeg: cmake/vendored/ffmpeg_msvc.cmake is missing; media support cannot be built")
     endif ()
 
     return()

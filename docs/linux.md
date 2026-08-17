@@ -40,9 +40,10 @@ The Linux platform layer is about 2,400 lines across five files, against `platfo
 | `platform_linux_settings.cpp` | The INI backend, which is the only one here |
 | `platform_linux_ui.cpp` | Style palette, key table, UI-thread identity — no window, no message loop |
 
-`platform_linux_av_stubs.cpp` and `platform_linux_xmp_stubs.cpp` are a further 345 lines and are
-not gaps: they are alternatives to `av_format.cpp` and `metadata_xmp.cpp` for a build configured
-without those forks, and exactly one of each pair is ever compiled.
+The FFmpeg and XMP forks once had stand-in translation units for a build configured without them.
+Both forks build under GCC, and an application that reports every media file and every XMP
+property as absent is not Diffractor, so they are now required dependencies: configuration fails
+when either is missing rather than producing a degraded binary.
 
 **What is done beyond the build:** indexing, search, metadata, the decode ladder, ratings,
 renaming, collections and the location index all pass on Linux; delete, move and copy are real
@@ -1040,7 +1041,6 @@ executable — is done, and green.
 |---|---|
 | The abstraction every port must satisfy | [platform.h](../src/platform.h) |
 | What exists today: entry point, files, settings, desktop, UI | [platform_linux.cpp](../src/platform_linux.cpp), [platform_linux_files.cpp](../src/platform_linux_files.cpp), [platform_linux_settings.cpp](../src/platform_linux_settings.cpp), [platform_linux_desktop.cpp](../src/platform_linux_desktop.cpp), [platform_linux_ui.cpp](../src/platform_linux_ui.cpp) |
-| Stand-ins for absent dependencies | [platform_linux_av_stubs.cpp](../src/platform_linux_av_stubs.cpp), [platform_linux_xmp_stubs.cpp](../src/platform_linux_xmp_stubs.cpp) — alternatives to the real implementation, never built alongside it |
 | Cross-platform compatibility shims | [platform_compat.h](../src/platform_compat.h) |
 | The CPU rasterizer, the seam a platform fills to show it, and the parity gate | [render_software.h](../src/render_software.h), [render_software.cpp](../src/render_software.cpp) |
 | The Windows implementation each of these mirrors | the `platform_win*` files |
