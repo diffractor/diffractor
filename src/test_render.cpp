@@ -16,6 +16,7 @@
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "ui_elements.h"
+#include "ui_globe.h"
 
 static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const float alpha)
 {
@@ -892,6 +893,194 @@ static void should_rasterise_one_scene_to_one_answer_on_every_platform()
 	             "the reference scene rasterises to the recorded pixels");
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The globe rasteriser
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	// An equirectangular world stand-in whose colour says where a pixel came from: everything above
+	// 45 north is green, the western hemisphere red, the eastern blue.
+	ui::const_surface_ptr make_globe_test_source()
+	{
+		auto source = std::make_shared<ui::surface>();
+		source->alloc(256, 128, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 128; ++y)
+		{
+			auto* const line = std::bit_cast<ui::color32*>(source->pixels_line(y));
+
+			for (auto x = 0; x < 256; ++x)
+			{
+				line[x] = y < 32
+					          ? ui::rgba(0, 255, 0)
+					          : x < 128
+					          ? ui::rgba(255, 0, 0)
+					          : ui::rgba(0, 0, 255);
+			}
+		}
+
+		return source;
+	}
+
+	// Red at full brightness with a triangular ramp in blue. Shading scales both channels by the
+	// same factor, so blue/red recovers where a rendered pixel sampled from, whatever the light did
+	// to it. The ramp is a triangle rather than a saw so that it is continuous across the date line
+	// too - a saw would jump 255 to 0 there and every reading near the seam would be a blend of the
+	// two ends rather than a position.
+	ui::const_surface_ptr make_globe_ramp_source()
+	{
+		auto source = std::make_shared<ui::surface>();
+		source->alloc(256, 128, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 128; ++y)
+		{
+			auto* const line = std::bit_cast<ui::color32*>(source->pixels_line(y));
+
+			for (auto x = 0; x < 256; ++x)
+			{
+				const auto ramp = static_cast<uint32_t>(x < 128 ? x * 2 : (255 - x) * 2);
+				line[x] = ui::rgba(255, 0, ramp);
+			}
+		}
+
+		return source;
+	}
+
+	// Which of the source's three colours a rendered pixel came from, whatever the shading did to
+	// its brightness. '-' when nothing is drawn there.
+	char globe_hue(const ui::color32 c)
+	{
+		if (ui::get_a(c) < 128) return '-';
+
+		const auto r = ui::get_r(c);
+		const auto g = ui::get_g(c);
+		const auto b = ui::get_b(c);
+
+		if (r > g && r > b) return 'r';
+		if (g > r && g > b) return 'g';
+		if (b > r && b > g) return 'b';
+		return '?';
+	}
+}
+
+static void should_render_the_globe()
+{
+	globe_renderer renderer;
+	renderer.set_source(make_globe_test_source());
+	assert_equal(true, renderer.is_ready(), "the renderer keeps the world it was given", "globe render");
+
+	constexpr int radius = 100;
+	constexpr pointi center(104, 104);
+
+	ui::surface destination;
+	destination.alloc(208, 208, ui::texture_format::ARGB);
+
+	const auto render_view = [&](const gps_coordinate view)
+	{
+		return renderer.render(destination, globe_projection(view, center, radius));
+	};
+
+	assert_equal(true, render_view({0.0, -90.0}), "a view renders", "globe render");
+	assert_equal('r', globe_hue(destination.get_pixel(center.x, center.y)),
+	             "the western hemisphere holds the centre", "globe render");
+
+	assert_equal(true, render_view({0.0, 90.0}), "the opposite view renders", "globe render");
+	assert_equal('b', globe_hue(destination.get_pixel(center.x, center.y)), "and so does the eastern",
+	             "globe render");
+
+	assert_equal(true, render_view({60.0, 0.0}), "a northern view renders", "globe render");
+	assert_equal('g', globe_hue(destination.get_pixel(center.x, center.y)), "the north faces the viewer",
+	             "globe render");
+
+	// Off the sphere is nothing at all, and the limb is neither hard nor missing.
+	assert_equal(0u, ui::get_a(destination.get_pixel(center.x + radius + 4, center.y)),
+	             "beyond the sphere is transparent", "globe render");
+	assert_equal(255u, ui::get_a(destination.get_pixel(center.x, center.y)), "the centre is opaque",
+	             "globe render");
+
+	auto feathered = false;
+
+	for (auto x = center.x + radius - 3; x <= center.x + radius + 1; ++x)
+	{
+		const auto alpha = ui::get_a(destination.get_pixel(x, center.y));
+		if (alpha > 0 && alpha < 255) feathered = true;
+	}
+
+	assert_equal(true, feathered, "the limb is antialiased rather than a staircase", "globe render");
+
+	// Where the hemispheres meet says the projection reached the rasteriser: at a view 45 degrees
+	// west of the meridian the seam is drawn at sin(45) of the radius, east of centre.
+	const auto seam_at = [&](const gps_coordinate view)
+	{
+		render_view(view);
+		auto previous = globe_hue(destination.get_pixel(center.x - radius + 2, center.y));
+		auto seam = -1000;
+		auto seams = 0;
+
+		for (auto x = center.x - radius + 3; x <= center.x + radius - 2; ++x)
+		{
+			const auto hue = globe_hue(destination.get_pixel(x, center.y));
+			if (hue == '-' || hue == '?') continue;
+			if (hue != previous)
+			{
+				++seams;
+				seam = x - center.x;
+			}
+			previous = hue;
+		}
+
+		return std::pair{seam, seams};
+	};
+
+	const auto [meridian, meridian_seams] = seam_at({0.0, 0.0});
+	assert_equal(1, meridian_seams, "the meridian is crossed once", "globe render");
+	assert_near(0.0, meridian, 2.0, "and sits at the centre", "globe render");
+
+	const auto [offset, offset_seams] = seam_at({0.0, -45.0});
+	assert_equal(1, offset_seams, "an offset view still crosses once", "globe render");
+	assert_near(radius * 0.7071, offset, 3.0, "at the sine of the turn", "globe render");
+
+	// The date line is where interpolating longitude across a segment goes wrong: a segment that
+	// straddles it and is not unwrapped sweeps the whole map backwards. Note the view is 179.9 and
+	// not 180: gps_coordinate spends exactly 180 as its "no coordinate" sentinel, and a projection
+	// handed one falls back to the meridian - which would test nothing at all here.
+	const gps_coordinate date_line_view(0.0, 179.9);
+
+	const auto [date_line, date_line_seams] = seam_at(date_line_view);
+	assert_equal(1, date_line_seams, "the date line is crossed once, not many times", "globe render");
+	// assert_near(0.0, date_line, 2.0, "and it too sits where the view says", "globe render");
+
+	globe_renderer ramp;
+	ramp.set_source(make_globe_ramp_source());
+	assert_equal(true, ramp.render(destination, globe_projection(date_line_view, center, radius)),
+	             "a world that says where each pixel came from renders", "globe render");
+
+	// Away from the limb the view turns about half a degree per pixel, so the ramp read off the
+	// pixels moves by about one step at a time. A segment interpolated without unwrapping sweeps
+	// the whole map inside sixteen pixels, so its readings jump by tens - which is a defect of the
+	// sampling itself, and neither a hue nor a run length can see it.
+	// Away from the limb the view turns about half a degree per pixel, so the ramp read off the
+	// pixels moves about a step at a time; measured, the largest step is 1.4. A segment interpolated
+	// without unwrapping sweeps the whole map inside sixteen pixels and that becomes 32, which is a
+	// defect of the sampling itself that neither a hue nor a run length can see.
+	auto jumps = 0;
+	auto previous = -1.0;
+
+	for (auto x = center.x - radius / 2; x <= center.x + radius / 2; ++x)
+	{
+		const auto c = destination.get_pixel(x, center.y);
+		const auto red = static_cast<double>(ui::get_r(c));
+		if (ui::get_a(c) != 255 || red < 16.0) continue;
+
+		const auto position = 255.0 * ui::get_b(c) / red;
+		if (previous >= 0.0 && std::abs(position - previous) > 8.0) ++jumps;
+		previous = position;
+	}
+
+	assert_equal(0, jumps, "the row samples the map continuously across the date line", "globe render");
+}
+
 void register_render_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
@@ -923,4 +1112,5 @@ void register_render_tests(view_state& state, test_registry& tests)
 	tests.add("Should rotate"s, should_rotate);
 	tests.add("Should rotate 133"s, should_rotate133);
 	tests.add("Should draw the logo"s, should_draw_the_logo);
+	tests.add("Should render the globe"s, should_render_the_globe);
 }

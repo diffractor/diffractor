@@ -593,11 +593,11 @@ msgstr "수정된 날짜를 기준으로 정렬"
 msgid "Sort by Date created"
 msgstr "생성 날짜를 기준으로 정렬"
 
-msgid "Show dates sorted ascending"
-msgstr "날짜를 오름차순으로 정렬하여 표시"
+msgid "Show oldest items first"
+msgstr "오래된 항목을 먼저 표시"
 
-msgid "Show dates sorted descending"
-msgstr "날짜를 내림차순으로 정렬하여 표시"
+msgid "Show newest items first"
+msgstr "최신 항목을 먼저 표시"
 
 msgid "Sort by Group order (Default)"
 msgstr "그룹 순서로 정렬(기본값)"

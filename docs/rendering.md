@@ -502,6 +502,35 @@ decode during `files::load`. The media view checks it up front as well, so it ca
 [`Too large to display`](file-io.md#411-when-an-image-cannot-be-shown) rather than reporting a
 generic failure after the fact.
 
+### The sidebar globe
+
+The [sidebar globe](locations.md#50-the-sidebar-globe) is rasterised entirely in software, into a
+surface the element uploads as a texture. That is what makes it backend-independent for free: the
+pixels are produced before either backend sees them, so there is nothing to keep at parity.
+
+The view has two degrees of freedom, so a per-pixel lookup table is not available — a vertical drag
+would invalidate every entry on every frame. Instead each destination row is walked in segments of
+sixteen pixels, the exact sphere inverse is evaluated only at segment endpoints, and the source
+coordinates are interpolated between them. That is a sixteenth of the transcendentals a per-pixel
+inverse would cost, which is what makes resampling on every frame of a drag affordable. Two
+consequences are load-bearing rather than incidental:
+
+- A segment that straddles the date line has its endpoint longitudes unwrapped before interpolation.
+  Without that the row sweeps the whole map backwards and shreds. `Should render the globe` covers
+  this by reading the sampled position back out of the pixels: a shading-invariant channel ratio
+  encodes where each pixel came from, and the largest step along a row is 1.4 with the unwrap and 32
+  without it.
+- A segment whose endpoints come within ten degrees of a pole is evaluated per pixel instead.
+  Longitude swings arbitrarily fast there and a straight line between two endpoints is simply wrong.
+  **This one has no test**: near a pole the correct rendering is itself heavily compressed, so no
+  cheap assertion separates the two, and it is verified by eye at a polar view.
+
+Reduced copies of the source, halved until they are small, cover the compression toward the limb,
+where one screen pixel can span dozens of source texels; the level is chosen per segment from how far
+the source coordinates moved across it. The source is the map with the heat overlay already composited
+into it, so the reduced copies are rebuilt whenever that is, and the resample runs only when the view
+or the element's size actually changed — a repaint that moved neither redraws the texture it has.
+
 ## Text
 
 Text uses **DirectWrite** (`DWriteCreateFactory`). The D3D backend renders glyphs
@@ -771,6 +800,7 @@ bridge.
 | Surface allocation, scaling, cropping, format conversion, the mark | [render_surface.cpp](../src/render_surface.cpp) |
 | Tone curves, saturation, vibrance, contrast, brightness | [render_color.cpp](../src/render_color.cpp) |
 | Pixel-level transforms and differences | [render_image.cpp](../src/render_image.cpp) |
+| The sidebar globe's software resample | [render_globe.cpp](../src/render_globe.cpp), [ui_globe.h](../src/ui_globe.h) |
 | SSE/AVX/NEON paths behind the above | [util_simd.h](../src/util_simd.h) |
 | Demux, decode, scaling, resampling, hardware acceleration | [av_format.h](../src/av_format.h), [av_format.cpp](../src/av_format.cpp) |
 | Playback session, A/V sync, transport | [av_player.h](../src/av_player.h) |

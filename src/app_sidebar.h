@@ -37,6 +37,7 @@
 
 #pragma once
 #include "ui_controls.h"
+#include "ui_globe.h"
 #include "ui_plasma.h"
 #include "app_util.h"
 
@@ -1408,12 +1409,22 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 
 	ui::const_surface_ptr _surface;
 	ui::const_surface_ptr _surface_original;
+	globe_renderer _renderer;
 	mutable ui::texture_ptr _tex;
+	mutable ui::surface_ptr _globe_surface;
+	mutable ui::texture_ptr _marker_tex;
+	mutable int _marker_size = 0;
+	mutable ui::color32 _marker_color = 0;
 
 	mutable bool _tex_invalid = true;
-	recti _source_bounds;
-	int _hover_source_left = -1;
+	mutable sizei _rendered_extent;
 	df::location_heat_map _summary;
+
+	// The coordinate facing the viewer. It starts on the collection and stays wherever the user
+	// last dragged it; a drag is theirs to keep, so a later publish never yanks it back.
+	gps_coordinate _view;
+	gps_coordinate _drag_start_view;
+	bool _view_is_user_set = false;
 
 	std::vector<map_location_area> _locations;
 	df::hash_map<uint32_t, map_location_area> _resolved_areas;
@@ -1438,83 +1449,77 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 	df::hash_set<uint32_t> _resolving_areas;
 	uint32_t _resolved_generation = 0;
 
-	static constexpr int min_longitude_span = 90;
-	static constexpr int min_latitude_span = 60;
-
-	recti location_to_source(const map_location_area& location) const
+	// The sphere fills the element, which is square and the same size as the pie chart above it.
+	globe_projection projection(const pointi element_offset) const
 	{
-		const auto dims = _surface_original->dimensions();
-		return recti(
-			df::mul_div(location.cell.x, dims.cx, df::location_heat_map::map_width),
-			df::mul_div(location.cell.y, dims.cy, df::location_heat_map::map_height),
-			df::mul_div(location.cell.x + location.cell_span, dims.cx, df::location_heat_map::map_width),
-			df::mul_div(location.cell.y + location.cell_span, dims.cy, df::location_heat_map::map_height));
+		const auto logical_bounds = bounds.offset(element_offset);
+		const auto radius = std::min(logical_bounds.width(), logical_bounds.height()) / 2 - 1;
+		return {_view, logical_bounds.center(), static_cast<double>(std::max(radius, 1))};
 	}
 
-	void update_source_bounds()
+	// Where an area is drawn, or nothing when it is on the far side. The user turns the globe to
+	// reach those; nothing off the near hemisphere is drawn or aimed at.
+	std::optional<pointi> location_to_view(const map_location_area& location, const pointi element_offset) const
 	{
-		const auto dims = _surface_original->dimensions();
-		_source_bounds = recti(0, 0, dims.cx, dims.cy);
-		if (_locations.empty()) return;
+		return projection(element_offset).project(location.position);
+	}
 
-		auto left = dims.cx - 1;
-		auto top = dims.cy - 1;
-		auto right = 0;
-		auto bottom = 0;
+	// How close the pointer has to be to claim a marker. design.md targeting: the pointer has to be
+	// ON one, so the globally nearest area is never picked out of empty ocean.
+	int grab_radius() const
+	{
+		return std::max(bounds.height() / 8, 4);
+	}
 
-		for (const auto& location : _locations)
+	// The hovered area is marked with a translucent disc rather than a filled box: a square drawn
+	// on a sphere reads as a sticker stuck to it, and an opaque one hides the place it names.
+	// Built as a surface so the hardware and software backends draw the same marker.
+	void update_marker(ui::draw_context& dc, const int diameter) const
+	{
+		const auto clr = ui::bgr(ui::style::color::important_background);
+
+		// Keyed on the colour as well as the size: the accent colour is a theme value, and a key
+		// that omits an input serves one theme's marker under another.
+		if (_marker_tex && _marker_size == diameter && _marker_color == clr) return;
+
+		if (!_marker_tex)
 		{
-			const auto source_loc = location_to_source(location);
-			left = std::min(left, source_loc.left);
-			top = std::min(top, source_loc.top);
-			right = std::max(right, source_loc.right);
-			bottom = std::max(bottom, source_loc.bottom);
+			_marker_tex = dc.create_texture();
+			if (!_marker_tex) return;
 		}
 
-		const auto min_width = df::mul_div(dims.cx, min_longitude_span, 360);
-		const auto min_height = df::mul_div(dims.cy, min_latitude_span, 180);
-		auto width = std::max(right - left, min_width);
-		auto height = std::max(bottom - top, min_height);
-		width += std::max(width / 3, 8);
-		height += std::max(height / 3, 8);
-		width = std::min(width, dims.cx);
-		height = std::min(height, dims.cy);
+		const auto surface = std::make_shared<ui::surface>();
+		surface->alloc(diameter, diameter, ui::texture_format::ARGB);
 
-		const auto center_x = (left + right) / 2;
-		const auto center_y = (top + bottom) / 2;
-		left = std::clamp(center_x - width / 2, 0, dims.cx - width);
-		top = std::clamp(center_y - height / 2, 0, dims.cy - height);
-		_source_bounds = recti(left, top, left + width, top + height);
-	}
+		const auto centre = (diameter - 1) / 2.0;
+		const auto radius = diameter / 2.0;
 
-	recti view_source_bounds() const
-	{
-		auto width = _source_bounds.width();
-		if (bounds.height() > 0)
+		for (auto y = 0; y < diameter; ++y)
 		{
-			width = std::max(1, std::min(width,
-			                             df::mul_div(_source_bounds.height(), bounds.width(), bounds.height())));
+			auto* const line = std::bit_cast<ui::color32*>(surface->pixels_line(y));
+
+			for (auto x = 0; x < diameter; ++x)
+			{
+				const auto dx = x - centre;
+				const auto dy = y - centre;
+				const auto distance = std::sqrt(dx * dx + dy * dy);
+				const auto edge = std::clamp(radius - distance + 0.5, 0.0, 1.0);
+
+				// A quiet wash inside and a brighter rim, so the marker rings the place rather
+				// than covering it.
+				const auto ring = (distance / radius - 0.82) / 0.13;
+				const auto alpha = std::clamp((0.20 + 0.68 * std::exp(-0.5 * ring * ring)) * edge, 0.0, 1.0);
+				const auto scale = static_cast<uint32_t>(alpha * 256.0);
+
+				const auto rb = ((clr & 0x00FF00FFu) * scale >> 8) & 0x00FF00FFu;
+				const auto g = ((clr & 0x0000FF00u) * scale >> 8) & 0x0000FF00u;
+				line[x] = (static_cast<uint32_t>(df::round(alpha * 255.0)) << 24) | rb | g;
+			}
 		}
 
-		const auto max_left = _surface_original->dimensions().cx - width;
-		const auto centered_left = std::clamp(_source_bounds.center().x - width / 2, 0, max_left);
-		const auto left = _hover_source_left == -1 ? centered_left : std::clamp(_hover_source_left, 0, max_left);
-		return recti(left, _source_bounds.top, left + width, _source_bounds.bottom);
-	}
-
-	recti location_to_view(const map_location_area& location, const pointi element_offset) const
-	{
-		const auto source_bounds = view_source_bounds();
-		const auto source_loc = location_to_source(location);
-		return recti(
-			bounds.left + element_offset.x +
-			df::mul_div(source_loc.left - source_bounds.left, bounds.width(), source_bounds.width()),
-			bounds.top + element_offset.y +
-			df::mul_div(source_loc.top - source_bounds.top, bounds.height(), source_bounds.height()),
-			bounds.left + element_offset.x +
-			df::mul_div(source_loc.right - source_bounds.left, bounds.width(), source_bounds.width()),
-			bounds.top + element_offset.y +
-			df::mul_div(source_loc.bottom - source_bounds.top, bounds.height(), source_bounds.height()));
+		_marker_tex->update(surface);
+		_marker_size = diameter;
+		_marker_color = clr;
 	}
 
 	static std::string display_name(const map_location_area& location)
@@ -1627,22 +1632,105 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 			});
 	}
 
+	// The map ships as flat-toned land over transparent water, so drawing it as it comes left the
+	// oceans the colour of whatever was behind them - black, which sits badly beside the rest of
+	// the palette. Composite it once over deep water, using the source's alpha as coverage so
+	// coastlines stay smooth.
+	static ui::const_surface_ptr composite_water(const ui::const_surface_ptr& map)
+	{
+		if (!is_valid(map)) return map;
+
+		const auto dims = map->dimensions();
+		const auto result = std::make_shared<ui::surface>();
+		result->alloc(dims, ui::texture_format::ARGB);
+
+		// Land is one flat tone, so its colour is whatever the first opaque pixel carries - and a
+		// fully opaque pixel reads the same whether the decode premultiplied alpha or not.
+		auto land = ui::bgr(ui::rgb(128, 128, 128));
+		auto found_land = false;
+
+		for (auto y = 0; y < dims.cy && !found_land; ++y)
+		{
+			const auto* const line = std::bit_cast<const ui::color32*>(map->pixels_line(y));
+
+			for (auto x = 0; x < dims.cx; ++x)
+			{
+				if (ui::get_a(line[x]) == 255)
+				{
+					land = line[x] & 0x00FFFFFFu;
+					found_land = true;
+					break;
+				}
+			}
+		}
+
+		const auto water = ui::bgr(ui::rgb(19, 38, 64));
+
+		for (auto y = 0; y < dims.cy; ++y)
+		{
+			const auto* const source = std::bit_cast<const ui::color32*>(map->pixels_line(y));
+			auto* const destination = std::bit_cast<ui::color32*>(result->pixels_line(y));
+
+			for (auto x = 0; x < dims.cx; ++x)
+			{
+				destination[x] = (ui::lerp(water, land, static_cast<int>(ui::get_a(source[x]))) & 0x00FFFFFFu) |
+					0xFF000000u;
+			}
+		}
+
+		return result;
+	}
+
 public:
-	sidebar_map_element(view_state& state, ui::const_surface_ptr s) noexcept :
-		view_element(view_element_style::has_tooltip | view_element_style::can_invoke), _state(state),
-		_surface_original(std::move(s))
+	sidebar_map_element(view_state& state, ui::const_surface_ptr s) :
+		view_element(view_element_style::has_tooltip | view_element_style::can_invoke | flex_item::center),
+		_state(state), _surface_original(composite_water(s))
 	{
 		_surface = _surface_original;
-		const auto dims = _surface_original->dimensions();
-		_source_bounds = recti(0, 0, dims.cx, dims.cy);
+		_renderer.set_source(_surface);
 	}
 
 	int cell_span() const
 	{
-		const auto dims = _surface_original->dimensions();
-		const auto visible_cells = df::mul_div(view_source_bounds().width(),
-		                                       df::location_heat_map::map_width, dims.cx);
-		return map_location_cell_span(visible_cells, bounds.width());
+		// Half the world faces the viewer at any moment, whatever the view is, so the areas the
+		// globe folds cells into no longer depend on a crop.
+		return map_location_cell_span(df::location_heat_map::map_width / 2, bounds.width());
+	}
+
+	// Where the collection deserves to be seen from: the count-weighted mean of its places. An
+	// Australian collection opens on Australia and a US one on the US, without either being named.
+	void frame_on_collection()
+	{
+		if (_view_is_user_set) return;
+
+		globe_framer framer;
+		for (const auto& location : _locations) framer.add(location.position, location.count);
+
+		const auto framed = framer.view();
+		if (!framed.is_valid() || framed == _view) return;
+
+		_view = framed;
+		_tex_invalid = true;
+	}
+
+	// The drag owns the view from the moment it turns, so an index publish mid-gesture cannot
+	// reframe the globe under the pointer. A click that never moved is not a drag and leaves the
+	// framing free to follow the collection.
+	void begin_drag()
+	{
+		_drag_start_view = _view;
+	}
+
+	bool drag_to(const pointi drag, const pointi element_offset)
+	{
+		const auto turned = globe_view_from_drag(_drag_start_view, drag, projection(element_offset).radius());
+		if (turned == _view) return false;
+
+		_view = turned;
+		_view_is_user_set = true;
+		_tex_invalid = true;
+		_hover_location = -1;
+		return true;
 	}
 
 	bool populate(const df::location_heat_map& summary, std::vector<map_location_area> locations)
@@ -1682,8 +1770,7 @@ public:
 					}
 				}
 				_hover_location = -1;
-				_hover_source_left = -1;
-				update_source_bounds();
+				frame_on_collection();
 			}
 
 			if (summary_changed)
@@ -1753,6 +1840,7 @@ public:
 					_surface = std::move(surface);
 				}
 
+				_renderer.set_source(_surface);
 				_tex_invalid = true;
 			}
 			return true;
@@ -1763,95 +1851,103 @@ public:
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
-		if (is_valid(_surface))
-		{
-			if (!_tex)
-			{
-				const auto t = dc.create_texture();
+		if (!_renderer.is_ready()) return;
 
-				if (t)
-				{
-					_tex = t;
-					_tex_invalid = true;
-				}
+		const auto logical_bounds = bounds.offset(element_offset);
+		const auto extent = logical_bounds.extent();
+		if (extent.cx < 4 || extent.cy < 4) return;
+
+		if (!_tex)
+		{
+			const auto t = dc.create_texture();
+
+			if (t)
+			{
+				_tex = t;
+				_tex_invalid = true;
+			}
+		}
+
+		if (!_tex) return;
+
+		if (_tex_invalid || _rendered_extent != extent)
+		{
+			// The sphere is resampled only when the view or the size actually moved; a repaint
+			// that changed neither redraws the texture it already has. The buffer is kept because a
+			// drag re-renders on every frame and would otherwise allocate on every one of them.
+			if (!_globe_surface || _globe_surface->dimensions() != extent)
+			{
+				_globe_surface = std::make_shared<ui::surface>();
+				_globe_surface->alloc(extent, ui::texture_format::ARGB);
 			}
 
-			if (_tex_invalid)
+			const globe_projection local(_view, pointi(extent.cx / 2, extent.cy / 2),
+			                             projection(element_offset).radius());
+
+			if (_renderer.render(*_globe_surface, local))
 			{
-				_tex->update(_surface);
+				_tex->update(_globe_surface);
+				_rendered_extent = extent;
 				_tex_invalid = false;
 			}
+		}
 
-			if (_tex)
-			{
-				dc.draw_texture(_tex, bounds.offset(element_offset), view_source_bounds());
-			}
+		dc.draw_texture(_tex, logical_bounds);
 
-			if (_hover_location >= 0 && _hover_location < static_cast<int>(_locations.size()))
+		if (_hover_location >= 0 && _hover_location < static_cast<int>(_locations.size()))
+		{
+			if (const auto at = location_to_view(_locations[_hover_location], element_offset))
 			{
-				const auto hover_bounds = location_to_view(_locations[_hover_location], element_offset);
-				dc.draw_rect(hover_bounds,
-				             ui::color(ui::style::color::important_background, dc.colors.alpha));
+				const auto diameter = grab_radius();
+				update_marker(dc, diameter);
+
+				if (_marker_tex)
+				{
+					dc.draw_texture(_marker_tex, center_rect(sizei(diameter, diameter), at.value()),
+					                dc.colors.alpha);
+				}
 			}
 		}
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		const auto pie_size = std::min(width_limit, df::round(sidebar_visualization_size * mc.scale_factor));
-		return {width_limit, df::mul_div(pie_size, 85, 100)};
+		// Square, and the same size as the pie chart above it, so the two spheres match.
+		const auto size = std::min(width_limit, df::round(sidebar_visualization_size * mc.scale_factor));
+		return {size, size};
 	}
 
-	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
-	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
-	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
-	}
+	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
+	                                             const std::vector<recti>& excluded_bounds) override;
 
 	void hover(interaction_context& ic) override
 	{
-		if (_surface)
+		if (_renderer.is_ready())
 		{
 			const auto logical_bounds = bounds.offset(ic.element_offset);
 			const auto hovering = logical_bounds.contains(ic.loc);
-			const auto previous_hover_source_left = _hover_source_left;
 			int hover_location = -1;
-			int hover_source_left = -1;
 
 			if (hovering)
 			{
-				const auto dims = _surface_original->dimensions();
-				const auto source_bounds = view_source_bounds();
-				const auto source_width = source_bounds.width();
-				const auto max_left = dims.cx - source_width;
-				const auto centered_left = std::clamp(_source_bounds.center().x - source_width / 2, 0, max_left);
-				const auto hover_x = std::clamp(ic.loc.x - logical_bounds.left, 0, logical_bounds.width());
-				const auto half_width = logical_bounds.width() / 2;
-				if (hover_x <= half_width)
-				{
-					hover_source_left = df::mul_div(centered_left, hover_x, std::max(half_width, 1));
-				}
-				else
-				{
-					hover_source_left = centered_left + df::mul_div(
-						max_left - centered_left, hover_x - half_width,
-						std::max(logical_bounds.width() - half_width, 1));
-				}
-				hover_source_left = std::clamp(hover_source_left, 0, max_left);
-				_hover_source_left = hover_source_left;
-
 				auto closest_distance = std::numeric_limits<int64_t>::max();
 
 				// design.md targeting: the pointer has to be ON a marker. Picking the globally
 				// nearest area made empty ocean hover -- and click through to -- whichever
 				// cluster happened to be least far away, which is not a target the user chose.
-				const auto grab = static_cast<int64_t>(std::max(bounds.height() / 8, 4));
+				const auto grab = static_cast<int64_t>(grab_radius());
 				const auto max_distance = grab * grab;
+				const auto sphere = projection(ic.element_offset);
 
 				for (auto i = 0u; i < _locations.size(); i++)
 				{
-					const auto distance = distance_squared(ic.loc, location_to_view(_locations[i], ic.element_offset));
+					const auto at = sphere.project(_locations[i].position);
+					if (!at) continue;
+
+					const auto dx = static_cast<int64_t>(at->x - ic.loc.x);
+					const auto dy = static_cast<int64_t>(at->y - ic.loc.y);
+					const auto distance = dx * dx + dy * dy;
+
 					if (distance <= max_distance && distance < closest_distance)
 					{
 						closest_distance = distance;
@@ -1859,16 +1955,11 @@ public:
 					}
 				}
 			}
-			else
-			{
-				_hover_source_left = -1;
-			}
 
-			if (_hover_location != hover_location || previous_hover_source_left != hover_source_left)
+			if (_hover_location != hover_location)
 			{
 				_hover_location = hover_location;
 				if (_hover_location != -1) resolve_area(_locations[_hover_location]);
-				_hover_source_left = hover_source_left;
 				ic.invalidate_view = true;
 				_state.invalidate_view(view_invalid::tooltip);
 			}
@@ -1944,6 +2035,18 @@ public:
 
 	void dispatch_event(const view_element_event& event) override
 	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			// The globe holds a full-size resample buffer as well as two textures, which is more
+			// than the flat map ever did, so it answers the broadcast the app uses to shed them.
+			_tex.reset();
+			_marker_tex.reset();
+			_globe_surface.reset();
+			_rendered_extent = {};
+			_tex_invalid = true;
+			return;
+		}
+
 		if (event.type == view_element_event_type::invoke && _hover_location != -1)
 		{
 			const auto& loc = _locations[_hover_location];
@@ -1970,6 +2073,109 @@ public:
 		}
 	}
 };
+
+// Drags turn the globe; anything shorter than a few pixels is still a click on whatever marker is
+// under the pointer. The sidebar scrolls by its scrollbar, so no direction has to be handed back.
+class globe_rotate_controller final : public view_controller
+{
+	const std::shared_ptr<sidebar_map_element> _element;
+	const pointi _element_offset;
+	bool _tracking = false;
+	bool _turned = false;
+
+public:
+	globe_rotate_controller(const view_host_ptr& host, std::shared_ptr<sidebar_map_element> e,
+	                        const pointi element_offset, const recti bounds) :
+		view_controller(host, bounds), _element(std::move(e)), _element_offset(element_offset)
+	{
+		_element->set_style_bit(view_element_style::hover, true, _host, _element);
+	}
+
+	~globe_rotate_controller() override
+	{
+		interaction_context ic{{-1, -1}, _element_offset, false};
+		_element->hover(ic);
+		_element->set_style_bit(view_element_style::hover, false, _host, _element);
+		invalidate();
+	}
+
+	ui::style::cursor cursor() const override
+	{
+		return _tracking ? ui::style::cursor::hand_up : ui::style::cursor::hand_down;
+	}
+
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		view_controller::on_mouse_left_button_down(loc, keys);
+		_tracking = true;
+		_turned = false;
+		_element->begin_drag();
+		update_hover(loc);
+	}
+
+	void on_mouse_move(const pointi loc) override
+	{
+		_last_loc = loc;
+
+		if (_tracking)
+		{
+			const auto drag = loc - _start_loc;
+			if (std::abs(drag.x) > 2 || std::abs(drag.y) > 2) _turned = true;
+			if (_element->drag_to(drag, _element_offset)) invalidate();
+			return;
+		}
+
+		update_hover(loc);
+	}
+
+	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
+	{
+		_last_loc = loc;
+		const auto was_turning = _turned;
+		_tracking = false;
+		update_hover(loc);
+
+		// locations.md 5.5: a drag is never read as a click.
+		if (!was_turning && _bounds.contains(loc))
+		{
+			const view_element_event click{view_element_event_type::click, _host};
+			const view_element_event invoke{view_element_event_type::invoke, _host};
+			_element->dispatch_event(click);
+			_element->dispatch_event(invoke);
+		}
+	}
+
+	void popup_from_location(view_hover_element& hover) override
+	{
+		_element->tooltip(hover, _last_loc, _element_offset);
+	}
+
+private:
+	void update_hover(const pointi loc)
+	{
+		interaction_context ic{loc, _element_offset, _tracking};
+		_element->hover(ic);
+		if (ic.invalidate_view) invalidate();
+	}
+
+	void invalidate() const
+	{
+		_host->frame()->invalidate(_element->invalidate_bounds(_element_offset));
+	}
+};
+
+inline view_controller_ptr sidebar_map_element::controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                                        const pointi element_offset,
+                                                                        const std::vector<recti>& excluded_bounds)
+{
+	if (!is_visible() || !bounds.contains(loc - element_offset)) return nullptr;
+
+	auto controller_bounds = bounds;
+	for (const auto& excluded : excluded_bounds) controller_bounds.exclude(loc - element_offset, excluded);
+
+	return std::make_shared<globe_rotate_controller>(host, shared_from_this(), element_offset,
+	                                                 controller_bounds.offset(element_offset));
+}
 
 class app_logo_element final : public std::enable_shared_from_this<app_logo_element>, public view_element
 {

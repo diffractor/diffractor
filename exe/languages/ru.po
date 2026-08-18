@@ -594,11 +594,11 @@ msgstr "Сортировать по дате изменения"
 msgid "Sort by Date created"
 msgstr "Сортировать по дате создания"
 
-msgid "Show dates sorted ascending"
-msgstr "Показывать даты по возрастанию"
+msgid "Show oldest items first"
+msgstr "Показывать сначала старые элементы"
 
-msgid "Show dates sorted descending"
-msgstr "Показывать даты по убыванию"
+msgid "Show newest items first"
+msgstr "Показывать сначала новые элементы"
 
 msgid "Sort by Group order (Default)"
 msgstr "Сортировать по порядку группы (по умолчанию)"

@@ -593,11 +593,11 @@ msgstr "Classificar por data de modificação"
 msgid "Sort by Date created"
 msgstr "Classificar por data de criação"
 
-msgid "Show dates sorted ascending"
-msgstr "Mostrar datas em ordem crescente"
+msgid "Show oldest items first"
+msgstr "Mostrar primeiro os itens mais antigos"
 
-msgid "Show dates sorted descending"
-msgstr "Mostrar datas em ordem decrescente"
+msgid "Show newest items first"
+msgstr "Mostrar primeiro os itens mais recentes"
 
 msgid "Sort by Group order (Default)"
 msgstr "Classificar pela ordem do grupo (padrão)"

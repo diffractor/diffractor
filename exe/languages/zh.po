@@ -593,11 +593,11 @@ msgstr "按修改日期排序"
 msgid "Sort by Date created"
 msgstr "按创建日期排序"
 
-msgid "Show dates sorted ascending"
-msgstr "按升序显示日期"
+msgid "Show oldest items first"
+msgstr "先显示最早的项目"
 
-msgid "Show dates sorted descending"
-msgstr "按降序显示日期"
+msgid "Show newest items first"
+msgstr "先显示最新的项目"
 
 msgid "Sort by Group order (Default)"
 msgstr "按分组顺序排序（默认）"

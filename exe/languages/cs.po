@@ -615,11 +615,11 @@ msgstr "Řadit podle data změny"
 msgid "Sort by Date created"
 msgstr "Řadit podle data vytvoření"
 
-msgid "Show dates sorted ascending"
-msgstr "Zobrazit data seřazená vzestupně"
+msgid "Show oldest items first"
+msgstr "Zobrazit nejstarší položky jako první"
 
-msgid "Show dates sorted descending"
-msgstr "Zobrazit data seřazená sestupně"
+msgid "Show newest items first"
+msgstr "Zobrazit nejnovější položky jako první"
 
 msgid "Sort by Group order (Default)"
 msgstr "Řadit podle pořadí skupiny (výchozí)"
