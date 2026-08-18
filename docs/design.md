@@ -129,7 +129,7 @@ Write the name capitalized and alone; the word "view" may follow it in lowercase
 
 ## Application structure
 
-The search/address box and sidebar navigate folders, dates, locations, media types, ratings, labels, tags, duplicates, drives, and saved searches.
+The search/address box navigates folders, dates, locations, media types, ratings, labels, tags, duplicates, drives, and saved searches. The sidebar carries the same destinations except folders: a collection's folders are how it was declared, not a place worth a standing row apiece, and a folder the user does want to hand is a saved search away.
 
 - **Items** is the windowed browser. It shows grouped thumbnails or details alongside an optional media/metadata preview.
 - **Fullscreen** gives media the whole display for immersive photo, video, audio, comparison, or selection presentation.

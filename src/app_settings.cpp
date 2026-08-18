@@ -123,7 +123,6 @@ static constexpr auto s_sidebar = "sidebar";
 static constexpr auto s_show_total_items = "show_total_items";
 static constexpr auto s_show_history = "show_history";
 static constexpr auto s_show_world_map = "show_world_map";
-static constexpr auto s_show_indexed_folders = "show_indexed_folders";
 static constexpr auto s_show_drives = "show_drives";
 static constexpr auto s_show_favorite_searches = "show_favorite_searches";
 static constexpr auto s_show_tags = "show_tags";
@@ -422,7 +421,6 @@ settings_t::settings_t()
 	sidebar.show_total_items = true;
 	sidebar.show_history = true;
 	sidebar.show_world_map = true;
-	sidebar.show_indexed_folders = true;
 	sidebar.show_drives = true;
 	sidebar.show_favorite_searches = true;
 	sidebar.show_tags = true;
@@ -927,7 +925,6 @@ void settings_t::read()
 	store.read(s_sidebar, s_show_total_items, sidebar.show_total_items);
 	store.read(s_sidebar, s_show_history, sidebar.show_history);
 	store.read(s_sidebar, s_show_world_map, sidebar.show_world_map);
-	store.read(s_sidebar, s_show_indexed_folders, sidebar.show_indexed_folders);
 	store.read(s_sidebar, s_show_drives, sidebar.show_drives);
 	store.read(s_sidebar, s_show_favorite_searches, sidebar.show_favorite_searches);
 	store.read(s_sidebar, s_show_tags, sidebar.show_tags);
@@ -1100,7 +1097,6 @@ void settings_t::write() const
 	store.write(s_sidebar, s_show_total_items, sidebar.show_total_items);
 	store.write(s_sidebar, s_show_history, sidebar.show_history);
 	store.write(s_sidebar, s_show_world_map, sidebar.show_world_map);
-	store.write(s_sidebar, s_show_indexed_folders, sidebar.show_indexed_folders);
 	store.write(s_sidebar, s_show_drives, sidebar.show_drives);
 	store.write(s_sidebar, s_show_favorite_searches, sidebar.show_favorite_searches);
 	store.write(s_sidebar, s_show_tags, sidebar.show_tags);

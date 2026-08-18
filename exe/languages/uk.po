@@ -731,11 +731,11 @@ msgstr "Показати диски"
 msgid "Show history chart"
 msgstr "Показати діаграму історії"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Початковий рік графіка історії. Порожнє — за замовчуванням 10 років."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Показувати папки колекції"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Показати улюблені пошукові запити"
@@ -1019,17 +1019,8 @@ msgstr "Ваша колекція — це папки, які ви обрали,
 msgid "folder"
 msgstr "папка"
 
-msgid "music"
-msgstr "музика"
-
 msgid "folders"
 msgstr "папки"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "зображення"
 
 msgid "Folder"
 msgstr "Папка"

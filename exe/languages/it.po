@@ -731,11 +731,11 @@ msgstr "Mostra unità"
 msgid "Show history chart"
 msgstr "Mostra grafico cronologia"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Anno di inizio del grafico cronologico. Vuoto imposta 10 anni come predefinito."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Mostra le cartelle della collezione"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Mostra ricerche preferite"
@@ -1019,17 +1019,8 @@ msgstr "La tua collezione è l'insieme delle cartelle che scegli, comprese le lo
 msgid "folder"
 msgstr "cartella"
 
-msgid "music"
-msgstr "musica"
-
 msgid "folders"
 msgstr "cartelle"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "immagine"
 
 msgid "Folder"
 msgstr "Cartella"

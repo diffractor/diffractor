@@ -353,10 +353,6 @@ struct app_text_t
 	text_t command_new_version = "New version available";
 	text_t command_check_for_updates = "Check for updates";
 	text_t searching_text = "Searching...";
-	text_t folder_onedrive = "onedrive";
-	text_t folder_picture = "picture";
-	text_t folder_video = "videos";
-	text_t folder_music = "music";
 	text_t disk_label = "Label";
 	text_t disk_capacity = "Capacity";
 	text_t disk_free = "Free//disk";
@@ -907,9 +903,8 @@ struct app_text_t
 	text_t customise_sidebar_desc = "Define what items are shown in the sidebar.";
 	text_t customize_show_total = "Show total items pie chart";
 	text_t customize_show_history = "Show history chart";
-	text_t customize_history_start_year = "History chart start year. Empty defaults to 10 years.";
+	text_t customize_history_start_year = "Earliest year the history navigator offers. Empty works it out from your photos.";
 	text_t customize_show_world_map = "Show world map";
-	text_t customize_show_indexed_folders = "Show collection folders";
 	text_t customize_show_drives = "Show drives";
 	text_t customize_show_searches = "Show favorite searches";
 	text_t customize_show_tags = "Show tags";
@@ -966,6 +961,7 @@ struct app_text_t
 	text_t items_created_fmt = "Items created {} {}";
 	text_t items_modified_fmt = "Items modified {} {}";
 	text_t open_created_modified = "Opens created items.\nCtrl+click opens modified items.";
+	text_t history_navigator_action = "Shows the eight years ending here.";
 	text_t click_items_from_fmt = "{} items close to {} in the collection.";
 	text_t map_items_close_to_fmt = "{} items close to {}";
 	text_t filter = "filter";

@@ -755,11 +755,11 @@ msgstr "Zobrazit disky"
 msgid "Show history chart"
 msgstr "Zobrazit graf historie"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Počáteční rok grafu historie. Prázdné znamená výchozích 10 let."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Zobrazit složky sbírky"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Zobrazit oblíbená vyhledávání"
@@ -1075,17 +1075,8 @@ msgstr "Vaše sbírka jsou složky, které si vyberete, včetně jejich podslož
 msgid "folder"
 msgstr "Složka"
 
-msgid "music"
-msgstr "hudba"
-
 msgid "folders"
 msgstr "Složky"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "obrázky"
 
 msgid "Folder"
 msgstr "Složka"

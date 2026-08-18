@@ -760,12 +760,85 @@ static void should_record_history_beyond_ten_years()
 
 static void should_calculate_history_span_from_start_year()
 {
-	assert_equal(10, df::history_year_count(0, 2026), "empty start year defaults to 10 years");
-	assert_equal(17, df::history_year_count(2010, 2026), "start year is inclusive");
-	assert_equal(1, df::history_year_count(2030, 2026), "future start year clamps to current year");
-	assert_equal(df::max_history_years, df::history_year_count(1900, 2026), "old start year clamps to capacity");
-	assert_equal(17, df::history_row_count(17, 1), "one year per row");
-	assert_equal(9, df::history_row_count(17, 2), "two years per row rounds up");
+	constexpr auto this_year = 2026;
+
+	const auto typed = df::history_range_from_start_year(2010, this_year);
+	assert_equal(2010, typed.first_year, "a typed start year is taken as given");
+	assert_equal(this_year, typed.last_year, "and the range still ends today");
+
+	// A start year inside the window would leave the calendar with rows the navigator cannot reach.
+	const auto recent = df::history_range_from_start_year(this_year, this_year);
+	assert_equal(df::history_window_years, recent.year_count(), "a start year too recent still leaves a window");
+
+	const auto ancient = df::history_range_from_start_year(1800, this_year);
+	assert_equal(df::max_history_years, ancient.year_count(), "an old start year clamps to what is stored");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The navigator's range is worked out from what was indexed, and photographs carry wrong dates. A
+// scanner that stamped 1900 on four negatives must not set the scale for twenty thousand photos,
+// and a camera whose clock reset must not add a decade nobody photographed.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_choose_a_history_range_that_survives_wrong_dates()
+{
+	constexpr auto this_year = 2026;
+
+	const auto with = [](const std::vector<std::pair<int, int>>& years_and_counts)
+	{
+		df::date_histogram h;
+
+		for (const auto& [years_ago, count] : years_and_counts)
+		{
+			h.dates[static_cast<size_t>(years_ago) * 12 + 5].created += count;
+		}
+
+		return df::history_auto_range(h, this_year);
+	};
+
+	{
+		const auto empty = df::history_auto_range({}, this_year);
+		assert_equal(this_year, empty.last_year, "an empty collection still ends today");
+		assert_equal(df::history_window_years, empty.year_count(), "and offers exactly one window");
+	}
+
+	{
+		// Fifteen real years, and four negatives a scanner stamped 1900.
+		std::vector<std::pair<int, int>> years;
+		for (auto y = 0; y < 15; ++y) years.emplace_back(y, 800);
+		years.emplace_back(99, 4);
+
+		const auto range = with(years);
+		assert_equal(this_year - 14, range.first_year, "the range stops at the real history");
+		assert_equal(this_year, range.last_year, "and ends today");
+	}
+
+	{
+		// A camera whose clock reset: an island of a few dozen behind a decade of silence.
+		std::vector<std::pair<int, int>> years;
+		for (auto y = 0; y < 10; ++y) years.emplace_back(y, 1000);
+		years.emplace_back(40, 30);
+		years.emplace_back(41, 30);
+
+		const auto range = with(years);
+		assert_equal(this_year - 9, range.first_year, "an island behind a long gap is a date bug");
+	}
+
+	{
+		// Scanned family photographs are a real decade, however long ago: they are too much of the
+		// collection to be a clock that reset, and cutting them would hide them from the navigator.
+		std::vector<std::pair<int, int>> years;
+		for (auto y = 0; y < 10; ++y) years.emplace_back(y, 1000);
+		for (auto y = 40; y < 50; ++y) years.emplace_back(y, 400);
+
+		const auto range = with(years);
+		assert_equal(this_year - 49, range.first_year, "a substantial older decade is kept");
+	}
+
+	{
+		// One busy year is still eight years of navigator, or there is nothing to navigate.
+		const auto range = with({{0, 500}});
+		assert_equal(df::history_window_years, range.year_count(), "the range is never shorter than a window");
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2338,6 +2411,8 @@ void register_app_tests(view_state& state, test_registry& tests)
 	// Issue #175 - sidebar history chart span
 	tests.add("Should record history beyond ten years"s, should_record_history_beyond_ten_years);
 	tests.add("Should calculate history span from start year"s, should_calculate_history_span_from_start_year);
+	tests.add("Should choose a history range that survives wrong dates"s,
+	          should_choose_a_history_range_that_survives_wrong_dates);
 
 	tests.add("Should persist media filter"s, should_persist_media_filter);
 

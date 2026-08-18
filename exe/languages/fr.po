@@ -731,11 +731,11 @@ msgstr "Afficher les lecteurs"
 msgid "Show history chart"
 msgstr "Afficher le graphique de l'historique"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Année de début du graphique d'historique. Vide correspond à 10 ans par défaut."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Afficher les dossiers de la collection"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Afficher les recherches favorites"
@@ -1019,17 +1019,8 @@ msgstr "Votre collection, ce sont les dossiers que vous choisissez, y compris le
 msgid "folder"
 msgstr "Dossier"
 
-msgid "music"
-msgstr "Musique"
-
 msgid "folders"
 msgstr "Dossiers"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "image"
 
 msgid "Folder"
 msgstr "Dossier"

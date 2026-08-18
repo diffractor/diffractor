@@ -3257,8 +3257,6 @@ static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_history, sidebar_settings.show_history));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_world_map,
 	                                                 sidebar_settings.show_world_map));
-	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_indexed_folders,
-	                                                 sidebar_settings.show_indexed_folders));
 	sidebar->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_drives, sidebar_settings.show_drives));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_searches,

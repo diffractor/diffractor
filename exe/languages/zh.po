@@ -731,11 +731,11 @@ msgstr "显示驱动器"
 msgid "Show history chart"
 msgstr "显示历史图表"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "历史图表的起始年份。留空默认为 10 年。"
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "显示集合文件夹"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "显示最喜欢的搜索"
@@ -1019,17 +1019,8 @@ msgstr "您的集合就是您选择的文件夹及其子文件夹。Diffractor �
 msgid "folder"
 msgstr "文件夹"
 
-msgid "music"
-msgstr "音乐"
-
 msgid "folders"
 msgstr "文件夹"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "图片"
 
 msgid "Folder"
 msgstr "文件夹"

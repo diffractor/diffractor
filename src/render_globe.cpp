@@ -242,7 +242,8 @@ bool globe_renderer::render(ui::surface& destination, const globe_projection& pr
 
 					alpha = static_cast<uint32_t>(std::min(covered, 255));
 
-					// Premultiplied at the limb, matching what fill_pie does when it fades to nothing.
+					// Premultiplied at the limb, matching what the chart rasterisers do where their
+					// silhouettes fade to nothing.
 					shade_q8 = shade_q8 * alpha / 255u;
 				}
 

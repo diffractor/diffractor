@@ -3066,44 +3066,6 @@ inline bool index_state::is_collection_search(const df::search_t& search) const
 	return true;
 }
 
-void index_state::calc_folder_summary(const df::folder_path& path, const df::index_folder_info_const_ptr& folder,
-                                      df::file_group_histogram& result, const df::cancel_token& token)
-{
-	const auto child_folders = folder->folders_snapshot();
-	for (const auto& sub_folder : *child_folders)
-	{
-		calc_folder_summary(path.combine(sub_folder->name), sub_folder, result, token);
-	}
-
-	for (const auto& file : folder->files)
-	{
-		result.record(file, df::file_path(path, file.name));
-	}
-}
-
-df::file_group_histogram index_state::calc_folder_summary(const df::folder_path path,
-                                                          const df::cancel_token& token) const
-{
-	df::file_group_histogram result;
-	const auto folder = _items.find(path);
-
-	if (folder)
-	{
-		const auto child_folders = folder->folders_snapshot();
-		for (const auto& sub_folder : *child_folders)
-		{
-			calc_folder_summary(path.combine(sub_folder->name), sub_folder, result, token);
-		}
-
-		for (const auto& file : folder->files)
-		{
-			result.record(file, df::file_path(path, file.name));
-		}
-	}
-
-	return result;
-}
-
 void index_state::save_media_position(const df::file_path id, const double media_position)
 {
 	item_db_write write;

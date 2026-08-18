@@ -300,7 +300,6 @@ public:
 		bool show_total_items = false;
 		bool show_history = false;
 		bool show_world_map = false;
-		bool show_indexed_folders = false;
 		bool show_drives = false;
 		bool show_favorite_searches = false;
 		bool show_tags = false;

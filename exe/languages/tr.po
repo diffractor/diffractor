@@ -731,11 +731,11 @@ msgstr "Sürücüleri göster"
 msgid "Show history chart"
 msgstr "Geçmiş grafiğini göster"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Geçmiş grafiğinin başlangıç yılı. Boş bırakılırsa varsayılan 10 yıldır."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Koleksiyon klasörlerini göster"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Favori aramaları göster"
@@ -1019,17 +1019,8 @@ msgstr "Koleksiyonunuz, alt klasörleri dahil olmak üzere seçtiğiniz klasörl
 msgid "folder"
 msgstr "klasör"
 
-msgid "music"
-msgstr "müzik"
-
 msgid "folders"
 msgstr "klasörler"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "resim"
 
 msgid "Folder"
 msgstr "Klasör"

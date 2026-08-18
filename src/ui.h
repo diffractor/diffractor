@@ -803,7 +803,6 @@ namespace ui
 		void clear(color32 clr) const;
 		surface_ptr transform(simple_transform t) const;
 
-		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg) const;
 		void fill_logo() const;
 
 		const_surface_ptr transform(const image_edits& photo_edits) const;

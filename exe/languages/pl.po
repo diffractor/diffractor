@@ -731,11 +731,11 @@ msgstr "Pokaż dyski"
 msgid "Show history chart"
 msgstr "Pokaż wykres historii"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Rok początkowy wykresu historii. Puste pole domyślnie ustawia 10 lat."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Pokaż foldery kolekcji"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Pokaż ulubione wyszukiwania"
@@ -1019,17 +1019,8 @@ msgstr "Twoja kolekcja to foldery, które wybierzesz, wraz z ich podfolderami. D
 msgid "folder"
 msgstr "folder"
 
-msgid "music"
-msgstr "muzyka"
-
 msgid "folders"
 msgstr "foldery"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "zdjęcie"
 
 msgid "Folder"
 msgstr "Folder"

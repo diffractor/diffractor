@@ -801,6 +801,7 @@ bridge.
 | Tone curves, saturation, vibrance, contrast, brightness | [render_color.cpp](../src/render_color.cpp) |
 | Pixel-level transforms and differences | [render_image.cpp](../src/render_image.cpp) |
 | The sidebar globe's software resample | [render_globe.cpp](../src/render_globe.cpp), [ui_globe.h](../src/ui_globe.h) |
+| The sidebar pie and calendar: extruded solids and their identity buffers | [render_charts.cpp](../src/render_charts.cpp), [ui_charts.h](../src/ui_charts.h) |
 | SSE/AVX/NEON paths behind the above | [util_simd.h](../src/util_simd.h) |
 | Demux, decode, scaling, resampling, hardware acceleration | [av_format.h](../src/av_format.h), [av_format.cpp](../src/av_format.cpp) |
 | Playback session, A/V sync, transport | [av_player.h](../src/av_player.h) |

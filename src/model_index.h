@@ -666,8 +666,6 @@ class index_state final : public df::no_copy
 	df::hash_map<df::file_path, int, df::ihash, df::ieq> _write_claims;
 	df::item_set _deferred_modified_scans;
 
-	static void calc_folder_summary(const df::folder_path& path, const df::index_folder_info_const_ptr& folder,
-	                                df::file_group_histogram& result, const df::cancel_token& token);
 	void add_distinct_other_folders(df::unique_folders folders);
 	void enqueue_db_write(item_db_write write);
 	void enqueue_db_writes(std::vector<item_db_write> writes);
@@ -776,7 +774,6 @@ public:
 
 	df::index_file_item find_item(df::file_path id) const;
 
-	df::file_group_histogram calc_folder_summary(df::folder_path path, const df::cancel_token& token) const;
 	df::file_group_histogram count_matches(const df::search_t& a, const df::cancel_token& token);
 
 	df::file_group_histogram label_summary(const std::string_view label) const

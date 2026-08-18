@@ -210,6 +210,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/model_search.cpp
         src/model_tile_cache.cpp
         src/render_color.cpp
+        src/render_charts.cpp
         src/render_globe.cpp
         src/render_image.cpp
         src/render_software.cpp

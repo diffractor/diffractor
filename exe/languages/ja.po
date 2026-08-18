@@ -731,11 +731,11 @@ msgstr "ドライブを表示"
 msgid "Show history chart"
 msgstr "履歴チャートを表示"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "履歴チャートの開始年。空欄の場合は既定で 10 年になります。"
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "コレクションフォルダーを表示"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "お気に入りの検索を表示"
@@ -1019,17 +1019,8 @@ msgstr "コレクションとは、選んだフォルダーとそのサブフォ
 msgid "folder"
 msgstr "フォルダー"
 
-msgid "music"
-msgstr "ミュージック"
-
 msgid "folders"
 msgstr "フォルダー"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "ピクチャ"
 
 msgid "Folder"
 msgstr "フォルダー"

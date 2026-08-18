@@ -731,11 +731,11 @@ msgstr "Mostrar unidades"
 msgid "Show history chart"
 msgstr "Mostrar gráfico histórico"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Ano inicial do gráfico de histórico. Vazio assume 10 anos por padrão."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr ""
 
-msgid "Show collection folders"
-msgstr "Mostrar pastas da coleção"
+msgid "Shows the eight years ending here."
+msgstr ""
 
 msgid "Show favorite searches"
 msgstr "Mostrar pesquisas favoritas"
@@ -1019,17 +1019,8 @@ msgstr "Sua coleção são as pastas que você escolhe, incluindo as subpastas. 
 msgid "folder"
 msgstr "pasta"
 
-msgid "music"
-msgstr "Música"
-
 msgid "folders"
 msgstr "pastas"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "foto"
 
 msgid "Folder"
 msgstr "Pasta"

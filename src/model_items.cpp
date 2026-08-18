@@ -698,6 +698,68 @@ df::file_group_histogram df::item_set::summary() const
 	return result;
 }
 
+df::history_range df::history_auto_range(const date_histogram& dates, const int current_year)
+{
+	const auto window = history_range{current_year - history_window_years + 1, current_year};
+
+	std::array<uint64_t, max_history_years> yearly{};
+	uint64_t total = 0;
+
+	for (auto y = 0; y < max_history_years; ++y)
+	{
+		uint64_t sum = 0;
+		for (auto m = 0; m < 12; ++m) sum += dates.dates[static_cast<size_t>(y) * 12 + m].created;
+		yearly[y] = sum;
+		total += sum;
+	}
+
+	if (total == 0) return window;
+
+	// How much of the collection sits at or beyond each year, counting back from today. Both trims
+	// below are questions about a tail, and this answers them without rescanning.
+	std::array<uint64_t, max_history_years + 1> beyond{};
+	for (auto y = max_history_years - 1; y >= 0; --y) beyond[y] = beyond[y + 1] + yearly[y];
+
+	// The shortest run back from today that still holds nearly everything. A scanner that stamped
+	// 1900 on four negatives does not get to set the scale for twenty thousand photographs.
+	const auto keep = total * history_coverage_percent / 100;
+	uint64_t running = 0;
+	auto oldest = 0;
+
+	for (auto y = 0; y < max_history_years; ++y)
+	{
+		if (yearly[y] == 0) continue;
+		running += yearly[y];
+		oldest = y;
+		if (running >= keep) break;
+	}
+
+	// Real history thins out; it does not fall silent for six years and then resume. An island
+	// behind a long gap, holding only a sliver of the collection, is a camera whose clock reset.
+	auto gap = 0;
+
+	for (auto y = 1; y <= oldest; ++y)
+	{
+		if (yearly[y] == 0)
+		{
+			++gap;
+			continue;
+		}
+
+		if (gap >= history_gap_years && beyond[y] * 100 < total * history_island_percent)
+		{
+			oldest = y - gap - 1;
+			break;
+		}
+
+		gap = 0;
+	}
+
+	// Never narrower than one window, or the navigator has nothing to navigate.
+	return {std::min(current_year - oldest, window.first_year), current_year};
+}
+
+
 //////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////

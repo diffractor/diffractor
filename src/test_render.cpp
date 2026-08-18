@@ -16,6 +16,7 @@
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "ui_elements.h"
+#include "ui_charts.h"
 #include "ui_globe.h"
 
 static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const float alpha)
@@ -1081,6 +1082,264 @@ static void should_render_the_globe()
 	assert_equal(0, jumps, "the row samples the map continuously across the date line", "globe render");
 }
 
+static void should_scale_month_blocks_logarithmically()
+{
+	assert_equal(0.0, chart_log_height(0, 1000), "an empty month has no block", "chart height");
+	assert_equal(1.0, chart_log_height(1000, 1000), "the fullest month fills the row", "chart height");
+
+	// The point of the log: a month holding a hundredth of the busiest month still earns a third of
+	// the height. Scaled linearly it would be a line the user cannot see, let alone judge.
+	const auto hundredth = chart_log_height(10, 1000);
+	assert_equal(true, hundredth > 0.3, "a quiet month stays visible beside a holiday month", "chart height");
+	assert_equal(true, hundredth < 1.0, "and still reads as the smaller of the two", "chart height");
+
+	auto monotonic = true;
+	auto previous = -1.0;
+
+	for (uint64_t count = 0; count <= 1000; count += 7)
+	{
+		const auto height = chart_log_height(count, 1000);
+		if (height < previous) monotonic = false;
+		previous = height;
+	}
+
+	assert_equal(true, monotonic, "more items are never shorter", "chart height");
+}
+
+static void should_point_at_the_pie_wedge_that_was_drawn()
+{
+	const auto build = [](const bool raise_back, chart_surface& chart)
+	{
+		assert_equal(true, chart.prepare({160, 160}), "prepare the pie surface", "pie chart");
+
+		pie_chart_scene scene;
+
+		// Two halves, two colours, two identities. Segment zero is the back of the tilted disc,
+		// which is where the largest media type is placed, so a pixel that reports the wrong half
+		// would put the wrong search behind a click.
+		for (auto i = 0; i < pie_chart_segment_count; ++i)
+		{
+			const auto back = i < pie_chart_segment_count / 2;
+			scene.wedges[i] = {
+				back ? ui::rgba(255, 0, 0, 255) : ui::rgba(0, 0, 255, 255),
+				static_cast<uint16_t>(back ? pie_chart_wedge_id_base : pie_chart_wedge_id_base + 1),
+				back && raise_back
+			};
+		}
+
+		scene.hole_color = ui::rgba(0, 255, 0, 255);
+		render_pie_chart(chart, scene);
+	};
+
+	chart_surface chart;
+	build(false, chart);
+
+	const auto extent = chart.extent();
+
+	assert_equal(static_cast<int>(pie_chart_hole_id),
+	             static_cast<int>(chart.id_at({extent.cx / 2, extent.cy / 2})),
+	             "the well floor is what the centre of the chart points at", "pie chart");
+
+	auto back_pixels = 0;
+	auto front_pixels = 0;
+	auto mismatches = 0;
+	auto back_top = extent.cy;
+
+	for (auto y = 1; y < extent.cy - 1; ++y)
+	{
+		for (auto x = 1; x < extent.cx - 1; ++x)
+		{
+			const auto id = chart.id_at({x, y});
+			if (id < pie_chart_wedge_id_base) continue;
+
+			const auto back = id == pie_chart_wedge_id_base;
+			if (back) back_top = std::min(back_top, y);
+
+			// Only pixels the reduction did not mix, so this measures the identity buffer rather
+			// than the antialiasing along the seam between the halves.
+			if (chart.id_at({x - 1, y}) != id || chart.id_at({x + 1, y}) != id ||
+				chart.id_at({x, y - 1}) != id || chart.id_at({x, y + 1}) != id)
+			{
+				continue;
+			}
+
+			const auto c = chart.pixels()->get_pixel(x, y);
+
+			if (back)
+			{
+				++back_pixels;
+				if (ui::get_r(c) <= ui::get_b(c)) ++mismatches;
+			}
+			else
+			{
+				++front_pixels;
+				if (ui::get_b(c) <= ui::get_r(c)) ++mismatches;
+			}
+		}
+	}
+
+	assert_equal(true, back_pixels > 200, "the back half is drawn", "pie chart");
+	assert_equal(true, front_pixels > 200, "the front half is drawn", "pie chart");
+	assert_equal(0, mismatches, "every identity names the wedge whose colour that pixel is", "pie chart");
+
+	chart_surface raised;
+	build(true, raised);
+
+	auto raised_back_top = extent.cy;
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			if (raised.id_at({x, y}) == pie_chart_wedge_id_base) raised_back_top = std::min(raised_back_top, y);
+		}
+	}
+
+	assert_equal(true, raised_back_top < back_top, "a hovered media type lifts out of the disc", "pie chart");
+}
+
+static void should_reach_every_month_block_in_the_calendar()
+{
+	const sizei extent(240, 20);
+	const calendar_chart_style style{3, 2, 4, 2};
+
+	const auto build = [extent, style](const bool raise, chart_surface& chart)
+	{
+		assert_equal(true, chart.prepare(extent), "prepare the calendar surface", "calendar chart");
+
+		std::vector<calendar_chart_cell> cells;
+
+		for (auto m = 0; m < 12; ++m)
+		{
+			// The last month stands for one the collection has not reached: a socket with no
+			// identity, so it is drawn but cannot be aimed at.
+			const auto future = m == 11;
+			cells.emplace_back(recti(df::mul_div(m, extent.cx, 12), 0, df::mul_div(m + 1, extent.cx, 12), extent.cy),
+			                   future ? 0 : m,
+			                   ui::rgba(200, 200, 200, 255),
+			                   future ? chart_surface::no_id : static_cast<uint16_t>(m + 1),
+			                   raise && m == 5);
+		}
+
+		render_calendar_chart(chart, cells, style);
+		return cells;
+	};
+
+	chart_surface chart;
+	const auto cells = build(false, chart);
+
+	std::array<int, 13> found{};
+	std::array<int, 13> top{};
+	std::ranges::fill(top, extent.cy);
+	auto strays = 0;
+	auto future_pixels = 0;
+
+	const auto& future_cell = cells[11].cell;
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			const auto id = chart.id_at({x, y});
+			if (id == chart_surface::no_id) continue;
+
+			found[id] += 1;
+			top[id] = std::min(top[id], y);
+
+			// design.md targeting: a block may lean into the column to its right by its own depth
+			// and no further, or the pointer selects a month it is not over.
+			const auto& cell = cells[id - 1].cell;
+			if (x < cell.left || x > cell.right + style.depth_x) ++strays;
+			if (x >= future_cell.left + style.depth_x) ++future_pixels;
+		}
+	}
+
+	for (auto m = 0; m < 11; ++m)
+	{
+		assert_equal(true, found[m + 1] > 0, "every month the collection covers can be pointed at", "calendar chart");
+	}
+
+	assert_equal(0, strays, "no block claims a pixel outside its own column", "calendar chart");
+	assert_equal(0, future_pixels, "a month the collection has not reached cannot be aimed at", "calendar chart");
+
+	// Height is what carries the count, so the busiest month has to stand taller than a quiet one.
+	assert_equal(true, top[11] < top[2], "a busier month rises further", "calendar chart");
+
+	chart_surface raised;
+	build(true, raised);
+
+	auto raised_top = extent.cy;
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			if (raised.id_at({x, y}) == 6) raised_top = std::min(raised_top, y);
+		}
+	}
+
+	assert_equal(true, raised_top < top[6], "a hovered month floats above the row", "calendar chart");
+}
+
+static void should_keep_an_overlapped_month_selectable()
+{
+	// A block tall enough to clear its own row leans over the row above. That is only allowed
+	// because the sidebar cuts it short of the block above, so the month it leans over keeps a band
+	// of its own to be pointed at. This is the contract that clamp has to honour, and the second
+	// pass here is the negative control: without the clamp the month above is simply gone.
+	const sizei extent(60, 32);
+	const calendar_chart_style style{2, 2, 3, 2};
+	constexpr auto row_height = 16;
+	constexpr auto depth_y = 2;
+	constexpr auto min_exposed = 4;
+
+	// The upper block tops out here, so the lower one may rise no further than min_exposed below
+	// it: (31 - depth_y) - 9 - min_exposed.
+	constexpr auto upper_height = 4;
+	constexpr auto upper_top = row_height - 1 - upper_height - depth_y;
+	constexpr auto clamped = row_height * 2 - 1 - depth_y - upper_top - min_exposed;
+
+	const auto reachable = [&](const int lower_height)
+	{
+		chart_surface chart;
+		assert_equal(true, chart.prepare(extent), "prepare the calendar surface", "calendar overlap");
+
+		// Cells are given in drawing order: the upper row first, so the block below occludes it.
+		const std::vector<calendar_chart_cell> cells{
+			{recti(0, 0, 30, row_height), upper_height, ui::rgba(200, 200, 200, 255), 1, false},
+			{recti(30, 0, 60, row_height), 0, ui::rgba(200, 200, 200, 255), 2, false},
+			{recti(0, row_height, 30, row_height * 2), lower_height, ui::rgba(120, 120, 120, 255), 3, false},
+			{recti(30, row_height, 60, row_height * 2), 10, ui::rgba(120, 120, 120, 255), 4, false},
+		};
+
+		render_calendar_chart(chart, cells, style);
+
+		std::array<int, 5> found{};
+
+		for (auto y = 0; y < extent.cy; ++y)
+		{
+			for (auto x = 0; x < extent.cx; ++x)
+			{
+				const auto id = chart.id_at({x, y});
+				if (id != chart_surface::no_id) found[id] += 1;
+			}
+		}
+
+		return found;
+	};
+
+	const auto clamped_found = reachable(clamped);
+
+	assert_equal(true, clamped_found[3] > 0, "the overlapping block is drawn", "calendar overlap");
+	assert_equal(true, clamped_found[1] > 0, "the month it leans over can still be pointed at", "calendar overlap");
+	assert_equal(true, clamped_found[2] > 0, "and so can an empty month beside it", "calendar overlap");
+	assert_equal(true, clamped_found[4] > 0, "as can the month that did not overlap", "calendar overlap");
+
+	const auto unclamped_found = reachable(row_height * 2 - depth_y);
+
+	assert_equal(0, unclamped_found[1], "an unbounded block would bury the month above", "calendar overlap");
+}
+
 void register_render_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
@@ -1096,6 +1355,15 @@ void register_render_tests(view_state& state, test_registry& tests)
 	tests.add("Should animate alpha between values"s, should_animate_alpha_between_values);
 	tests.add("Should fade at the same rate on any refresh rate"s, should_fade_at_the_same_rate_on_any_refresh_rate);
 	tests.add("Should skip alpha animation when disabled"s, should_skip_alpha_animation_when_disabled);
+
+	//
+	// Sidebar charts
+	//
+	tests.add("Should scale month blocks logarithmically"s, should_scale_month_blocks_logarithmically);
+	tests.add("Should point at the pie chart wedge that was drawn"s, should_point_at_the_pie_wedge_that_was_drawn);
+	tests.add("Should reach every month block in the calendar chart"s,
+	          should_reach_every_month_block_in_the_calendar);
+	tests.add("Should keep an overlapped calendar month selectable"s, should_keep_an_overlapped_month_selectable);
 
 	//
 	// Colour adjustment

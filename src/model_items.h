@@ -702,24 +702,50 @@ namespace df
 			(candidate_rank == current_rank && (current.is_empty() || candidate.icmp(current) < 0)));
 	}
 
-	// Maximum number of years the sidebar history chart can hold/display. The
-	// visible span is user-configurable by start year (default 10 years); the
-	// storage is always sized to this upper bound so changing the
-	// setting does not require re-indexing. Covers collections back to ~1900s.
+	// Maximum number of years the sidebar history chart can hold. The chart itself shows one window
+	// of history_window_years at a time and a navigator to move that window; the storage is always
+	// sized to this upper bound so changing what is shown never requires re-indexing. Covers
+	// collections back to ~1900s.
 	constexpr int max_history_years = 100;
-	constexpr int default_history_years = 10;
 
-	constexpr int history_year_count(const int start_year, const int current_year)
+	// Rows in the calendar, and the span a navigator selection covers. More than this and the grid
+	// stops being something the eye can take in at once.
+	constexpr int history_window_years = 8;
+
+	// The span of years the navigator offers, which is not the span the collection literally covers.
+	struct history_range
 	{
-		return start_year > 0
-			       ? std::clamp(current_year - start_year + 1, 1, max_history_years)
-			       : default_history_years;
+		int first_year = 0;
+		int last_year = 0;
+
+		int year_count() const { return last_year - first_year + 1; }
+		bool contains(const int year) const { return year >= first_year && year <= last_year; }
+	};
+
+	constexpr history_range history_range_from_start_year(const int start_year, const int current_year)
+	{
+		return {
+			std::clamp(start_year, current_year - max_history_years + 1,
+			           current_year - history_window_years + 1),
+			current_year
+		};
 	}
 
-	constexpr int history_row_count(const int year_count, const int years_per_row)
-	{
-		return (year_count + years_per_row - 1) / years_per_row;
-	}
+	// Share of the collection the range must still hold once its oldest years are trimmed.
+	constexpr int history_coverage_percent = 99;
+
+	// An empty stretch at least this long, with no more than history_island_percent of the
+	// collection beyond it, is treated as the edge of the real history.
+	constexpr int history_gap_years = 6;
+	constexpr int history_island_percent = 5;
+
+	struct date_histogram;
+
+	// The years worth offering, given what has been indexed. Photographs carry wrong dates - a
+	// scanner that stamped 1900, a camera whose battery died and reset the clock - and a range
+	// drawn to the oldest item would squeeze the decades the collection actually lives in into a
+	// few pixels to make room for a handful of items that are not really there.
+	history_range history_auto_range(const date_histogram& dates, int current_year);
 
 	struct date_histogram
 	{
