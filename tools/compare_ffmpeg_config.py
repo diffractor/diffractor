@@ -43,6 +43,18 @@ BASELINE = REPO_ROOT / "third-party" / "ffmpeg-config-divergence.txt"
 
 DEFINE = re.compile(r"^#define\s+(CONFIG_[A-Z0-9_]+)\s+(\S+)")
 
+# The documentation targets. Both configure lines pass --disable-doc, so nothing these control is
+# built on either platform, let alone compiled into Diffractor. They are nevertheless autodetected
+# rather than chosen: FFmpeg makes doc depend on the pages instead of the pages on doc, so each one
+# follows whether perl, pod2man and texi2html happen to be installed where configure ran. Comparing
+# them reports the build machine's package list as though it were a difference in the product.
+IGNORED = frozenset({
+    "CONFIG_HTMLPAGES",
+    "CONFIG_MANPAGES",
+    "CONFIG_PODPAGES",
+    "CONFIG_TXTPAGES",
+})
+
 
 def enabled_switches(directory: Path, headers: tuple[str, ...]) -> set[str]:
     """The CONFIG_* switches this configuration turns on, across all of its headers."""
@@ -60,7 +72,7 @@ def enabled_switches(directory: Path, headers: tuple[str, ...]) -> set[str]:
 
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             match = DEFINE.match(line)
-            if match and match.group(2) != "0":
+            if match and match.group(2) != "0" and match.group(1) not in IGNORED:
                 enabled.add(match.group(1))
 
     if not enabled:

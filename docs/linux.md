@@ -491,12 +491,14 @@ What remains is 27 switches on the Windows side, all of them platform — the DX
 hardware accelerators, Media Foundation, SChannel — and one on the Linux side, `CONFIG_ICONV`,
 which is part of glibc rather than a dependency. Decoder and demuxer coverage is identical.
 
-A fifth thing surfaced the first time the comparison ran on CI rather than on a developer machine:
-`CONFIG_HTMLPAGES` and `CONFIG_TXTPAGES` were on. `--disable-doc` does not reach them, because in
-FFmpeg's configure `doc` depends on the pages rather than the pages on `doc`, so each is
-autodetected from whether `perl`, `pod2man` and `texi2html` happen to be installed. The four page
-kinds are now named off individually. That is the same principle `--disable-autodetect` exists for:
-a build machine's installed packages must not decide what the product contains.
+The four documentation page switches are excluded from the comparison rather than accounted in it.
+Both configure lines pass `--disable-doc`, so nothing they control is built on either platform, but
+they are autodetected rather than chosen: FFmpeg makes `doc` depend on the pages instead of the
+pages on `doc`, so each follows whether `perl`, `pod2man` and `texi2html` happen to be installed
+where configure ran. The Windows side is a checked-in artifact generated on one machine and the
+Linux side is generated on whichever machine builds, so comparing them reports a package list as
+though it were a difference in the product. This was found by CI and first answered by naming the
+pages off in the Linux configure line, which only moved the difference to the other side.
 
 [tools/compare_ffmpeg_config.py](../tools/compare_ffmpeg_config.py) is that comparison, run by
 CI on the Release leg. It diffs the enabled `CONFIG_*` switches against a checked-in record of the
