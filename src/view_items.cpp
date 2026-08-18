@@ -1893,6 +1893,10 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 			draw_splitter(dc, _regions.sidebar_splitter, _sidebar_splitter_active != 0, false);
 		}
 	}
+
+	// Last, and over everything: the address bar above shares this view's background, so without an
+	// edge the two read as one surface and it is not obvious which part scrolls.
+	dc.draw_rect(recti(0, 0, _client_extent.cx, 1), ui::color(0.0f, 0.0f, 0.0f, 0.5f));
 }
 
 void items_view::layout_chrome(ui::measure_context& mc)
