@@ -593,11 +593,11 @@ msgstr "按修改日期排序"
 msgid "Sort by Date created"
 msgstr "按创建日期排序"
 
-msgid "Sort dates ascending"
-msgstr "按升序排列日期"
+msgid "Show dates sorted ascending"
+msgstr "按升序显示日期"
 
-msgid "Sort dates descending"
-msgstr "对日期进行降序排序"
+msgid "Show dates sorted descending"
+msgstr "按降序显示日期"
 
 msgid "Sort by Group order (Default)"
 msgstr "按分组顺序排序（默认）"

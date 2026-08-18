@@ -593,11 +593,11 @@ msgstr "수정된 날짜를 기준으로 정렬"
 msgid "Sort by Date created"
 msgstr "생성 날짜를 기준으로 정렬"
 
-msgid "Sort dates ascending"
-msgstr "날짜를 오름차순으로 정렬"
+msgid "Show dates sorted ascending"
+msgstr "날짜를 오름차순으로 정렬하여 표시"
 
-msgid "Sort dates descending"
-msgstr "날짜를 내림차순으로 정렬"
+msgid "Show dates sorted descending"
+msgstr "날짜를 내림차순으로 정렬하여 표시"
 
 msgid "Sort by Group order (Default)"
 msgstr "그룹 순서로 정렬(기본값)"

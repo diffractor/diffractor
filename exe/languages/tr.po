@@ -593,11 +593,11 @@ msgstr "Değiştirilme tarihine göre sırala"
 msgid "Sort by Date created"
 msgstr "Oluşturulma tarihine göre sırala"
 
-msgid "Sort dates ascending"
-msgstr "Tarihleri artan şekilde sırala"
+msgid "Show dates sorted ascending"
+msgstr "Tarihleri artan sırada göster"
 
-msgid "Sort dates descending"
-msgstr "Tarihleri azalan şekilde sırala"
+msgid "Show dates sorted descending"
+msgstr "Tarihleri azalan sırada göster"
 
 msgid "Sort by Group order (Default)"
 msgstr "Grup sırasına göre sırala (varsayılan)"

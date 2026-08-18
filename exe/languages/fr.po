@@ -593,11 +593,11 @@ msgstr "Trier par Date de modification"
 msgid "Sort by Date created"
 msgstr "Trier par date de création"
 
-msgid "Sort dates ascending"
-msgstr "Trier les dates par ordre croissant"
+msgid "Show dates sorted ascending"
+msgstr "Afficher les dates triées par ordre croissant"
 
-msgid "Sort dates descending"
-msgstr "Trier les dates par ordre décroissant"
+msgid "Show dates sorted descending"
+msgstr "Afficher les dates triées par ordre décroissant"
 
 msgid "Sort by Group order (Default)"
 msgstr "Trier par ordre du groupe (par défaut)"

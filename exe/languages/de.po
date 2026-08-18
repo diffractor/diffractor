@@ -596,11 +596,11 @@ msgstr "Sortieren nach Änderungsdatum"
 msgid "Sort by Date created"
 msgstr "Sortieren nach Erstellungsdatum"
 
-msgid "Sort dates ascending"
-msgstr "Datums- und Zeitangaben aufsteigend sortieren"
+msgid "Show dates sorted ascending"
+msgstr "Datumsangaben aufsteigend sortiert anzeigen"
 
-msgid "Sort dates descending"
-msgstr "Datums- und Zeitangaben absteigend sortieren"
+msgid "Show dates sorted descending"
+msgstr "Datumsangaben absteigend sortiert anzeigen"
 
 msgid "Sort by Group order (Default)"
 msgstr "Sortieren nach Gruppenreihenfolge (Standard)"

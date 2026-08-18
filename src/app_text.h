@@ -323,8 +323,8 @@ struct app_text_t
 	text_t command_group_aspect_ratio = "Group by Aspect ratio";
 	text_t command_group_presence = "Group by Collection presence";
 	text_t command_group_folder = "Group by Folder";
-	text_t command_sort_dates_descending = "Sort dates descending";
-	text_t command_sort_dates_ascending = "Sort dates ascending";
+	text_t command_sort_dates_descending = "Show dates sorted descending";
+	text_t command_sort_dates_ascending = "Show dates sorted ascending";
 	text_t command_sort_name = "Sort by Name";
 	text_t command_sort_size = "Sort by Size";
 	text_t command_sort_def = "Sort by Group order (Default)";

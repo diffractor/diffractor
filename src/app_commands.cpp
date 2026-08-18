@@ -4178,10 +4178,11 @@ void app_frame::initialise_commands()
 			find_command(commands::sort_size),
 			find_command(commands::sort_date_created),
 			find_command(commands::sort_date_modified),
-			// Only the one item: the pair read as two checkboxes of which one was permanently ticked,
-			// and clicking the ticked one set the value it already had.
-			find_command(commands::sort_dates_descending),
 			nullptr,
+			// A direction, not a sort key, so it sits outside the Sort by group. One item rather than the
+			// ascending/descending pair it was: of those two the tick was permanently on one, and clicking
+			// the ticked one set the value it already had.
+			find_command(commands::sort_dates_descending),
 			find_command(commands::group_shuffle),
 			find_command(commands::group_toggle),
 		};

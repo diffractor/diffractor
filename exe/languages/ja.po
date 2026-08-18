@@ -593,11 +593,11 @@ msgstr "更新日時で並べ替え"
 msgid "Sort by Date created"
 msgstr "作成日で並べ替え"
 
-msgid "Sort dates ascending"
-msgstr "日付を昇順で並べ替え"
+msgid "Show dates sorted ascending"
+msgstr "日付を昇順に並べ替えて表示"
 
-msgid "Sort dates descending"
-msgstr "日付を降順で並べ替え"
+msgid "Show dates sorted descending"
+msgstr "日付を降順に並べ替えて表示"
 
 msgid "Sort by Group order (Default)"
 msgstr "グループ順（デフォルト）で並べ替え"
