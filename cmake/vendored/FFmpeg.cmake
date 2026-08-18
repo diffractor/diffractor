@@ -124,6 +124,10 @@ endif ()
 # configure line from docs/third-party.md, which this had not been matching -- the whole encoder and
 # muxer set was being compiled in here. avif is the one intentional muxer, and file the one
 # intentional protocol.
+#
+# The four documentation page kinds are named off individually because --disable-doc does not reach
+# them: doc depends on the pages rather than the pages on doc, so each is autodetected from perl,
+# pod2man and texi2html and the answer follows whatever the build machine happens to have installed.
 ExternalProject_Add(ffmpeg_external
         SOURCE_DIR "${_ff_stage}"
         DOWNLOAD_COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_ff_src}" "${_ff_stage}"
@@ -132,6 +136,10 @@ ExternalProject_Add(ffmpeg_external
         --prefix=${_ff_prefix}
         --disable-programs
         --disable-doc
+        --disable-htmlpages
+        --disable-manpages
+        --disable-podpages
+        --disable-txtpages
         --disable-avdevice
         --disable-avfilter
         --disable-autodetect
