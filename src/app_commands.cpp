@@ -384,11 +384,7 @@ static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& pare
 static void setting_invoke(const view_state& s, bool& val, const bool new_val)
 {
 	val = new_val;
-	// command_state: every caller here is a checked command, and nothing else raises the flag that
-	// re-reads it, so without this the tick stays on whichever option was set when the menu last
-	// had a reason to update.
-	s.invalidate_view(view_invalid::view_layout | view_invalid::group_layout | view_invalid::app_layout |
-		view_invalid::command_state);
+	s.invalidate_view(view_invalid::view_layout | view_invalid::group_layout | view_invalid::app_layout);
 }
 
 static void zoom_navigator_mode_invoke(const view_state& state, const zoom_navigator_mode mode)
@@ -3694,9 +3690,12 @@ void app_frame::initialise_commands()
 	{
 		setting_invoke(_state, setting.highlight_large_items, !setting.highlight_large_items);
 	});
+	// A toggle, not a set: this is the one the menu shows, so clicking it while it is ticked has to
+	// do something. Ascending stays an explicit set because the empty-results surface offers
+	// whichever direction is not current by name.
 	add_command_invoke(commands::sort_dates_descending, [this]
 	{
-		setting_invoke(_state, setting.sort_dates_descending, true);
+		setting_invoke(_state, setting.sort_dates_descending, !setting.sort_dates_descending);
 	});
 	add_command_invoke(commands::sort_dates_ascending, [this]
 	{
@@ -4179,8 +4178,9 @@ void app_frame::initialise_commands()
 			find_command(commands::sort_size),
 			find_command(commands::sort_date_created),
 			find_command(commands::sort_date_modified),
+			// Only the one item: the pair read as two checkboxes of which one was permanently ticked,
+			// and clicking the ticked one set the value it already had.
 			find_command(commands::sort_dates_descending),
-			find_command(commands::sort_dates_ascending),
 			nullptr,
 			find_command(commands::group_shuffle),
 			find_command(commands::group_toggle),
