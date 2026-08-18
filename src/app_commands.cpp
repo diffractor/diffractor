@@ -384,7 +384,11 @@ static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& pare
 static void setting_invoke(const view_state& s, bool& val, const bool new_val)
 {
 	val = new_val;
-	s.invalidate_view(view_invalid::view_layout | view_invalid::group_layout | view_invalid::app_layout);
+	// command_state: every caller here is a checked command, and nothing else raises the flag that
+	// re-reads it, so without this the tick stays on whichever option was set when the menu last
+	// had a reason to update.
+	s.invalidate_view(view_invalid::view_layout | view_invalid::group_layout | view_invalid::app_layout |
+		view_invalid::command_state);
 }
 
 static void zoom_navigator_mode_invoke(const view_state& state, const zoom_navigator_mode mode)
