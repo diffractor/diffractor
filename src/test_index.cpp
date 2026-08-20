@@ -445,6 +445,22 @@ static void should_pack_item_properties()
 
 	assert_metadata(*md, *unpacked, "index");
 	assert_equal(md->orientation, unpacked->orientation, "index orientation");
+
+	// The panorama flag is only useful if it survives the re-index that fills it, and it is written
+	// after the properties an older build stops unpacking at, so its round trip is asserted here.
+	md->panorama = prop::panorama_projection::equirectangular;
+
+	metadata_packer pano_packer;
+	pano_packer.pack(md);
+
+	const auto pano_unpacked = std::make_shared<prop::item_metadata>();
+	metadata_unpacker pano_unpacker(pano_packer.cdata());
+	pano_unpacker.unpack(pano_unpacked);
+
+	assert_equal(static_cast<int>(prop::panorama_projection::equirectangular),
+	             static_cast<int>(pano_unpacked->panorama), "index panorama projection");
+	assert_equal(true, pano_unpacked->is_panorama(), "and it reads back as a panorama");
+	assert_equal(false, unpacked->is_panorama(), "while a file that declared none stays none");
 }
 
 static void should_store_webservice_results()

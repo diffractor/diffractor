@@ -1829,6 +1829,9 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_assert_parse("modified:aug-16"s);
 	register_assert_parse("@duplicates"s);
 	register_assert_parse("@remote"s);
+	register_assert_parse("@panorama"s);
+	// The short spelling is the same term, so it round-trips to the long one.
+	register_assert_parse("@pano"s, "@panorama"s);
 	register_assert_parse("loc:-30.515+151.66+5"s, "loc:-30.515,151.66,5km"s);
 	register_assert_parse("loc:\"Boulder City\""s);
 	register_assert_parse("place:London"s);

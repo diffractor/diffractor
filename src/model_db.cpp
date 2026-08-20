@@ -836,6 +836,12 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 	if (!prop::is_null(md->gps_speed)) write(prop::gps_speed.id, md->gps_speed);
 
 	if (!md->dates.is_empty()) write_date_pack(prop::dates_packed.id, md->dates);
+
+	if (md->is_panorama())
+	{
+		const auto val = static_cast<uint8_t>(md->panorama);
+		write(prop::panorama.id, val);
+	}
 }
 
 
@@ -941,6 +947,16 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 			md->dates.add(prop::date_source::legacy_created, d);
 		}
 		else if (t == prop::dates_packed) read_date_pack(md->dates);
+		else if (t == prop::panorama)
+		{
+			// A stored number this build does not know still means the file declared a panorama,
+			// so it is kept as one rather than discarded back to `none`.
+			uint8_t val = 0;
+			read_val(val);
+			md->panorama = val > static_cast<uint8_t>(prop::panorama_projection::unspecified)
+				               ? prop::panorama_projection::unspecified
+				               : static_cast<prop::panorama_projection>(val);
+		}
 		else if (t == prop::exposure_time) read_val(md->exposure_time);
 		else if (t == prop::f_number) read_val(md->f_number);
 		else if (t == prop::focal_length) read_val(md->focal_length);

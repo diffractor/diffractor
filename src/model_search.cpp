@@ -27,6 +27,7 @@ static_assert(sizeof(df::search_result) <= sizeof(void*) * 2 + 8);
 
 constexpr static auto sv_duplicates = "duplicates";
 constexpr static auto sv_remote = "remote";
+constexpr static auto sv_panorama = "panorama";
 
 void df::search_t::clear_date_properties()
 {
@@ -571,6 +572,11 @@ std::string df::format_term(const search_term& term)
 			result << "@";
 			result << sv_remote;
 		}
+		else if (term.type == search_term_type::panorama)
+		{
+			result << "@";
+			result << sv_panorama;
+		}
 	}
 
 	return result.str();
@@ -835,6 +841,9 @@ search_presence_mask df::search_t::calc_required_presence() const
 			// Only a coordinate can be remote, so the prefilter may skip everything else.
 			result.types |= search_presence_mask::location;
 			break;
+		case search_term_type::panorama:
+			result.types |= search_presence_mask::panorama;
+			break;
 		case search_term_type::media_type:
 			result.types |= v.fg_val->search_presence_bit();
 			break;
@@ -1077,6 +1086,8 @@ void df::search_t::parse_part(const search_part& part)
 			{"duplicate", search_term_type::duplicate},
 			{sv_duplicates, search_term_type::duplicate},
 			{sv_remote, search_term_type::remote},
+			{sv_panorama, search_term_type::panorama},
+			{"pano", search_term_type::panorama},
 		};
 
 		const auto found_flag = pre_title_stop_words.find(part.term);
@@ -2496,6 +2507,18 @@ df::search_result df::search_matcher::match_term(const str::cached folder_name, 
 		if (is_remote == term.modifiers.positive)
 		{
 			result.type = search_result_type::match_location;
+		}
+	}
+	else if (term.type == search_term_type::panorama)
+	{
+		// The file's own declaration. An image merely shaped like a panorama does not match, so a
+		// wide crop of a landscape is not swept in with the photo spheres.
+		const auto md = file.metadata.load();
+		const bool is_panorama = md && md->is_panorama();
+
+		if (is_panorama == term.modifiers.positive)
+		{
+			result.type = search_result_type::match_flag;
 		}
 	}
 	else if (term.type == search_term_type::text)

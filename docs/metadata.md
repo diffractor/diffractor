@@ -370,11 +370,49 @@ and writing take different code paths — reads come from FFmpeg, writes from th
   through the XMP toolkit, and the toolkit reconciles a smaller set. A property Diffractor
   displays is not necessarily one it can store back to the same tag.
 
+## Panorama
+
+A file is a panorama because it says so, never because of its shape. The scan reads Google's
+`GPano` namespace — which is what a phone panorama mode and most stitchers write, and which the
+XMP toolkit does not know, so it is registered at startup — and stores one value per indexed
+image: the projection the file declares, or `none`.
+
+| Read | Stored as |
+|---|---|
+| `GPano:ProjectionType` = `equirectangular` | `equirectangular` |
+| `GPano:ProjectionType` = `cylindrical` | `cylindrical` |
+| `GPano:ProjectionType` naming anything else | `unspecified` |
+| No `ProjectionType`, but `GPano:UsePanoramaViewer`, `FullPanoWidthPixels` or `CroppedAreaImageWidthPixels` | `unspecified` |
+| No `GPano` properties | `none` |
+
+Three consequences follow from storing the projection rather than a bare yes/no, and all three
+are the reason it is worth a byte:
+
+- **A writer that omits `ProjectionType` still declares a panorama**, and reading it as an
+  ordinary photograph would lose the file the feature exists for. The other `GPano` properties
+  answer the question the flag is for even when the projection does not.
+- **A stored number this build does not recognise still means panorama.** It is read back as
+  `unspecified` rather than discarded to `none`, so a value written by a later build does not
+  silently un-declare a file for an earlier one.
+- **The value is persisted, so its meaning is fixed once assigned.** Retire one by leaving its
+  number unused; never reuse it. Honouring equirectangular projection is a renderer rather than
+  a flag and is [not in this release](v-next.md) — but the file's own answer is recorded now, so
+  the release that does honour it needs no second re-index.
+
+Aspect ratio is deliberately **not** part of this. A 2:1 crop of a landscape is not a panorama,
+and the index stores what the file claims; anything wanting to guess from shape can do so from
+the dimensions the index already holds, at query time, without a stored field that would then
+disagree with the file.
+
+`@panorama`, and its short spelling `@pano`, ask for it. Both canonicalize to `@panorama`, so
+there is one vocabulary to learn — the same rule [locations](locations.md) applies to `@remote`.
+
 ## Where this lives
 
 | Standard or stage | Source |
 |---|---|
 | The date pack, its sources and the one resolution | [model_dates.h](../src/model_dates.h) — `date_source`, `date_sources`, `date_pack` |
+| The panorama declaration | [model_property.h](../src/model_property.h) — `panorama_projection`; read in [metadata_xmp.cpp](../src/metadata_xmp.cpp) |
 | EXIF read and write | [metadata_exif.h](../src/metadata_exif.h), [metadata_exif.cpp](../src/metadata_exif.cpp) |
 | IPTC read | [metadata_iptc.h](../src/metadata_iptc.h), [metadata_iptc.cpp](../src/metadata_iptc.cpp) |
 | XMP read and write, sidecars | [metadata_xmp.h](../src/metadata_xmp.h), [metadata_xmp.cpp](../src/metadata_xmp.cpp) |

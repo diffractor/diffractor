@@ -79,6 +79,9 @@ std::string prop::key::text() const
 }
 
 static text_t prop_name_crc32c = "crc32c"sv;
+// Never displayed and never typed by a user - `@panorama` is the spelling they see - so it carries
+// a local name rather than a catalog entry in thirteen languages.
+static text_t prop_name_panorama = "panorama"sv;
 
 prop::key prop::album('al', "", "album", tt.prop_name_album, icon_index::star, data_type::string,
                       style::groupable | style::sortable | style::auto_complete, search_presence_mask::album);
@@ -261,6 +264,8 @@ prop::key prop::label('lb', "", "label", tt.prop_name_label, icon_index::flag, d
                       search_presence_mask::rating_label);
 prop::key prop::doc_id('ii', "", "document.id", tt.prop_name_doc_id, icon_index::star, data_type::int32,
                        style::none, search_presence_mask::doc_id);
+prop::key prop::panorama('pj', "", "panorama.projection", prop_name_panorama, icon_index::world,
+                         data_type::int32, style::none, search_presence_mask::panorama);
 
 
 static df::hash_map<unsigned short, prop::key_ref> build_properties_by_id()
@@ -501,6 +506,7 @@ search_presence_mask prop::item_metadata::calc_search_presence() const
 	if (!is_null(f_number)) result.types |= prop::f_number.search_presence_bit;
 	if (!is_null(dates.original())) result.types |= prop::created_exif.search_presence_bit;
 	if (!is_null(dates.created())) result.types |= prop::created_utc.search_presence_bit;
+	if (is_panorama()) result.types |= prop::panorama.search_presence_bit;
 	if (!is_null(year)) result.types |= prop::year.search_presence_bit;
 	if (orientation != ui::orientation::top_left) result.types |= prop::orientation.search_presence_bit;
 	if (coordinate.is_valid()) result.types |= latitude.search_presence_bit;

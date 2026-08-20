@@ -196,6 +196,53 @@ static str::cached xmp_load_array(const SXMPMeta& xmp, const char* schema_ns, co
 	return result;
 }
 
+// Google's photo sphere namespace, which is what a phone panorama mode and most stitchers write.
+// It is not one the toolkit knows, so it is registered at startup before any file is parsed.
+constexpr auto ns_gpano = "http://ns.google.com/photos/1.0/panorama/";
+
+// Records what the file itself declares, never what its shape suggests. `UsePanoramaViewer` and the
+// cropped-area properties are read only to answer "is this a panorama" for a writer that omitted
+// ProjectionType; a file carrying none of them is not one.
+static void read_panorama_projection(const SXMPMeta& xmp, prop::item_metadata& md)
+{
+	std::string utf8;
+	XMP_OptionBits flags = 0;
+
+	if (xmp.GetProperty(ns_gpano, "ProjectionType", &utf8, &flags))
+	{
+		const auto text = str::trim(str::utf8_cast(utf8));
+
+		if (str::icmp(text, "equirectangular") == 0)
+		{
+			md.panorama = prop::panorama_projection::equirectangular;
+			return;
+		}
+
+		if (str::icmp(text, "cylindrical") == 0)
+		{
+			md.panorama = prop::panorama_projection::cylindrical;
+			return;
+		}
+
+		if (!text.empty())
+		{
+			md.panorama = prop::panorama_projection::unspecified;
+			return;
+		}
+	}
+
+	for (const auto* const declares_panorama : {
+		     "UsePanoramaViewer", "FullPanoWidthPixels", "CroppedAreaImageWidthPixels"
+	     })
+	{
+		if (xmp.GetProperty(ns_gpano, declares_panorama, &utf8, &flags))
+		{
+			md.panorama = prop::panorama_projection::unspecified;
+			return;
+		}
+	}
+}
+
 static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 {
 	XMP_OptionBits flags = 0;
@@ -454,6 +501,8 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	{
 		md.raw_file_name = str::strip_and_cache(utf8);
 	}
+
+	read_panorama_projection(xmp, md);
 }
 
 
@@ -473,6 +522,9 @@ void metadata_xmp::initialise()
 
 	// https://github.com/nomacs/nomacs/blob/master/exiv2-0.25/src/xmp.cpp	
 	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto", &microsoft_photo_prefix);
+
+	std::string gpano_prefix;
+	SXMPMeta::RegisterNamespace(ns_gpano, "GPano", &gpano_prefix);
 }
 
 void metadata_xmp::term()

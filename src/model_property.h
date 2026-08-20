@@ -55,6 +55,7 @@ struct search_presence_mask
 	static constexpr uint32_t text = 1 << 24u;
 	static constexpr uint32_t year = 1 << 25u;
 	static constexpr uint32_t doc_id = 1 << 26u;
+	static constexpr uint32_t panorama = 1 << 27u;
 
 	uint32_t types = 0;
 
@@ -93,6 +94,20 @@ namespace prop
 {
 	struct item_metadata;
 	class key;
+
+	// The projection a file's own GPano metadata declares. Persisted in the index, so a value's
+	// meaning is fixed once assigned: retire one by leaving its number unused, never by reusing it.
+	// `none` is the answer for a file carrying no panorama projection metadata at all, so anything
+	// else is the flag - the file says it is a panorama, rather than merely being shaped like one.
+	enum class panorama_projection : uint8_t
+	{
+		none = 0,
+		equirectangular = 1,
+		cylindrical = 2,
+		// GPano panorama properties are present but name no projection this build knows. Still a
+		// panorama, and recorded as one, because the declaration is the fact being stored.
+		unspecified = 3,
+	};
 
 	enum class data_type
 	{
@@ -252,6 +267,7 @@ namespace prop
 	extern key crc32c;
 	extern key label;
 	extern key doc_id;
+	extern key panorama;
 
 	constexpr bool is_null(const std::string_view s)
 	{
@@ -367,6 +383,7 @@ namespace prop
 		uint16_t width = 0;
 		uint16_t year = 0;
 		uint8_t season = 0;
+		panorama_projection panorama = panorama_projection::none;
 		ui::orientation orientation = ui::orientation::top_left;
 		df::xy8 disk = {0, 0};
 		df::xy8 episode = {0, 0};
@@ -385,6 +402,13 @@ namespace prop
 		}
 
 		search_presence_mask calc_search_presence() const;
+
+		// The file's own declaration, not a guess from its shape. An image merely wide enough to
+		// look like a panorama answers false here.
+		bool is_panorama() const
+		{
+			return panorama != panorama_projection::none;
+		}
 
 		bool has_gps() const
 		{

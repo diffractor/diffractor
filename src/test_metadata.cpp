@@ -110,6 +110,67 @@ static void should_parse_xmp()
 	assert_equal("Canon EOS 50D", actual.camera_model);
 	assert_equal("IMG_0604.CR2", actual.raw_file_name);
 	assert_equal("Denmark", actual.location_country);
+	assert_equal(false, actual.is_panorama(), "an ordinary photograph declares no panorama");
+}
+
+// The flag records what the file says about itself, not what its shape suggests: a 2:1 crop of a
+// landscape is not a panorama, and a photo sphere that has been cropped square still is one.
+static void should_read_the_declared_panorama_projection()
+{
+	const auto write_sidecar = [](const std::string_view gpano_body)
+	{
+		const auto path = _temps.next_path(".xmp");
+		const auto xml = std::format(
+			"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+			"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+			"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+			"<rdf:Description rdf:about=\"\" "
+			"xmlns:GPano=\"http://ns.google.com/photos/1.0/panorama/\">{}</rdf:Description>"
+			"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+			gpano_body);
+
+		std::ofstream f(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
+		f.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+		f.close();
+
+		prop::item_metadata md;
+		metadata_xmp::parse(md, path);
+		return md.panorama;
+	};
+
+	assert_equal(static_cast<int>(prop::panorama_projection::equirectangular),
+	             static_cast<int>(write_sidecar("<GPano:ProjectionType>equirectangular</GPano:ProjectionType>")),
+	             "a photo sphere");
+	assert_equal(static_cast<int>(prop::panorama_projection::cylindrical),
+	             static_cast<int>(write_sidecar("<GPano:ProjectionType>cylindrical</GPano:ProjectionType>")),
+	             "a cylindrical stitch");
+
+	// A projection this build does not know still answers the question the flag exists to answer.
+	assert_equal(static_cast<int>(prop::panorama_projection::unspecified),
+	             static_cast<int>(write_sidecar("<GPano:ProjectionType>mercator</GPano:ProjectionType>")),
+	             "an unrecognised projection is still a panorama");
+
+	// Writers that declare a panorama without naming its projection must not be read as ordinary.
+	assert_equal(static_cast<int>(prop::panorama_projection::unspecified),
+	             static_cast<int>(write_sidecar("<GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>")),
+	             "declared without a projection");
+	assert_equal(static_cast<int>(prop::panorama_projection::unspecified),
+	             static_cast<int>(write_sidecar("<GPano:FullPanoWidthPixels>8192</GPano:FullPanoWidthPixels>")),
+	             "declared by its full extent");
+
+	assert_equal(static_cast<int>(prop::panorama_projection::none),
+	             static_cast<int>(write_sidecar("")),
+	             "and a file carrying no GPano at all is not a panorama");
+
+	// The presence bit is what lets the index reject candidates before it loads them.
+	prop::item_metadata pano;
+	pano.panorama = prop::panorama_projection::equirectangular;
+	assert_equal(true, (pano.calc_search_presence().types & search_presence_mask::panorama) != 0,
+	             "a panorama carries the presence bit");
+
+	constexpr prop::item_metadata plain;
+	assert_equal(false, (plain.calc_search_presence().types & search_presence_mask::panorama) != 0,
+	             "and an ordinary file does not");
 }
 
 static void should_merge_xmp_sidecar()
@@ -2035,6 +2096,7 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should not double apply heif rotation"s, should_not_double_apply_heif_rotation);
 	tests.add("Should scan avif metadata"s, should_scan_avif);
 	tests.add("Should parse Xmp"s, should_parse_xmp);
+	tests.add("Should read the declared panorama projection"s, should_read_the_declared_panorama_projection);
 	tests.add("Should present exif metadata by ifd"s, should_present_exif_block_by_ifd);
 	tests.add("Should present maker note section"s, should_present_maker_note_section);
 	tests.add("Should present derived exif section"s, should_present_derived_exif_section);

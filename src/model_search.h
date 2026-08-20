@@ -84,6 +84,8 @@ namespace df
 		area,
 		duplicate,
 		volume,
+		// The file's own panorama declaration, spelled `@panorama` and taking no argument.
+		panorama,
 	};
 
 	// Specificity a location term is constrained to; `any` matches place, region or country.
@@ -653,7 +655,8 @@ namespace df
 				type == search_term_type::has_location ||
 				type == search_term_type::remote ||
 				type == search_term_type::area ||
-				type == search_term_type::duplicate;
+				type == search_term_type::duplicate ||
+				type == search_term_type::panorama;
 		}
 
 		friend bool operator==(const search_term& lhs, const search_term& rhs)
