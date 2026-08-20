@@ -33,8 +33,17 @@ try {
     $sourceFiles = Get-ChildItem src -File -Include *.cpp, *.h -Recurse |
         Where-Object { $_.Name -ne 'secrets.h' }
 
+    # The documentation set is what the repository publishes, so it is what git tracks. A private
+    # working note left in docs/ -- ignored, excluded, or simply not added yet -- owns nothing and
+    # promises nothing, and failing the ownership rule for one only teaches the reader to ignore it.
+    $trackedDocs = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@(git ls-files 'docs/*.md' 2>$null | ForEach-Object { Split-Path $_ -Leaf }),
+        [System.StringComparer]::OrdinalIgnoreCase)
+
+    $publishedDocs = { Get-ChildItem docs -Filter *.md | Where-Object { $trackedDocs.Contains($_.Name) } }
+
     # Instruction and prompt files carry the same routing as the docs and rot the same way.
-    $docFiles = @(Get-ChildItem docs -Filter *.md) +
+    $docFiles = @(& $publishedDocs) +
         @(Get-ChildItem .github/instructions -Filter *.md -ErrorAction SilentlyContinue) +
         @(Get-ChildItem .github/prompts -Filter *.md -ErrorAction SilentlyContinue) +
         @(Get-Item AGENTS.md) + @(Get-Item README.md)
@@ -195,7 +204,7 @@ try {
         Check = {
             $agents = Get-Content AGENTS.md -Raw
             # v-*.md are archived release notes; only the current one is named in the table.
-            Get-ChildItem docs -Filter *.md |
+            & $publishedDocs |
                 Where-Object { $_.Name -notmatch '^v-\d' } |
                 Where-Object { $agents -notmatch [regex]::Escape("docs/$($_.Name)") } |
                 ForEach-Object { "AGENTS.md: docs/$($_.Name) has no owner row in the ownership table" }
@@ -207,7 +216,7 @@ try {
         # documents, and own no code.
         Why   = 'AGENTS.md: each subject document names the source that implements it, so a reader can route without searching.'
         Check = {
-            Get-ChildItem docs -Filter *.md |
+            & $publishedDocs |
                 Where-Object { $_.Name -notmatch '^v-' } |
                 Where-Object { (Get-Content $_.FullName -Raw) -notmatch '(?m)^##+\s+Where this lives\s*$' } |
                 ForEach-Object { "docs/$($_.Name): no '## Where this lives' section" }
