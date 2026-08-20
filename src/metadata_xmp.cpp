@@ -64,25 +64,7 @@ static df::date_t xmp_parse_date(const std::string_view str)
 // container date it is meant to agree with, which then reads as two dates instead of one.
 static int16_t xmp_date_offset(const std::string_view str)
 {
-	if (str.size() > 10 && (str.back() == 'Z' || str.back() == 'z'))
-	{
-		return prop::date_pack::utc_instant;
-	}
-
-	// ...T18:45:46.309-07:00
-	if (str.size() > 6)
-	{
-		const auto tail = str.substr(str.size() - 6);
-
-		if ((tail[0] == '+' || tail[0] == '-') && tail[3] == ':' &&
-			str::is_num(tail.substr(1, 2)) && str::is_num(tail.substr(4, 2)))
-		{
-			const auto minutes = str::to_int(tail.substr(1, 2)) * 60 + str::to_int(tail.substr(4, 2));
-			return static_cast<int16_t>(tail[0] == '-' ? -minutes : minutes);
-		}
-	}
-
-	return prop::date_pack::no_offset;
+	return prop::parse_utc_offset(str);
 }
 
 static bool xmp_decode_gps_coordinate(const std::string_view str, double& result)

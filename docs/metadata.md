@@ -126,22 +126,48 @@ grow without implying a claim it does not yet meet.
 |---|---|---|---|
 | EXIF `DATE_TIME_ORIGINAL` (0x9003) | Original | 1 | yes |
 | XMP `exif:DateTimeOriginal` | Original | 2 | yes |
-| IPTC `DATE_CREATED` (2:55) + `TIME_CREATED` (2:60) | Original | 3 | no |
-| ID3 `TDOR` | Original | 4 | no |
+| IPTC `DATE_CREATED` (2:55) + `TIME_CREATED` (2:60) | Original | 3 | yes |
+| ID3 `TDOR` | Original | 4 | yes |
 | XMP `photoshop:DateCreated` | Original | 5 | yes |
 | EXIF `DATE_TIME_DIGITIZED` (0x9004) | Created | 1 | yes |
 | XMP `exif:DateTimeDigitized` | Created | 2 | yes |
-| IPTC `DIGITAL_CREATION_DATE` (2:62) + `DIGITAL_CREATION_TIME` (2:63) | Created | 3 | no |
+| IPTC `DIGITAL_CREATION_DATE` (2:62) + `DIGITAL_CREATION_TIME` (2:63) | Created | 3 | yes |
 | XMP `xmp:CreateDate` | Created | 4 | yes |
 | Container creation — `creation_time`, `com.apple.quicktime.creationdate`, `©day`, `TDRC`, `ICRD`, Matroska `DateUTC`, PNG `tIME` | Created | 5 | yes |
 | DV timecode, RAW embedded date | Created | 6 | yes |
 | `date-eng`, `Rip date` | Created | 7 | yes |
 | Windows shell property store | Created | 8 | yes |
 | Filesystem created | Created | 9 | yes |
-| EXIF `GPSDateStamp` + `GPSTimeStamp` | reference | — | no |
+| EXIF `GPSDateStamp` (0x001d) + `GPSTimeStamp` (0x0007) | reference | — | yes |
 | Filesystem modified | Modified | 1 | yes |
 | EXIF `DATE_TIME` (0x0132) | Modified | 2 | yes |
-| XMP `xmp:ModifyDate` | Modified | 3 | no |
+| XMP `xmp:ModifyDate` | Modified | 3 | yes |
+
+### The zone and the fraction a reading was written with
+
+Three tags qualify an EXIF date rather than being one, and each is stored with the reading it
+qualifies:
+
+| Qualifies | Zone | Fraction |
+|---|---|---|
+| `DATE_TIME` | `OFFSET_TIME` (0x9010) | `SUB_SEC_TIME` (0x9290) |
+| `DATE_TIME_ORIGINAL` | `OFFSET_TIME_ORIGINAL` (0x9011) | `SUB_SEC_TIME_ORIGINAL` (0x9291) |
+| `DATE_TIME_DIGITIZED` | `OFFSET_TIME_DIGITIZED` (0x9012) | `SUB_SEC_TIME_DIGITIZED` (0x9292) |
+
+**None of them can be applied where it is read.** A qualifier may appear before or after the date
+it qualifies, and `OFFSET_TIME` sits in the Exif SubIFD while `DATE_TIME` sits in IFD0, which is
+walked first. So the readings are collected during the directory walk and combined once it ends.
+The same is true of IPTC, which splits every instant across two datasets — `CCYYMMDD` and
+`HHMMSS±HHMM` — that may arrive in either order.
+
+**The fraction is digits after an implied point**, so `SubSecTimeOriginal` of `12` is 0.12 s and
+not twelve of anything. It is what keeps two frames of a burst apart; without it they collapse to
+one instant and order by name.
+
+**The zone changes nothing a user sees today.** An EXIF date is already a wall-clock reading, so
+recording its offset adds provenance rather than shifting a value. It is stored now because it can
+only be filled by re-reading every file, and because `GPSDateStamp` plus `GPSTimeStamp` — a true
+UTC instant for the same moment — is the other half of recovering a zone a file never stated.
 
 One rule settles the whole table rather than one row at a time:
 

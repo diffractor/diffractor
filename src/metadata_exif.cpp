@@ -1118,6 +1118,58 @@ class exif_camera_settings_processor
 	float _gps_speed = 0.0f;
 	float _speed_to_kmh = 1.0f;
 
+	// A date, its zone and its fraction are three separate tags that may appear in any order, and
+	// OffsetTime lives in the Exif SubIFD while DateTime lives in IFD0. So the readings are held
+	// until the walk is over and combined once, rather than applied as they arrive.
+	struct pending_date
+	{
+		std::string text;
+		std::string offset;
+		std::string sub_second;
+	};
+
+	pending_date _date_time;
+	pending_date _date_original;
+	pending_date _date_digitized;
+
+	std::string _gps_date_stamp;
+	bool _has_gps_time = false;
+	double _gps_time[3] = {};
+
+	void add_pending(const pending_date& pending, const prop::date_source source) const
+	{
+		if (pending.text.empty()) return;
+
+		df::date_t d;
+		if (!d.parse_exif_date(pending.text) || !d.is_valid()) return;
+
+		if (const auto fraction = prop::parse_sub_second_intervals(pending.sub_second); fraction != 0)
+		{
+			d = df::date_t(d.to_int64() + fraction);
+		}
+
+		_metadata.dates.add(source, d, prop::parse_utc_offset(pending.offset));
+	}
+
+	// GPSDateStamp and GPSTimeStamp are a true UTC instant for the moment of capture, which is the
+	// one thing that can recover a zone an EXIF reading never stated. Stored, never displayed.
+	void add_gps_stamp() const
+	{
+		if (_gps_date_stamp.empty() || !_has_gps_time) return;
+
+		df::date_t d;
+		if (!d.parse_exif_date(_gps_date_stamp) || !d.is_valid()) return;
+
+		const auto seconds = static_cast<uint64_t>(_gps_time[0]) * 3600 +
+			static_cast<uint64_t>(_gps_time[1]) * 60 +
+			static_cast<uint64_t>(_gps_time[2]);
+
+		if (seconds >= 24 * 3600) return;
+
+		_metadata.dates.add_utc(prop::date_source::gps_stamp,
+		                        df::date_t(d.to_int64() + seconds * df::date_t::intervals_per_second));
+	}
+
 public:
 	explicit exif_camera_settings_processor(prop::item_metadata& pd) : _metadata(pd)
 	{
@@ -1132,6 +1184,11 @@ public:
 
 		if (_below_sea_level) _metadata.altitude = -_metadata.altitude;
 		_metadata.gps_speed = _gps_speed * _speed_to_kmh;
+
+		add_pending(_date_original, prop::date_source::exif_original);
+		add_pending(_date_digitized, prop::date_source::exif_digitized);
+		add_pending(_date_time, prop::date_source::exif_datetime);
+		add_gps_stamp();
 	}
 
 	void tag(const exif_dir_entry& entry)
@@ -1341,35 +1398,34 @@ public:
 			break;
 
 		case EXIF_TAG_DATE_TIME:
-			{
-				df::date_t ft;
-
-				if (ft.parse_exif_date(entry.text()) && ft.is_valid())
-				{
-					_metadata.dates.add(prop::date_source::exif_datetime, ft);
-				}
-			}
+			_date_time.text = entry.text();
 			break;
 		case EXIF_TAG_DATE_TIME_ORIGINAL:
-			{
-				df::date_t ft;
-
-				if (ft.parse_exif_date(entry.text()) && ft.is_valid())
-				{
-					_metadata.dates.add(prop::date_source::exif_original, ft);
-				}
-			}
+			_date_original.text = entry.text();
 			break;
 		case EXIF_TAG_DATE_TIME_DIGITIZED:
-			{
-				df::date_t ft;
+			_date_digitized.text = entry.text();
+			break;
 
-				if (ft.parse_exif_date(entry.text()) && ft.is_valid())
-				{
-					_metadata.dates.add(prop::date_source::exif_digitized, ft);
-				}
-				break;
-			}
+		case EXIF_TAG_OFFSET_TIME:
+			_date_time.offset = entry.text();
+			break;
+		case EXIF_TAG_OFFSET_TIME_ORIGINAL:
+			_date_original.offset = entry.text();
+			break;
+		case EXIF_TAG_OFFSET_TIME_DIGITIZED:
+			_date_digitized.offset = entry.text();
+			break;
+
+		case EXIF_TAG_SUB_SEC_TIME:
+			_date_time.sub_second = entry.text();
+			break;
+		case EXIF_TAG_SUB_SEC_TIME_ORIGINAL:
+			_date_original.sub_second = entry.text();
+			break;
+		case EXIF_TAG_SUB_SEC_TIME_DIGITIZED:
+			_date_digitized.sub_second = entry.text();
+			break;
 		}
 	}
 
@@ -1444,6 +1500,17 @@ public:
 			if (first_char_is(entry.text(), 'M')) _speed_to_kmh = 1.609344f;
 			else if (first_char_is(entry.text(), 'N')) _speed_to_kmh = 1.852f;
 			else _speed_to_kmh = 1.0f;
+			break;
+
+		case EXIF_TAG_GPS_DATE_STAMP:
+			_gps_date_stamp = entry.text();
+			break;
+
+		case EXIF_TAG_GPS_TIME_STAMP:
+			_gps_time[0] = entry.get_urational(0).to_real();
+			_gps_time[1] = entry.get_urational(1).to_real();
+			_gps_time[2] = entry.get_urational(2).to_real();
+			_has_gps_time = true;
 			break;
 		}
 	}

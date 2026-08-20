@@ -349,6 +349,63 @@ namespace prop
 	// it is a deliberate decision, not a side effect of adding a field.
 	static_assert(sizeof(date_pack) == 61, "date_pack size is a per-indexed-file memory cost");
 
+	// Accepts either a bare EXIF offset - `+02:00`, which is the whole of OffsetTimeOriginal - or
+	// the tail of an ISO timestamp, which is how XMP carries the same fact. It lives beside the
+	// encoding it produces so the two cannot drift apart.
+	constexpr int16_t parse_utc_offset(const std::string_view str)
+	{
+		if (str.size() > 10 && (str.back() == 'Z' || str.back() == 'z'))
+		{
+			return date_pack::utc_instant;
+		}
+
+		if (str.size() < 6) return date_pack::no_offset;
+
+		const auto tail = str.substr(str.size() - 6);
+
+		const auto is_two_digits = [](const std::string_view s)
+		{
+			return s[0] >= '0' && s[0] <= '9' && s[1] >= '0' && s[1] <= '9';
+		};
+
+		const auto to_two_digits = [](const std::string_view s)
+		{
+			return (s[0] - '0') * 10 + (s[1] - '0');
+		};
+
+		if ((tail[0] != '+' && tail[0] != '-') || tail[3] != ':') return date_pack::no_offset;
+		if (!is_two_digits(tail.substr(1, 2)) || !is_two_digits(tail.substr(4, 2))) return date_pack::no_offset;
+
+		const auto minutes = to_two_digits(tail.substr(1, 2)) * 60 + to_two_digits(tail.substr(4, 2));
+		return static_cast<int16_t>(tail[0] == '-' ? -minutes : minutes);
+	}
+
+	// EXIF stores the fraction of a second as digits after an implied point, so `12` is 0.12 s and
+	// not 12 of anything. Without it a burst shot at 5 frames a second collapses to one instant and
+	// the frames order by name.
+	constexpr uint64_t parse_sub_second_intervals(const std::string_view str)
+	{
+		constexpr int digits_per_second = 7; // df::date_t counts 100 ns intervals
+
+		uint64_t result = 0;
+		auto used = 0;
+
+		for (const auto c : str)
+		{
+			if (c < '0' || c > '9') break;
+			if (used == digits_per_second) break;
+
+			result = result * 10 + static_cast<uint64_t>(c - '0');
+			++used;
+		}
+
+		if (used == 0) return 0;
+
+		for (auto i = used; i < digits_per_second; ++i) result *= 10;
+
+		return result;
+	}
+
 	// The tag a date was read from, for the properties panel. Not localized: these are tag names as
 	// they appear in the standards and in every other tool the user might check against.
 	constexpr std::string_view date_source_name(const date_source s)

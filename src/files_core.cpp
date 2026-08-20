@@ -3040,6 +3040,22 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 				result.dates.add_utc(prop::date_source::rip_date, date);
 			}
 		}
+		// TDOR is the recording's own release date, which for a rip is decades before the file. It
+		// is a wall-clock reading rather than an instant: nobody wrote a zone for 1969.
+		else if (is_key(kv.key, "TDOR") || is_key(kv.key, "originalyear") || is_key(kv.key, "original_year"))
+		{
+			const auto date = df::date_t::from(kv.value);
+			if (date.is_valid())
+			{
+				result.dates.add(prop::date_source::id3_original_release, date);
+			}
+			else if (kv.value.size() == 4 && str::is_num(kv.value))
+			{
+				const auto year = str::to_int(kv.value);
+				if (year > 1800 && year < 2100) result.dates.add(prop::date_source::id3_original_release,
+				                                                df::date_t(year, 1, 1, 0, 0, 0));
+			}
+		}
 		else if (is_key(kv.key, "id3v2_priv.Windows Media Player 9 Series"))
 		{
 			// FFmpeg exposes the PRIV payload with non-printable bytes escaped as \xNN and

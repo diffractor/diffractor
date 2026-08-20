@@ -80,6 +80,9 @@ void assert_metadata(const prop::item_metadata& expected, const prop::item_metad
 	assert_equal(expected.copyright_url, actual.copyright_url, "copyright_url", message);
 	assert_equal(expected.dates.original(), actual.dates.original(), "date original", message);
 	assert_equal(expected.dates.created(), actual.dates.created(), "date created", message);
+	// Modified is a date a user holds, so a fixture that stops at the other two cannot see a whole
+	// third of the ladder change under it.
+	assert_equal(expected.dates.modified(), actual.dates.modified(), "date modified", message);
 	assert_equal(expected.description, actual.description, "description", message);
 	assert_equal(expected.width, actual.width, "width", message);
 	assert_equal(expected.height, actual.height, "height", message);

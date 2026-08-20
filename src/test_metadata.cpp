@@ -68,6 +68,8 @@ static void should_scan_jpeg()
 	expected_iptc.location_country = "Czech Republic"_c;
 	expected_iptc.copyright_notice = "Copyright"_c;
 	expected_iptc.rating = 0;
+	// 2:55 and 2:60, which agree with the EXIF original this file also carries.
+	expected_iptc.dates.add(prop::date_source::iptc_created, df::date_t(2012, 9, 14, 19, 21, 14));
 
 	assert_metadata(expected_iptc, *extract_properties(load_path, metadata_type::IPTC), "IPTC");
 
@@ -85,6 +87,7 @@ static void should_scan_jpeg()
 	expected_xmp.rating = 4;
 	expected_xmp.dates.add(prop::date_source::xmp_exif_digitized, df::date_t(2012, 9, 14, 19, 21, 14));
 	expected_xmp.dates.add(prop::date_source::xmp_exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+	expected_xmp.dates.add(prop::date_source::xmp_modify, df::date_t(2012, 9, 14, 19, 21, 14));
 
 	assert_metadata(expected_xmp, *actual_xmp, "XMP");
 
@@ -276,6 +279,7 @@ static void should_scan_mp4()
 	expected.height = 320;
 	expected.rating = 4;
 	expected.dates.add_utc(prop::date_source::container_created, df::date_t(2010, 3, 20, 21, 29, 11));
+	expected.dates.add_utc(prop::date_source::xmp_modify, df::date_t(2010, 3, 20, 21, 29, 12));
 	expected.year = 2010;
 	expected.video_codec = "h264"_c;
 	expected.encoder = "HandBrake 0.9.4 2009112300"_c;
@@ -420,6 +424,7 @@ static void should_scan_mov()
 	expected.rating = 4;
 	expected.video_codec = "mpeg4"_c;
 	expected.dates.add_utc(prop::date_source::container_created, df::date_t(2005, 10, 17, 22, 54, 32));
+	expected.dates.add_utc(prop::date_source::xmp_modify, df::date_t(2005, 10, 17, 22, 56, 39));
 	expected.year = 2005;
 
 	assert_metadata(expected, *actual.to_props(), "ipod.mov");
@@ -1924,6 +1929,37 @@ static void should_take_the_modified_date_from_the_filesystem()
 	assert_equal(df::date_t(2019, 5, 4, 9, 0, 0), no_stamp.modified(), "rather than nothing at all");
 }
 
+// A zone and a fraction are separate EXIF tags from the date they qualify, and OffsetTime lives in
+// a different directory from DateTime, so neither can be applied where it is read. Every one of
+// these is stored rather than displayed today: they exist so the release that uses them needs no
+// re-index of its own.
+static void should_carry_the_zone_and_fraction_a_date_was_written_with()
+{
+	assert_equal(120, prop::parse_utc_offset("+02:00"), "a bare EXIF offset");
+	assert_equal(-450, prop::parse_utc_offset("-07:30"), "west of Greenwich, and not a whole hour");
+	assert_equal(120, prop::parse_utc_offset("2019-05-04T09:00:00+02:00"), "the tail of an ISO timestamp");
+	assert_equal(prop::date_pack::utc_instant, prop::parse_utc_offset("2019-05-04T09:00:00Z"), "an instant");
+	assert_equal(prop::date_pack::no_offset, prop::parse_utc_offset("2019:05:04 09:00:00"), "EXIF states no zone");
+	assert_equal(prop::date_pack::no_offset, prop::parse_utc_offset("+0200"), "and a malformed one claims nothing");
+
+	// EXIF writes the fraction as digits after an implied point, so `5` is half a second, not five
+	// of anything. Reading it as an integer would put a burst frame 5 seconds late.
+	assert_equal(5'000'000ull, prop::parse_sub_second_intervals("5"), "one digit is tenths");
+	assert_equal(1'200'000ull, prop::parse_sub_second_intervals("12"), "two digits are hundredths");
+	assert_equal(3'090'000ull, prop::parse_sub_second_intervals("309"), "three digits are milliseconds");
+	assert_equal(0ull, prop::parse_sub_second_intervals(""), "an absent fraction adds nothing");
+	assert_equal(0ull, prop::parse_sub_second_intervals("x"), "and neither does a malformed one");
+
+	// The fraction is what keeps two frames of a burst apart; without it they collapse to one group
+	// and order by name instead of by time.
+	prop::date_pack burst;
+	burst.add(prop::date_source::exif_original, df::date_t(df::date_t(2024, 6, 1, 12, 0, 0).to_int64() + 2'000'000));
+	burst.add(prop::date_source::xmp_exif_original, df::date_t(2024, 6, 1, 12, 0, 0));
+	assert_equal(1, burst.group_count(), "the same second is one group");
+	assert_equal(2'000'000ll, burst.group_value(0).to_int64() % df::date_t::intervals_per_second,
+	             "and it keeps the more precise reading");
+}
+
 // A print made in 1980 and scanned in 2024 is the case the three dates exist for: both are true,
 // they are decades apart, and the collection must file it under the older one.
 static void should_separate_original_from_created_for_a_scan()
@@ -2066,6 +2102,8 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should read exif DateTime as modified date"s, should_read_exif_datetime_as_modified);
 	tests.add("Should take the modified date from the filesystem"s,
 	          should_take_the_modified_date_from_the_filesystem);
+	tests.add("Should carry the zone and fraction a date was written with"s,
+	          should_carry_the_zone_and_fraction_a_date_was_written_with);
 	tests.add("Should separate original from created date for a scan"s,
 	          should_separate_original_from_created_for_a_scan);
 	tests.add("Should fall back through created to modified date"s, should_fall_back_through_created_to_modified);
