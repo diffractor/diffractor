@@ -94,6 +94,18 @@ Defects confirmed in the source before 1.27.1 and deliberately left, each with t
 
 ---
 
+## 1B. Scoped out of 1.27.2, attached to no release
+
+Each was raised while 1.27.2 was being planned or reviewed, and each was deliberately not taken. What 1.27.2 did take is in [1.27.2](v-1.27.2.md); its outstanding manual gates are recorded there, not here.
+
+- **`.vscode/tasks.json` still drives MSBuild against `df.sln`.** 1.27.2 deleted the solution and every vendored `.vcxproj`, so all five build tasks in the workspace invoke a build description that no longer exists. Not a shipping defect and invisible to a user, but it is the first thing a contributor touches.
+- **Equirectangular panoramas are drawn flat.** `GPano:ProjectionType` of `equirectangular` describes a sphere; 1.27.2 draws the strip at 100% and lets the pointer look along it, which is a different feature that happens to serve the same files. Reprojection is a renderer, and the sidebar globe is the closest thing in the tree to one — but it resamples a small fixed source into a small disc, and a panorama is neither.
+- **Editing a container's own creation date.** 1.27.2's metadata editor edits Original only, and shows Created and Modified read-only beside it. A container that records its own creation time — MP4, MOV, `xmp:CreateDate` — is a real case for editing Created, and a narrow one. It was left out because "edit Created" and "rewrite a filesystem stamp" are indistinguishable to a user reading a dialog, and settling that needs wording work rather than code.
+- **A calendar popup on the date control.** The segmented field 1.27.2 introduces is complete without one: every segment is typed or stepped. A calendar is a second control with its own layout, focus, keyboard and locale problems, and it is worth building only if picking a date by looking at a month turns out to be something users reach for.
+- **The tile caption under Group by Date Created shows the resolved date, not the creation date.** `populate_info` is built without knowing the active order, so the caption is less specific than the group it sits in. The group header states the bucket, so nothing is misfiled.
+
+---
+
 ## 2. Invariants that must survive a re-sync or refactor
 
 ### 2.0 The spelling dictionary writes to the per-user folder, never the install folder

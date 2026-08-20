@@ -279,6 +279,26 @@ written during the current second was later than the scan that had just read it 
 `needs_scan` said yes forever. Anything producing a `df::date_t` must carry the same 100ns tick
 the file times do.
 
+### One that compiles clean on both and is slow on one
+
+**A scalar loop is not a portable vector loop.** Every hand-written kernel in
+[util_simd.h](../src/util_simd.h) and [render_surface.cpp](../src/render_surface.cpp) carries a
+scalar fallback, and each one has only ever been measured under MSVC. That is the compiler that
+flatters them: on a byte-wise distance loop MSVC's auto-vectoriser finds `psadbw` by itself and
+lands within 5% of the hand-written SSE2 kernel, while GCC at `-O3` transliterates the same
+source into an unpack-compare-subtract chain roughly ten times slower. Auto-vectorisation will
+widen a loop on both compilers; neither can be relied on to synthesise the specialised
+instruction that makes a kernel fast, and GCC does not.
+
+The consequence for this port is that a fallback path is a correctness fallback, not a
+performance one, and the places where Linux takes it are the places to measure first: the scalar
+loop in `ui::surface::swap_rb`, which is reached whenever SSSE3 is absent *or* the surface is not
+16-byte aligned; the software blend paths in [render_software.h](../src/render_software.h); and
+any hot loop written on the assumption that the compiler would widen it. Where a Linux profile
+finds one of these, the answer is an explicit intrinsic behind the runtime check the codebase
+already has - `platform::has_avx2()`, `platform::ssse3_supported` - not a rewrite of the scalar
+source in the hope GCC notices.
+
 ## Features with no Linux equivalent
 
 These are product decisions, not ports. The governing answer is now settled: **anything without

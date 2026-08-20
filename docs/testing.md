@@ -27,7 +27,7 @@ One file per subject, matching the `src/` prefixes in [implementation](implement
 | [test_text.cpp](../src/test_text.cpp) | `register_text_tests` | `app_text`, `util_spell`: catalogs, plural forms, translated month names, spell checking |
 | [test_render.cpp](../src/test_render.cpp) | `register_render_tests` | `render*`, `util_simd`: software blends, YUV conversion, area downscaling, colour adjustment, surface transforms, alpha animation, decode budgets |
 | [test_files.cpp](../src/test_files.cpp) | `register_files_tests` | `files*`: codec decode and encode, format detection, container parsing, the write path (staging, replacement, originals, collisions, rollback), decoder robustness |
-| [test_metadata.cpp](../src/test_metadata.cpp) | `register_metadata_tests` | `metadata*`, `model_property`, `model_tags`: EXIF, IPTC, XMP, ICC, per-format metadata scanning, sidecars, tag sets, property presentation |
+| [test_metadata.cpp](../src/test_metadata.cpp) | `register_metadata_tests` | `metadata*`, `model_property`, `model_dates`, `model_tags`: EXIF, IPTC, XMP, ICC, per-format metadata scanning, the date pack and its authority table, sidecars, tag sets, property presentation |
 | [test_media_edit.cpp](../src/test_media_edit.cpp) | `register_media_edit_tests` | The metadata write path and the image editing model: in-place and staged edits, Windows shell tags, orientation, crop, perspective, temperature |
 | [test_av.cpp](../src/test_av.cpp) | `register_av_tests` | `av*`: probing, seeking, read-ahead bounds, hover preview, audio buffers, the visualizer, session lifetime |
 | [test_index.cpp](../src/test_index.cpp) | `register_index_tests` | `model_index`, `model_db`, `model_postings`: indexing, the inverted and trigram indexes, the database, the thumbnail pipeline, duplicates and presence, stale-result discarding, hydration |
@@ -97,6 +97,10 @@ Recorded so they are not rediscovered as surprises:
 - `ui_dialog.h`, `ui_text_view.h` and `ui_plasma.h` have no coverage. The suite has no `ui::draw_context`, so anything whose only output is pixels on a real device is verified by eye.
 - View-level behavior for `view_locate`, `view_tags`, `view_batch`, `view_items` and `view_media` is covered only through their planning helpers.
 - Nothing drives `view_state::tick` end to end; `calc_playback_advance` covers the decision, not the player calls around it.
+- Maker note decoding is exercised only on Canon. The other makes libexif handles reach the same call, but no fixture carries one.
+- No fixture holds an embedded image that fails to decode, so the pane's fall back from a picture to a hex dump is proven by construction rather than end to end.
+- `parse_mpf_index` in [files_jpeg.cpp](../src/files_jpeg.cpp) is file-static, so its bounds guard against a malformed Multi-Picture index has no test. It parses untrusted file offsets, which is exactly where a silent regression would matter.
+- `metadata_tree_control` in [view_items.cpp](../src/view_items.cpp) is file-static and lays out its own detail rows, so nothing covers the box each detail control is given. A control that fills its bounds was once stretched by this and would be again without notice.
 
 ## Where this lives
 
