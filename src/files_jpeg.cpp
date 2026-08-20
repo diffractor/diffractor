@@ -1489,9 +1489,11 @@ static void parse_mpf_index(metadata_kv_list& rows, const uint8_t* data, const u
 		default: role = "undefined type"; break;
 		}
 
+		// Only the first individual image stores zero, so a later entry claiming it is naming an
+		// offset it does not have rather than pointing at this file.
 		auto& row = rows.emplace_back(
 			std::format("Image {}", i + 1),
-			offset == 0
+			(i == 0 && offset == 0)
 				? std::format("{}, {} bytes, this file", role, size)
 				: std::format("{}, {} bytes, offset {}", role, size, tiff_offset + offset));
 

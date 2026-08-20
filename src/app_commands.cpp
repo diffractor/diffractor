@@ -1054,11 +1054,16 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 				// A move empties the folders it came from, and only the destination was ever reported.
 				// A search that names no folder is not watched, so it would keep listing what moved.
 				df::unique_folders sources;
+				df::item_element_ptr next;
 
 				if (is_move)
 				{
 					for (const auto& path : items.file_paths(true)) sources.emplace(path.folder());
 					for (const auto& path : items.folder_paths()) sources.emplace(path.parent());
+
+					// #250: what the cursor should settle on once the set has gone, taken before the
+					// operation because afterwards the items are no longer in the listing to step from.
+					next = s.next_unselected_item();
 				}
 
 				const auto result = platform::move_or_copy(
@@ -1075,6 +1080,18 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 						detach.keep_display_closed();
 						s.open(view, df::search_t().add_selector(write_folder),
 						       make_unique_paths(result.created_files));
+					}
+					else if (is_move)
+					{
+						// #249: the listing used to be updated only when the queued re-enumeration
+						// happened to notice the folder had changed, which is why moved files
+						// sometimes stayed. The move has completed here, so its own completion
+						// re-runs the listing; the validation above still follows and confirms it.
+						// #250: and the cursor lands on what followed the set rather than resetting,
+						// so sorting a folder is not a re-navigation after every action.
+						df::unique_paths selection;
+						if (next) next->add_to(selection);
+						s.open(view, s.search(), selection);
 					}
 				}
 				else if (result.code != platform::file_op_result_code::CANCELLED)
@@ -1773,6 +1790,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 
 	static bool search_date_from = false;
 	static bool search_date_until = false;
+	static bool search_date_original = false;
 	static bool search_date_created = false;
 	static bool search_date_modified = false;
 	static df::date_t from_val;
@@ -1813,6 +1831,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 	});
 
 	auto date_type_control = std::make_shared<ui::col_control>(std::vector<view_element_ptr>{
+		std::make_shared<ui::check_control>(dlg_parent, tt_prep(tt.prop_name_original.sv()), search_date_original),
 		std::make_shared<ui::check_control>(dlg_parent, tt.prop_name_created, search_date_created),
 		std::make_shared<ui::check_control>(dlg_parent, tt.prop_name_modified, search_date_modified)
 	});
@@ -2247,9 +2266,18 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 			new_search.with(df::search_term(file_group::audio, df::search_term_modifier{}));
 		}
 
+		// One box narrows the range to that date; none or several leave it against all of them, which
+		// is what the range means with nothing said about which date it applies to.
 		auto date_target = df::date_parts_prop::any;
-		if (search_date_created && !search_date_modified) date_target = df::date_parts_prop::created;
-		if (!search_date_created && search_date_modified) date_target = df::date_parts_prop::modified;
+		const auto date_boxes_checked = (search_date_original ? 1 : 0) + (search_date_created ? 1 : 0) +
+			(search_date_modified ? 1 : 0);
+
+		if (date_boxes_checked == 1)
+		{
+			if (search_date_original) date_target = df::date_parts_prop::original;
+			else if (search_date_created) date_target = df::date_parts_prop::created;
+			else date_target = df::date_parts_prop::modified;
+		}
 
 		if (search_date_from)
 		{

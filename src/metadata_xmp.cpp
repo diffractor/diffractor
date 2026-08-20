@@ -862,6 +862,74 @@ df::file_path probe_xmp_path(const df::file_path src_path, const std::string_vie
 	return src_path.extension(".xmp");
 }
 
+// GPano writes these as plain integers. A property the file omits leaves its member zero, which
+// prop::panorama_geometry reads as an incomplete declaration and resolves against the pixels.
+static void read_panorama_geometry(const SXMPMeta& xmp, prop::panorama_geometry& g)
+{
+	const auto read = [&xmp](const char* const name, int& out)
+	{
+		XMP_Int32 value = 0;
+		XMP_OptionBits flags = 0;
+		if (xmp.GetProperty_Int(ns_gpano, name, &value, &flags)) out = value;
+	};
+
+	read("FullPanoWidthPixels", g.full_width);
+	read("FullPanoHeightPixels", g.full_height);
+	read("CroppedAreaLeftPixels", g.cropped_left);
+	read("CroppedAreaTopPixels", g.cropped_top);
+	read("CroppedAreaImageWidthPixels", g.cropped_width);
+	read("CroppedAreaImageHeightPixels", g.cropped_height);
+}
+
+prop::panorama_geometry metadata_xmp::panorama(const df::file_path path)
+{
+	prop::panorama_geometry result;
+
+	try
+	{
+		const auto* const ft = files::file_type_from_name(path);
+
+		if (ft->has_trait(file_traits::embedded_xmp))
+		{
+			SXMPFiles f;
+
+			if (f.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(path)), kXMP_UnknownFile,
+			               kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
+			{
+				SXMPMeta xmp;
+				const auto found = f.GetXMP(&xmp);
+				f.CloseFile();
+
+				if (found)
+				{
+					read_panorama_geometry(xmp, result);
+					if (result.is_valid()) return result;
+				}
+			}
+		}
+
+		// A stitcher that wrote a sidecar rather than an embedded packet still declared the sphere.
+		const auto sidecar = blob_from_file(probe_xmp_path(path, {}));
+
+		if (!sidecar.empty())
+		{
+			SXMPMeta xmp;
+			xmp.ParseFromBuffer(std::bit_cast<const char*>(sidecar.data()), static_cast<uint32_t>(sidecar.size()));
+			read_panorama_geometry(xmp, result);
+		}
+	}
+	catch (const std::exception& e)
+	{
+		record_xmp_error(__FUNCTION__, e.what());
+	}
+	catch (const XMP_Error& e)
+	{
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
+	}
+
+	return result;
+}
+
 bool metadata_xmp::has_embedded_xmp(const df::file_path path)
 {
 	try

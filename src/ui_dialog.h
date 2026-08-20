@@ -3674,7 +3674,7 @@ public:
 
 		for (const auto& c : _controls)
 		{
-			// dont destroy controls that are in the new set
+			// don't destroy controls that are in the new set
 			if (!controls_set.contains(c))
 			{
 				c->visit_controls(destroyer);

@@ -2567,6 +2567,9 @@ msgstr "更新日時"
 msgid "or"
 msgstr "or"
 
+msgid "original"
+msgstr "元の日時"
+
 msgid "related"
 msgstr "関連"
 

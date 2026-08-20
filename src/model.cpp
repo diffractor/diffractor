@@ -908,6 +908,7 @@ void view_state::toggle_group_order()
 		group_by::extension,
 		group_by::location,
 		group_by::rating_label,
+		group_by::date_original,
 		group_by::date_created,
 		group_by::date_modified,
 		group_by::camera,
@@ -1999,11 +2000,12 @@ public:
 			result.emplace_back(str::to_string(sidecars), ui::style::color::sidecar_background);
 		}
 
-		// Same condition as the tile and the detail row: the zero that says "no other copy" is an
-		// answer, but a count drawn while presence is still checking would read as one.
-		if (_item->presence() != item_presence::unknown)
+		// Issue #137 - the count includes this file, so below two it says "no other copy", which the
+		// absence of a badge already says. Presence is still the gate: a count drawn while the check
+		// is running would read as an answer it has not reached.
+		if (_item->presence() != item_presence::unknown && _item->duplicates().count > 1)
 		{
-			result.emplace_back(str::format_count(_item->duplicates().count, true),
+			result.emplace_back(str::format_count(_item->duplicates().count),
 			                    ui::style::color::duplicate_background);
 		}
 
@@ -2414,21 +2416,28 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 
 				if (md)
 				{
+					// design.md: the overlay identifies, it does not summarise. A photograph or a video
+					// is already on screen, so its name, date, rating and label are the whole of what an
+					// overlay adds; anything more competes with the only thing the Media view exists for,
+					// and the questions it answers are asked in the panel and the metadata pane. Audio is
+					// the exception - the media is not a picture, so the overlay *is* the presentation.
+					const auto overlay_is_the_presentation = !compact || ft->has_trait(file_traits::music_metadata);
+
 					// Compact keeps what describes the subject and drops what describes the container,
 					// because full screen is where the picture is read, not the file.
 					std::vector<view_element_ptr> pixel_elements;
 					std::vector<view_element_ptr> audio_elements;
 
-					if (md->width && md->height)
-					{
-						for (const auto& e : format_dims(md->width, md->height, ft, false))
-						{
-							pixel_elements.emplace_back(e);
-						}
-					}
-
 					if (!compact)
 					{
+						if (md->width && md->height)
+						{
+							for (const auto& e : format_dims(md->width, md->height, ft, false))
+							{
+								pixel_elements.emplace_back(e);
+							}
+						}
+
 						const auto video_codec = info.video_codec.is_empty() ? md->video_codec : info.video_codec;
 						const auto pixel_format = info.pixel_format.is_empty() ? md->pixel_format : info.pixel_format;
 						const auto bitrate = info.bitrate ? prop::format_bit_rate(info.bitrate) : md->bitrate.sz();
@@ -2470,42 +2479,64 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 						if (!prop::is_null(audio_codec))
 							audio_elements.emplace_back(
 								make_link(s, audio_codec, prop::audio_codec, search_result));
+
+						append_bullet(elements, ft->icon, pixel_elements);
+						append_bullet(elements, icon_index::audio, audio_elements);
+						append_bullet(elements, icon_index::camera, create_camera_elements(s, md, search_result));
 					}
 
-					append_bullet(elements, ft->icon, pixel_elements);
-					append_bullet(elements, icon_index::audio, audio_elements);
-
-					append_bullet(elements, icon_index::camera, create_camera_elements(s, md, search_result));
-					append_bullet(elements, icon_index::disk, create_album_elements(s, md, search_result));
-					append_bullet(elements, icon_index::person, create_artist_elements(s, md, search_result));
-					append_bullet(elements, icon_index::retro, create_retro_elements(s, md, search_result));
-					append_bullet(elements, icon_index::copyright, create_copyright_elements(s, md, search_result));
-				}
-
-				// Location, Tags and Description close the panel. Location and Tags lead with the command
-				// that edits them, so the icon in front of the row both names the field and opens it.
-				std::vector<view_element_ptr> location_elements;
-				if (md) location_elements = create_location_elements(s, md, search_result);
-				append_editable_bullet(s, elements, commands::tool_locate, location_elements);
-
-				std::vector<view_element_ptr> tag_elements;
-				if (md) tag_elements = create_tag_elements(s, md, search_result);
-				constexpr size_t max_tags = 6;
-				if (tag_elements.size() > max_tags)
-				{
-					const auto hidden_count = tag_elements.size() - max_tags;
-					tag_elements.resize(max_tags);
-					tag_elements.emplace_back(std::make_shared<text_element>(std::format("+{}", hidden_count)));
-				}
-				append_editable_bullet(s, elements, commands::tool_tag, tag_elements);
-
-				// A populated description gets its own section below this panel, and that section carries
-				// the same edit command, so only its absence needs an affordance here.
-				if (!md || is_empty(md->description))
-				{
-					if (auto description_command = s.find_command(commands::tool_edit_description))
+					if (overlay_is_the_presentation)
 					{
-						elements.emplace_back(std::make_shared<command_link_element>(std::move(description_command)));
+						append_bullet(elements, icon_index::disk, create_album_elements(s, md, search_result));
+						append_bullet(elements, icon_index::person, create_artist_elements(s, md, search_result));
+						append_bullet(elements, icon_index::retro, create_retro_elements(s, md, search_result));
+					}
+
+					if (compact)
+					{
+						// Where it was taken describes the subject as much as when it was, so location keeps
+						// its place beside the date in full screen. It identifies rather than invites an
+						// edit, so it carries no command icon and is absent when the item has no place.
+						append_bullet(elements, icon_index::location,
+						              create_location_elements(s, md, search_result));
+					}
+
+					if (!compact)
+					{
+						append_bullet(elements, icon_index::copyright,
+						              create_copyright_elements(s, md, search_result));
+					}
+				}
+
+				if (!compact)
+				{
+					// Location, Tags and Description close the panel. Location and Tags lead with the
+					// command that edits them, so the icon in front of the row both names the field and
+					// opens it.
+					std::vector<view_element_ptr> location_elements;
+					if (md) location_elements = create_location_elements(s, md, search_result);
+					append_editable_bullet(s, elements, commands::tool_locate, location_elements);
+
+					std::vector<view_element_ptr> tag_elements;
+					if (md) tag_elements = create_tag_elements(s, md, search_result);
+					constexpr size_t max_tags = 6;
+					if (tag_elements.size() > max_tags)
+					{
+						const auto hidden_count = tag_elements.size() - max_tags;
+						tag_elements.resize(max_tags);
+						tag_elements.emplace_back(std::make_shared<text_element>(std::format("+{}", hidden_count)));
+					}
+					append_editable_bullet(s, elements, commands::tool_tag, tag_elements);
+
+					// A populated description gets its own section below this panel, and that section
+					// carries the same edit command, so only its absence needs an affordance here.
+					if (!md || is_empty(md->description))
+					{
+						if (auto description_command = s.find_command(commands::tool_edit_description))
+						{
+							elements.emplace_back(
+								std::make_shared<command_link_element>(std::move(description_command)));
+						}
 					}
 				}
 
@@ -2553,15 +2584,16 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 				auto media_created = std::make_shared<text_element>(platform::format_date_time(item->media_created()),
 				                                                    view_element_style::none);
 				if (search_result.type == df::search_result_type::match_date && s.search().
-					is_match(prop::created_utc, item->media_created()))
+					is_match(prop::created_exif, item->media_created()))
 					media_created->set_style_bit(
 						view_element_style::important, true);
-				table->add(tt.prop_name_created, media_created);
+				table->add(tt_prep(tt.prop_name_original.sv()), media_created);
 
-				auto file_modified = std::make_shared<text_element>(platform::format_date_time(item->file_modified()),
-				                                                    view_element_style::none);
+				auto file_modified = std::make_shared<text_element>(
+					platform::format_date_time(item->file_modified().system_to_local()),
+					view_element_style::none);
 				if (search_result.type == df::search_result_type::match_date && s.search().
-					is_match(prop::modified, item->file_modified()))
+					is_match(prop::modified, item->file_modified().system_to_local()))
 					file_modified->set_style_bit(
 						view_element_style::important, true);
 				table->add(tt.prop_name_modified, file_modified);
@@ -2609,7 +2641,7 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 			           make_rank_element(i1->file_size().str(), i1->file_size() > i2->file_size()),
 			           make_rank_element(i2->file_size().str(), i1->file_size() < i2->file_size()));
 
-			table->add(tt.prop_name_created,
+			table->add(tt_prep(tt.prop_name_original.sv()),
 			           make_rank_element(platform::format_date_time(i1->media_created()),
 			                             i1->media_created() > i2->media_created()),
 			           make_rank_element(platform::format_date_time(i2->media_created()),
@@ -3205,6 +3237,8 @@ df::item_element_ptr view_state::next_unselected_item() const
 {
 	auto found = false;
 	const auto start = _focus;
+	df::item_element_ptr first; // first unselected in the listing
+	df::item_element_ptr previous; // nearest unselected at or before the focus
 
 	for (const auto& b : _item_groups)
 	{
@@ -3215,22 +3249,21 @@ df::item_element_ptr view_state::next_unselected_item() const
 				return i;
 			}
 
+			if (!i->is_selected())
+			{
+				if (!first) first = i;
+				if (!found) previous = i;
+			}
+
 			found = found || i == start;
 		}
 	}
 
-	for (const auto& b : _item_groups)
-	{
-		for (const auto& i : b->items())
-		{
-			if (!i->is_selected())
-			{
-				return i;
-			}
-		}
-	}
-
-	return nullptr;
+	// Nothing follows the set, which is a selection running to the end of the listing. Settle on what
+	// precedes it rather than on the first item: jumping to the top is the cursor reset #250 reported,
+	// and it is the same reset whether the set was in the middle or at the end. A focus that is not in
+	// the listing has nothing to be before, so the first item is still the only answer there.
+	return found ? previous : first;
 }
 
 df::item_element_ptr view_state::end_item(const bool forward) const
@@ -3967,6 +4000,10 @@ void texture_state::seed_placeholder(const df::item_element_ptr& i)
 	// replacing it would step backwards.
 	if (!i || _tex || _staged_surface) return;
 
+	// Staged without touching _display_dimensions: the pane is laid out for what the item is, and a
+	// thumbnail is not always that shape. draw fits it rather than stretching it - see
+	// df::fit_preserving_aspect. Publishing the thumbnail's shape here instead would jump the layout
+	// when the decode arrived.
 	const auto& s = i->thumbnail_surface();
 	if (ui::is_valid(s)) _staged_surface = s;
 }
@@ -4034,6 +4071,8 @@ void texture_state::free_graphics_resources()
 	_zoom_texture.reset();
 	_last_draw_tex.reset();
 	_fade_out_tex.reset();
+	_panorama_tex.reset();
+	_panorama_rendered = false;
 	_tex_invalid = true;
 
 	// The texture this was dissolving from has just gone; leaving the animation part-way would fade the
@@ -4052,6 +4091,12 @@ void texture_state::release_decoded_surfaces()
 	_retained_surface.reset();
 	_zoom_staged_surface.reset();
 	_zoom_timestamp = {};
+
+	// The mip pyramid is the biggest thing here: it holds a third again as much as the source it was
+	// built from, and the source is already going.
+	_panorama_renderer.set_source(nullptr);
+	_panorama_source.reset();
+	_panorama_surface.reset();
 
 	free_graphics_resources();
 }
@@ -4198,6 +4243,18 @@ static sizei oriented_dimensions(const file_load_result& loaded)
 	return dims;
 }
 
+// A texture's extent as it lands on screen. The destination is in display space, so an extent
+// compared against it has to be in the same one.
+static sizei oriented_extent(sizei dims, const ui::orientation orientation)
+{
+	if (setting.show_rotated && flips_xy(orientation))
+	{
+		std::swap(dims.cx, dims.cy);
+	}
+
+	return dims;
+}
+
 // Fits an extent inside both budgets the draw backend published: the pixels a texture may cost, and
 // the largest edge the device accepts. Aspect ratio is kept, so an over-wide panorama is shown
 // scaled down rather than failing its upload and showing nothing.
@@ -4233,6 +4290,22 @@ static sizei clamp_to_texture_budget(sizei target)
 sizei texture_state::calc_scale_hint() const
 {
 	const auto dims = oriented_dimensions(_loaded);
+
+	// A projection samples the sphere, not the rectangle, so the viewport says nothing about how
+	// much source it needs: at a narrow field of view a small window reads a large arc at close to
+	// one texel per pixel. The arc the viewport covers is what sets the resolution, capped at the
+	// file's own, and the decode budget above still refuses what will not fit.
+	if (_panorama.active && _panorama.geometry.is_valid())
+	{
+		const auto full_width_needed = _display_bounds.width() * 2.0 * M_PI / std::max(0.01, _panorama.view.fov());
+		const auto wanted = std::min(1.0, full_width_needed / std::max(1, _panorama.geometry.full_width));
+		const auto target = sizei{
+			std::max(1, df::round(dims.cx * wanted)), std::max(1, df::round(dims.cy * wanted))
+		};
+
+		return clamp_to_texture_budget(target);
+	}
+
 	const auto scale = ui::calc_scale_down_factor(dims, _display_bounds.extent());
 	const auto target = scale < 2 ? dims : sizei{dims.cx / scale, dims.cy / scale};
 
@@ -4240,19 +4313,29 @@ sizei texture_state::calc_scale_hint() const
 }
 
 
-void texture_state::draw(ui::draw_context& rc, const pointi offset, const int compare_pos, const bool first_texture,
-                         const bool interactive)
+// The decode ladder, shared by the flat and projected presentations. What differs between them is
+// the resolution asked for, and calc_scale_hint owns that.
+void texture_state::update_decode(ui::draw_context& rc)
 {
 	const auto media_bounds = _display_bounds;
 
-	if (!media_bounds.is_empty())
+	if (media_bounds.is_empty()) return;
+
 	{
 		const auto scale_hint = calc_scale_hint();
 
-		if ((_tex_invalid || _loading_scale_hint != scale_hint) && !_loaded.is_empty())
+		// A projection reads the decoded pixels itself, so it needs them packed. Everything else hands
+		// the surface straight to a texture, where planar YUV is cheaper and the backend does the
+		// conversion. The requirement is part of what a decode was asked for, so changing it has to
+		// re-decode even when the size did not change.
+		const auto wants_packed = _panorama.active;
+
+		if ((_tex_invalid || _loading_scale_hint != scale_hint || _loading_packed != wants_packed) &&
+			!_loaded.is_empty())
 		{
 			cancel_pending_decode();
 			_loading_scale_hint = scale_hint;
+			_loading_packed = wants_packed;
 			_tex_invalid = false;
 
 			const auto decode_bytes = files::estimate_decode_bytes(_loaded.i, scale_hint);
@@ -4281,22 +4364,23 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 				// queue.
 				_async.queue_async(placeholder ? async_queue::render : async_queue::render_display,
 				                   [&as = _async, ld = _loaded, retained, scale_hint, placeholder, generation, cancel,
-					                   token, t = ui_owned(_async, shared_from_this())]
+					                   token, wants_packed, t = ui_owned(_async, shared_from_this())]
 				                   {
 					                   if (cancel->load(std::memory_order_relaxed)) return;
 					                   files loader;
 					                   const auto can_reuse = ui::is_valid(retained) && retained->dimensions().cx >=
 						                   scale_hint.cx &&
-						                   retained->dimensions().cy >= scale_hint.cy;
+						                   retained->dimensions().cy >= scale_hint.cy &&
+						                   (!wants_packed || ui::is_packed(retained->format()));
 					                   auto s = can_reuse
 						                            ? loader.scale_if_needed(retained, scale_hint)
-						                            : ld.to_surface(scale_hint, true, token);
+						                            : ld.to_surface(scale_hint, !wants_packed, token);
 					                   auto zoom = ui::is_valid(s)
 						                               ? loader.scale_if_needed(
 							                               s, df::zoom_view_state::navigator_surface_extent)
 						                               : nullptr;
 
-					                   as.queue_ui([t, s, zoom, placeholder, generation, can_reuse]
+					                   as.queue_ui([t, s, zoom, placeholder, generation, can_reuse, wants_packed]
 					                   {
 						                   // Scale changes and phase upgrades can complete out of order. Only the current
 						                   // request may publish, and a placeholder may never replace a later phase.
@@ -4322,11 +4406,30 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 						                   // rather than a cancellation.
 						                   if (!ui::is_valid(s)) t->_display_problem = display_problem::failed;
 
-						                   if (!can_reuse && ui::is_valid(s) &&
-							                   (!ui::is_valid(t->_retained_surface) || s->size() > t->_retained_surface
-								                   ->size()))
+						                   // What is worth holding is decided by what will read it. Comparing
+						                   // allocated bytes compares two formats against each other - planar YUV
+						                   // costs 1.5 bytes a pixel and packed costs 4 - so a large planar
+						                   // surface from a flat view outweighed the packed decode a projection
+						                   // had just asked for, and the projection then had nothing it could
+						                   // read and drew an empty frame for as long as the item was open.
+						                   if (!can_reuse && ui::is_valid(s))
 						                   {
-							                   t->_retained_surface = s;
+							                   const auto& held = t->_retained_surface;
+							                   const auto held_valid = ui::is_valid(held);
+							                   const auto keeps_format = !wants_packed || !held_valid ||
+								                   ui::is_packed(s->format()) == ui::is_packed(held->format());
+							                   const auto pixels = [](const ui::const_surface_ptr& surface)
+							                   {
+								                   const auto d = surface->dimensions();
+								                   return static_cast<int64_t>(d.cx) * d.cy;
+							                   };
+
+							                   if (!held_valid ||
+								                   (!keeps_format && ui::is_packed(s->format())) ||
+								                   (keeps_format && pixels(s) > pixels(held)))
+							                   {
+								                   t->_retained_surface = s;
+							                   }
 						                   }
 						                   t->_async.invalidate_view(view_invalid::view_redraw);
 					                   });
@@ -4350,11 +4453,20 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 			}
 		}
 	}
+}
+
+void texture_state::draw(ui::draw_context& rc, const pointi offset, const int compare_pos, const bool first_texture,
+                         const bool interactive)
+{
+	const auto media_bounds = _display_bounds;
+
+	_panorama = {};
+	update_decode(rc);
 
 	// After the upload above, because that is what starts the dissolve. Read before it, this is the
 	// previous fade's finished value: the incoming texture would draw opaque for one frame, the
 	// outgoing one would be released as complete, and the fade would then run against the background.
-	const auto alpha = _display_alpha_animation.val();
+	auto alpha = _display_alpha_animation.val();
 
 	const auto tex = _vid_tex && _vid_tex->is_valid() ? _vid_tex : _tex;
 	if ((!tex || !tex->is_valid()) && !media_bounds.is_empty())
@@ -4369,13 +4481,29 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 	// frozen copy would drift out of register for the length of the fade.
 	if (_fade_out_tex && _fade_out_tex->is_valid())
 	{
-		if (alpha < 1.0f)
+		const auto fade_dims = _fade_out_tex->source_extent();
+		const auto fades_whole_texture = _fade_out_source_rect.width() >= fade_dims.cx &&
+			_fade_out_source_rect.height() >= fade_dims.cy;
+
+		if (!fades_whole_texture)
+		{
+			// In compare the last source rect is the split portion, and fitting the destination to
+			// that shape would shrink the outgoing picture for the length of the dissolve. Without an
+			// underlay there is nothing to dissolve from, so the fade is abandoned rather than run
+			// against the background - a flash is not an improvement on a resize.
+			_fade_out_tex.reset();
+			_display_alpha_animation.reset(1.0f);
+			alpha = 1.0f;
+		}
+		else if (alpha < 1.0f)
 		{
 			const auto fade_orientation = _fade_out_tex->_orientation;
+			const auto fade_bounds = df::fit_preserving_aspect(
+				rectd(media_bounds), sized(oriented_extent(fade_dims, fade_orientation)));
 			const auto fade_dst_quad = setting.show_rotated
-				                           ? quadd(media_bounds.offset(offset)).transform(
+				                           ? quadd(fade_bounds.offset(pointd(offset))).transform(
 					                           to_simple_transform(fade_orientation))
-				                           : media_bounds.offset(offset);
+				                           : fade_bounds.offset(pointd(offset));
 
 			rc.draw_texture(_fade_out_tex, fade_dst_quad, _fade_out_source_rect, 1.0f, _fade_out_sampler);
 		}
@@ -4391,7 +4519,14 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 		const auto orientation = tex->_orientation;
 		const auto sampler = calc_sampler(media_bounds.extent(), tex_dims, orientation, interactive,
 		                                  tex == _tex && is_provisional());
-		auto draw_bounds = rectd(media_bounds);
+
+		// rendering.md: the destination is shaped by what the item is, not by what has arrived to
+		// draw into it, and a stand-in staged before the decode need not be that shape. Fitting it
+		// keeps the subject's shape; stretching it distorted the picture until the decode landed,
+		// which is what read as a compare-mode defect.
+		const auto image_bounds = df::fit_preserving_aspect(rectd(media_bounds), sized(oriented_extent(
+			                                                    tex_dims, orientation)));
+		auto draw_bounds = image_bounds;
 		auto tex_bounds = rectd(tex_dims);
 
 		if (compare_pos)
@@ -4402,8 +4537,8 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 					draw_bounds.X;
 				draw_bounds.Width = split_x;
 
-				const auto cx = tex_dims.cx * draw_bounds.Width / media_bounds.width();
-				const auto cy = tex_dims.cy * draw_bounds.Width / media_bounds.width();
+				const auto cx = tex_dims.cx * draw_bounds.Width / image_bounds.Width;
+				const auto cy = tex_dims.cy * draw_bounds.Width / image_bounds.Width;
 
 				if (flips_xy(orientation))
 				{
@@ -4431,8 +4566,8 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 				draw_bounds.X += split_x;
 				draw_bounds.Width -= split_x;
 
-				const auto cx = tex_dims.cx * draw_bounds.Width / media_bounds.width();
-				const auto cy = tex_dims.cy * draw_bounds.Width / media_bounds.width();
+				const auto cx = tex_dims.cx * draw_bounds.Width / image_bounds.Width;
+				const auto cy = tex_dims.cy * draw_bounds.Width / image_bounds.Width;
 
 				if (flips_xy(orientation))
 				{
@@ -4462,7 +4597,7 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 
 		rc.draw_texture(tex, dst_quad, tex_bounds.round(), alpha, sampler);
 
-		draw_texture_info(rc, media_bounds.offset(offset), tex, orientation, sampler, alpha);
+		draw_texture_info(rc, image_bounds.round().offset(offset), tex, orientation, sampler, alpha);
 
 		_last_draw_tex = tex;
 		_last_draw_source_rect = tex_bounds.round();
@@ -4492,6 +4627,88 @@ void texture_state::layout(ui::measure_context& mc, const recti bounds, const df
 {
 	_display_bounds = bounds;
 	refresh(i);
+}
+
+// zoom.md: the file declared a sphere, so the user is put inside it. The resample is software on
+// both backends, for the reason rendering.md gives the globe: a projection whose pixels differed by
+// backend would be two features. The camera and the decoded source together decide the frame, so a
+// repaint that moved neither reuses the texture it already has.
+void texture_state::draw_panorama(ui::draw_context& rc, const pointi offset, const prop::panorama_geometry& geometry,
+                                  const panorama_view& view)
+{
+	_panorama = {true, geometry, view};
+	update_decode(rc);
+
+	// A decode that lands while projected arms a dissolve nothing here draws. Left armed it would run
+	// against the flat picture the moment the user asked for it.
+	_fade_out_tex.reset();
+	_display_alpha_animation.reset(1.0f);
+
+	const auto media_bounds = _display_bounds;
+	if (media_bounds.is_empty()) return;
+
+	// Sphere the file does not hold, and every frame before the first decode arrives, read as the
+	// same empty surround rather than as whatever was drawn there last.
+	rc.draw_rect(media_bounds.offset(offset), ui::color(ui::style::color::group_background, 1.0f));
+
+	const auto& source = ui::is_valid(_retained_surface) ? _retained_surface : _loaded.s;
+	if (!ui::is_valid(source) || !ui::is_packed(source->format()) || !geometry.is_valid()) return;
+
+	if (_panorama_source != source)
+	{
+		_panorama_renderer.set_source(source);
+		_panorama_source = source;
+		_panorama_rendered = false;
+	}
+
+	if (!_panorama_renderer.is_ready()) return;
+
+	// Normally the viewport, because a projected panorama owns the whole media area. The budget is
+	// the guard for a frame drawn between entering the projection and the layout that resizes for
+	// it, where the bounds still describe the flat picture at full zoom - which would be a hundreds
+	// of megabytes allocation and a raster to match.
+	const auto extent = clamp_to_texture_budget(media_bounds.extent());
+
+	if (!_panorama_tex)
+	{
+		_panorama_tex = rc.create_texture();
+		_panorama_rendered = false;
+	}
+
+	if (!_panorama_tex) return;
+
+	const auto view_moved = !_panorama_rendered ||
+		_panorama_rendered_geometry != geometry ||
+		!df::equiv(_panorama_rendered_view.yaw(), view.yaw()) ||
+		!df::equiv(_panorama_rendered_view.pitch(), view.pitch()) ||
+		!df::equiv(_panorama_rendered_view.fov(), view.fov());
+
+	if (view_moved || !_panorama_surface || _panorama_surface->dimensions() != extent)
+	{
+		// The buffer is kept because a drag re-renders on every frame and would otherwise allocate
+		// on every one of them.
+		if (!_panorama_surface || _panorama_surface->dimensions() != extent)
+		{
+			_panorama_surface = std::make_shared<ui::surface>();
+
+			if (!_panorama_surface->alloc(extent, ui::texture_format::ARGB))
+			{
+				// A failed alloc still reports the requested extent, so the buffer has to be dropped
+				// rather than left to be recognised as the right size on the next frame.
+				_panorama_surface.reset();
+				return;
+			}
+		}
+
+		if (!_panorama_renderer.render(*_panorama_surface, geometry, view)) return;
+		if (_panorama_tex->update(_panorama_surface) == ui::texture_update_result::failed) return;
+
+		_panorama_rendered_view = view;
+		_panorama_rendered_geometry = geometry;
+		_panorama_rendered = true;
+	}
+
+	rc.draw_texture(_panorama_tex, media_bounds.offset(offset));
 }
 
 
@@ -4552,6 +4769,32 @@ void display_state_t::populate(const view_state& state)
 			if (!i) continue;
 			if (i->has_thumb()) i->stage_thumbnail_surface(_async);
 			else state.item_index.queue_load_thumbnail(i);
+		}
+
+		// zoom.md: which patch of the sphere a declared panorama holds. Read from the file rather
+		// than from the index, so it costs no stored field - and only for the item on screen, which
+		// is the only one that can be looked around.
+		if (declares_equirectangular())
+		{
+			const auto path = _item1->path();
+			const auto source = _item1->metadata()->dimensions();
+
+			if (panorama_item(path, source))
+			{
+				const auto weak = weak_from_this();
+
+				_async.queue_async(async_queue::load, [weak, path, source, &async = _async]
+				{
+					const auto declared = metadata_xmp::panorama(path);
+
+					async.queue_ui([weak, path, source, declared]
+					{
+						// The display may have moved on, and the session is keyed on the path for
+						// exactly that reason.
+						if (const auto display = weak.lock()) display->panorama_geometry(path, declared, source);
+					});
+				});
+			}
 		}
 	}
 	else if (_is_two)

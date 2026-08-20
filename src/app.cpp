@@ -48,7 +48,7 @@
 
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1300";
+const std::string_view g_app_build = "1303";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -137,6 +137,14 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 					{"ft"s, str::to_hex(reported_features)},
 					{"i"s, str::to_hex(setting.instantiations)},
 					{"os"s, platform::OS()},
+					// The packed platform identity. It ships alongside `os` for one release rather
+					// than replacing it on the same commit, so the ingest can change without a gap
+					// in the daily series. It is its own parameter and never merged into `ft`: a
+					// feature bit means "at least once since the last report" and is cleared once
+					// sent, a system value means "right now" and is recomputed every time, and
+					// OR-accumulating an architecture would make anyone who once ran the 32-bit
+					// build look like a permanent 32-bit user.
+					{"s"s, str::to_hex(df::pack_environment(platform::environment()))},
 				};
 
 				const auto con = platform::connect_to_host("diffractor.com");
@@ -334,7 +342,7 @@ void media_view::update_media_elements()
 			}
 			else if (file_type->has_trait(file_traits::visualize_audio) && !media_unavailable)
 			{
-				media_element = std::make_shared<audio_control>(_state, display, _host);
+				media_element = std::make_shared<audio_control>(_state, display, _host, true);
 			}
 			else if (file_type->has_trait(file_traits::av) && !media_unavailable)
 			{
@@ -980,6 +988,13 @@ static constexpr auto s_options_version = "options_version";
 // order. Migrating on every start instead would make the order it migrates away from unreachable.
 static constexpr uint32_t options_version = 1;
 
+// Rolling a release back is ordinary, and both settings and the cache are shared with whatever
+// version the user goes back to. The long-standing keys therefore keep a value every build
+// understands, and the true order lives beside them under its own key. The rules are
+// `group_order_older_builds_understand` and `resolve_stored_order` in model_items.h.
+static constexpr auto s_group_order_ex = "group_order_ex";
+static constexpr auto s_sort_order_ex = "sort_order_ex";
+
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
 	if (store->root_created())
@@ -1013,8 +1028,16 @@ void app_frame::load_options(const platform::setting_file_ptr& store)
 		auto sort_order = static_cast<uint32_t>(sort_by::name);
 		store->read({}, s_group_order, group_order);
 		store->read({}, s_sort_order, sort_order);
-		_starting_group_order = static_cast<group_by>(group_order);
-		_starting_sort_order = static_cast<sort_by>(sort_order);
+
+		auto group_order_ex = group_order;
+		auto sort_order_ex = sort_order;
+		const auto has_group_ex = store->read({}, s_group_order_ex, group_order_ex);
+		const auto has_sort_ex = store->read({}, s_sort_order_ex, sort_order_ex);
+
+		_starting_group_order = resolve_stored_order<group_by>(group_order, group_order_ex, has_group_ex,
+		                                                       group_order_older_builds_understand);
+		_starting_sort_order = resolve_stored_order<sort_by>(sort_order, sort_order_ex, has_sort_ex,
+		                                                     sort_order_older_builds_understand);
 
 		uint32_t stored_options_version = 0;
 		store->read({}, s_options_version, stored_options_version);
@@ -1041,8 +1064,12 @@ void app_frame::save_options(const bool search_only)
 {
 	auto& store = _settings;
 	store->write({}, s_search, _state.search().text());
-	store->write({}, s_group_order, static_cast<uint32_t>(_state.group_order()));
-	store->write({}, s_sort_order, static_cast<uint32_t>(_state.sort_order()));
+	store->write({}, s_group_order,
+	             static_cast<uint32_t>(group_order_older_builds_understand(_state.group_order())));
+	store->write({}, s_sort_order,
+	             static_cast<uint32_t>(sort_order_older_builds_understand(_state.sort_order())));
+	store->write({}, s_group_order_ex, static_cast<uint32_t>(_state.group_order()));
+	store->write({}, s_sort_order_ex, static_cast<uint32_t>(_state.sort_order()));
 	store->write({}, s_options_version, options_version);
 
 	store->write({}, s_media_filter, media_filter_to_string(_state.filter()));
@@ -1758,6 +1785,10 @@ void app_frame::report_safe_start()
 
 bool app_frame::key_down(const char32_t key, const ui::key_state keys)
 {
+	// Ctrl is itself a key press, so this is where the modifier that arms drawing a region first
+	// becomes known - and the pointer may not move again before the user acts on it.
+	_view_frame->sync_modifier_cursor();
+
 	if (df::command_active == 0)
 	{
 		// Step the prediction list without committing. The address bar is drawn by the items view,

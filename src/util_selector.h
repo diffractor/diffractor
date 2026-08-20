@@ -41,7 +41,17 @@ namespace df
 
 			if (_recursive)
 			{
-				is_match = path_text_starts(path.folder().text(), _root.text());
+				// The boundary is required: without it a selector for `C:\Pics` claims every file under
+				// `C:\Pictures`. A root keeps its separator, so the boundary is the root text without one -
+				// measuring the raw length instead makes a selector rooted at a drive match nothing.
+				const auto folder = path.folder().text().sv();
+				const auto root = _root.text().sv();
+
+				if (path_text_starts(folder, root))
+				{
+					const auto boundary = root.empty() ? 0_z : root.size() - (is_path_sep(root.back()) ? 1 : 0);
+					is_match = folder.size() == boundary || is_path_sep(folder[boundary]);
+				}
 			}
 			else
 			{

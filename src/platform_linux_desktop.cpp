@@ -31,6 +31,34 @@ std::string platform::OS()
 	return "Linux";
 }
 
+// There is no Linux window or packaging yet, so the only honest answers are the family and the
+// architecture this binary was built for. A field with nothing behind it reports unknown rather
+// than a plausible value: with daily aggregates a wrong reading cannot be revisited.
+df::environment_facts platform::environment()
+{
+	df::environment_facts result;
+	result.family = df::os_family::linux_;
+
+#if defined(__aarch64__)
+	result.process = df::machine_arch::arm64;
+#elif defined(__arm__)
+	result.process = df::machine_arch::arm32;
+#elif defined(__x86_64__)
+	result.process = df::machine_arch::x64;
+#elif defined(__i386__)
+	result.process = df::machine_arch::x86;
+#elif defined(__riscv) && __riscv_xlen == 64
+	result.process = df::machine_arch::riscv64;
+#else
+	result.process = df::machine_arch::other;
+#endif
+
+	// Nothing here emulates, so the native machine is the one the process runs on. When a Linux
+	// build ships this needs the same treatment IsWow64Process2 gives it on Windows.
+	result.machine = result.process;
+	return result;
+}
+
 bool platform::has_burner()
 {
 	return false;

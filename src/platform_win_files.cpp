@@ -1553,6 +1553,153 @@ std::string platform::OS()
 	return str::utf8_cast2(result);
 }
 
+static df::machine_arch to_machine_arch(const USHORT image_file_machine)
+{
+	switch (image_file_machine)
+	{
+	case IMAGE_FILE_MACHINE_I386: return df::machine_arch::x86;
+	case IMAGE_FILE_MACHINE_AMD64: return df::machine_arch::x64;
+	case IMAGE_FILE_MACHINE_ARMNT: return df::machine_arch::arm32;
+	case IMAGE_FILE_MACHINE_ARM64: return df::machine_arch::arm64;
+	case IMAGE_FILE_MACHINE_UNKNOWN: return df::machine_arch::unknown;
+	default: return df::machine_arch::other;
+	}
+}
+
+// The build's own target, which is a compile-time fact and cannot be got wrong at runtime.
+static df::machine_arch process_arch()
+{
+#if defined(_M_ARM64) || defined(__aarch64__)
+	return df::machine_arch::arm64;
+#elif defined(_M_ARM) || defined(__arm__)
+	return df::machine_arch::arm32;
+#elif defined(_M_X64) || defined(__x86_64__)
+	return df::machine_arch::x64;
+#elif defined(_M_IX86) || defined(__i386__)
+	return df::machine_arch::x86;
+#else
+	return df::machine_arch::other;
+#endif
+}
+
+// The *native* machine, which is the whole point of the field: a 32-bit process on a 64-bit machine
+// is the number that decides whether the 32-bit build is still earning its place, and asking the
+// process is what makes that question unanswerable. IsWow64Process2 is Windows 10 1511 and later, so
+// an older system answers unknown rather than a guess.
+static df::machine_arch native_machine_arch()
+{
+	using pfnIsWow64Process2 = BOOL(WINAPI*)(HANDLE, USHORT*, USHORT*);
+
+	if (const auto kernel = GetModuleHandleW(L"kernel32.dll"))
+	{
+		if (const auto fn = std::bit_cast<pfnIsWow64Process2>(GetProcAddress(kernel, "IsWow64Process2")))
+		{
+			USHORT process_machine = IMAGE_FILE_MACHINE_UNKNOWN;
+			USHORT native_machine = IMAGE_FILE_MACHINE_UNKNOWN;
+
+			if (fn(GetCurrentProcess(), &process_machine, &native_machine))
+			{
+				return to_machine_arch(native_machine);
+			}
+		}
+	}
+
+	// Without IsWow64Process2 the native machine still has an honest source: GetNativeSystemInfo
+	// reports the machine rather than the process, and it is correct under emulation, which is the
+	// case worth knowing about. It exists on every supported Windows, so this is a fallback in
+	// availability only.
+	SYSTEM_INFO info = {};
+	GetNativeSystemInfo(&info);
+
+	switch (info.wProcessorArchitecture)
+	{
+	case PROCESSOR_ARCHITECTURE_INTEL: return df::machine_arch::x86;
+	case PROCESSOR_ARCHITECTURE_AMD64: return df::machine_arch::x64;
+	case PROCESSOR_ARCHITECTURE_ARM: return df::machine_arch::arm32;
+	case PROCESSOR_ARCHITECTURE_ARM64: return df::machine_arch::arm64;
+	case PROCESSOR_ARCHITECTURE_UNKNOWN: return df::machine_arch::unknown;
+	// The call answered with a machine this field has no member for, which is precisely what other
+	// is for. Booking it as unknown would hide it among the readings that were never taken.
+	default: return df::machine_arch::other;
+	}
+}
+
+static df::os_release windows_release()
+{
+#pragma warning(push)
+#pragma warning(disable:4996)
+	OSVERSIONINFO osvi = {};
+	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+	const auto read = GetVersionEx(&osvi) != 0;
+#pragma warning(pop)
+
+	// A reading we could not take is unknown, not other: other is the signal that the field has run
+	// out of room, and a failed call booked there would look like one.
+	if (!read || osvi.dwMajorVersion == 0) return df::os_release::unknown;
+
+	if (osvi.dwMajorVersion > 10) return df::os_release::windows_later;
+
+	if (osvi.dwMajorVersion == 10)
+	{
+		return osvi.dwBuildNumber >= 22000 ? df::os_release::windows_11 : df::os_release::windows_10;
+	}
+
+	// 6.0 is Vista and 6.2 is Windows 8.0. Neither has a value, and folding them into a neighbour
+	// would fix a wrong meaning permanently - a value's meaning is fixed once assigned.
+	if (osvi.dwMajorVersion == 6)
+	{
+		if (osvi.dwMinorVersion >= 3) return df::os_release::windows_8_1;
+		if (osvi.dwMinorVersion == 1) return df::os_release::windows_7;
+	}
+
+	return df::os_release::other;
+}
+
+// Where the running binary came from. The Store package is a full-trust desktop-bridge app, so
+// nothing about its behaviour marks it out - only its install location does.
+static df::package_kind installed_package()
+{
+#ifdef WINSTORE
+	return df::package_kind::microsoft_store;
+#else
+	const auto app_folder = platform::known_path(platform::known_folder::running_app_folder);
+
+	if (app_folder.is_empty()) return df::package_kind::unknown;
+
+	// The desktop installer puts the application in %LOCALAPPDATA%\Diffractor; anything running
+	// from anywhere else was unpacked by hand. The boundary matters: a plain prefix compare reads
+	// %LOCALAPPDATA%\DiffractorPortable as an install.
+	const auto installed_root = platform::known_path(platform::known_folder::app_data);
+
+	// A root we could not read is unknown, not portable. path_from_csidl fabricates a relative path
+	// when the shell lookup fails, so an unqualified root means the comparison never happened -
+	// booking that as portable would report every install on such a machine as unpacked by hand.
+	if (!installed_root.is_qualified()) return df::package_kind::unknown;
+
+	const std::string_view app_text = app_folder.text();
+	const std::string_view root_text = installed_root.text();
+
+	if (df::path_text_starts(app_text, root_text) &&
+		(app_text.size() == root_text.size() || df::is_path_sep(app_text[root_text.size()])))
+	{
+		return df::package_kind::installer;
+	}
+
+	return df::package_kind::portable;
+#endif
+}
+
+df::environment_facts platform::environment()
+{
+	df::environment_facts result;
+	result.family = df::os_family::windows;
+	result.release = windows_release();
+	result.process = process_arch();
+	result.machine = native_machine_arch();
+	result.package = installed_package();
+	return result;
+}
+
 void platform::trace(const std::string_view message)
 {
 	trace(std::string(message));

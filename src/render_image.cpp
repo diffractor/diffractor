@@ -19,7 +19,7 @@
 
 // Separated so SSSE3 can be named for this loop alone. Naming it on swap_rb would let the scalar
 // fallback below use SSSE3 as well - on a processor that reached the fallback by not having it.
-DF_TARGET_SSSE3 static void swap_rb_ssse3(uint8_t* const pixels, const int stride, const int height)
+DF_TARGET_SSSE3 static void swap_rb_ssse3(uint8_t* const pixels, const size_t stride, const int height)
 {
 	const auto mask = _mm_setr_epi8(
 		0x02, 0x01, 0x00, 0x03,

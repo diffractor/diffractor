@@ -39,3 +39,9 @@ intermediate/
 /third-party/FFmpeg/intermediate
 exe/tiles/*.png
 /build
+
+# Captured test output and ad-hoc search scratch at the repository root.
+/test_*.txt
+/matches.txt
+/run_search.py
+/search_*.ps1

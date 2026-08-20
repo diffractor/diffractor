@@ -1812,7 +1812,7 @@ static void should_prefer_datetimeoriginal_for_created()
 // every date in the application, and nothing else would fail.
 static void should_hold_date_sources_in_authority_order()
 {
-	uint32_t seen = 0;
+	uint64_t seen = 0;
 	auto kind_count = 0;
 
 	for (auto kind : {
@@ -1832,8 +1832,8 @@ static void should_hold_date_sources_in_authority_order()
 			previous_authority = info.authority;
 			++found;
 
-			const auto bit = static_cast<uint32_t>(info.source);
-			assert_equal(0u, seen & bit, "each source appears exactly once");
+			const auto bit = static_cast<uint64_t>(info.source);
+			assert_equal(0ull, seen & bit, "each source appears exactly once");
 			assert_equal(true, bit != 0 && (bit & (bit - 1)) == 0, "each source is one bit");
 			seen |= bit;
 		}
@@ -1902,8 +1902,9 @@ static void should_read_exif_datetime_as_modified()
 
 // Modified describes the file, so the filesystem answers it. A metadata modify tag records when a
 // tool last wrote the metadata: a copy preserves it and an editor that does not maintain it never
-// touches it, so it is stale exactly when the user is asking. The reverse ranking would report a
-// file edited today as last modified in 2019, and the report would be right.
+// touches it, so it is stale exactly when the user is asking. Nothing fills the filesystem rung
+// during a scan - the stamps belong to the index record, and `modified:` reads them directly - so
+// this pins the ranking against the moment something does, which is what the bit exists for.
 static void should_take_the_modified_date_from_the_filesystem()
 {
 	prop::date_pack pack;
@@ -1929,6 +1930,56 @@ static void should_take_the_modified_date_from_the_filesystem()
 	assert_equal(df::date_t(2019, 5, 4, 9, 0, 0), no_stamp.modified(), "rather than nothing at all");
 }
 
+// #184 - the date bubble names the tag behind each date, then lists the filesystem stamps. A stamp
+// that already answered one of the three named dates must not be repeated under its own name, or
+// the bubble shows the same instant twice and reads as a contradiction.
+static void should_not_repeat_a_filesystem_stamp_in_the_date_bubble()
+{
+	// The ordinary photograph: metadata answers Original and Created, the stamp answers Modified.
+	prop::date_pack photo;
+	photo.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+	photo.add(prop::date_source::xmp_create, df::date_t(2025, 8, 16, 18, 12, 30));
+	photo.add(prop::date_source::file_modified, df::date_t(2026, 8, 19, 21, 30, 0));
+
+	assert_equal(true, prop::shows_own_file_stamp_row(photo, prop::date_source::file_created),
+	             "the creation stamp answered nothing, so it gets its own row");
+	assert_equal(false, prop::shows_own_file_stamp_row(photo, prop::date_source::file_modified),
+	             "the modification stamp is already the Modified row");
+
+	// A file carrying no metadata dates at all: both stamps are rows of their own, and they are the
+	// only rows there are.
+	prop::date_pack bare;
+	assert_equal(true, prop::shows_own_file_stamp_row(bare, prop::date_source::file_created),
+	             "nothing above claimed the creation stamp");
+	assert_equal(true, prop::shows_own_file_stamp_row(bare, prop::date_source::file_modified),
+	             "nothing above claimed the modification stamp");
+
+	// A copy: the creation stamp is the copy time and the container still states when the content
+	// was made, so Created is answered by the container and the stamp stands on its own.
+	prop::date_pack copied;
+	copied.add(prop::date_source::container_created, df::date_t(2020, 1, 2, 3, 4, 5));
+	copied.add(prop::date_source::file_created, df::date_t(2026, 8, 19, 21, 30, 0));
+	assert_equal(true, prop::shows_own_file_stamp_row(copied, prop::date_source::file_created),
+	             "the container answered Created, so the copy time is still worth showing");
+
+	// The filesystem stamps are read from the item rather than stored with the metadata, so in
+	// practice the pack does not carry them and asking which tag won cannot answer on its own. A row
+	// carrying an instant already on screen under another tag is the duplicate this exists to stop.
+	prop::date_pack unstamped;
+	unstamped.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+	unstamped.add(prop::date_source::xmp_modify, df::date_t(2026, 8, 19, 21, 30, 0));
+
+	assert_equal(false, prop::shows_own_file_stamp_row(unstamped, prop::date_source::file_modified,
+	                                                   df::date_t(2026, 8, 19, 21, 30, 0)),
+	             "the same instant under another tag is the same row");
+	assert_equal(true, prop::shows_own_file_stamp_row(unstamped, prop::date_source::file_modified,
+	                                                  df::date_t(2026, 8, 19, 21, 31, 0)),
+	             "a minute apart is a different fact and says something");
+	assert_equal(true, prop::shows_own_file_stamp_row(unstamped, prop::date_source::file_created,
+	                                                  df::date_t(2026, 8, 19, 22, 0, 0)),
+	             "and a stamp nothing above matches keeps its row");
+}
+
 // A zone and a fraction are separate EXIF tags from the date they qualify, and OffsetTime lives in
 // a different directory from DateTime, so neither can be applied where it is read. Every one of
 // these is stored rather than displayed today: they exist so the release that uses them needs no
@@ -1941,6 +1992,12 @@ static void should_carry_the_zone_and_fraction_a_date_was_written_with()
 	assert_equal(prop::date_pack::utc_instant, prop::parse_utc_offset("2019-05-04T09:00:00Z"), "an instant");
 	assert_equal(prop::date_pack::no_offset, prop::parse_utc_offset("2019:05:04 09:00:00"), "EXIF states no zone");
 	assert_equal(prop::date_pack::no_offset, prop::parse_utc_offset("+0200"), "and a malformed one claims nothing");
+
+	// An Exif ASCII value spans its whole component count, so OffsetTimeOriginal arrives as seven
+	// characters, not six. Measuring the tail without trimming reads the zone off by one and finds
+	// nothing at all.
+	assert_equal(120, prop::parse_utc_offset(std::string_view("+02:00\0", 7)), "NUL-terminated, as Exif stores it");
+	assert_equal(-450, prop::parse_utc_offset(std::string_view("-07:30 \0", 8)), "and space-padded besides");
 
 	// EXIF writes the fraction as digits after an implied point, so `5` is half a second, not five
 	// of anything. Reading it as an integer would put a burst frame 5 seconds late.
@@ -1958,6 +2015,33 @@ static void should_carry_the_zone_and_fraction_a_date_was_written_with()
 	assert_equal(1, burst.group_count(), "the same second is one group");
 	assert_equal(2'000'000ll, burst.group_value(0).to_int64() % df::date_t::intervals_per_second,
 	             "and it keeps the more precise reading");
+}
+
+// GPSDateStamp is `CCYY:MM:DD` and nothing else - no time, and colons where the shared parser's
+// date-only form expects hyphens. Handing it over as it is read parses nothing, so the GPS instant
+// was recorded for no file at all: the rung was filled and dead at the same time.
+static void should_read_a_gps_date_stamp_as_a_date()
+{
+	df::date_t bare;
+	assert_equal(false, bare.parse_exif_date("2023:07:14"),
+	             "the colon spelling has no date-only form in the shared parser");
+
+	df::date_t punctuated;
+	assert_equal(true, punctuated.parse_exif_date("2023:07:14 00:00:00"),
+	             "so the stamp is punctuated to midnight before parsing, as IPTC dates already are");
+	assert_equal(df::date_t(2023, 7, 14, 0, 0, 0), punctuated, "and it reads as the day the file states");
+
+	// The stamp is only half of it: the pair becomes one UTC instant, which is what makes it able to
+	// recover a zone an EXIF reading never stated.
+	constexpr auto seconds = 9ull * 3600 + 41 * 60 + 6;
+	const df::date_t instant(punctuated.to_int64() + seconds * df::date_t::intervals_per_second);
+
+	prop::date_pack pack;
+	pack.add_utc(prop::date_source::gps_stamp, instant);
+
+	assert_equal(true, pack.has_source(prop::date_source::gps_stamp), "the reference date is recorded");
+	assert_equal(df::date_t(2023, 7, 14, 9, 41, 6), pack.group_value(0), "with the time the stamp carries");
+	assert_equal(prop::date_pack::utc_instant, pack.group_offset(0), "and as an instant, not a wall clock");
 }
 
 // A print made in 1980 and scanned in 2024 is the case the three dates exist for: both are true,
@@ -2102,8 +2186,11 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should read exif DateTime as modified date"s, should_read_exif_datetime_as_modified);
 	tests.add("Should take the modified date from the filesystem"s,
 	          should_take_the_modified_date_from_the_filesystem);
+	tests.add("Should not repeat a filesystem stamp in the date bubble"s,
+	          should_not_repeat_a_filesystem_stamp_in_the_date_bubble);
 	tests.add("Should carry the zone and fraction a date was written with"s,
 	          should_carry_the_zone_and_fraction_a_date_was_written_with);
+	tests.add("Should read a gps date stamp as a date"s, should_read_a_gps_date_stamp_as_a_date);
 	tests.add("Should separate original from created date for a scan"s,
 	          should_separate_original_from_created_for_a_scan);
 	tests.add("Should fall back through created to modified date"s, should_fall_back_through_created_to_modified);

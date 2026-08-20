@@ -1076,21 +1076,28 @@ public:
 	{
 		const auto& search = s.search();
 
-		if (search.is_match(prop::created_utc, _item->file_created()))
+		// Each candidate is matched against the key that names it. The tile can show the
+		// capture-first ladder, the Created concept or the file stamp, and a match on one of those
+		// is not a match on another. The stamps are UTC instants in the index, so they are converted
+		// before being compared or shown, the way the index matcher converts them.
+		const auto created_concept = _item->file_or_metadata_created();
+		const auto modified_date = _item->file_modified().system_to_local();
+
+		if (search.is_match(prop::created_utc, created_concept))
 		{
 			style |= view_element_style::important;
-			_text = platform::format_date(_item->file_created());
+			_text = platform::format_date(created_concept);
 		}
-		else if (search.is_match(prop::modified, _item->file_modified()))
+		else if (search.is_match(prop::modified, modified_date))
 		{
 			style |= view_element_style::important;
-			_text = platform::format_date(_item->file_modified());
+			_text = platform::format_date(modified_date);
 		}
 		else
 		{
 			const auto created_date = _item->media_created();
 
-			if (search.is_match(prop::created_utc, created_date))
+			if (search.is_match(prop::created_exif, created_date))
 			{
 				style |= view_element_style::important;
 			}
@@ -1928,7 +1935,7 @@ public:
 };
 
 
-class comodore_disk_control final : public std::enable_shared_from_this<comodore_disk_control>, public view_element
+class commodore_disk_control final : public std::enable_shared_from_this<commodore_disk_control>, public view_element
 {
 	display_state_ptr _display;
 
@@ -1956,7 +1963,7 @@ class comodore_disk_control final : public std::enable_shared_from_this<comodore
 	}
 
 public:
-	comodore_disk_control(display_state_ptr display, const view_element_options& style_in) noexcept :
+	commodore_disk_control(display_state_ptr display, const view_element_options& style_in) noexcept :
 		view_element(style_in),
 		_display(std::move(display))
 	{
@@ -1964,6 +1971,18 @@ public:
 
 		for (const auto& line : _lines) _cols = std::max(_cols, static_cast<int>(line.screen_codes.size()));
 		_rows = static_cast<int>(_lines.size());
+	}
+
+	// texture::is_valid() only answers "not null" - it knows nothing about the device that made it -
+	// so an element caching one has to answer this broadcast or it draws a texture the device no
+	// longer owns.
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_texture.reset();
+			_tex_extent = {};
+		}
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -2372,8 +2391,115 @@ public:
 	mutable recti _zoom_100_bounds;
 	mutable recti _zoom_in_bounds;
 	mutable recti _zoom_options_bounds;
+	// zoom.md L6: the visible control for the flat/projected state of a declared panorama.
+	mutable recti _zoom_projection_bounds;
 	mutable uint64_t _zoom_quality_generation = 0;
 	view_elements_ptr _zoom_grading_element;
+
+	// design.md: a region drawn on the displayed picture. Held in source space so it survives a
+	// resize, a layout change and a zoom, and held on the view state keyed to the item rather than on
+	// this control, which is rebuilt for anything that raises view_invalid::media_elements - a sidecar
+	// arriving or index progress would otherwise erase what the user just drew. The key is what keeps
+	// "a crop region is about one picture" true.
+	mutable recti _region_close_bounds;
+	mutable recti _region_zoom_bounds;
+	mutable recti _region_crop_bounds;
+
+	df::file_path region_item() const
+	{
+		return _display && _display->is_one() && _display->_item1 ? _display->_item1->path() : df::file_path{};
+	}
+
+	rectd region() const
+	{
+		return _state.drawn_region(region_item());
+	}
+
+	bool has_region() const
+	{
+		// zoom.md: a region lives in source space and is drawn where the picture is. A projected view
+		// is not the picture laid out in source space, so the rectangle is hidden rather than drawn
+		// somewhere it does not mean anything. It is kept, and returns with the flat pixels.
+		return !region().is_empty() && !_display->is_panorama_projected();
+	}
+
+	void region(const rectd source_rect)
+	{
+		_state.drawn_region(region_item(), source_rect);
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	void clear_region()
+	{
+		if (!has_region()) return;
+		_state.drawn_region(region_item(), {});
+		_state.end_region_drag();
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	// Where the whole picture lands on screen at the current scale, which is what the region maps
+	// through in both directions.
+	rectd image_bounds(const pointi element_offset) const
+	{
+		if (!_display->_selected_texture1) return {};
+		return rectd(_display->_selected_texture1->display_bounds().offset(element_offset));
+	}
+
+	sized source_extent() const
+	{
+		if (!_display->_selected_texture1) return {};
+		return sized(_display->_selected_texture1->calc_display_dimensions());
+	}
+
+	recti region_bounds(const pointi element_offset) const
+	{
+		if (!has_region()) return {};
+		return df::source_rect_to_client(region(), image_bounds(element_offset), source_extent()).round();
+	}
+
+	// A drag replaces whatever was there: two rectangles at once would be two answers to a question
+	// that has one.
+	void begin_region_drag()
+	{
+		_state.begin_region_drag(region_item(), true);
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	// Moving keeps the rectangle; only the buttons go, because the pointer is over them. They are
+	// painted, so their leaving is a redraw the drag itself has to ask for.
+	void begin_region_move()
+	{
+		_state.begin_region_drag(region_item(), false);
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	void release_region_drag()
+	{
+		_state.end_region_drag();
+	}
+
+	void drag_region(const pointi from, const pointi to, const pointi element_offset)
+	{
+		region(df::client_rect_to_source(rectd(recti(from, to)), image_bounds(element_offset), source_extent()));
+	}
+
+	void end_region_drag(const pointi from, const pointi to, const pointi element_offset)
+	{
+		drag_region(from, to, element_offset);
+		_state.end_region_drag();
+
+		// A rectangle too small to see is a click that happened to move, not a region.
+		const auto drawn = region_bounds(element_offset);
+		if (drawn.width() < 8 || drawn.height() < 8) region({});
+		else _host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	void cancel_region_drag()
+	{
+		const auto restore = _state.region_drag_restore();
+		_state.end_region_drag();
+		region(restore);
+	}
 
 	photo_control(view_state& state, display_state_ptr display, view_host_ptr host) :
 		view_element(view_element_style::can_invoke | flex_item::media), _state(state),
@@ -2418,8 +2544,18 @@ public:
 				};
 				_host->invalidate_view(view_invalid::animations);
 			}
-			st->draw(dc, element_offset, 0, true, _display->zoom_interactive(dc.time_now));
+			if (const auto request = _display->panorama_draw_request(); request.active)
+			{
+				st->draw_panorama(dc, element_offset, request.geometry, request.view);
+			}
+			else
+			{
+				st->draw(dc, element_offset, 0, true, _display->zoom_interactive(dc.time_now));
+			}
 
+			// The zoom chrome is drawn after the region for the same reason it is hit-tested before it:
+			// a rectangle drawn across the navigator must not hide it and must not claim its clicks.
+			render_region(dc, element_offset);
 			if (_display->zoom()) render_zoom_thumb(dc, element_offset);
 			if (_display->is_zoom_mode() && !_display->is_temporary_zoom() && _zoom_grading_element &&
 				!_zoom_grading_element->bounds.is_empty())
@@ -2432,6 +2568,51 @@ public:
 				dc.colors.alpha = original_alpha;
 			}
 		}
+	}
+
+	void render_region(ui::draw_context& dc, const pointi element_offset) const
+	{
+		_region_close_bounds.clear();
+		_region_zoom_bounds.clear();
+		_region_crop_bounds.clear();
+
+		const auto region = region_bounds(element_offset);
+		if (region.is_empty()) return;
+
+		const auto border_clr = ui::color(ui::style::color::dialog_selected_background, dc.colors.alpha);
+		dc.draw_border(region, region.inflate(df::round(2 * dc.scale_factor)), border_clr, border_clr);
+
+		// Hidden during a drag: the buttons would sit under the pointer that is still drawing the
+		// rectangle they belong to.
+		if (_state.drawing_region()) return;
+
+		const auto cxy = dc.icon_cxy;
+		const auto gap = dc.padding1;
+		const auto strip_width = cxy * 3 + gap * 2;
+
+		// Outside the rectangle when it is too small to hold them, so a small selection is still
+		// something a user can act on rather than something they have to redraw larger first. Either
+		// way the strip is clamped into the element: placed below a region at the bottom edge it
+		// would be drawn outside the clip and hit-tested where nothing routes, which is a region the
+		// pointer can neither act on nor dismiss.
+		const auto inside = region.width() >= strip_width + gap * 2 && region.height() >= cxy + gap * 2;
+		const auto limit = bounds.offset(element_offset);
+		const auto left = std::clamp(inside ? region.right - strip_width - gap : region.left,
+		                             limit.left, std::max(limit.left, limit.right - strip_width));
+		const auto top = std::clamp(inside ? region.top + gap : region.bottom + gap,
+		                            limit.top, std::max(limit.top, limit.bottom - cxy));
+
+		_region_close_bounds = recti(left, top, left + cxy, top + cxy);
+		_region_zoom_bounds = _region_close_bounds.offset(cxy + gap, 0);
+		_region_crop_bounds = _region_zoom_bounds.offset(cxy + gap, 0);
+
+		const auto strip = recti(_region_close_bounds.left, top, _region_crop_bounds.right, top + cxy);
+		dc.draw_rounded_rect(strip.inflate(gap), ui::color(0, dc.colors.alpha * 0.66f), dc.padding1);
+
+		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
+		xdraw_icon(dc, icon_index::close, _region_close_bounds, clr, {});
+		xdraw_icon(dc, icon_index::zoom_in, _region_zoom_bounds, clr, {});
+		xdraw_icon(dc, icon_index::crop, _region_crop_bounds, clr, {});
 	}
 
 	sizei calc_tex_extent(const int width_limit, const int height_limit) const
@@ -2469,13 +2650,19 @@ public:
 			const auto viewport = sized(bounds.extent());
 			_display->zoom_layout(source, viewport, pointd(bounds.top_left()));
 			const auto geometry = _display->zoom_state().geometry(source, viewport, _display->zoom_fit_scale());
-			const auto image_bounds = geometry.destination.offset(pointd(bounds.top_left())).round();
+
+			// A projection has no image rectangle: the sphere is drawn across the whole viewport, and
+			// what is off screen is behind the camera rather than outside a destination rect.
+			const auto projected = _display->is_panorama_projected();
+			const auto image_bounds = projected
+				                          ? bounds
+				                          : geometry.destination.offset(pointd(bounds.top_left())).round();
 
 			st->layout(mc, image_bounds, i);
 
 			const auto pan_extent = image_bounds.extent();
 			_can_pan = i && i->file_type()->has_trait(file_traits::zoom) &&
-				(bounds.width() < pan_extent.cx || bounds.height() < pan_extent.cy);
+				(projected || bounds.width() < pan_extent.cx || bounds.height() < pan_extent.cy);
 
 			if (_display->is_zoom_mode() && _zoom_grading_element)
 			{
@@ -2546,7 +2733,10 @@ public:
 		}
 		catch (std::exception& e)
 		{
-			df::trace(e.what());
+			// A frame that cannot be drawn is dropped rather than propagated out of paint. df::trace
+			// is compiled out of a shipping build, so the reason has to reach the log or a blank
+			// video is a defect with no evidence; log_once bounds a failure that repeats per frame.
+			df::log_once(__FUNCTION__, e.what());
 		}
 	}
 
@@ -2612,16 +2802,35 @@ public:
 	view_state& _state;
 	view_host_ptr _host;
 	display_state_ptr _display;
+	// Fullscreen gives the visualizer the whole view; in the items column it is one pane above the
+	// information, and an audio file is the case where the information is what the user came for.
+	const bool _fills_view;
 
-	audio_control(view_state& s, display_state_ptr display, view_host_ptr host) noexcept :
+	audio_control(view_state& s, display_state_ptr display, view_host_ptr host,
+	              const bool fills_view = false) noexcept :
 		view_element(view_element_style::can_invoke | flex_item::media), _state(s), _host(std::move(host)),
-		_display(std::move(display))
+		_display(std::move(display)), _fills_view(fills_view)
 	{
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, std::max(width_limit, 500)};
+		if (_fills_view) return {width_limit, std::max(width_limit, df::round(500 * mc.scale_factor))};
+
+		// Cover art is the only picture an audio file has, and layout gives it the top three fifths of
+		// the pane, so the pane is that art scaled to the width and grown back. Without art there is no
+		// picture to make room for: the visualizer takes a band and the metadata below keeps the rest.
+		const auto art = _display->_selected_texture1
+			                 ? _display->_selected_texture1->calc_display_dimensions()
+			                 : sizei{};
+
+		if (art.cx <= 0 || art.cy <= 0)
+		{
+			return {width_limit, df::round(128 * mc.scale_factor)};
+		}
+
+		const auto art_cy = std::min(df::mul_div(art.cy, width_limit, art.cx), width_limit);
+		return {width_limit, std::max(df::round(128 * mc.scale_factor), df::mul_div(art_cy, 5, 3))};
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -2709,6 +2918,9 @@ public:
 	mutable recti _zoom_100_bounds;
 	mutable recti _zoom_in_bounds;
 	mutable recti _zoom_options_bounds;
+	// Never populated here: a projection is a judgement about one picture, so it never appears
+	// while two are being compared. Carried so both controls share one overlay renderer.
+	mutable recti _zoom_projection_bounds;
 	std::array<view_elements_ptr, 2> _zoom_grading_elements;
 	// Height reserved above the images for the A and B pane markers; zero while magnified or split.
 	mutable int _pane_marker_height = 0;
@@ -3340,7 +3552,6 @@ public:
 			_child->render(dc, element_offset);
 		}
 	}
-
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
 	{

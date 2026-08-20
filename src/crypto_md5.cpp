@@ -150,7 +150,7 @@ void md5::finalize()
 #define S43 15
 #define S44 21
 
-// RotateLeftrotates x left n bits.
+// RotateLeft rotates x left n bits.
 static uint32_t RotateLeft(const uint32_t x, const uint32_t n)
 {
 	return x << n | x >> (32 - n);

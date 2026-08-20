@@ -84,7 +84,9 @@ public:
 	static constexpr uint16_t no_id = 0;
 
 	bool prepare(sizei extent);
-	bool is_ready() const { return _extent.cx > 0 && _pixels && _scratch; }
+	// The buffers, not the pointers: surface::alloc answers null pixels on a failed allocation while
+	// still reporting a size, so testing the shared_ptr alone lets a memset run against nothing.
+	bool is_ready() const { return _extent.cx > 0 && ui::is_valid(_pixels) && ui::is_valid(_scratch); }
 	sizei extent() const { return _extent; }
 
 	const ui::surface_ptr& pixels() const { return _pixels; }

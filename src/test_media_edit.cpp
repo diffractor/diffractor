@@ -849,8 +849,13 @@ static void should_read_asf_wm_categories()
 	ff.update(load_path, save_path, {}, {}, {}, false, {});
 
 	const std::vector<std::string> shell_tags = {"AsfTagA", "AsfTagB", "AsfTagC"};
-	if (platform::write_shell_tags(save_path, shell_tags).failed())
-		return; // Windows Media Foundation unavailable; skip on this host
+	const auto tagged = !platform::write_shell_tags(save_path, shell_tags).failed();
+
+	// The runner fails a test that asserts nothing, so the skip has to say what it decided rather
+	// than returning silently - otherwise a host without Media Foundation reads as a regression.
+	assert_equal(true, save_path.exists(), "asf copy written");
+
+	if (!tagged) return; // Windows Media Foundation unavailable; skip the rest on this host
 
 	const auto sr = ff_scan_file(ff, save_path);
 

@@ -21,6 +21,54 @@ static std::string convert_extension()
 	return ".jpg";
 }
 
+struct agreed_date_row
+{
+	std::string_view label;
+	std::string value;
+	std::string_view source;
+};
+
+// A read-only report of the dates the editor does not offer. Stated only where every selected item
+// agrees on both the value and the tag it came from: a set carrying two answers has no single one
+// to state, and inventing one would be worse than saying nothing.
+static std::vector<agreed_date_row> agreed_dates(const df::item_set& items)
+{
+	std::vector<agreed_date_row> result;
+	if (items.is_empty()) return result;
+
+	const auto add = [&result, &items](const std::string_view label, const prop::date_concept kind)
+	{
+		df::date_t value;
+		auto source = prop::date_source::none;
+		auto first = true;
+
+		for (const auto& item : items.items())
+		{
+			const auto md = item->metadata();
+			const auto item_value = md ? md->dates.resolve(kind) : df::date_t{};
+			const auto item_source = md ? md->dates.resolved_source(kind) : prop::date_source::none;
+
+			if (first)
+			{
+				value = item_value;
+				source = item_source;
+				first = false;
+			}
+			else if (value != item_value || source != item_source)
+			{
+				return;
+			}
+		}
+
+		if (!value.is_valid()) return;
+		result.emplace_back(label, platform::format_date_time(value), prop::date_source_name(source));
+	};
+
+	add(tt_prep(tt.prop_name_created.sv()), prop::date_concept::created);
+	add(tt_prep(tt.prop_name_modified.sv()), prop::date_concept::modified);
+	return result;
+}
+
 // Offer the built-in genres that suit the selected media, merged with the genres already present
 // in the collection so an established vocabulary is never hidden behind the built-in list.
 static std::vector<std::string> genre_suggestions(const view_state& s, const df::item_set& items)
@@ -56,7 +104,13 @@ std::array<text_t, list_view::max_col_count> batch_tool_view::col_titles()
 	if (_mode == batch_tool_mode::convert)
 		return {tt.source, tt.destination, showing_results() ? tt.status : tt.changes, {}};
 	if (_mode == batch_tool_mode::metadata) return {tt.file, tt.changes, tt.status, {}};
-	return {tt.file, tt.edit_original, showing_results() ? tt.status : tt.after, {}};
+	// Adjust dates changes Original, and the source column makes mixed provenance visible before the
+	// shift: a set where one file resolves from DateTimeOriginal and another from the file stamp is
+	// not a set the same shift means the same thing to.
+	return {
+		tt.file, tt_prep(tt.prop_name_original.sv()), showing_results() ? tt.status : tt.after,
+		tt_prep(tt.source.sv())
+	};
 }
 
 std::string_view batch_tool_view::title()
@@ -339,6 +393,7 @@ void batch_tool_view::refresh_dates()
 		row->_text[0] = item->path().pack();
 		row->_text[1] = platform::format_date_time(original);
 		row->_text[2] = platform::format_date_time(adjusted_item_date(original, _new_start, _original_start));
+		row->_text[3] = std::string(adjust_date_source_name(item->metadata()));
 		row->_order = order++;
 		row->_work_index = row->_order;
 		rows.emplace_back(row);
@@ -803,7 +858,8 @@ void batch_tool_view::run_dates()
 
 					                   if (result.success())
 					                   {
-						                   platform::created_date(request.path, date.local_to_system());
+						                   // Shifting a camera clock says nothing about when the file was
+						                   // written, so the filesystem creation stamp is left alone.
 						                   statuses[index] = item_status::success;
 						                   written.emplace(request.path.folder());
 					                   }
@@ -970,8 +1026,17 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 		add_control_field(tt.prop_name_year, setting.set_year,
 		                  std::make_shared<ui::num_control>(frame, std::string_view{}, _metadata_year, true,
 		                                                    [this](int) { refresh(); }));
-		add_control_field(tt.prop_name_created, setting.set_created,
+		add_control_field(tt_prep(tt.prop_name_original.sv()), setting.set_created,
 		                  std::make_shared<ui::date_control>(frame, _metadata_created, true, [this] { refresh(); }));
+		// Created and Modified are facts about the file, so the editor reports them and does not
+		// offer them. They are only named where the whole selection agrees; a single line claiming
+		// one value for a set that holds several would be worse than saying nothing.
+		if (const auto agreed = agreed_dates(items); !agreed.empty())
+		{
+			const auto table = std::make_shared<ui::table_element>();
+			for (const auto& [label, value, source] : agreed) table->add(label, value, source);
+			controls.emplace_back(table);
+		}
 		add_control_field(tt.prop_name_episode, setting.set_episode,
 		                  std::make_shared<ui::num_pair_control>(frame, std::string_view{}, _metadata_episode));
 		add_control_field(tt.prop_name_season, setting.set_season,

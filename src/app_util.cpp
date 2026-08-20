@@ -366,7 +366,8 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 			vacated.emplace(source_key);
 
 			for (const auto& [sidecar_source, sidecar_destination] : rename.sidecars)
-				if (sidecar_source.icmp(sidecar_destination) != 0) vacated.emplace(sidecar_source.pack());
+				if (df::compare_path_key(sidecar_source.pack(), sidecar_destination.pack()) != 0)
+					vacated.emplace(sidecar_source.pack());
 		}
 
 		name_is_usable.emplace_back(
@@ -394,7 +395,8 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 			for (auto sidecar = 0_z; sidecar < rename.sidecars.size(); ++sidecar)
 			{
 				const auto& [sidecar_source, sidecar_destination] = rename.sidecars[sidecar];
-				if (sidecar_source.icmp(sidecar_destination) != 0 && rename.sidecar_destinations_exist[sidecar] &&
+				if (df::compare_path_key(sidecar_source.pack(), sidecar_destination.pack()) != 0 &&
+					rename.sidecar_destinations_exist[sidecar] &&
 					!vacated.contains(sidecar_destination.pack()))
 					return true;
 			}
@@ -406,6 +408,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 		if (rename.collides && policy == collision_policy::auto_rename)
 		{
 			const auto base_name = rename.new_name;
+			const auto base_destination = rename.destination;
 
 			for (auto suffix = 2; suffix < 10000; ++suffix)
 			{
@@ -421,6 +424,15 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 					rename.collides = false;
 					break;
 				}
+			}
+
+			// Exhausted: the row stays invalid, but it must not keep pointing at the last candidate.
+			// destination feeds the duplicate-destination pass, so a name this row will never write
+			// would invalidate whichever row legitimately asked for it.
+			if (rename.collides)
+			{
+				rename.destination = base_destination;
+				assign_sidecars(rename, i, rename.destination);
 			}
 		}
 		else if (rename.collides && policy == collision_policy::skip)
@@ -1062,8 +1074,15 @@ static bool path_contains(const df::folder_path parent, const df::folder_path ch
 	const auto parent_text = parent.text().sv();
 	const auto child_text = child.text().sv();
 	if (parent_text.size() >= child_text.size()) return parent == child;
-	return df::path_text_starts(child_text, parent_text) &&
-		df::is_path_sep(child_text[parent_text.size()]);
+	if (!df::path_text_starts(child_text, parent_text)) return false;
+
+	// A root keeps its separator - "C:\" and "/" normalise with one - so the boundary to test is the
+	// text without it. Testing the raw length instead makes every drive root contain nothing, and the
+	// overlap guard would then let Sync run a folder into its own subtree.
+	const auto boundary = parent_text.empty()
+		                      ? 0_z
+		                      : parent_text.size() - (df::is_path_sep(parent_text.back()) ? 1 : 0);
+	return child_text.size() == boundary || df::is_path_sep(child_text[boundary]);
 }
 
 std::string sync_invalid_message(const sync_analysis_result& analysis)
@@ -1605,6 +1624,27 @@ std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_
 df::date_t adjusted_item_date(const df::date_t created, const df::date_t new_start, const df::date_t original_start)
 {
 	return created.is_valid() && original_start.is_valid() ? created + (new_start - original_start) : new_start;
+}
+
+// Adjust dates writes Original, shifting whatever the item resolves to now - Original where the file
+// carries one, the rung below it where it does not. Naming that tag before the run is what makes
+// mixed provenance in a selection visible: the same shift does not mean the same thing to a file
+// dated by its shutter and a file dated by the day it landed on this disk.
+std::string_view adjust_date_source_name(const prop::item_metadata_const_ptr& md)
+{
+	if (md)
+	{
+		for (const auto kind : {
+			     prop::date_concept::original, prop::date_concept::created, prop::date_concept::modified
+		     })
+		{
+			if (md->dates.resolve(kind).is_valid()) return prop::date_source_name(md->dates.resolved_source(kind));
+		}
+	}
+
+	// Mirrors calc_media_created: with no metadata date the filesystem creation stamp is what is
+	// being shifted, and saying so is the whole point of the column.
+	return prop::date_source_name(prop::date_source::file_created);
 }
 
 icon_index drive_icon(const platform::drive_type d)

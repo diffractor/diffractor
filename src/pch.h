@@ -72,6 +72,7 @@ constexpr float M_PIF = 3.14159265358979f;
 #include "util_geometry.h"
 #include "util_strings.h"
 #include "util_path.h"
+#include "app_environment.h"
 #include "platform.h"
 #include "util_date.h"
 #include "util_selector.h"

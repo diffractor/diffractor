@@ -2658,6 +2658,9 @@ msgstr "Změněno"
 msgid "or"
 msgstr "nebo"
 
+msgid "original"
+msgstr "Originál"
+
 msgid "related"
 msgstr "Spojeno s"
 

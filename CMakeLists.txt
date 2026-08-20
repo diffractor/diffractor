@@ -213,6 +213,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/render_charts.cpp
         src/render_globe.cpp
         src/render_image.cpp
+        src/render_panorama.cpp
         src/render_software.cpp
         src/render_surface.cpp
         src/ui.cpp

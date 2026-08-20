@@ -2567,6 +2567,9 @@ msgstr "수정됨"
 msgid "or"
 msgstr "또는"
 
+msgid "original"
+msgstr "원본"
+
 msgid "related"
 msgstr "관련"
 

@@ -72,6 +72,7 @@ public:
 	int _fps_counter = 0;
 	int _fps_avg = 0;
 	int _fps_second = 0;
+	bool _control_down = false;
 
 	view_frame(view_state& s) : _state(s)
 	{
@@ -98,6 +99,20 @@ public:
 		{
 			_active_controller->tick();
 		}
+
+		sync_modifier_cursor();
+	}
+
+	// zoom.md: cursor state follows state rather than waiting for the next pointer move. Ctrl is what
+	// arms drawing a region, and a held pointer produces no event that would otherwise re-ask.
+	// key_down calls this on the press so the change is immediate; the tick covers the release, for
+	// which there is no key event at all.
+	void sync_modifier_cursor()
+	{
+		const auto control_down = ui::current_key_state().control;
+		if (_control_down == control_down) return;
+		_control_down = control_down;
+		if (_hover && _active_controller) update_cursor();
 	}
 
 	// Never null after construction: most handlers below dereference _view without testing it, and a

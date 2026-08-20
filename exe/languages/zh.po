@@ -2567,6 +2567,9 @@ msgstr "已修改"
 msgid "or"
 msgstr "或者"
 
+msgid "original"
+msgstr "原始日期"
+
 msgid "related"
 msgstr "相关"
 

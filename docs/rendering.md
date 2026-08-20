@@ -502,6 +502,31 @@ decode during `files::load`. The media view checks it up front as well, so it ca
 [`Too large to display`](file-io.md#411-when-an-image-cannot-be-shown) rather than reporting a
 generic failure after the fact.
 
+### A stand-in is fitted, never stretched
+
+A pane is laid out for the shape the item **is** — `texture_state::_display_bounds` comes from
+`calc_display_dimensions()`, which reads the indexed dimensions long before any pixels arrive. What
+gets drawn into it is whatever the [display phase ladder](file-io.md#4-reading-the-display-phase-ladder)
+has reached, and the earlier rungs are not always that shape.
+
+`seed_placeholder` stages the item's thumbnail surface, and an **embedded thumbnail is stored
+verbatim**: cameras and phones routinely write a padded 160x120 for a 3:2 or 16:9 frame. A thumbnail
+Diffractor generated is a downscale and matches to within rounding; an embedded one can be 12 to 33
+per cent out. `draw` therefore fits the sampled extent inside the destination through
+`df::fit_preserving_aspect` rather than stretching the whole texture into the whole rectangle.
+
+Two properties make this safe to rely on:
+
+- **An aspect that already agrees is returned untouched**, within one device pixel, so every
+  correctly shaped image draws exactly where it did before and nothing acquires bars from rounding.
+- **The destination is not moved.** Publishing the stand-in's shape as the item's would have been the
+  other way to reconcile the two, and it would jump the layout the moment the decode landed.
+
+The compare split divides by the fitted width rather than the pane width, so the two panes stay in
+register. None of this is compare-specific: compare was only where it was noticed, because the pane
+carried over from the previous display is the one holding a picture to distort while the other is
+still empty.
+
 ### The sidebar globe
 
 The [sidebar globe](locations.md#50-the-sidebar-globe) is rasterised entirely in software, into a
@@ -524,6 +549,19 @@ consequences are load-bearing rather than incidental:
   Longitude swings arbitrarily fast there and a straight line between two endpoints is simply wrong.
   **This one has no test**: near a pole the correct rendering is itself heavily compressed, so no
   cheap assertion separates the two, and it is verified by eye at a polar view.
+
+### A projected panorama
+
+An equirectangular panorama that the user is [standing inside](zoom.md#64-standing-inside-an-equirectangular-panorama) is rasterised the same way and for the same reason: a projection whose pixels depended on the backend would be two features, and producing them before either backend sees them settles it for free.
+
+Three things differ from the globe, and each is a consequence of the camera being inside the sphere rather than outside it:
+
+- **The destination is the whole media viewport**, not a small disc, so segments are eight pixels rather than sixteen and the mip pyramid earns its keep at a wide field of view, where one destination pixel can span dozens of source texels.
+- **The source is the decoded picture at whatever size the budget allowed**, not a fixed map, so the file's declared geometry and the decode resolution are reconciled by one scale factor rather than assumed equal. The decode is asked for the resolution the *field of view* needs — a narrow view of a large panorama reads a small arc at close to one texel per pixel, which the viewport extent alone would never ask for.
+- **The source does not cover the sphere.** A segment straddling the edge of what the file holds is evaluated per pixel, because interpolating across the gap would sample pixels that are not there, and what is outside is left transparent rather than clamped to the nearest row.
+
+`Should render a projected panorama` covers the camera against a source whose colour says which quadrant it came from, with an asymmetric probe per case: a symmetric one would pass for every mirrored or flipped member of the same family, which is exactly the defect worth catching. It was verified discriminating by negating each camera axis in turn.
+
 
 Reduced copies of the source, halved until they are small, cover the compression toward the limb,
 where one screen pixel can span dozens of source texels; the level is chosen per segment from how far
@@ -801,6 +839,7 @@ bridge.
 | Tone curves, saturation, vibrance, contrast, brightness | [render_color.cpp](../src/render_color.cpp) |
 | Pixel-level transforms and differences | [render_image.cpp](../src/render_image.cpp) |
 | The sidebar globe's software resample | [render_globe.cpp](../src/render_globe.cpp), [ui_globe.h](../src/ui_globe.h) |
+| A projected panorama's software resample | [render_panorama.cpp](../src/render_panorama.cpp), [ui_panorama.h](../src/ui_panorama.h) |
 | The sidebar pie and calendar: extruded solids and their identity buffers | [render_charts.cpp](../src/render_charts.cpp), [ui_charts.h](../src/ui_charts.h) |
 | SSE/AVX/NEON paths behind the above | [util_simd.h](../src/util_simd.h) |
 | Demux, decode, scaling, resampling, hardware acceleration | [av_format.h](../src/av_format.h), [av_format.cpp](../src/av_format.cpp) |

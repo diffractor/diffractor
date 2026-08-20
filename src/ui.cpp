@@ -274,18 +274,20 @@ public:
 	view_state& _state;
 	recti _view_bounds;
 	recti _zoom_bounds;
+	pointi _element_offset;
 	bool _tracking = false;
-	bool _region_select = false;
+	bool _drawing_region = false;
 	bool _inspect_active = false;
 	df::zoom_view_state _start_zoom_state;
 	bool _committed = false;
 
 	zoom_controller(const view_host_ptr& host, std::shared_ptr<photo_control> media_parent, view_state& state,
-	                const recti interaction_bounds, const recti view_bounds) :
+	                const recti interaction_bounds, const recti view_bounds, const pointi element_offset) :
 		view_controller(host, interaction_bounds),
 		_parent_element(std::move(media_parent)),
 		_state(state),
 		_view_bounds(view_bounds),
+		_element_offset(element_offset),
 		_start_zoom_state(_parent_element->_display->zoom_state())
 	{
 		_zoom_bounds = calc_zoom_bounds();
@@ -293,7 +295,10 @@ public:
 
 	~zoom_controller() override
 	{
-		if (_tracking && !_committed) _parent_element->_display->restore_zoom_state(_start_zoom_state);
+		// An interrupted drag would otherwise leave _region_dragging set, and the region's buttons are
+		// hidden while it is - permanently, since nothing else clears it.
+		if (_drawing_region) _parent_element->cancel_region_drag();
+		else if (_tracking && !_committed) _parent_element->_display->restore_zoom_state(_start_zoom_state);
 		_tracking = false;
 	}
 
@@ -310,27 +315,34 @@ public:
 
 	ui::style::cursor cursor() const override
 	{
-		if (_region_select) return ui::style::cursor::select;
-		return _inspect_active ? ui::style::cursor::size_all : ui::style::cursor::zoom;
+		if (_drawing_region) return ui::style::cursor::select;
+		if (_inspect_active) return ui::style::cursor::size_all;
+		// zoom.md: the cursor follows state, not the next pointer move. Ctrl is what arms drawing a
+		// region, so it has to be answered before the press rather than after it.
+		if (!_tracking && ui::current_key_state().control) return ui::style::cursor::select;
+		return ui::style::cursor::zoom;
 	}
 
 	void draw(ui::draw_context& dc) override
 	{
-		if (_region_select && _tracking)
-		{
-			const auto selection = recti(_start_loc, _last_loc).normalise().crop(_view_bounds);
-			dc.draw_rect(selection, ui::color(ui::style::color::dialog_selected_background, 0.5));
-		}
 	}
 
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
 	{
 		_tracking = true;
 		_last_loc = _start_loc = loc;
-		_region_select = keys.control;
 		_inspect_active = false;
 		_committed = false;
-		if (_region_select) return;
+
+		// design.md: Ctrl and drag draws a region on the picture. It is read here rather than when the
+		// controller was chosen, because the modifier is only known at the moment of the press.
+		_drawing_region = keys.control;
+		if (_drawing_region)
+		{
+			_parent_element->begin_region_drag();
+			return;
+		}
+
 		const auto local = loc - _view_bounds.top_left();
 		_parent_element->_display->inspect_at_100(pointd(local));
 		_inspect_active = true;
@@ -338,33 +350,43 @@ public:
 
 	void on_mouse_move(const pointi loc) override
 	{
-		if (_tracking)
+		if (!_tracking) return;
+		_last_loc = loc;
+
+		if (_drawing_region)
 		{
-			_last_loc = loc;
-			if (_region_select) return;
-			const auto local = loc - _view_bounds.top_left();
-			const auto extent = _view_bounds.extent();
-			_parent_element->_display->zoom_center({
-				std::clamp(local.x / static_cast<double>(std::max(1, extent.cx)), 0.0, 1.0),
-				std::clamp(local.y / static_cast<double>(std::max(1, extent.cy)), 0.0, 1.0)
-			});
+			_parent_element->drag_region(_start_loc, loc, _element_offset);
+			return;
 		}
+
+		const auto local = loc - _view_bounds.top_left();
+		const auto extent = _view_bounds.extent();
+
+		// zoom.md: the same positional traversal, applied to whatever is being shown. Over a
+		// projection the viewport maps the sphere rather than the rectangle.
+		if (_parent_element->_display->is_panorama_projected())
+		{
+			_parent_element->_display->panorama_look_at(pointd(local));
+			return;
+		}
+
+		_parent_element->_display->zoom_center({
+			std::clamp(local.x / static_cast<double>(std::max(1, extent.cx)), 0.0, 1.0),
+			std::clamp(local.y / static_cast<double>(std::max(1, extent.cy)), 0.0, 1.0)
+		});
 	}
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
 		_tracking = false;
-		if (_region_select)
+
+		if (_drawing_region)
 		{
-			const auto selection = recti(_start_loc, loc).normalise().crop(_view_bounds);
-			_region_select = false;
-			if (selection.width() >= 8 && selection.height() >= 8)
-			{
-				const auto local = selection.offset(-_view_bounds.top_left());
-				_parent_element->_display->zoom_region(rectd(local));
-			}
+			_drawing_region = false;
+			_parent_element->end_region_drag(_start_loc, loc, _element_offset);
 			return;
 		}
+
 		if (_committed)
 		{
 			_committed = false;
@@ -389,9 +411,15 @@ public:
 
 	bool escape() override
 	{
-		if (!_tracking && !_region_select && !_inspect_active) return false;
+		if (_drawing_region)
+		{
+			_drawing_region = false;
+			_tracking = false;
+			_parent_element->cancel_region_drag();
+			return true;
+		}
+		if (!_tracking && !_inspect_active) return false;
 		_parent_element->_display->restore_zoom_state(_start_zoom_state);
-		_region_select = false;
 		_tracking = false;
 		_inspect_active = false;
 		return true;
@@ -401,7 +429,7 @@ public:
 static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& display,
                                 const texture_state_ptr& texture_state, const recti bounds, const pointi element_offset,
                                 recti& navigator_bounds, recti& fit_bounds, recti& out_bounds, recti& actual_bounds,
-                                recti& in_bounds, recti& options_bounds)
+                                recti& in_bounds, recti& options_bounds, recti& projection_bounds)
 {
 	navigator_bounds.clear();
 	fit_bounds.clear();
@@ -409,6 +437,7 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 	actual_bounds.clear();
 	in_bounds.clear();
 	options_bounds.clear();
+	projection_bounds.clear();
 	try
 	{
 		if (setting.zoom_navigator == zoom_navigator_mode::off) return;
@@ -416,9 +445,15 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 
 		const auto client_bounds = bounds.offset(element_offset);
 		const auto inspect = display->is_temporary_zoom();
+		const auto projected = display->is_panorama_projected();
+		// zoom.md: there is no one-to-one inside a sphere, so the ladder is a field of view and the
+		// readout says so rather than quoting a percentage that would mean nothing.
+		const auto scale_text = projected
+			                        ? std::format("{:.0f}°", display->panorama().view.fov_degrees())
+			                        : std::format("{}%", display->zoom_scale_percent());
 		const auto text = !inspect && texture_state->is_provisional()
-			                  ? std::format("{}% - Preview", display->zoom_scale_percent())
-			                  : std::format("{}%", display->zoom_scale_percent());
+			                  ? scale_text + " - Preview"
+			                  : scale_text;
 		const auto text_extent = dc.measure_text(text, ui::style::font_face::dialog,
 		                                         ui::style::text_style::single_line, 100);
 		const auto label_padding = dc.padding1;
@@ -441,16 +476,37 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 		const auto media_bounds = texture_state->display_bounds().offset(element_offset);
 		if (media_bounds.is_empty()) return;
 
-		const auto l = df::mul_div(client_bounds.left - media_bounds.left, zoom_bounds.width(), media_bounds.width()) +
-			zoom_bounds.left;
-		const auto t = df::mul_div(client_bounds.top - media_bounds.top, zoom_bounds.height(), media_bounds.height()) +
-			zoom_bounds.top;
-		const auto r = df::mul_div(client_bounds.right - media_bounds.left, zoom_bounds.width(), media_bounds.width()) +
-			zoom_bounds.left;
-		const auto b = df::mul_div(client_bounds.bottom - media_bounds.top, zoom_bounds.height(),
-		                           media_bounds.height()) +
-			zoom_bounds.top;
-		const auto shown_bounds = recti(l, t, r, b).crop(zoom_bounds);
+		// zoom.md L10: where the visible region sits within the whole. Projected, that region is the
+		// patch of the file the camera covers rather than a window onto a scaled rectangle, so it is
+		// asked of the camera; the map underneath is the same flat strip either way.
+		const auto shown_bounds = projected
+			                          ? [&]
+			                          {
+				                          const auto covered = display->panorama().view.covered_source_fraction(
+					                          sized(media_bounds.extent()), display->panorama().geometry);
+				                          return recti(
+					                          zoom_bounds.left + df::round(covered.X * zoom_bounds.width()),
+					                          zoom_bounds.top + df::round(covered.Y * zoom_bounds.height()),
+					                          zoom_bounds.left + df::round(covered.right() * zoom_bounds.width()),
+					                          zoom_bounds.top + df::round(covered.bottom() * zoom_bounds.height())
+				                          ).crop(zoom_bounds);
+			                          }()
+			                          : [&]
+			                          {
+				                          const auto l = df::mul_div(client_bounds.left - media_bounds.left,
+				                                                     zoom_bounds.width(), media_bounds.width()) +
+					                          zoom_bounds.left;
+				                          const auto t = df::mul_div(client_bounds.top - media_bounds.top,
+				                                                     zoom_bounds.height(), media_bounds.height()) +
+					                          zoom_bounds.top;
+				                          const auto r = df::mul_div(client_bounds.right - media_bounds.left,
+				                                                     zoom_bounds.width(), media_bounds.width()) +
+					                          zoom_bounds.left;
+				                          const auto b = df::mul_div(client_bounds.bottom - media_bounds.top,
+				                                                     zoom_bounds.height(), media_bounds.height()) +
+					                          zoom_bounds.top;
+				                          return recti(l, t, r, b).crop(zoom_bounds);
+			                          }();
 		const auto zoom_texture = texture_state->zoom_texture(dc, df::zoom_view_state::navigator_surface_extent);
 		if (!zoom_texture) return;
 
@@ -462,7 +518,9 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 			                         : panel_bounds.width();
 		const auto label_bounds = recti(panel_bounds.left, client_bounds.top, panel_bounds.left + label_width,
 		                                client_bounds.top + label_height).crop(client_bounds);
-		const auto button_width = std::min(label_height, label_bounds.width() / 5);
+		const auto has_projection_toggle = !inspect && display->declares_equirectangular();
+		const auto button_count = has_projection_toggle ? 6 : 5;
+		const auto button_width = std::min(label_height, label_bounds.width() / button_count);
 		if (!inspect)
 		{
 			fit_bounds = recti(label_bounds.left, label_bounds.top,
@@ -471,8 +529,16 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 			                   std::min(label_bounds.right, fit_bounds.right + button_width), label_bounds.bottom);
 			options_bounds = recti(std::max(label_bounds.left, label_bounds.right - button_width), label_bounds.top,
 			                       label_bounds.right, label_bounds.bottom);
-			in_bounds = recti(std::max(label_bounds.left, options_bounds.left - button_width), label_bounds.top,
-			                  options_bounds.left, label_bounds.bottom);
+
+			if (has_projection_toggle)
+			{
+				projection_bounds = recti(std::max(label_bounds.left, options_bounds.left - button_width),
+				                          label_bounds.top, options_bounds.left, label_bounds.bottom);
+			}
+
+			const auto right_of_in = has_projection_toggle ? projection_bounds.left : options_bounds.left;
+			in_bounds = recti(std::max(label_bounds.left, right_of_in - button_width), label_bounds.top,
+			                  right_of_in, label_bounds.bottom);
 			actual_bounds = recti(out_bounds.right, label_bounds.top, in_bounds.left, label_bounds.bottom);
 		}
 		const auto excluded = ui::color(0, thumb_alpha / 2.0f);
@@ -499,6 +565,16 @@ static void render_zoom_overlay(ui::draw_context& dc, const display_state_ptr& d
 			             ui::style::text_style::single_line_center, foreground, {});
 			dc.draw_text(icon_to_utf8(icon_index::zoom_in), in_bounds, ui::style::font_face::icons,
 			             ui::style::text_style::single_line_center, foreground, {});
+
+			// zoom.md L6: which of the two ways of looking at this file is on, shown rather than
+			// remembered. Dimmed while the flat pixels are being shown, lit while projected.
+			if (has_projection_toggle)
+			{
+				dc.draw_text(icon_to_utf8(icon_index::world), projection_bounds, ui::style::font_face::icons,
+				             ui::style::text_style::single_line_center,
+				             projected ? foreground : ui::color(dc.colors.foreground, alpha * 0.45f), {});
+			}
+
 			dc.draw_text(icon_to_utf8(icon_index::more), options_bounds, ui::style::font_face::icons,
 			             ui::style::text_style::single_line_center, foreground, {});
 		}
@@ -520,7 +596,7 @@ void photo_control::render_zoom_thumb(ui::draw_context& dc, const pointi element
 {
 	render_zoom_overlay(dc, _display, _display->_selected_texture1, bounds, element_offset,
 	                    _zoom_navigator_bounds, _zoom_fit_bounds, _zoom_out_bounds, _zoom_100_bounds,
-	                    _zoom_in_bounds, _zoom_options_bounds);
+	                    _zoom_in_bounds, _zoom_options_bounds, _zoom_projection_bounds);
 }
 
 void side_by_side_control::render_zoom_thumb(ui::draw_context& dc, const pointi element_offset) const
@@ -530,7 +606,7 @@ void side_by_side_control::render_zoom_thumb(ui::draw_context& dc, const pointi 
 		                     : _display->_selected_texture2;
 	render_zoom_overlay(dc, _display, texture, bounds, element_offset, _zoom_navigator_bounds,
 	                    _zoom_fit_bounds, _zoom_out_bounds, _zoom_100_bounds, _zoom_in_bounds,
-	                    _zoom_options_bounds);
+	                    _zoom_options_bounds, _zoom_projection_bounds);
 }
 
 class zoom_command_controller final : public view_controller
@@ -608,8 +684,45 @@ public:
 	}
 };
 
-class zoom_navigator_controller final : public view_controller
+// zoom.md L6: switching a declared panorama between the sphere it describes and the flat pixels it
+// stores. One click, and the control it lives on shows which is in force.
+class panorama_projection_controller final : public view_controller
 {
+	display_state_ptr _display;
+	bool _tracking = false;
+
+public:
+	panorama_projection_controller(const view_host_ptr& host, display_state_ptr display, const recti bounds) :
+		view_controller(host, bounds), _display(std::move(display))
+	{
+	}
+
+	ui::style::cursor cursor() const override
+	{
+		return ui::style::cursor::link;
+	}
+
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		_tracking = true;
+	}
+
+	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
+	{
+		const auto invoke = _tracking && _bounds.contains(loc);
+		_tracking = false;
+		if (invoke) _display->toggle_panorama_projection();
+	}
+
+	bool escape() override
+	{
+		if (!_tracking) return false;
+		_tracking = false;
+		return true;
+	}
+};
+
+class zoom_navigator_controller final : public view_controller{
 	display_state_ptr _display;
 	bool _tracking = false;
 
@@ -686,6 +799,7 @@ public:
 	ui::style::cursor cursor() const override
 	{
 		if (_region_select) return ui::style::cursor::select;
+		if (!_tracking && ui::current_key_state().control) return ui::style::cursor::select;
 		return _display->zoom() || _inspect_active ? ui::style::cursor::size_all : ui::style::cursor::zoom;
 	}
 
@@ -816,43 +930,229 @@ public:
 	}
 };
 
+// design.md: the region drawn on the displayed picture. Dragging inside it moves it; the three
+// buttons close it, zoom to it, and open Edit with it as the crop. The rectangle itself is held on
+// the photo_control in source space - this only translates a drag into that space.
+class region_controller final : public view_controller
+{
+	std::shared_ptr<photo_control> _parent;
+	pointi _element_offset;
+	rectd _start_region;
+	bool _tracking = false;
+	bool _moving = false;
+
+public:
+	region_controller(const view_host_ptr& host, std::shared_ptr<photo_control> parent,
+	                  const recti interaction_bounds, const pointi element_offset, const bool moving) :
+		view_controller(host, interaction_bounds), _parent(std::move(parent)), _element_offset(element_offset),
+		_start_region(_parent->region()), _moving(moving)
+	{
+	}
+
+	~region_controller() override
+	{
+		// An interrupted drag must put back what it took: a Ctrl-draw cleared the rectangle that was
+		// there, so dropping the flag alone would destroy it.
+		if (_tracking)
+		{
+			if (_moving) _parent->release_region_drag();
+			else _parent->cancel_region_drag();
+		}
+	}
+
+	ui::style::cursor cursor() const override
+	{
+		if (_tracking) return _moving ? ui::style::cursor::size_all : ui::style::cursor::select;
+		// Ctrl inside the rectangle draws a replacement rather than moving it, so the cursor has to say
+		// which of the two the press will get.
+		return ui::current_key_state().control ? ui::style::cursor::select : ui::style::cursor::size_all;
+	}
+
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		_tracking = true;
+		_last_loc = _start_loc = loc;
+		_start_region = _parent->region();
+
+		// design.md: a drag replaces whatever was there. Ctrl at the moment of the press means draw,
+		// even inside the rectangle that is already here, so a smaller region does not first need the
+		// current one cleared.
+		_moving = !keys.control;
+		if (_moving) _parent->begin_region_move();
+		else _parent->begin_region_drag();
+	}
+
+	void on_mouse_move(const pointi loc) override
+	{
+		if (!_tracking) return;
+		_last_loc = loc;
+
+		const auto image = _parent->image_bounds(_element_offset);
+		const auto source = _parent->source_extent();
+
+		if (_moving)
+		{
+			const auto delta = pointd(loc - _start_loc);
+			const auto scale_x = image.Width > 0.0 ? source.Width / image.Width : 0.0;
+			const auto scale_y = image.Height > 0.0 ? source.Height / image.Height : 0.0;
+			_parent->region(df::offset_source_rect(_start_region, {delta.X * scale_x, delta.Y * scale_y}, source));
+			return;
+		}
+
+		_parent->region(df::client_rect_to_source(rectd(recti(_start_loc, loc)), image, source));
+	}
+
+	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
+	{
+		on_mouse_move(loc);
+		_tracking = false;
+		_parent->release_region_drag();
+
+		// A rectangle too small to see is a click that happened to move, not a region.
+		const auto drawn = _parent->region_bounds(_element_offset);
+		if (!_moving && (drawn.width() < 8 || drawn.height() < 8)) _parent->region({});
+
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	bool escape() override
+	{
+		if (!_tracking) return false;
+		_tracking = false;
+		_parent->release_region_drag();
+		_parent->region(_start_region);
+		return true;
+	}
+};
+// One of the region's three buttons. `commands::none` is close, which belongs to the region rather
+// than to the application and so has no command of its own.
+class region_command_controller final : public view_controller
+{
+	std::shared_ptr<photo_control> _parent;
+	view_state& _state;
+	pointi _element_offset;
+	commands _command;
+	bool _tracking = false;
+
+public:
+	region_command_controller(const view_host_ptr& host, std::shared_ptr<photo_control> parent, view_state& state,
+	                          const recti bounds, const pointi element_offset, const commands command) :
+		view_controller(host, bounds), _parent(std::move(parent)), _state(state), _element_offset(element_offset),
+		_command(command)
+	{
+	}
+
+	ui::style::cursor cursor() const override
+	{
+		return ui::style::cursor::link;
+	}
+
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		_tracking = true;
+	}
+
+	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
+	{
+		const auto invoke = _tracking && _bounds.contains(loc);
+		_tracking = false;
+		if (!invoke) return;
+
+		if (_command == commands::none)
+		{
+			_parent->clear_region();
+			return;
+		}
+
+		if (_command == commands::view_zoom)
+		{
+			// The same region-to-viewport primitive the transient Ctrl-drag used, in the viewport
+			// coordinates the zoom model takes.
+			const auto region = _parent->region_bounds(_element_offset);
+			const auto viewport = _parent->bounds.offset(_element_offset);
+			_parent->clear_region();
+			if (!region.is_empty()) _parent->_display->zoom_region(rectd(region.offset(-viewport.top_left())));
+			return;
+		}
+
+		const auto command = _state.find_command(_command);
+		if (command && !command->enable) return;
+
+		const auto item = _parent->_display ? _parent->_display->_item1 : df::item_element_ptr{};
+		if (!item) return;
+
+		// After the item, because source_extent() reads the display the line above just tested.
+		const auto source = _parent->source_extent();
+		if (source.Width <= 0.0 || source.Height <= 0.0) return;
+
+		// Handed on as fractions of the displayed picture: what is on screen may be a stand-in, and
+		// Edit reads the file for itself, so pixel counts taken here would not be the same grid.
+		const auto drawn = _parent->region();
+		const rectd normalised{
+			drawn.X / source.Width, drawn.Y / source.Height,
+			drawn.Width / source.Width, drawn.Height / source.Height
+		};
+
+		_state._pending_edit_crop = view_state::pending_edit_crop_t{item->path(), normalised};
+		_parent->clear_region();
+		_host->invoke(_command);
+	}
+
+	bool escape() override
+	{
+		if (!_tracking) return false;
+		_tracking = false;
+		return true;
+	}
+};
+
 class pan_controller final : public view_controller, public std::enable_shared_from_this<pan_controller>
 {
 public:
 	std::shared_ptr<photo_control> _parent;
 	view_state& _state;
+	pointi _element_offset;
 	df::zoom_view_state _start_zoom_state;
+	// zoom.md: a projected panorama is looked around by grabbing it, so the gesture carries the
+	// camera it started from and is recomputed from the drag origin on every move.
+	panorama_view _start_panorama_view;
+	bool _looking = false;
 	bool _tracking = false;
-	bool _region_select = false;
+	bool _drawing_region = false;
 	bool _auto_pan = false;
 	pointd _auto_velocity;
 	pointd _auto_offset;
 	double _auto_last_time = 0.0;
 
 	pan_controller(const view_host_ptr& host, std::shared_ptr<photo_control> parent, view_state& s,
-	               const recti bounds) : view_controller(host, bounds), _parent(std::move(parent)), _state(s)
+	               const recti bounds, const pointi element_offset) : view_controller(host, bounds),
+	                                                                  _parent(std::move(parent)), _state(s),
+	                                                                  _element_offset(element_offset)
 	{
 	}
 
 	~pan_controller() override
 	{
 		ui::animations.erase(this);
-		if (_tracking && !_region_select) _parent->_display->restore_zoom_state(_start_zoom_state);
-	}
-
-	ui::style::cursor cursor() const override
-	{
-		if (_region_select) return ui::style::cursor::select;
-		return ui::style::cursor::size_all;
+		// An interrupted drag would otherwise leave _region_dragging set, and the region's buttons are
+		// hidden while it is - permanently, since nothing else clears it.
+		if (_drawing_region) _parent->cancel_region_drag();
+		else if (_tracking && _looking) _parent->_display->restore_panorama_view(_start_panorama_view);
+		else if (_tracking) _parent->_display->restore_zoom_state(_start_zoom_state);
 	}
 
 	void draw(ui::draw_context& rc) override
 	{
-		if (_region_select && _tracking)
-		{
-			const auto selection = recti(_start_loc, _last_loc).normalise().crop(_bounds);
-			rc.draw_rect(selection, ui::color(ui::style::color::dialog_selected_background, 0.5));
-		}
+	}
+
+	ui::style::cursor cursor() const override
+	{
+		if (_drawing_region) return ui::style::cursor::select;
+		if (!_tracking && !_auto_pan && ui::current_key_state().control) return ui::style::cursor::select;
+		// Grabbing the sphere is a different gesture from pushing a rectangle around, and says so.
+		if (_looking || (!_tracking && _parent->_display->is_panorama_projected()))
+			return _looking ? ui::style::cursor::hand_down : ui::style::cursor::hand_up;
+		return ui::style::cursor::size_all;
 	}
 
 	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
@@ -863,10 +1163,23 @@ public:
 			return;
 		}
 		_start_zoom_state = _parent->_display->zoom_state();
+		_start_panorama_view = _parent->_display->panorama().view;
+		_looking = _parent->_display->is_panorama_projected();
 		_last_loc = _start_loc = loc;
 		_tracking = true;
-		_region_select = keys.control;
-		if (_region_select) return;
+
+		// design.md: Ctrl and drag draws a region on the picture, at whatever scale it is being shown.
+		// Not over a projection: the rectangle would be drawn in sphere space and stored as source
+		// pixels, which is a crop of somewhere else.
+		_drawing_region = keys.control && !_looking;
+		if (_drawing_region)
+		{
+			_parent->begin_region_drag();
+			return;
+		}
+
+		if (_looking) return;
+
 		scroll_to(loc);
 	}
 
@@ -880,24 +1193,40 @@ public:
 		}
 		if (_tracking)
 		{
-			if (_region_select)
+			if (_drawing_region)
 			{
 				_last_loc = loc;
+				_parent->drag_region(_start_loc, loc, _element_offset);
+				return;
+			}
+			if (_looking)
+			{
+				_last_loc = loc;
+				_parent->_display->panorama_drag(pointd(loc - _start_loc), _start_panorama_view);
 				return;
 			}
 			scroll_to(loc);
+			return;
+		}
+
+		// zoom.md: looking around a panorama. No button is held, so this neither begins nor ends a
+		// drag, and press-and-hold inspect zoom is untouched. The origin is the element's own bounds:
+		// _bounds has had the zoom tools and the navigator carved out of it, and mapping the pointer
+		// through a shrunken rectangle would leave one end of the picture unreachable.
+		if (_parent->_display->is_looking_around())
+		{
+			_parent->_display->look_around_at(pointd(loc - _parent->bounds.offset(_element_offset).top_left()));
 		}
 	}
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
 		_tracking = false;
-		if (_region_select)
+		_looking = false;
+		if (_drawing_region)
 		{
-			const auto selection = recti(_start_loc, loc).normalise().crop(_bounds);
-			_region_select = false;
-			if (selection.width() >= 8 && selection.height() >= 8)
-				_parent->_display->zoom_region(rectd(selection.offset(-_bounds.top_left())));
+			_drawing_region = false;
+			_parent->end_region_drag(_start_loc, loc, _element_offset);
 		}
 	}
 
@@ -940,8 +1269,20 @@ public:
 		if (_tracking)
 		{
 			_tracking = false;
-			if (!_region_select) _parent->_display->restore_zoom_state(_start_zoom_state);
-			_region_select = false;
+			if (_drawing_region)
+			{
+				_drawing_region = false;
+				_parent->cancel_region_drag();
+			}
+			else if (_looking)
+			{
+				_looking = false;
+				_parent->_display->restore_panorama_view(_start_panorama_view);
+			}
+			else
+			{
+				_parent->_display->restore_zoom_state(_start_zoom_state);
+			}
 			return true;
 		}
 		return false;
@@ -998,6 +1339,75 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 		                          ? _display->_selected_texture1->display_bounds().offset(element_offset)
 		                          : recti{};
 	const auto durable_zoom = _display->zoom() && !_display->is_temporary_zoom();
+
+	// design.md: the region is a layer over the picture, not over the window. The zoom chrome keeps
+	// its precedence over all of it - including the region's own buttons, which are clamped into the
+	// element and so can land on the navigator - because a rectangle a user happened to draw must not
+	// make the tools it covers unclickable.
+	const auto over_reserved = [this, loc, element_offset, durable_zoom](const std::vector<recti>& excluded)
+	{
+		for (const auto& excluded_logical : excluded)
+		{
+			if (!excluded_logical.is_empty() && excluded_logical.offset(element_offset).contains(loc)) return true;
+		}
+
+		if (!durable_zoom) return false;
+
+		const std::array chrome{
+			_zoom_fit_bounds, _zoom_out_bounds, _zoom_100_bounds, _zoom_in_bounds, _zoom_options_bounds,
+			_zoom_projection_bounds, _zoom_navigator_bounds,
+			_zoom_grading_element ? _zoom_grading_element->bounds.offset(element_offset) : recti{}
+		};
+
+		for (const auto& chrome_bounds : chrome)
+		{
+			if (!chrome_bounds.is_empty() && chrome_bounds.contains(loc)) return true;
+		}
+
+		return false;
+	};
+
+	const auto region_available = has_region() && !over_reserved(excluded_bounds);
+
+	// The host keeps a controller until the pointer leaves its bounds, so everything that answers
+	// ahead of one has to be cut out of it. Without this a rectangle re-entered from the picture
+	// keeps the zoom or pan tool, and a button approached from inside the rectangle it belongs to is
+	// never reached - the pointer is still where the outgoing controller was told it could be.
+	const auto exclude_region_layer = [this, loc, element_offset](recti& interaction_bounds, const bool exclude_body)
+	{
+		if (!has_region()) return;
+
+		if (exclude_body)
+		{
+			const auto region = region_bounds(element_offset);
+			if (!region.is_empty()) interaction_bounds.exclude(loc, region);
+		}
+
+		const std::array command_bounds{_region_close_bounds, _region_zoom_bounds, _region_crop_bounds};
+
+		for (const auto& command : command_bounds)
+		{
+			if (!command.is_empty()) interaction_bounds.exclude(loc, command);
+		}
+	};
+
+	if (region_available)
+	{
+		const std::array region_commands{
+			std::pair{_region_close_bounds, commands::none},
+			std::pair{_region_zoom_bounds, commands::view_zoom},
+			std::pair{_region_crop_bounds, commands::tool_edit}
+		};
+		for (const auto& [command_bounds, command] : region_commands)
+		{
+			if (!command_bounds.is_empty() && command_bounds.contains(loc))
+			{
+				return std::make_shared<region_command_controller>(host, shared_from_this(), _state, command_bounds,
+				                                                   element_offset, command);
+			}
+		}
+	}
+
 	if (durable_zoom && _zoom_grading_element && !_zoom_grading_element->bounds.is_empty() &&
 		_zoom_grading_element->bounds.offset(element_offset).contains(loc))
 	{
@@ -1009,6 +1419,10 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 		if (!_zoom_options_bounds.is_empty() && _zoom_options_bounds.contains(loc))
 		{
 			return std::make_shared<zoom_options_controller>(host, _state, _zoom_options_bounds);
+		}
+		if (!_zoom_projection_bounds.is_empty() && _zoom_projection_bounds.contains(loc))
+		{
+			return std::make_shared<panorama_projection_controller>(host, _display, _zoom_projection_bounds);
 		}
 		const std::array zoom_commands{
 			std::pair{_zoom_fit_bounds, commands::view_zoom_fit},
@@ -1031,6 +1445,45 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 		return std::make_shared<zoom_navigator_controller>(host, _display, _zoom_navigator_bounds);
 	}
 
+	// Dragging inside the rectangle moves it. Drawing a new one is Ctrl at the moment of the press,
+	// which region_controller reads for itself.
+	if (region_available)
+	{
+		if (const auto region = region_bounds(element_offset); !region.is_empty() && region.contains(loc))
+		{
+			// The host caches a controller until the pointer leaves its bounds, so handing the whole
+			// rectangle over would let it shadow the chrome it covers until the pointer left the
+			// rectangle entirely. The excluded rects are cut out of the interaction bounds instead,
+			// exactly as pan_controller does, so moving onto a tool re-runs this test.
+			auto interaction_bounds = region;
+
+			if (durable_zoom)
+			{
+				const std::array chrome{
+					_zoom_fit_bounds, _zoom_out_bounds, _zoom_100_bounds, _zoom_in_bounds, _zoom_options_bounds,
+					_zoom_projection_bounds, _zoom_navigator_bounds,
+					_zoom_grading_element ? _zoom_grading_element->bounds.offset(element_offset) : recti{}
+				};
+
+				for (const auto& chrome_bounds : chrome)
+				{
+					if (!chrome_bounds.is_empty()) interaction_bounds.exclude(loc, chrome_bounds);
+				}
+			}
+
+			for (const auto& excluded_logical : excluded_bounds)
+			{
+				if (!excluded_logical.is_empty()) interaction_bounds.exclude(loc, excluded_logical.offset(element_offset));
+			}
+
+			// The rectangle's own buttons sit inside it whenever it is large enough to hold them.
+			exclude_region_layer(interaction_bounds, false);
+
+			return std::make_shared<region_controller>(host, shared_from_this(), interaction_bounds, element_offset,
+			                                          true);
+		}
+	}
+
 	if (!_display->zoom() && !image_bounds.is_empty() && image_bounds.contains(loc) &&
 		_display->can_zoom())
 	{
@@ -1047,8 +1500,10 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 			if (excluded.bottom < loc.y) interaction_bounds.top = std::max(interaction_bounds.top, excluded.bottom + 1);
 			if (excluded.top > loc.y) interaction_bounds.bottom = std::min(interaction_bounds.bottom, excluded.top - 1);
 		}
+		exclude_region_layer(interaction_bounds, true);
 		const auto view_bounds = bounds.offset(element_offset);
-		return std::make_shared<zoom_controller>(host, shared_from_this(), _state, interaction_bounds, view_bounds);
+		return std::make_shared<zoom_controller>(host, shared_from_this(), _state, interaction_bounds, view_bounds,
+		                                         element_offset);
 	}
 
 	if (bounds.contains(logical_loc) && _can_pan && _display->zoom())
@@ -1062,6 +1517,7 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 				_zoom_100_bounds,
 				_zoom_in_bounds,
 				_zoom_options_bounds,
+				_zoom_projection_bounds,
 				_zoom_navigator_bounds,
 				_zoom_grading_element ? _zoom_grading_element->bounds.offset(element_offset) : recti{}
 			};
@@ -1074,7 +1530,9 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 		{
 			if (!excluded_logical.is_empty()) interaction_bounds.exclude(loc, excluded_logical.offset(element_offset));
 		}
-		controller = std::make_shared<pan_controller>(host, shared_from_this(), _state, interaction_bounds);
+		exclude_region_layer(interaction_bounds, true);
+		controller = std::make_shared<pan_controller>(host, shared_from_this(), _state, interaction_bounds,
+		                                              element_offset);
 	}
 
 	return controller;
@@ -1723,8 +2181,12 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 {
 	constexpr auto font = ui::style::font_face::dialog;
 	const auto md = _item->metadata();
-	const auto file_created_date = _item->file_created();
-	const auto file_modified_date = _item->file_modified();
+
+	// The index stores both stamps as UTC instants. Every metadata row above them is a wall clock, so
+	// they are converted here or the table lists one instant twice, ten hours apart, under two names -
+	// which also defeats the de-duplication shows_own_file_stamp_row exists to do.
+	const auto file_created_date = _item->file_created().system_to_local();
+	const auto file_modified_date = _item->file_modified().system_to_local();
 	const auto created_date = _item->media_created();
 	const auto st = created_date.date();
 	const auto search = df::search_t().day(st.day, st.month, st.year);
@@ -1734,41 +2196,61 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 	const auto matches = _state.day_item_count(created_date);
 	const auto e = hover.elements;
 
+	// Four columns of a table, not a sentence: at the default width the source column wraps its tag
+	// name and the row stops reading as one date.
+	hover.preferred_size = df::mul_div(view_hover_element::default_preferred_size, 13, 10);
+
 	e->add(make_icon_element(search.first_type()->icon, flex_item::no_break));
 	e->add(std::make_shared<text_element>(tt.dates_title, ui::style::font_face::title,
 	                                      ui::style::text_style::single_line, flex_item::line_break));
 
 	const auto table = std::make_shared<ui::table_element>(flex_item::center);
 
+	// The source is provenance rather than value, so it is dimmed beside the date it explains.
+	const auto source_color = ui::darken(ui::style::color::view_text, 0.22f);
+
+	const auto add_row = [&table, source_color](const std::string_view label, const df::date_t d,
+	                                            const std::string_view source)
+	{
+		auto source_cell = std::make_shared<text_element>(source);
+		source_cell->foreground_color(source_color);
+
+		table->add(std::make_shared<text_element>(label),
+		           std::make_shared<text_element>(platform::format_date(d)),
+		           std::make_shared<text_element>(platform::format_time(d)),
+		           source_cell);
+	};
+
 	// Naming the tag each date came from is what turns "the date is wrong" into a question with a
 	// visible answer, which is the whole difficulty of #184.
 	if (md)
 	{
-		const auto add_date_row = [&table, md](const std::string_view label, const prop::date_concept kind)
+		const auto add_date_row = [&add_row, md](const std::string_view label, const prop::date_concept kind)
 		{
 			const auto d = md->dates.resolve(kind);
 			if (!d.is_valid()) return;
 
-			const auto source = prop::date_source_name(md->dates.resolved_source(kind));
-			table->add(label, platform::format_date(d),
-			           std::format("{} - {}", platform::format_time(d), source));
+			add_row(label, d, prop::date_source_name(md->dates.resolved_source(kind)));
 		};
 
-		add_date_row(tt.prop_name_original.sv(), prop::date_concept::original);
-		add_date_row(tt.prop_name_created.sv(), prop::date_concept::created);
-		add_date_row(tt.prop_name_modified.sv(), prop::date_concept::modified);
+		add_date_row(tt_prep(tt.prop_name_original.sv()), prop::date_concept::original);
+		add_date_row(tt_prep(tt.prop_name_created.sv()), prop::date_concept::created);
+		add_date_row(tt_prep(tt.prop_name_modified.sv()), prop::date_concept::modified);
 	}
 
-	if (file_created_date.is_valid())
+	const auto shows_file_created = !md || prop::shows_own_file_stamp_row(
+		md->dates, prop::date_source::file_created, file_created_date);
+	const auto shows_file_modified = !md || prop::shows_own_file_stamp_row(
+		md->dates, prop::date_source::file_modified, file_modified_date);
+
+	if (file_created_date.is_valid() && shows_file_created)
 	{
-		table->add(tt.dates_file_created, platform::format_date(file_created_date),
-		           platform::format_time(file_created_date));
+		add_row(tt.dates_file_created, file_created_date, prop::date_source_name(prop::date_source::file_created));
 	}
 
-	if (file_modified_date.is_valid())
+	if (file_modified_date.is_valid() && shows_file_modified)
 	{
-		table->add(tt.dates_file_modified, platform::format_date(file_modified_date),
-		           platform::format_time(file_modified_date));
+		add_row(tt.dates_file_modified, file_modified_date, prop::date_source_name(prop::date_source::file_modified));
 	}
 
 	e->add(table);

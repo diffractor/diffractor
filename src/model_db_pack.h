@@ -105,15 +105,28 @@ public:
 
 	// Grouped by value, so the six date tags a phone writes usually cost one group. Written as one
 	// property, so the record framing and the forward-compatible skip both come for free.
+	//
+	// The body describes its own shape: a reader takes the fields it knows from the front of each
+	// group record and steps over the rest by the stated stride, so a later release can append a
+	// field to a group, or to the trailer, without the stored dates becoming unreadable. A layout
+	// change that cost every user a re-index is the thing this exists to prevent, and the one byte
+	// each of stride and trailer length is what buys it.
+	static constexpr uint8_t date_pack_version = 2;
+	static constexpr uint8_t date_pack_group_stride = 18; // uint64 sources, int64 value, int16 offset
+	static constexpr uint8_t date_pack_trailer_len = 8; // uint64 overflow
+	static constexpr size_t date_pack_header_len = 4;
+
 	void write_date_pack(const uint16_t id, const prop::date_pack& dates)
 	{
 		const auto count = dates.group_count();
 		if (count <= 0) return;
 
 		df::blob body;
-		body.reserve(2 + count * 14 + 4);
-		body.push_back(1); // pack version
+		body.reserve(date_pack_header_len + count * date_pack_group_stride + date_pack_trailer_len);
+		body.push_back(date_pack_version);
 		body.push_back(static_cast<uint8_t>(count));
+		body.push_back(date_pack_group_stride);
+		body.push_back(date_pack_trailer_len);
 
 		const auto push = [&body](const void* p, const size_t n)
 		{
@@ -123,7 +136,7 @@ public:
 
 		for (auto i = 0; i < count; ++i)
 		{
-			const auto sources = static_cast<uint32_t>(dates.group_sources(i));
+			const auto sources = static_cast<uint64_t>(dates.group_sources(i));
 			const auto value = dates.group_value(i).to_int64();
 			const auto offset = dates.group_offset(i);
 
@@ -132,7 +145,7 @@ public:
 			push(&offset, sizeof(offset));
 		}
 
-		const auto overflow = static_cast<uint32_t>(dates.overflow());
+		const auto overflow = static_cast<uint64_t>(dates.overflow());
 		push(&overflow, sizeof(overflow));
 
 		write_prop_id(id);
@@ -228,9 +241,14 @@ public:
 		_pos += read_len();
 	}
 
-	// A pack whose body is malformed or written by a newer pack version is stepped over whole. A
-	// half-read pack would claim dates the file does not have, which is worse than having none.
-	void read_date_pack(prop::date_pack& dates)
+	// A pack whose body is malformed, or written to a pack version older than this build reads, is
+	// stepped over whole. A half-read pack would claim dates the file does not have, which is worse
+	// than having none. A body written by a later release is read as far as this build understands
+	// it: the header states how long a group record and the trailer are, so fields appended after
+	// these are stepped over rather than misread, and the dates stay readable without a re-index.
+	// Answers whether any date was restored, so a caller that has the legacy records beside the pack
+	// can fall back to them rather than leaving the row with no date at all.
+	bool read_date_pack(prop::date_pack& dates)
 	{
 		const auto ser_len = read_len();
 		const auto end = _pos + ser_len;
@@ -238,42 +256,66 @@ public:
 		if (remaining() < ser_len)
 		{
 			_pos = end;
-			return;
+			return false;
+		}
+
+		if (ser_len < metadata_packer::date_pack_header_len)
+		{
+			_pos = end;
+			return false;
 		}
 
 		const auto* p = _data.data + _pos;
-		const auto version = ser_len >= 2 ? p[0] : 0;
-		const auto count = ser_len >= 2 ? p[1] : 0;
+		const auto version = p[0];
+		const auto count = p[1];
+		const size_t stride = p[2];
+		const size_t trailer_len = p[3];
 
-		if (version == 1 && ser_len >= static_cast<size_t>(2 + count * 14 + 4))
+		const auto known_group = static_cast<size_t>(metadata_packer::date_pack_group_stride);
+		const auto known_trailer = static_cast<size_t>(metadata_packer::date_pack_trailer_len);
+		const auto body_len = metadata_packer::date_pack_header_len + count * stride + trailer_len;
+
+		if (version < metadata_packer::date_pack_version || stride < known_group ||
+			trailer_len < known_trailer || ser_len < body_len)
 		{
-			p += 2;
+			_pos = end;
+			return false;
+		}
 
-			for (auto i = 0; i < count; ++i)
+		p += metadata_packer::date_pack_header_len;
+
+		for (auto i = 0; i < count; ++i)
+		{
+			uint64_t sources = 0;
+			uint64_t value = 0;
+			int16_t offset = 0;
+
+			std::memcpy(&sources, p, sizeof(sources));
+			std::memcpy(&value, p + 8, sizeof(value));
+			std::memcpy(&offset, p + 16, sizeof(offset));
+			p += stride;
+
+			// Restored one source at a time, so grouping, ordering and de-duplication are the
+			// same code that filled it and a hand-edited row cannot produce a pack add() would
+			// never build.
+			for (const auto& info : prop::date_sources)
 			{
-				uint32_t sources = 0;
-				uint64_t value = 0;
-				int16_t offset = 0;
-
-				std::memcpy(&sources, p, sizeof(sources));
-				std::memcpy(&value, p + 4, sizeof(value));
-				std::memcpy(&offset, p + 12, sizeof(offset));
-				p += 14;
-
-				// Restored one source at a time, so grouping, ordering and de-duplication are the
-				// same code that filled it and a hand-edited row cannot produce a pack add() would
-				// never build.
-				for (const auto& info : prop::date_sources)
+				if (sources & static_cast<uint64_t>(info.source))
 				{
-					if (sources & static_cast<uint32_t>(info.source))
-					{
-						dates.add(info.source, df::date_t(value), offset);
-					}
+					dates.add(info.source, df::date_t(value), offset);
 				}
 			}
 		}
 
+		// The overflow mask cannot be replayed through add(): those readings have no stored value,
+		// which is what put them here. Without this the pack answers has_source differently once it
+		// has been through the index, and its own equality operator disagrees with itself.
+		uint64_t overflow = 0;
+		std::memcpy(&overflow, p, sizeof(overflow));
+		dates.restore_overflow(static_cast<prop::date_source>(overflow));
+
 		_pos = end;
+		return true;
 	}
 
 	void read_val(str::cached& v)

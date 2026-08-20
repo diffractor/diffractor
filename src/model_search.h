@@ -412,11 +412,16 @@ namespace df
 
 	struct search_parent;
 
+	// The three keys a date term can be compared against, one per group order. `original` is the
+	// capture-first ladder the tile shows and Group by Date Original keys on; `created` is the
+	// Created concept alone. Appended rather than placed beside `created` so the numbering a term
+	// carries stays what it was.
 	enum class date_parts_prop
 	{
 		any,
 		created,
-		modified
+		modified,
+		original
 	};
 
 	struct date_parts
@@ -752,6 +757,10 @@ namespace df
 	};
 
 	std::string format_term(const search_term& term);
+
+	// Issue #139: wraps a path that contains spaces so it reads as one search term. Shared by the
+	// address box and by folder completion, which would otherwise disagree about the same path.
+	std::string quote_path_term(std::string_view path);
 
 	// Returns true when folder_name is on a drive whose volume label matches the
 	// term text (case-insensitive, wildcards supported). drive_labels maps an
@@ -1221,7 +1230,7 @@ namespace df
 		// comparisons express the range, so the query the node runs returns exactly the items the
 		// node counted rather than a coarser month or year around them.
 		search_t& date_range(const day_t& from, const day_t& to,
-		                     const date_parts_prop target = date_parts_prop::created)
+		                     const date_parts_prop target = date_parts_prop::original)
 		{
 			search_term_modifier not_before;
 			not_before.greater_than = true;

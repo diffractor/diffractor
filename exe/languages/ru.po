@@ -2570,6 +2570,9 @@ msgstr "модифицированный"
 msgid "or"
 msgstr "или"
 
+msgid "original"
+msgstr "оригинал"
+
 msgid "related"
 msgstr "связанный"
 

@@ -128,10 +128,10 @@ namespace str
 	// String Storage Structure for Interning
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Stores the length and UTF-8 data for an interned string. Uses the C "flexible array member"
-	// pattern - actual allocation size is offsetof(chached_string_storage_t, sz) + len + 1 bytes.
+	// pattern - actual allocation size is offsetof(cached_string_storage_t, sz) + len + 1 bytes.
 	// Once allocated, the storage is immutable and persists for the application lifetime.
 	////////////////////////////////////////////////////////////////////////////////////////////////////
-	struct chached_string_storage_t
+	struct cached_string_storage_t
 	{
 		uint32_t len;
 
@@ -154,17 +154,17 @@ namespace str
 
 		// Resolves handle 0 before the pool exists. The pool reserves its own slot 0 so the table
 		// never hands out a zero handle for real content.
-		inline constexpr chached_string_storage_t empty_storage{0, empty_ihash, {0}};
+		inline constexpr cached_string_storage_t empty_storage{0, empty_ihash, {0}};
 
 		// Base of the single contiguous reservation holding every interned record. Assigned once,
 		// before any non-zero handle can exist, so a reader that holds a handle already
 		// synchronized-with the store; the relaxed load compiles to a plain move.
-		extern std::atomic<const chached_string_storage_t*> intern_pool_base;
+		extern std::atomic<const cached_string_storage_t*> intern_pool_base;
 
-		inline const chached_string_storage_t* resolve(const uint32_t id) noexcept
+		inline const cached_string_storage_t* resolve(const uint32_t id) noexcept
 		{
 			const auto* const base = std::bit_cast<const uint8_t*>(intern_pool_base.load(std::memory_order_relaxed));
-			return std::bit_cast<const chached_string_storage_t*>(base + (static_cast<size_t>(id) <<
+			return std::bit_cast<const cached_string_storage_t*>(base + (static_cast<size_t>(id) <<
 				intern_align_shift));
 		}
 	}
@@ -521,7 +521,7 @@ namespace str
 		return result;
 	}
 
-	int normalze_for_compare(int c);
+	int normalize_for_compare(int c);
 
 	constexpr int cmp(const std::string_view ll, const std::string_view rr)
 	{

@@ -1218,7 +1218,7 @@ uint32_t toolbar_CommandToIndex(const HWND hwnd, const uint32_t nID)
 	return static_cast<uint32_t>(::SendMessage(hwnd, TB_COMMANDTOINDEX, nID, 0L));
 }
 
-static void erase_toolbar_seperators(const HWND tb, const HDC dc, const COLORREF bg_clr)
+static void erase_toolbar_separators(const HWND tb, const HDC dc, const COLORREF bg_clr)
 {
 	const int count = toolbar_GetButtonCount(tb);
 
@@ -7027,7 +7027,7 @@ bool MonitorHasAutohideTaskbarForEdge(const UINT edge, const HMONITOR monitor)
 	// There is a potential race condition here:
 	// 1. A maximized chrome window is fullscreened.
 	// 2. It is switched back to maximized.
-	// 3. In the process the window gets a WM_NCCACLSIZE message which calls us to
+	// 3. In the process the window gets a WM_NCCALCSIZE message which calls us to
 	//    get the autohide state.
 	// 4. The worker thread is invoked. It calls the API to get the autohide
 	//    state. On Windows versions  earlier than Windows 7, taskbars could
@@ -7613,7 +7613,7 @@ public:
 			}
 			if (pCustomDraw->dwDrawStage == CDDS_PREERASE)
 			{
-				erase_toolbar_seperators(from, pCustomDraw->hdc, colors.background);
+				erase_toolbar_separators(from, pCustomDraw->hdc, colors.background);
 				return CDRF_SKIPDEFAULT;
 			}
 			if (pCustomDraw->dwDrawStage == CDDS_ITEMPREPAINT)
@@ -7979,13 +7979,13 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 				exception_information.ExceptionPointers = exception_pointers;
 				exception_information.ClientPointers = TRUE;
 
-				auto dump_flags = MiniDumpWithDataSegs | // Include DS from all loaded mocults
+				auto dump_flags = MiniDumpWithDataSegs | // Include DS from all loaded modules
 					MiniDumpWithHandleData | // Include high level OS handle info
 					MiniDumpScanMemory | // Scan for pointer references in module list
-					MiniDumpWithUnloadedModules | // Recently Unloaded modules
+					MiniDumpWithUnloadedModules | // Recently unloaded modules
 					MiniDumpWithThreadInfo | // Include thread state information
 					MiniDumpIgnoreInaccessibleMemory |
-					// Ignore memory read failures when attempting to read innaccesible regions
+					// Ignore memory read failures when attempting to read inaccessible regions
 					MiniDumpNormal; // Normal stack trace info
 
 				dump_successful = write_dump(GetCurrentProcess(), GetCurrentProcessId(), dump_file,
@@ -8667,7 +8667,7 @@ bool win32_app::pre_translate_message(MSG& m)
 						return true;
 					}
 				}
-				// standard edit shortcuts - dont translate
+				// standard edit shortcuts - don't translate
 				if (is_edit_char(focus_wnd, c, ks))
 				{
 					return false;

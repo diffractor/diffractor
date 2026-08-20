@@ -29,7 +29,7 @@ namespace ui
 
 namespace df
 {
-	struct progess_i;
+	struct progress_i;
 	class item_selector;
 	class item_set;
 	class date_t;
@@ -62,6 +62,11 @@ namespace platform
 	extern std::atomic<size_t> static_memory_usage;
 
 	std::string OS();
+
+	// The platform identity the daily ping reports, packed by df::pack_environment. Every value is
+	// read fresh: a system fact means "right now", unlike a feature bit, which means "at least once
+	// since the last report". docs/v-1.27.2.md owns what each value means.
+	df::environment_facts environment();
 
 	extern bool sse2_supported;
 	extern bool ssse3_supported;

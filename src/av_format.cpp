@@ -51,7 +51,7 @@ static void av_log(void*, const int level, const char* format, va_list argList)
 #ifdef _DEBUG
 	if (level <= AV_LOG_WARNING)
 	{
-		if (strstr(format, "%td") == nullptr && strstr(format, "%ti") == nullptr) // Dont handle '%td'
+		if (strstr(format, "%td") == nullptr && strstr(format, "%ti") == nullptr) // Don't handle '%td'
 		{
 			const auto length = _vscprintf(format, argList);
 			std::string result(length + 1u, 0);
@@ -2470,6 +2470,14 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 	if (stream_index < 0) return {};
 
 	const auto* const params = fc->streams[stream_index]->codecpar;
+
+	// Every still decoder with a format of its own refuses an over-budget source by returning an
+	// empty surface, and an empty surface is exactly what routes a file here - so without this gate
+	// the fallback re-decodes what the budget just refused. It is also the only gate the formats
+	// ffmpeg alone carries (TGA, SGI, the portable pixmaps, DPX) ever get, because scan_photo reads
+	// no header for them and the caller's check is skipped when the geometry is unknown.
+	if (reject_over_budget_source(nullptr, {params->width, params->height}, "ffmpeg")) return {};
+
 	const auto* const codec = avcodec_find_decoder(params->codec_id);
 	if (!codec) return {};
 
@@ -2479,6 +2487,11 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 	const df::scope_exit free_codec([&cc] { avcodec_free_context(&cc); });
 
 	if (avcodec_parameters_to_context(cc, params) < 0) return {};
+
+	// codecpar can understate what the bitstream then asks for, so the ceiling is restated where the
+	// decoder itself will enforce it.
+	if (df::max_decode_bytes > 0) cc->max_pixels = df::max_decode_bytes / 4;
+
 	if (avcodec_open2(cc, codec, nullptr) != 0) return {};
 
 	auto* frame = av_frame_alloc();

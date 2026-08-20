@@ -109,6 +109,60 @@ namespace prop
 		unspecified = 3,
 	};
 
+	// Which patch of the sphere a file's pixels cover, in GPano's terms: a notional full panorama
+	// of full_width x full_height spanning the whole sphere, and the file's own pixels as a crop
+	// out of it. Read from the file at display time rather than indexed, because only the item
+	// being looked at needs it and the answer is worth no field of its own.
+	struct panorama_geometry
+	{
+		int full_width = 0;
+		int full_height = 0;
+		int cropped_left = 0;
+		int cropped_top = 0;
+		int cropped_width = 0;
+		int cropped_height = 0;
+
+		bool operator==(const panorama_geometry&) const noexcept = default;
+
+		bool is_valid() const noexcept
+		{
+			return full_width > 0 && full_height > 0 && cropped_width > 0 && cropped_height > 0 &&
+				cropped_left >= 0 && cropped_top >= 0 &&
+				cropped_left + cropped_width <= full_width && cropped_top + cropped_height <= full_height;
+		}
+
+		// A writer that declared equirectangular and no crop. The pixels are taken to span the full
+		// circle and to sit on the horizon, which is the identity for a true 2:1 sphere and the
+		// least wrong guess for anything else - assuming a strip runs pole to pole would bend the
+		// horizon of every panorama ever stitched.
+		static panorama_geometry assumed(const sizei source) noexcept
+		{
+			if (source.cx <= 0 || source.cy <= 0) return {};
+
+			const auto full_height = std::max(source.cy, source.cx / 2);
+
+			return {
+				source.cx, full_height,
+				0, (full_height - source.cy) / 2,
+				source.cx, source.cy
+			};
+		}
+
+		// Fills in whatever the file left out, and rejects a declaration that contradicts the
+		// pixels. A crop wider than the full panorama, or a cropped extent that is not the image,
+		// describes a different file than the one being drawn.
+		static panorama_geometry resolve(const panorama_geometry& declared, const sizei source) noexcept
+		{
+			if (declared.is_valid() &&
+				declared.cropped_width == source.cx && declared.cropped_height == source.cy)
+			{
+				return declared;
+			}
+
+			return assumed(source);
+		}
+	};
+
 	enum class data_type
 	{
 		int32 = 1,
@@ -408,6 +462,23 @@ namespace prop
 		bool is_panorama() const
 		{
 			return panorama != panorama_projection::none;
+		}
+
+		// docs/zoom.md: what the *display* treats as a panorama, which is a wider question than what
+		// the file declares. Failing a declaration, an aspect ratio of at least 2:1 with a long edge
+		// of at least 4000 pixels qualifies. Aspect alone would claim every wide screenshot, and the
+		// size floor excludes them. Both halves are stored dimensions, so the shape test costs no
+		// field and can be retuned without a re-index. `@panorama` stays the declaration alone,
+		// because a search is an assertion about the file rather than about how it is drawn.
+		bool displays_as_panorama() const
+		{
+			if (is_panorama()) return true;
+
+			constexpr int min_long_edge = 4000;
+			const auto long_edge = std::max<int>(width, height);
+			const auto short_edge = std::min<int>(width, height);
+
+			return short_edge > 0 && long_edge >= min_long_edge && long_edge >= short_edge * 2;
 		}
 
 		bool has_gps() const

@@ -895,7 +895,7 @@ static void should_intern_strings()
 	assert_equal(true, str::cache(std::string_view{}).is_empty(), "empty interns to empty");
 
 	const std::string largest(platform::memory_pool::block_size -
-	                          offsetof(str::chached_string_storage_t, sz) - 1, 'x');
+	                          offsetof(str::cached_string_storage_t, sz) - 1, 'x');
 	assert_equal(largest.size(), str::cache(largest).size(), "largest pool record is interned");
 	const std::string too_large(largest.size() + 1, 'x');
 	assert_equal(true, str::cache(too_large).is_empty(), "oversized pool record is rejected");
@@ -1102,7 +1102,7 @@ static void should_case_fold_korean()
 	assert_equal(0, str::icmp(family, family), "Korean icmp equal");
 
 	// A single Hangul syllable normalises to itself for comparison.
-	assert_equal(0xAC00, str::normalze_for_compare(0xAC00), "Hangul normalise identity");
+	assert_equal(0xAC00, str::normalize_for_compare(0xAC00), "Hangul normalise identity");
 
 	// Different Korean words must not compare equal.
 	assert_equal(true, str::icmp(family, "\uC5EC\uD589") != 0, "different Korean words differ");

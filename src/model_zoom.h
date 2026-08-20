@@ -1,3 +1,11 @@
+// This file is part of the Diffractor photo and video organizer
+// Copyright 2026  Zac Walker
+// 
+// This program is free software; you can redistribute it and / or modify it
+// under the terms of the LGPL License either version 2.1 or later.
+// License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
+// This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
+
 // Purpose: Pure image zoom scale, source-space center, anchoring, bounds geometry,
 // and navigator visibility timing.
 
@@ -112,6 +120,24 @@ namespace df
 			};
 		}
 
+		// zoom.md: looking around. The pointer maps onto the source-space centre, so crossing the
+		// viewport sweeps the whole extent. An axis is pinned unless the picture is larger than the
+		// viewport along it at this scale: without something to see there, following the pointer is only
+		// jitter. Both axes are tested, because a tall stitch qualifies as readily as a wide one.
+		static pointd look_around_center(const pointd local, const sized source, const sized viewport,
+		                                 const double scale) noexcept
+		{
+			if (viewport.Width <= 0.0 || viewport.Height <= 0.0) return {0.5, 0.5};
+
+			const auto horizontal_has_travel = source.Width * scale > viewport.Width + 1.0;
+			const auto vertical_has_travel = source.Height * scale > viewport.Height + 1.0;
+
+			return {
+				horizontal_has_travel ? std::clamp(local.X / viewport.Width, 0.0, 1.0) : 0.5,
+				vertical_has_travel ? std::clamp(local.Y / viewport.Height, 0.0, 1.0) : 0.5
+			};
+		}
+
 		static int accumulate_wheel_steps(double& pending, const double delta, const double detent = 60.0) noexcept
 		{
 			if (detent <= 0.0) return 0;
@@ -195,6 +221,14 @@ namespace df
 			_last_explicit_center = _center;
 			_carried_fit = false;
 			_has_explicit = true;
+		}
+
+		// Moves what is centred without answering the question of scale, so a sweep across a picture
+		// cannot turn a chosen Fit width or Fill into an explicit scale that then stops re-fitting.
+		void set_center(const pointd center) noexcept
+		{
+			_center = {std::clamp(center.X, 0.0, 1.0), std::clamp(center.Y, 0.0, 1.0)};
+			if (_mode == zoom_scale_mode::explicit_scale) _last_explicit_center = _center;
 		}
 
 		void set_anchored(const double scale, const double old_scale, const sized source, const sized viewport,
@@ -349,6 +383,81 @@ namespace df
 			};
 		}
 	};
+
+	// A rectangle a user drew on the picture belongs to the picture, not to the window, so it is held
+	// in source space for the same reason the zoom model keeps its centre there: it then survives a
+	// resize, a layout change and a zoom without sliding off the subject. `image_bounds` is where the
+	// whole picture lands on screen at the current scale, which is what both directions map through.
+	inline rectd client_rect_to_source(const rectd client, const rectd image_bounds, const sized source) noexcept
+	{
+		if (image_bounds.Width <= 0.0 || image_bounds.Height <= 0.0) return {};
+
+		const auto scale_x = source.Width / image_bounds.Width;
+		const auto scale_y = source.Height / image_bounds.Height;
+
+		// A drag runs in whichever direction the pointer went, so the corners are sorted before the
+		// rectangle means anything.
+		const auto client_left = std::min(client.left(), client.right());
+		const auto client_top = std::min(client.top(), client.bottom());
+		const auto client_right = std::max(client.left(), client.right());
+		const auto client_bottom = std::max(client.top(), client.bottom());
+
+		// Clamped to the picture: a rectangle reaching past the edge would name pixels that are not
+		// there, and both the zoom and the crop it hands off to would have to clamp it again.
+		const auto left = std::clamp((client_left - image_bounds.X) * scale_x, 0.0, source.Width);
+		const auto top = std::clamp((client_top - image_bounds.Y) * scale_y, 0.0, source.Height);
+		const auto right = std::clamp((client_right - image_bounds.X) * scale_x, 0.0, source.Width);
+		const auto bottom = std::clamp((client_bottom - image_bounds.Y) * scale_y, 0.0, source.Height);
+
+		return {left, top, right - left, bottom - top};
+	}
+
+	inline rectd source_rect_to_client(const rectd source_rect, const rectd image_bounds, const sized source) noexcept
+	{
+		if (source.Width <= 0.0 || source.Height <= 0.0) return {};
+
+		const auto scale_x = image_bounds.Width / source.Width;
+		const auto scale_y = image_bounds.Height / source.Height;
+
+		return {
+			image_bounds.X + source_rect.X * scale_x, image_bounds.Y + source_rect.Y * scale_y,
+			source_rect.Width * scale_x, source_rect.Height * scale_y
+		};
+	}
+
+	// Dragging inside the rectangle moves it, and it stops at the edge of the picture rather than
+	// being carried off it.
+	inline rectd offset_source_rect(const rectd source_rect, const pointd delta, const sized source) noexcept
+	{
+		const auto x = std::clamp(source_rect.X + delta.X, 0.0, std::max(0.0, source.Width - source_rect.Width));
+		const auto y = std::clamp(source_rect.Y + delta.Y, 0.0, std::max(0.0, source.Height - source_rect.Height));
+		return {x, y, source_rect.Width, source_rect.Height};
+	}
+
+	// A destination is laid out for the shape the item is, but the surface drawn into it is whatever
+	// has arrived so far. A stand-in staged before the real decode need not be that shape: an
+	// embedded thumbnail is stored verbatim, and cameras routinely write a padded 160x120 for a 3:2
+	// or 16:9 frame. Stretching it into the destination distorts the picture until the decode lands.
+	// Fitting it keeps the subject's shape. An aspect that already agrees is returned untouched, so
+	// nothing letterboxes itself over a rounding difference.
+	inline rectd fit_preserving_aspect(const rectd destination, const sized source) noexcept
+	{
+		if (source.Width <= 0.0 || source.Height <= 0.0 || destination.Width <= 0.0 || destination.Height <= 0.0)
+		{
+			return destination;
+		}
+
+		const auto scale = std::min(destination.Width / source.Width, destination.Height / source.Height);
+		const auto width = source.Width * scale;
+		const auto height = source.Height * scale;
+
+		if (destination.Width - width < 1.0 && destination.Height - height < 1.0) return destination;
+
+		return {
+			destination.X + (destination.Width - width) / 2.0, destination.Y + (destination.Height - height) / 2.0,
+			width, height
+		};
+	}
 
 	// The two panes always show the same scale and center, so switching between them is a blink comparison.
 	class comparison_zoom_state

@@ -58,6 +58,67 @@ static void should_parse_searches()
 	assert_equal(false, matcher.match_item({}, info).is_match(), "date");
 }
 
+// Group by Date Original keys on the capture-first ladder and Group by Date Created keys on the
+// Created concept, so each header has to be answered by its own key and by nothing else: answered by
+// the wrong one, a header lists items the cell never counted; answered by neither, it opens empty.
+// That is #184 on whichever order loses the rung.
+static void should_answer_a_date_group_header_with_its_own_items()
+{
+	df::index_file_item info;
+	info.ft = files::file_type_from_name("test.jpg");
+
+	// A photograph taken in 2019 and written to this disk by an export in 2026 - the ordinary shape
+	// of a file whose two dates disagree, and the whole reason Created is an order of its own.
+	info.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(2019, 5, 4));
+	info.safe_ps()->dates.add(prop::date_source::xmp_create, df::date_t(2026, 8, 19));
+
+	assert_equal(df::date_t(2019, 5, 4), info.safe_ps()->dates.original(), "the shutter is Original");
+	assert_equal(df::date_t(2026, 8, 19), info.safe_ps()->dates.created(), "and the export is Created");
+
+	// Day zero is the whole month, which is what a group header stands for.
+	const auto header = [](const int month, const int year, const df::date_parts_prop target)
+	{
+		return df::search_t().day(0, month, year, target);
+	};
+
+	assert_equal(true, df::search_matcher(header(5, 2019, df::date_parts_prop::original))
+	             .match_item({}, info).is_match(), "the Original header lists it");
+	assert_equal(true, df::search_matcher(header(8, 2026, df::date_parts_prop::created))
+	             .match_item({}, info).is_match(), "the Created header lists it");
+
+	// The two probes that pin the split. While the targets were one word both of these matched, so
+	// each header listed the other's items and the two orders were the same order.
+	assert_equal(false, df::search_matcher(header(8, 2026, df::date_parts_prop::original))
+	             .match_item({}, info).is_match(), "the Original header does not list the export month");
+	assert_equal(false, df::search_matcher(header(5, 2019, df::date_parts_prop::created))
+	             .match_item({}, info).is_match(), "the Created header does not list the shutter month");
+
+	// Still a date test, not a date-shaped wildcard.
+	assert_equal(false, df::search_matcher(header(7, 2022, df::date_parts_prop::original))
+	             .match_item({}, info).is_match(), "a month neither date names lists nothing");
+
+	// Where the concept has no tag the header is drawn from the filesystem stamp, so the stamp has
+	// to answer that order - and only that order, or Created reaches back into the shutter time.
+	df::index_file_item stamped;
+	stamped.ft = files::file_type_from_name("test.jpg");
+	stamped.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(2019, 5, 4));
+	stamped.file_created = df::date_t(2021, 3, 9);
+
+	assert_equal(false, stamped.safe_ps()->dates.created().is_valid(), "no tag names a creation date");
+
+	// Derived rather than written out: the group key converts the stamp to local, so the month the
+	// header carries depends on the machine and hard-coding one would pin nothing off UTC.
+	const auto stamp_parts = stamped.file_created.system_to_local().date();
+
+	assert_equal(true, df::search_matcher(header(stamp_parts.month, stamp_parts.year,
+	                                             df::date_parts_prop::created))
+	             .match_item({}, stamped).is_match(), "the Created header drawn from the stamp lists it");
+	assert_equal(true, df::search_matcher(header(5, 2019, df::date_parts_prop::original))
+	             .match_item({}, stamped).is_match(), "and its Original header lists it too");
+	assert_equal(false, df::search_matcher(header(5, 2019, df::date_parts_prop::created))
+	             .match_item({}, stamped).is_match(), "while Created still does not reach the shutter time");
+}
+
 static void should_calculate_safe_presence_requirements()
 {
 	const auto photo_bit = file_group::photo.search_presence_bit();
@@ -180,20 +241,29 @@ static void should_match_terms()
 	           .is_not_match("-age:5")
 	           .is_not_match("!age:5");
 
+	// original: is the capture-first ladder the tile shows and Group by Date Original keys on;
+	// created: is the Created concept alone. A file carrying only a shutter time answers the first
+	// and not the second, which is what stops the two words being synonyms.
 	prop_test().tag("aaa").date(2000, 1, 1)
 	           .is_match("#aaa age:1")
-	           .is_match("#aaa created:2000-jan")
-	           .is_not_match("created:2000-feb")
-	           .is_not_match("#bbb created:2000-jan");
+	           .is_match("#aaa original:2000-jan")
+	           .is_not_match("original:2000-feb")
+	           .is_not_match("#bbb original:2000-jan")
+	           .is_not_match("created:2000-jan");
 
+	// The reverse asymmetry: the shutter time answers original: and the filesystem stamp behind it
+	// answers created:, so neither word reaches the other's date.
 	prop_test().file_created_date(2000, 1, 1).date(1999, 5, 25)
-	           .is_not_match("created:9")
-	           .is_not_match("created:2000-jan")
-	           .is_match("created:1999-may");
+	           .is_match("original:1999-may")
+	           .is_not_match("original:1998-mar")
+	           .is_not_match("created:1999-may");
 
+	// With no metadata date at all both ladders fall back to the same stamp, which is what keeps a
+	// header drawn from it clickable under either order.
 	prop_test().file_created_date(2000, 1, 1)
 	           .is_match("age:10")
-	           .is_match("created:2000-jan");
+	           .is_match("created:2000-jan")
+	           .is_match("original:2000-jan");
 }
 
 // A query the user is midway through typing has an unbalanced '(' on almost every
@@ -434,12 +504,44 @@ static void should_classify_search_scope()
 	}
 }
 
+// A completion match needs a strategy to report back to. Nothing here selects, so the callbacks
+// are never reached.
+class null_complete_strategy final : public ui::complete_strategy_t
+{
+public:
+	std::string no_results_message() override { return {}; }
+	void selected(const ui::auto_complete_match_ptr& i, select_type st) override {}
+	ui::auto_complete_match_ptr selected() const override { return nullptr; }
+
+	void search(const std::string& query, std::function<void(const ui::auto_complete_results&)> complete) override
+	{
+	}
+
+	void initialise(std::function<void(const ui::auto_complete_results&)> complete) override {}
+};
+
 static void should_format_search_predictions()
 {
 	assert_equal("#holiday #beach"s, str::combine2(auto_complete_lead("#holiday"), "#beach"),
 	             "missing separator is inserted");
 	assert_equal("#holiday #beach"s, str::combine2(auto_complete_lead("#holiday "), "#beach"),
 	             "existing separator is preserved");
+
+	// Issue #139 - a completed path containing spaces reads as one term. Committing it after a lead
+	// term is the case the whole-input auto-quote cannot reach.
+	null_complete_strategy strategy;
+
+	const auto my_photos = as_platform_path("C:\\My Photos");
+	const auto photos = as_platform_path("C:\\Photos");
+
+	assert_equal("\"" + my_photos + "\"",
+	             folder_match(strategy, df::folder_path(my_photos)).edit_text(),
+	             "completed path with spaces is quoted");
+	assert_equal(photos, folder_match(strategy, df::folder_path(photos)).edit_text(),
+	             "completed path without spaces is left alone");
+	assert_equal("#holiday \"" + my_photos + "\"",
+	             folder_match(strategy, df::folder_path(my_photos), "#holiday"s).edit_text(),
+	             "completed path after a lead term is quoted");
 
 	assert_equal(true, search_icon("holiday") == icon_index::search, "plain text uses search icon");
 	assert_equal(true, search_icon(as_platform_path("C:\\Photos")) == icon_index::folder, "path uses folder icon");
@@ -630,6 +732,29 @@ static void should_select_files()
 	assert_equal(false, contains(platform::select_files(recursive_cr2, true), "Test.jpg"),
 	             "files from sub folders");
 	assert_equal(false, contains(platform::select_folders(recursive_cr2, true), "raw"), "include folders");
+}
+
+// A recursive selector names a folder, not a string. Normalisation drops the trailing separator, so
+// a raw prefix compare claims every sibling whose name the root is a prefix of - `C:\Pics` swallowing
+// `C:\Pictures` is a scope that silently holds files the user never pointed at.
+static void should_bound_a_recursive_selector_at_a_folder_boundary()
+{
+	const df::folder_path root("c:\\Pics");
+	const df::item_selector pics(root, true);
+
+	assert_equal(true, pics.match(df::file_path(root, "a.jpg")), "the root itself is in scope");
+	assert_equal(true, pics.match(df::file_path(df::folder_path("c:\\Pics\\holiday"), "b.jpg")),
+	             "and so is a folder below it");
+	assert_equal(false, pics.match(df::file_path(df::folder_path("c:\\Pictures"), "c.jpg")),
+	             "a sibling the root merely prefixes is not");
+	assert_equal(false, pics.match(df::file_path(df::folder_path("c:\\PicsOld\\holiday"), "d.jpg")),
+	             "and neither is anything under one");
+
+	// Non-recursive was already an equality test; pinned so the two branches cannot drift apart.
+	const df::item_selector one_folder(root, false);
+	assert_equal(true, one_folder.match(df::file_path(root, "a.jpg")), "one folder holds its own files");
+	assert_equal(false, one_folder.match(df::file_path(df::folder_path("c:\\Pictures"), "c.jpg")),
+	             "and claims no sibling");
 }
 
 // A related search answers with the closest matches on each axis, so the collector has to keep the
@@ -1051,6 +1176,7 @@ static void should_next_date_search()
 	assert_date_shift(df::search_t().year(2010, df::date_parts_prop::created), "created:2009", "created:2010");
 	assert_date_shift(df::search_t().month(1, df::date_parts_prop::created).year(2010, df::date_parts_prop::created),
 	                  "created:2009-dec", "created:2010-jan");
+	assert_date_shift(df::search_t().year(2010, df::date_parts_prop::original), "original:2009", "original:2010");
 }
 
 static void should_parse_search_input()
@@ -1669,6 +1795,10 @@ void register_search_tests(view_state& state, test_registry& tests)
 	tests.add("Should parse search"s, should_parse_search);
 	tests.add("Should parse search input"s, should_parse_search_input);
 	tests.add("Should parse searches"s, should_parse_searches);
+	tests.add("Should answer a date group header with its own items"s,
+	          should_answer_a_date_group_header_with_its_own_items);
+	tests.add("Should bound a recursive selector at a folder boundary"s,
+	          should_bound_a_recursive_selector_at_a_folder_boundary);
 	tests.add("Should calculate safe presence requirements"s, should_calculate_safe_presence_requirements);
 	tests.add("Should update duplicate search presence"s, should_update_duplicate_search_presence);
 	tests.add("Should next date search"s, should_next_date_search);
@@ -1789,6 +1919,9 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_assert_format(df::search_t().with(alfie).with(jana));
 	register_assert_format(df::search_t().age(7, df::date_parts_prop::any));
 	register_assert_format(df::search_t().age(7, df::date_parts_prop::modified));
+	register_assert_format(df::search_t().age(7, df::date_parts_prop::created));
+	register_assert_format(df::search_t().age(7, df::date_parts_prop::original));
+	register_assert_format(df::search_t().day(0, 5, 2019, df::date_parts_prop::original));
 	register_assert_format(df::search_t().fuzzy(prop::duration, 33));
 	register_assert_format(df::search_t().location(gps_coordinate(-30.515, 151.665), 5.0));
 	register_assert_format(df::search_t().with_extension("jpg"));

@@ -640,6 +640,7 @@ struct app_text_t
 	text_t query_with = "with";
 	text_t query_without = "without";
 	text_t query_created = "created";
+	text_t query_original = "original";
 	text_t query_modified = "modified";
 	text_t query_age = "age";
 	text_t query_related = "related";
@@ -1003,7 +1004,7 @@ struct app_text_t
 	text_t genre_childrens = "Children's";
 	text_t genre_chorus = "Chorus";
 	text_t genre_christian_gospel = "Christian & Gospel";
-	text_t genre_christianran_reap = "Christian Rap";
+	text_t genre_christian_rap = "Christian Rap";
 	text_t genre_classic_rock = "Classic Rock";
 	text_t genre_classic = "Classic";
 	text_t genre_classical = "Classical";
@@ -1059,7 +1060,7 @@ struct app_text_t
 	text_t genre_gothic = "Gothic";
 	text_t genre_grunge = "Grunge";
 	text_t genre_hardrock = "Hard Rock";
-	text_t genre_highke = "High key";
+	text_t genre_high_key = "High key";
 	text_t genre_high_speed = "High-speed";
 	text_t genre_hip_hop = "Hip-Hop";
 	text_t genre_hip_hop_rap = "Hip-Hop/Rap";
@@ -1095,7 +1096,7 @@ struct app_text_t
 	text_t genre_musical = "Musical";
 	text_t genre_musicals = "Musicals";
 	text_t genre_narrative = "Narrative";
-	text_t genre_nationa_folk = "National Folk";
+	text_t genre_national_folk = "National Folk";
 	text_t genre_native_american = "Native American";
 	text_t genre_new_age = "New Age";
 	text_t genre_new_wave = "New Wave";

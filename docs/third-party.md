@@ -17,20 +17,20 @@ No package manager is used. Source code for each library is copied into `third-p
 | [bzip2](https://github.com/libarchive/bzip2) | 1.0.8 | `third-party/bzip2` | Source copy | Download from [libarchive/bzip2](https://github.com/libarchive/bzip2/releases) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | 1.5.4 | `third-party/dav1d` | Source copy | Clone from [videolan/dav1d](https://code.videolan.org/videolan/dav1d), copy `include/` + `src/`, then reapply the Diffractor-specific bits (see [dav1d](#dav1d) below) |
 | [dng-sdk](https://github.com/niclaswue/dng_sdk) | 1.7.1 | `third-party/dng` | Source copy | Download from [Adobe DNG SDK](https://helpx.adobe.com/camera-raw/digital-negative.html), mirror at [niclaswue/dng_sdk](https://github.com/niclaswue/dng_sdk) |
-| [expat](https://github.com/libexpat/libexpat) | 2.8.2 | `third-party/expat` | Source copy | Download release from [libexpat/libexpat](https://github.com/libexpat/libexpat/releases), replace `lib/` sources |
+| [expat](https://github.com/libexpat/libexpat) | 2.8.3 | `third-party/expat` | Source copy | Download release from [libexpat/libexpat](https://github.com/libexpat/libexpat/releases), replace `lib/` sources; keep the hand-written root `expat_config.h` and drop the `Makefile.*` / `libexpat.def.cmake` / `libexpat.map.in` build files the tarball carries |
 | [ffmpeg](https://github.com/diffractor/FFmpeg) | main | `third-party/FFmpeg` | **Fork** (submodule) | Rebase [diffractor/FFmpeg](https://github.com/diffractor/FFmpeg) on upstream [FFmpeg/FFmpeg](https://github.com/FFmpeg/FFmpeg). Fork adds custom `ffmpeg.vcxproj` for MSVC |
 | [highway](https://github.com/google/highway) | 1.4.0 | `third-party/highway` | Source copy | Download release from [google/highway](https://github.com/google/highway/releases) |
 | [hunspell](https://github.com/hunspell/hunspell) | 1.7.3 | `third-party/hunspell` | Source copy | Download release from [hunspell/hunspell](https://github.com/hunspell/hunspell/releases), replace `src/hunspell/` sources |
-| [libarchive](https://github.com/libarchive/libarchive) | 3.8.8 | `third-party/libarchive` | Source copy | Download release from [libarchive/libarchive](https://github.com/libarchive/libarchive/releases) |
+| [libarchive](https://github.com/libarchive/libarchive) | 3.8.9 | `third-party/libarchive` | Source copy | Download release from [libarchive/libarchive](https://github.com/libarchive/libarchive/releases); keep the checked-in `libarchive/config.h` and drop the `.3`/`.5` man pages |
 | [libde265](https://github.com/strukturag/libde265) | 1.1.1 | `third-party/libde265` | Source copy | Download release from [strukturag/libde265](https://github.com/strukturag/libde265/releases), update `de265-version.h` |
-| [libebml](https://github.com/Matroska-Org/libebml) | 1.4.6 | `third-party/libebml` | Source copy | Download release from [Matroska-Org/libebml](https://github.com/Matroska-Org/libebml/releases), copy `ebml/` + `src/`; keep the hand-written `ebml_export.h` shim (see [libebml / libmatroska](#libebml--libmatroska) below) |
+| [libebml](https://github.com/Matroska-Org/libebml) | 1.4.7 | `third-party/libebml` | Source copy | Download release from [Matroska-Org/libebml](https://github.com/Matroska-Org/libebml/releases), copy `ebml/` + `src/`; keep the hand-written `ebml_export.h` shim (see [libebml / libmatroska](#libebml--libmatroska) below) |
 | [libexif](https://github.com/libexif/libexif) | 0.6.26 | `third-party/libexif` | Source copy | Download release from [libexif/libexif](https://github.com/libexif/libexif/releases) |
 | [libheif](https://github.com/strukturag/libheif) | 1.23.1 | `third-party/libheif` | Source copy | Download release from [strukturag/libheif](https://github.com/strukturag/libheif/releases), update `heif_version.h` |
 | [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) | 3.2.0 | `third-party/LibJpeg` | Source copy | Download release from [libjpeg-turbo/libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo/releases), place sources under `src/` (upstream layout), regenerate `src/jconfig.h` for MSVC |
 | [libjxl](https://github.com/libjxl/libjxl) | 0.12.0 | `third-party/libjx` | Source copy | Download release from [libjxl/libjxl](https://github.com/libjxl/libjxl/releases), take the source lists from `lib/jxl_lists.cmake`, update `jxl/version.h` |
 | [liblzma](https://github.com/tukaani-project/xz) | 5.8.3 | `third-party/liblzma` | Source copy | Download release from [tukaani-project/xz](https://github.com/tukaani-project/xz/releases), copy `src/liblzma/` sources |
 | [libmatroska](https://github.com/Matroska-Org/libmatroska) | 1.7.2 | `third-party/libmatroska` | Source copy | Download release from [Matroska-Org/libmatroska](https://github.com/Matroska-Org/libmatroska/releases), copy `matroska/` + `src/`; keep the hand-written `matroska_export.h` shim (see [libebml / libmatroska](#libebml--libmatroska) below) |
-| [libopenmpt](https://github.com/OpenMPT/openmpt) | 0.8.7 | `third-party/libopenmpt` | Source copy | Download the `.autotools` source release from [lib.openmpt.org](https://lib.openmpt.org/libopenmpt/download/), mirror at [OpenMPT/openmpt](https://github.com/OpenMPT/openmpt); copy `common/`, `libopenmpt/`, `sounddsp/`, `soundlib/`, `src/` (see [libopenmpt](#libopenmpt) below) |
+| [libopenmpt](https://github.com/OpenMPT/openmpt) | 0.8.9 | `third-party/libopenmpt` | Source copy | Download the `.autotools` source release from [lib.openmpt.org](https://lib.openmpt.org/libopenmpt/download/), mirror at [OpenMPT/openmpt](https://github.com/OpenMPT/openmpt); copy `common/`, `libopenmpt/`, `sounddsp/`, `soundlib/`, `src/` (see [libopenmpt](#libopenmpt) below) |
 | [libpng](https://github.com/pnggroup/libpng) | 1.6.58 | `third-party/libpng` | Source copy | Download release from [pnggroup/libpng](https://github.com/pnggroup/libpng/releases) |
 | [LibRaw](https://github.com/LibRaw/LibRaw) | 0.22.2 | `third-party/LibRaw` | Source copy | Download release from [LibRaw/LibRaw](https://github.com/LibRaw/LibRaw/releases), copy `src/`, `libraw/`, `internal/` |
 | [fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) | main | `src/Res/FluentSystemIcons-Resizable.ttf` | Asset (MIT) | Download `fonts/FluentSystemIcons-Resizable.ttf` **and** the matching `.json` from [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons). The two go together: code points are assigned sequentially by the font build and move between releases, so after replacing the font re-run `python tools/fluent_icons.py --json <the .json> --write` to regenerate `src/app_icons.h`. Never hand-edit a code point. This replaced `segmdl2.ttf`, a Windows system font that was being embedded in the shipped binary and is not redistributable |
@@ -38,7 +38,7 @@ No package manager is used. Source code for each library is copied into `third-p
 | [minizip-ng](https://github.com/zlib-ng/minizip-ng) | 4.2.2 | `third-party/minizip` | Source copy | Download release from [zlib-ng/minizip-ng](https://github.com/zlib-ng/minizip-ng/releases); the zlib-style compat API moved to `compat/` (zip.c/unzip.c/ioapi.c); regenerate `mz_config.h` for MSVC |
 | [rapidjson](https://github.com/Tencent/rapidjson) | main | `third-party/rapidjson` | Header-only | Copy headers from [Tencent/rapidjson](https://github.com/Tencent/rapidjson) `include/rapidjson/` |
 | [skcms](https://github.com/niclaswue/skcms) | main | `third-party/skcms` | Source copy | Copy from [skia.googlesource.com/skcms](https://skia.googlesource.com/skcms), mirror at [niclaswue/skcms](https://github.com/niclaswue/skcms) |
-| [sqlite](https://github.com/niclaswue/sqlite) | 3.53.3 | `third-party/sqlite` | Source copy | Download amalgamation from [sqlite.org](https://www.sqlite.org/download.html), mirror at [niclaswue/sqlite](https://github.com/niclaswue/sqlite) |
+| [sqlite](https://github.com/niclaswue/sqlite) | 3.53.4 | `third-party/sqlite` | Source copy | Download amalgamation from [sqlite.org](https://www.sqlite.org/download.html), mirror at [niclaswue/sqlite](https://github.com/niclaswue/sqlite) |
 | [utf-cpp](https://github.com/nemtrif/utfcpp) | 4.1.1 | `Include/utf8-cpp` | Header-only | Copy headers from [nemtrif/utfcpp](https://github.com/nemtrif/utfcpp/releases) into `Include/utf8-cpp/` |
 | [xmp-sdk](https://github.com/diffractor/XMP-Toolkit-SDK) | 6.0.0 | `third-party/xmp` | **Fork** (submodule) | Rebase [diffractor/XMP-Toolkit-SDK](https://github.com/diffractor/XMP-Toolkit-SDK) on upstream [adobe/XMP-Toolkit-SDK](https://github.com/adobe/XMP-Toolkit-SDK). Fork adds: POPM/TPE2 reconciliation for MP3, Windows tag support, C++17 fixes, WebP support from Exempi |
 | [zlib-ng](https://github.com/zlib-ng/zlib-ng) | 2.3.3 | `third-party/ZLib` | Source copy | Download release from [zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng/releases), configure for zlib-compat mode |
@@ -69,6 +69,17 @@ When updating or re-vendor copying third-party libraries (e.g. `libjx`, `highway
      ```powershell
      python tools/dd.py build --config Release --arch x86
      ```
+
+## Security advisories the vendored version answers
+
+A version bump taken for a published advisory is recorded here, because the vendored tree carries no
+upstream changelog: only `lib/` sources are copied for expat, and the `.autotools` release strips the
+release notes. Without this table the advisory identifier a release note cites exists nowhere durable.
+
+| Library | Version taken | Advisory |
+|---------|---------------|----------|
+| expat | 2.8.3 | [CVE-2026-72522](https://nvd.nist.gov/vuln/detail/CVE-2026-72522) |
+| libopenmpt | 0.8.9 | 0.8.8 and 0.8.9 are both upstream security releases |
 
 ## Library-specific upgrade notes
 

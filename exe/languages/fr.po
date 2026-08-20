@@ -2569,6 +2569,9 @@ msgstr "Modifié"
 msgid "or"
 msgstr "ou"
 
+msgid "original"
+msgstr "original"
+
 msgid "related"
 msgstr "en rapport"
 

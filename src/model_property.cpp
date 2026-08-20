@@ -377,6 +377,7 @@ std::vector<prop::prop_scope> prop::search_scopes()
 		comment,
 		description,
 		created_exif,
+		created_digitized,
 		created_utc,
 		disk_num,
 		dimensions,
@@ -405,6 +406,11 @@ std::vector<prop::prop_scope> prop::search_scopes()
 		game,
 		crc32c,
 		doc_id,
+		// Internal storage, not vocabulary: neither has an arm in compare_val, so offering them in
+		// the picker gives the user a term that silently matches nothing. `@panorama` is the
+		// spelling a user sees for the second one.
+		dates_packed,
+		panorama,
 	};
 
 	std::vector<prop_scope> result;
@@ -433,10 +439,24 @@ std::vector<prop::prop_scope> prop::search_scopes()
 
 std::vector<prop::prop_scope> prop::key_scopes()
 {
+	// `with:` completes from this list, so a name here is a promise that asking for it answers.
+	// `date.pack` is the storage the three dates live in rather than a date anyone asks for, and
+	// `digitized` is the old spelling of the concept now called `created` - offering both teaches a
+	// fourth date that no longer exists. `panorama` has no arm in has_type for the same reason it has
+	// none in compare_val; `@panorama` is the spelling that answers.
+	const std::unordered_set<const key*> exclusions
+	{
+		created_digitized,
+		dates_packed,
+		panorama,
+	};
+
 	std::vector<prop_scope> result;
 
 	for (const auto& i : all_props)
 	{
+		if (exclusions.contains(i.second)) continue;
+
 		prop_scope s;
 		s.scope = i.first;
 		s.type = i.second;
@@ -597,6 +617,11 @@ prop::key_ref prop::from_prefix(const std::string_view scope)
 	if (str::icmp(scope, "created") == 0 || str::icmp(scope, tt.query_created) == 0)
 	{
 		return created_utc;
+	}
+
+	if (str::icmp(scope, tt.query_original) == 0)
+	{
+		return created_exif;
 	}
 
 	if (str::icmp(scope, "modified") == 0 || str::icmp(scope, tt.query_modified) == 0)

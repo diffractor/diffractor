@@ -49,6 +49,9 @@ struct media_column_inputs
 	// arrives late, so the arrangement must not depend on whether it has arrived yet. Every other
 	// selection has no detail form at all.
 	bool detail_possible = false;
+	// The picture in the block, if there is one. The column budgets how far it may be reduced, so
+	// naming it is what lets the arrangement bound the information instead of the media.
+	view_element_ptr media;
 };
 
 // Returns the scrollable content height.
@@ -95,6 +98,12 @@ struct item_and_group
 		return !(lhs < rhs);
 	}
 };
+
+// Discussion #251: the menu opened by the always-visible control in the scroller track. Only
+// "Scroll to top" belongs to that control; every other entry is the toolbar's own command object,
+// so the two copies cannot disagree about availability.
+std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, bool at_top,
+                                               std::function<void()> scroll_to_top);
 
 class items_view final : public view_base
 {
@@ -332,7 +341,10 @@ public:
 	void items_changed(bool path_changed) override;
 	void display_changed() override;
 	void update_media_elements() override;
+	bool escape() override;
 	void add_metadata_elements(std::vector<view_element_ptr>& elements, const metadata_block& block);
+	void add_stream_elements(std::vector<view_element_ptr>& elements, const display_state_ptr& display,
+	                         const df::item_element_ptr& item);
 	void add_description_elements(std::vector<view_element_ptr>& elements, const df::item_element_ptr& item,
 	                              const prop::item_metadata_const_ptr& md);
 

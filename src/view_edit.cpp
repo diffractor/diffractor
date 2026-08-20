@@ -2301,7 +2301,7 @@ void edit_view_controls::options_changed()
 
 void edit_view_controls::create_controls()
 {
-	const std::vector<ui::command_ptr> rotate_butons =
+	const std::vector<ui::command_ptr> rotate_buttons =
 	{
 		std::make_shared<ui::command>(icon_index::rotate_anticlockwise, commands::tool_rotate_anticlockwise,
 		                              [this] { _view->rotate_anticlockwise(); }),
@@ -2334,7 +2334,7 @@ void edit_view_controls::create_controls()
 		_dlg, tt.perspective_horizontal, _edit_state._perspective_horizontal, -0.6, 0.6, changed_func);
 	_perspective_vertical_slider = std::make_shared<log_slider_control>(
 		_dlg, tt.perspective_vertical, _edit_state._perspective_vertical, -0.6, 0.6, changed_func);
-	_rotate_toolbar = std::make_shared<task_toolbar_control>(_dlg, rotate_butons);
+	_rotate_toolbar = std::make_shared<task_toolbar_control>(_dlg, rotate_buttons);
 	_color_divider = std::make_shared<divider_element>();
 	_color_title = std::make_shared<ui::title_control>(icon_index::color, tt.color);
 	_vibrance_slider = std::make_shared<log_slider_control>(_dlg, tt.vibrance, _edit_state._vibrance, -1, 1,
@@ -2470,6 +2470,16 @@ void edit_view::display_changed()
 	}
 
 	_edit_state.reset(safe_metadata(item), _loaded.dimensions(), _loaded.orientation());
+
+	// design.md: a region drawn on the displayed picture opens Edit as that crop, so a selection the
+	// user already made is not one they have to make again. `reset` has already set the full-frame
+	// baseline, so the incoming crop is left reading as a pending change - re-baselining here would
+	// grey out Save and drop the crop on the way to the file.
+	if (const auto region = _state.take_pending_edit_crop(_path); region && !region->is_empty() && is_photo())
+	{
+		_edit_state._edits.crop_bounds(edit_view_state::crop_from_displayed_rect(
+			*region, _loaded.dimensions(), _loaded.orientation(), setting.show_rotated));
+	}
 
 	if (is_photo())
 	{

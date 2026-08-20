@@ -2570,6 +2570,9 @@ msgstr "Modifiziert"
 msgid "or"
 msgstr "oder"
 
+msgid "original"
+msgstr "Original"
+
 msgid "related"
 msgstr "Verwandt"
 

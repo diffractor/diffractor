@@ -67,26 +67,33 @@ df::search_t df::search_t::parse_path(const std::string_view text)
 	return result;
 }
 
-// Issue #139: a bare, unquoted path that contains spaces is wrapped in double
-// quotes so it reads (and re-parses) as a single search term. Already-quoted or
-// space-free input is returned unchanged.
+// Issue #139: a path that contains spaces is wrapped in double quotes so it reads (and re-parses)
+// as a single search term. Only whitespace forces quotes - str::need_quotes also fires on the colon
+// in every Windows drive path, and quoting those would change what the address box shows for input
+// that never needed it. Already-quoted text is returned unchanged.
+std::string df::quote_path_term(const std::string_view path)
+{
+	if (path.find(' ') == std::string_view::npos) return std::string(path);
+	if (path.front() == '\"' || path.front() == '\'') return std::string(path);
+
+	std::string result;
+	result.reserve(path.size() + 2);
+	result += '\"';
+	result.append(path);
+	result += '\"';
+	return result;
+}
+
 static std::string auto_quote_search_input(const std::string_view text)
 {
 	const auto trimmed = str::trim(text);
 
-	if (df::is_path(trimmed) &&
-		trimmed.find(' ') != std::string_view::npos &&
-		trimmed.front() != '\"' && trimmed.front() != '\'')
-	{
-		std::string result;
-		result.reserve(trimmed.size() + 2);
-		result += '\"';
-		result.append(trimmed);
-		result += '\"';
-		return result;
-	}
+	if (!df::is_path(trimmed)) return std::string(text);
 
-	return std::string(text);
+	auto quoted = df::quote_path_term(trimmed);
+
+	// Nothing was added, so hand back exactly what was typed rather than the trimmed form (#178).
+	return quoted.size() == trimmed.size() ? std::string(text) : quoted;
 }
 
 df::search_t df::search_t::parse_from_input(const std::string_view text) const
@@ -456,6 +463,11 @@ std::string df::format_term(const search_term& term)
 			if (term.date_val.target == date_parts_prop::created)
 			{
 				result << tt.query_created.sv();
+				result << ":";
+			}
+			else if (term.date_val.target == date_parts_prop::original)
+			{
+				result << tt.query_original.sv();
 				result << ":";
 			}
 			else if (term.date_val.target == date_parts_prop::modified)
@@ -1228,8 +1240,8 @@ void df::search_t::parse_part(const search_part& part)
 	{
 		auto target = date_parts_prop::any;
 		if (type == prop::modified) target = date_parts_prop::modified;
-		if (type == prop::created_utc || type == prop::created_exif)
-			target = date_parts_prop::created;
+		if (type == prop::created_utc) target = date_parts_prop::created;
+		if (type == prop::created_exif) target = date_parts_prop::original;
 
 		if (is_num)
 		{
@@ -2204,27 +2216,53 @@ static bool is_date_match(const df::date_parts& term, const df::date_t d, const 
 static bool is_date_match(const df::search_term& term, const df::index_file_item& file, const uint32_t now_days)
 {
 	const bool is_any = term.date_val.target == df::date_parts_prop::any;
+	const auto target = term.date_val.target;
 
-	if (term.date_val.target == df::date_parts_prop::created || is_any)
+	if (target == df::date_parts_prop::original || target == df::date_parts_prop::created || is_any)
 	{
 		const auto md = file.metadata.load();
-		const auto resolved = md ? md->created() : df::date_t::null;
 
-		// One resolver, and the file date converted the same way the group key converts it. Comparing
-		// a UTC stamp against a local group key is what made "click to open" miss by a day (#184).
-		if (resolved.is_valid())
+		// A header is only clickable if the matcher answers the key it was drawn from, so each key
+		// is reproduced here whole - mirroring one rung of one of them is #184 again on whichever
+		// order the missing rung belongs to. The stamp is converted the way the group key converts
+		// it; a UTC stamp against a local key misses by a day.
+		const auto file_stamp = file.file_created.system_to_local();
+		auto original_key = df::date_t::null;
+
+		if (target == df::date_parts_prop::original || is_any)
 		{
-			if (is_date_match(term.date_val, resolved, term.modifiers, now_days)) return true;
+			const auto resolved = md ? md->created() : df::date_t::null;
+			original_key = resolved.is_valid() ? resolved : file_stamp;
+
+			if (original_key.is_valid() &&
+				is_date_match(term.date_val, original_key, term.modifiers, now_days))
+			{
+				return true;
+			}
 		}
-		else if (is_date_match(term.date_val, file.file_created.system_to_local(), term.modifiers, now_days))
+
+		if (target == df::date_parts_prop::created || is_any)
 		{
-			return true;
+			const auto created = md ? md->dates.created() : df::date_t::null;
+			const auto created_key = created.is_valid() ? created : file_stamp;
+
+			// On the `any` path the two keys usually agree, and the first has already answered.
+			if (created_key.is_valid() && created_key != original_key &&
+				is_date_match(term.date_val, created_key, term.modifiers, now_days))
+			{
+				return true;
+			}
 		}
 	}
 
-	if (term.date_val.target == df::date_parts_prop::modified || is_any)
+	if (target == df::date_parts_prop::modified || is_any)
 	{
-		if (is_date_match(term.date_val, file.file_modified, term.modifiers, now_days)) return true;
+		// Same rule as the created axis: Group by Modified keys on the local stamp, so the term has
+		// to compare against the local stamp or the header it drew answers with nothing.
+		if (is_date_match(term.date_val, file.file_modified.load().system_to_local(), term.modifiers, now_days))
+		{
+			return true;
+		}
 	}
 
 	return false;
@@ -2245,8 +2283,11 @@ bool df::search_t::is_match(const prop::key& key, const date_t date) const
 
 			date_term_count += 1;
 
-			if (term.date_val.target == date_parts_prop::created &&
-				(key == prop::created_utc || key == prop::created_exif))
+			if (term.date_val.target == date_parts_prop::original && key == prop::created_exif)
+			{
+				if (is_date_match(term.date_val, date, mod, now_days)) ++date_term_match;
+			}
+			else if (term.date_val.target == date_parts_prop::created && key == prop::created_utc)
 			{
 				if (is_date_match(term.date_val, date, mod, now_days)) ++date_term_match;
 			}

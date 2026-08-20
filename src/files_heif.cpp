@@ -158,23 +158,23 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 			if (str::icmp(metadata_type, "XMP") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
-				df::blob raw_metatdata(metadataSize, 0);
+				df::blob raw_metadata(metadataSize, 0);
 
-				const auto error = heif_image_handle_get_metadata(handle, id, raw_metatdata.data());
+				const auto error = heif_image_handle_get_metadata(handle, id, raw_metadata.data());
 				if (error.code == heif_error_Ok)
 				{
-					result.xmp = std::move(raw_metatdata);
+					result.xmp = std::move(raw_metadata);
 				}
 			}
 			else if (str::icmp(metadata_type, "iptc") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
-				df::blob raw_metatdata(metadataSize, 0);
+				df::blob raw_metadata(metadataSize, 0);
 
-				const auto error = heif_image_handle_get_metadata(handle, id, raw_metatdata.data());
+				const auto error = heif_image_handle_get_metadata(handle, id, raw_metadata.data());
 				if (error.code == heif_error_Ok)
 				{
-					result.iptc = std::move(raw_metatdata);
+					result.iptc = std::move(raw_metadata);
 				}
 			}
 		}

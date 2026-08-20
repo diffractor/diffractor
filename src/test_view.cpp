@@ -16,9 +16,12 @@
 #include "files.h"
 #include "model_zoom.h"
 #include "ui_elements.h"
+#include "ui_panorama.h"
 #include "ui_text_edit.h"
+#include "ui_date_edit.h"
 #include "view_items.h"
 #include "view_list.h"
+#include "view_media.h"
 #include "view_selector.h"
 #include "view_tags.h"
 
@@ -281,9 +284,474 @@ static void should_zoom_model_region_to_viewport()
 	assert_zoom_near(0.5, zoom.effective_scale(fit), "region scale fills viewport");
 }
 
-static void should_accelerate_pan_from_drag_origin()
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// zoom.md: fitted to a browsing window a 12000x1000 stitch is a bright line. What qualifies for the
+// look-around treatment is a wider question than what the file declares, and the shape half of it
+// must not claim every wide screenshot - which is what the size floor is for.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_qualify_a_panorama_by_declaration_or_shape()
 {
-	const auto accelerated = df::zoom_view_state::accelerate_pan({3.0, 4.0}, 10.0);
+	const auto shaped = [](const int width, const int height)
+	{
+		prop::item_metadata md;
+		md.width = static_cast<uint16_t>(width);
+		md.height = static_cast<uint16_t>(height);
+		return md;
+	};
+
+	// The declaration qualifies a file outright, whatever it looks like.
+	auto declared = shaped(1024, 768);
+	declared.panorama = prop::panorama_projection::equirectangular;
+	assert_equal(true, declared.is_panorama(), "the file says so");
+	assert_equal(true, declared.displays_as_panorama(), "so it is drawn as one");
+
+	// A stitch that declares nothing still qualifies on its shape.
+	assert_equal(false, shaped(12000, 1000).is_panorama(), "an undeclared stitch is not a declaration");
+	assert_equal(true, shaped(12000, 1000).displays_as_panorama(), "but it is one to look at");
+	assert_equal(true, shaped(1000, 12000).displays_as_panorama(), "and a vertical stitch is too");
+
+	// A wide screenshot is exactly what aspect alone would have claimed. The size floor is the whole
+	// reason it does not.
+	assert_equal(false, shaped(3840, 1080).displays_as_panorama(), "an ultrawide screenshot is not a panorama");
+	assert_equal(false, shaped(5000, 3000).displays_as_panorama(), "nor is a large ordinary photograph");
+
+	// The boundary itself, both ways round, so a retune is a visible change rather than a silent one.
+	assert_equal(true, shaped(4000, 2000).displays_as_panorama(), "2:1 at the floor qualifies");
+	assert_equal(false, shaped(3999, 1999).displays_as_panorama(), "one pixel short of the floor does not");
+	assert_equal(false, shaped(4000, 2001).displays_as_panorama(), "wide enough but not 2:1 does not");
+
+	// Dimensions the scan never established say nothing either way.
+	assert_equal(false, shaped(0, 0).displays_as_panorama(), "an unmeasured image claims nothing");
+	assert_equal(false, shaped(12000, 0).displays_as_panorama(), "and neither does half a measurement");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// zoom.md: a file that declares equirectangular describes a sphere, so the viewer puts the user
+// inside it. The camera is the whole model - which way it faces and how much it takes in - and
+// these are the properties every other part of the feature is built on.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_look_around_inside_a_projected_panorama()
+{
+	// A complete sphere: the file is the whole panorama, so the camera opens facing its middle.
+	const prop::panorama_geometry sphere{4000, 2000, 0, 0, 4000, 2000};
+	assert_equal(true, sphere.is_valid(), "a full sphere is a valid declaration");
+	assert_equal(true, panorama_wraps_longitude(sphere), "and it closes the circle");
+
+	panorama_view view;
+	view.reset(sphere);
+	assert_equal(0.0, view.yaw(), "a full sphere opens facing its centre");
+	assert_equal(0.0, view.pitch(), "and level");
+
+	constexpr sized viewport{800.0, 600.0};
+	double u = 0.0, v = 0.0;
+
+	// The pixel under the middle of the viewport is the pixel the camera is pointed at. This is the
+	// property that makes every other one meaningful: if the centre drifts, nothing else is aimed.
+	assert_equal(true, view.texel_at(400.0, 300.0, viewport, sphere, u, v), "the centre samples the sphere");
+	assert_equal(2000, df::round(u), "and lands on the middle column");
+	assert_equal(1000, df::round(v), "and on the middle row");
+
+	// Off centre it must not merely be "somewhere else": a pixel to the right of centre is east of
+	// it, and one above is north. A symmetric check would pass for a mirrored projection too.
+	double right_u = 0.0, right_v = 0.0;
+	assert_equal(true, view.texel_at(700.0, 300.0, viewport, sphere, right_u, right_v), "so does one to its right");
+	assert_equal(true, right_u > u, "which is further east");
+	assert_equal(1000, df::round(right_v), "on the same row");
+
+	double above_u = 0.0, above_v = 0.0;
+	assert_equal(true, view.texel_at(400.0, 100.0, viewport, sphere, above_u, above_v), "and one above it");
+	assert_equal(true, above_v < v, "which is further north");
+	assert_equal(2000, df::round(above_u), "in the same column");
+
+	// Crossing the viewport turns by exactly one field of view, which is what "grab the world and
+	// drag it" means. Dragging right brings what was to the west into view, so the camera turns west.
+	const auto start = view;
+	view.drag({viewport.Width, 0.0}, viewport, start);
+	assert_equal(df::round(-start.fov_degrees() * 1000.0), df::round(view.yaw() * 180.0 / M_PI * 1000.0),
+	             "a drag of one viewport width turns by one field of view");
+	assert_equal(0.0, view.pitch(), "and does not tilt");
+
+	// The drag is recomputed from its origin, so re-applying the same total delta is idempotent -
+	// a coalesced or dropped move message cannot change where it ends up.
+	const auto after_first = view.yaw();
+	view.drag({viewport.Width, 0.0}, viewport, start);
+	assert_equal(df::round(after_first * 1e6), df::round(view.yaw() * 1e6), "and repeats to the same place");
+
+	// A vertical drag turns by the same amount per pixel, and straight up and straight down are both
+	// reachable without rolling past. Two viewport widths is 170 degrees of turn, so the clamp is
+	// what stops it rather than the drag running out.
+	view.drag({0.0, viewport.Width}, viewport, start);
+	assert_equal(df::round(start.fov_degrees()), df::round(view.pitch() * 180.0 / M_PI),
+	             "dragging down one width looks up by one field of view");
+	view.drag({0.0, viewport.Width * 2.0}, viewport, start);
+	assert_equal(90, df::round(view.pitch() * 180.0 / M_PI), "and further looks straight up, no more");
+	view.drag({0.0, -viewport.Width * 2.0}, viewport, start);
+	assert_equal(-90, df::round(view.pitch() * 180.0 / M_PI), "dragging up looks straight down, no more");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// zoom.md: inside a sphere there is no pixel to be one-to-one with, so the ladder is a field of
+// view. Its wide end is the floor, the same shape as L2 stepping out to Fit.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_step_the_panorama_field_of_view_ladder()
+{
+	panorama_view view;
+	assert_equal(df::round(panorama_default_fov_deg), df::round(view.fov_degrees()), "a new view opens at the default");
+
+	assert_equal(true, view.step_fov(1), "stepping in is a step");
+	assert_equal(70, df::round(view.fov_degrees()), "and narrows to the next stop");
+	assert_equal(true, view.step_fov(-1), "stepping out is a step");
+	assert_equal(85, df::round(view.fov_degrees()), "and returns to the one it came from");
+
+	// n steps in and n steps out returns exactly, which is L4 in the ladder this replaces.
+	for (auto i = 0; i < 4; ++i) view.step_fov(1);
+	for (auto i = 0; i < 4; ++i) view.step_fov(-1);
+	assert_equal(85, df::round(view.fov_degrees()), "four in and four out is where it started");
+
+	// The narrow end holds rather than stepping past; the wide end reports that there is nowhere
+	// wider, which is what makes the caller leave the projection instead of pretending.
+	for (auto i = 0; i < 20; ++i) view.step_fov(1);
+	assert_equal(df::round(panorama_min_fov_deg), df::round(view.fov_degrees()), "the narrow end holds");
+	assert_equal(true, view.step_fov(1), "and reports a step it did not need to take");
+
+	for (auto i = 0; i < 20; ++i) view.step_fov(-1);
+	assert_equal(df::round(panorama_max_fov_deg), df::round(view.fov_degrees()), "the wide end is the floor");
+	assert_equal(false, view.step_fov(-1), "and stepping out from it leaves the projection");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// zoom.md: under a held button the viewport maps the whole file and the pointer picks the direction.
+// This is the gesture press-and-hold has always had, applied to a sphere rather than a rectangle.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_aim_a_projected_panorama_with_a_held_pointer()
+{
+	const prop::panorama_geometry sphere{4000, 2000, 0, 0, 4000, 2000};
+	constexpr sized viewport{800.0, 600.0};
+
+	panorama_view view;
+	view.reset(sphere);
+
+	// The middle of the viewport is the middle of the file, and the ends are its ends. A press
+	// anywhere therefore looks at what was under the pointer, which is what makes the gesture
+	// positional rather than relative.
+	view.aim({400.0, 300.0}, viewport, sphere);
+	assert_equal(0, df::round(view.yaw() * 180.0 / M_PI), "the middle aims at the middle");
+	assert_equal(0, df::round(view.pitch() * 180.0 / M_PI), "and level");
+
+	view.aim({800.0, 300.0}, viewport, sphere);
+	assert_equal(180, std::abs(df::round(view.yaw() * 180.0 / M_PI)), "the right edge aims at the far side");
+
+	view.aim({0.0, 300.0}, viewport, sphere);
+	assert_equal(180, std::abs(df::round(view.yaw() * 180.0 / M_PI)), "and so does the left, from the other way");
+
+	// Asymmetric probes: a quarter across is a quarter round, east of centre and not west.
+	view.aim({600.0, 300.0}, viewport, sphere);
+	assert_equal(90, df::round(view.yaw() * 180.0 / M_PI), "a quarter to the right is a quarter turn east");
+	view.aim({200.0, 300.0}, viewport, sphere);
+	assert_equal(-90, df::round(view.yaw() * 180.0 / M_PI), "and a quarter to the left is a quarter west");
+
+	view.aim({400.0, 0.0}, viewport, sphere);
+	assert_equal(90, df::round(view.pitch() * 180.0 / M_PI), "the top aims straight up");
+	view.aim({400.0, 600.0}, viewport, sphere);
+	assert_equal(-90, df::round(view.pitch() * 180.0 / M_PI), "and the bottom straight down");
+
+	// A partial panorama maps its own coverage, not the whole sphere: crossing the viewport must
+	// reach the ends of what the file holds and no further, or most of the gesture would aim at
+	// nothing.
+	const auto strip = prop::panorama_geometry::assumed({4000, 400});
+	view.aim({400.0, 0.0}, viewport, strip);
+	assert_equal(18, df::round(view.pitch() * 180.0 / M_PI), "the top of a strip aims at the top of the strip");
+	view.aim({400.0, 600.0}, viewport, strip);
+	assert_equal(-18, df::round(view.pitch() * 180.0 / M_PI), "and the bottom at its bottom");
+
+	// Off the edge is clamped rather than wrapped: a pointer dragged outside the element must not
+	// spin the view round.
+	view.aim({-500.0, -500.0}, viewport, sphere);
+	assert_equal(180, std::abs(df::round(view.yaw() * 180.0 / M_PI)), "a pointer off the left clamps to the edge");
+	assert_equal(90, df::round(view.pitch() * 180.0 / M_PI), "and off the top clamps to straight up");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// metadata.md: a phone panorama is almost never a whole sphere. Treating a strip as one bends its
+// horizon, which is the visible defect this arithmetic exists to prevent.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_place_a_partial_panorama_on_the_sphere()
+{
+	// 360 degrees round, 36 degrees tall, sitting on the horizon.
+	const auto strip = prop::panorama_geometry::assumed({4000, 400});
+	assert_equal(4000, strip.full_width, "the pixels span the full circle");
+	assert_equal(2000, strip.full_height, "so the notional sphere is 2:1");
+	assert_equal(800, strip.cropped_top, "and the strip sits on the horizon");
+	assert_equal(18, df::round(panorama_latitude_at_top(strip) * 180.0 / M_PI), "18 north at its top");
+	assert_equal(36, df::round(panorama_latitude_span(strip) * 180.0 / M_PI), "36 degrees of sky in all");
+	assert_equal(0, df::round(panorama_center_latitude(strip) * 180.0 / M_PI), "centred on the horizon");
+
+	// A true 2:1 sphere is the identity, so the assumption costs nothing where it is not needed.
+	const auto whole = prop::panorama_geometry::assumed({4000, 2000});
+	assert_equal(2000, whole.full_height, "a 2:1 image is taken as the whole sphere");
+	assert_equal(0, whole.cropped_top, "with nothing missing above it");
+
+	// Sphere the file does not hold is not sampled: it reads as absence, not as the nearest pixel.
+	double u = 0.0, v = 0.0;
+	assert_equal(false, panorama_texel_at(strip, 0.0, 60.0 * M_PI / 180.0, u, v), "60 north is not in the strip");
+	assert_equal(true, panorama_texel_at(strip, 0.0, 0.0, u, v), "the horizon is");
+	assert_equal(200, df::round(v), "half way down it");
+
+	// A declaration that contradicts the pixels describes a different file, so it is refused rather
+	// than drawn: this is what stops a stale or copied GPano block bending the picture.
+	const prop::panorama_geometry lying{4000, 2000, 0, 800, 4000, 400};
+	assert_equal(true, lying.is_valid(), "the declaration is self-consistent");
+	assert_equal(400, prop::panorama_geometry::resolve(lying, {4000, 400}).cropped_height,
+	             "and is kept when it matches the pixels");
+	assert_equal(2000, prop::panorama_geometry::resolve(lying, {4000, 2000}).cropped_height,
+	             "but replaced when it does not");
+
+	// A crop that runs off the full panorama is not a declaration at all.
+	const prop::panorama_geometry impossible{4000, 2000, 3900, 0, 400, 2000};
+	assert_equal(false, impossible.is_valid(), "a crop past the edge declares nothing");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// design.md: a rectangle drawn on the picture belongs to the picture, not to the window. Held in
+// source space it survives a resize, a layout change and a zoom; held in client space it would slide
+// off the subject the moment any of the three happened, which would be worse than having none.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_hold_a_drawn_region_in_source_space()
+{
+	constexpr sized source{4000, 3000};
+
+	// The picture fitted into a small window, and the same picture after the window was resized and
+	// the layout moved it. Nothing about the rectangle the user drew has changed.
+	constexpr rectd fitted{100, 50, 400, 300};
+	constexpr rectd resized{0, 120, 1200, 900};
+
+	const auto drawn = df::client_rect_to_source({200, 125, 100, 75}, fitted, source);
+
+	assert_zoom_near(1000.0, drawn.X, "region left in source pixels");
+	assert_zoom_near(750.0, drawn.Y, "region top in source pixels");
+	assert_zoom_near(1000.0, drawn.Width, "region width in source pixels");
+	assert_zoom_near(750.0, drawn.Height, "region height in source pixels");
+
+	// Round trip through the layout it was drawn in.
+	const auto back = df::source_rect_to_client(drawn, fitted, source);
+	assert_zoom_near(200.0, back.X, "round trip left");
+	assert_zoom_near(125.0, back.Y, "round trip top");
+	assert_zoom_near(100.0, back.Width, "round trip width");
+	assert_zoom_near(75.0, back.Height, "round trip height");
+
+	// The layout changes and the rectangle still covers the same quarter of the same picture, which
+	// is the whole point of storing it in source space.
+	const auto after = df::source_rect_to_client(drawn, resized, source);
+	assert_zoom_near(300.0, after.X, "the same pixels after a resize");
+	assert_zoom_near(345.0, after.Y, "the same pixels after a resize");
+	assert_zoom_near(300.0, after.Width, "the same pixels after a resize");
+	assert_zoom_near(225.0, after.Height, "the same pixels after a resize");
+
+	// A drag runs in whichever direction the pointer went, and it is clamped to the picture rather
+	// than naming pixels that are not there.
+	const auto backwards = df::client_rect_to_source({300, 200, -100, -75}, fitted, source);
+	assert_zoom_near(1000.0, backwards.X, "a backwards drag is still a rectangle");
+	assert_zoom_near(1000.0, backwards.Width, "a backwards drag is still a rectangle");
+
+	const auto overhanging = df::client_rect_to_source({50, 25, 600, 450}, fitted, source);
+	assert_zoom_near(0.0, overhanging.X, "clamped to the left edge");
+	assert_zoom_near(0.0, overhanging.Y, "clamped to the top edge");
+	assert_zoom_near(source.Width, overhanging.Width, "clamped to the right edge");
+	assert_zoom_near(source.Height, overhanging.Height, "clamped to the bottom edge");
+
+	// Moving it stops at the edge rather than carrying it off the picture.
+	const auto moved = df::offset_source_rect(drawn, {5000, 5000}, source);
+	assert_zoom_near(3000.0, moved.X, "a move stops at the right edge");
+	assert_zoom_near(2250.0, moved.Y, "a move stops at the bottom edge");
+	assert_zoom_near(drawn.Width, moved.Width, "a move does not resize it");
+	assert_zoom_near(drawn.Height, moved.Height, "a move does not resize it");
+
+	const auto moved_back = df::offset_source_rect(drawn, {-5000, -5000}, source);
+	assert_zoom_near(0.0, moved_back.X, "and at the left edge");
+	assert_zoom_near(0.0, moved_back.Y, "and at the top edge");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The destination a pane is laid out for is shaped by what the item is; the surface drawn into it is
+// whatever has arrived so far. A stand-in staged before the decode need not be that shape - an
+// embedded thumbnail is stored verbatim and cameras routinely write a padded 4:3 for a 3:2 frame -
+// and stretching it distorted the picture until the decode landed. That read as a compare-mode
+// defect because the carried pane is the one with a picture to distort, but nothing here is about
+// comparing, so nothing here may be made compare-specific.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_fit_a_stand_in_rather_than_stretch_it()
+{
+	// The pane, laid out from the indexed dimensions of a 3:2 photograph.
+	constexpr rectd pane{100, 50, 900, 600};
+
+	// The real decode has the shape the pane was laid out for, so nothing moves. A fit that
+	// letterboxed here would put bars around every correctly shaped image ever drawn.
+	assert_equal(true, df::fit_preserving_aspect(pane, {3000, 2000}) == pane, "the real image fills its pane");
+
+	// A scaled-down decode is the same shape, and integer division makes it a fraction off. One
+	// device pixel of disagreement is rounding, not a different shape.
+	assert_equal(true, df::fit_preserving_aspect(pane, {1000, 667}) == pane, "a rounded decode still fills it");
+
+	// The padded embedded thumbnail. Stretched it was a 12 per cent distortion; fitted it keeps the
+	// subject's shape and gives back the height it does not fill.
+	const auto stand_in = df::fit_preserving_aspect(pane, {160, 120});
+	assert_zoom_near(800.0, stand_in.Width, "the stand-in keeps its own aspect");
+	assert_zoom_near(600.0, stand_in.Height, "and takes the height it can");
+	assert_zoom_near(150.0, stand_in.X, "centred in the pane it was given");
+	assert_zoom_near(50.0, stand_in.Y, "centred in the pane it was given");
+	assert_equal(true, stand_in.Width / stand_in.Height > 1.3 && stand_in.Width / stand_in.Height < 1.34,
+	             "which is 4:3, not the 3:2 the pane was laid out for");
+
+	// The other way round: a stand-in taller than the destination is bounded by the width.
+	const auto tall = df::fit_preserving_aspect(pane, {600, 800});
+	assert_zoom_near(450.0, tall.Width, "a tall stand-in is bounded by the height");
+	assert_zoom_near(600.0, tall.Height, "a tall stand-in is bounded by the height");
+	assert_zoom_near(325.0, tall.X, "and is centred");
+
+	// Nothing to fit says nothing about the destination, so the destination is what is used.
+	assert_equal(true, df::fit_preserving_aspect(pane, {}) == pane, "an unmeasured surface changes nothing");
+	assert_equal(true, df::fit_preserving_aspect({}, {160, 120}).is_empty(), "an empty pane draws nothing");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// A crop quad's positions are stored pixels; its corner order carries the orientation. A region the
+// user drew is in the space the picture was drawn in, which with show_rotated on is the upright one.
+// Permuting the corners reorders points and cannot move them between two spaces, so a rotated
+// capture would crop pixels the user never selected - and Edit's preview would be the first place
+// anyone found out.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_map_a_drawn_region_onto_stored_pixels()
+{
+	// A portrait phone photograph: stored 4000x3000 landscape, displayed 3000x4000 upright.
+	constexpr sizei stored{4000, 3000};
+
+	const auto mapped = [](const rectd normalised, const ui::orientation o, const bool was_rotated)
+	{
+		return edit_view_state::crop_from_displayed_rect(normalised, stored, o, was_rotated).bounding_rect();
+	};
+
+	const auto assert_rect = [](const rectd actual, const double x, const double y, const double w, const double h,
+	                            const std::string_view message)
+	{
+		assert_zoom_near(x, actual.X, message);
+		assert_zoom_near(y, actual.Y, message);
+		assert_zoom_near(w, actual.Width, message);
+		assert_zoom_near(h, actual.Height, message);
+	};
+
+	// The unrotated case must be left exactly where it was, or every ordinary photograph moves.
+	assert_rect(mapped({0.25, 0.5, 0.25, 0.25}, ui::orientation::top_left, true),
+	            1000, 1500, 1000, 750, "an unrotated capture is not moved");
+
+	// With show_rotated off the picture is drawn in its stored orientation, so the fractions are
+	// already fractions of the stored picture and only the corner order carries the rotation.
+	assert_rect(mapped({0.25, 0.5, 0.25, 0.25}, ui::orientation::right_top, false),
+	            1000, 1500, 1000, 750, "already stored space when the picture is not turned");
+
+	// One asymmetric probe per orientation, mapped by hand from the EXIF definition. A symmetric
+	// probe would pass under any orientation's formula, so it would pin nothing: the quarter chosen
+	// here lands in a different corner of the stored picture for every one of the seven.
+	// Displayed rect is the top-left quarter-ish block {0.0, 0.0, 0.25, 0.5} of the displayed extent.
+	struct probe
+	{
+		ui::orientation orientation;
+		double x, y, w, h;
+	};
+
+	// Non-flipping: displayed extent is 4000x3000, so the block is 1000x1500 at the displayed origin.
+	constexpr probe upright_probes[]{
+		{ui::orientation::top_right, 3000, 0, 1000, 1500},   // mirrored left to right
+		{ui::orientation::bottom_right, 3000, 1500, 1000, 1500}, // turned half way round
+		{ui::orientation::bottom_left, 0, 1500, 1000, 1500}, // mirrored top to bottom
+	};
+
+	for (const auto& p : upright_probes)
+	{
+		assert_rect(mapped({0.0, 0.0, 0.25, 0.5}, p.orientation, true), p.x, p.y, p.w, p.h,
+		            "the displayed top-left block lands where the orientation says");
+	}
+
+	// Flipping: displayed extent is 3000x4000, so the block is 750x2000 and the axes swap on the way
+	// back, giving a 2000x750 rectangle in stored space.
+	constexpr probe turned_probes[]{
+		{ui::orientation::left_top, 0, 0, 2000, 750},        // transposed about the main diagonal
+		{ui::orientation::right_top, 0, 2250, 2000, 750},    // rotated a quarter turn
+		{ui::orientation::right_bottom, 2000, 2250, 2000, 750}, // transposed about the anti-diagonal
+		{ui::orientation::left_bottom, 2000, 0, 2000, 750},  // rotated a quarter turn the other way
+	};
+
+	for (const auto& p : turned_probes)
+	{
+		assert_rect(mapped({0.0, 0.0, 0.25, 0.5}, p.orientation, true), p.x, p.y, p.w, p.h,
+		            "the displayed top-left block lands where the orientation says");
+	}
+
+	// Whatever the orientation, the whole displayed picture is the whole stored picture. That is the
+	// invariant every one of the seven maps has to satisfy on top of landing in the right corner.
+	for (const auto& [o, x, y, w, h] : upright_probes)
+	{
+		assert_rect(mapped({0, 0, 1, 1}, o, true), 0, 0, stored.cx, stored.cy, "all of it is all of it");
+	}
+
+	for (const auto& [o, x, y, w, h] : turned_probes)
+	{
+		assert_rect(mapped({0, 0, 1, 1}, o, true), 0, 0, stored.cx, stored.cy, "all of it is all of it");
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// zoom.md: looking around a panorama moves what is centred and nothing else. No button was pressed,
+// so the sweep must not answer the question of scale on the user's behalf: setting an explicit scale
+// would silently discard a chosen Fit width or Fill, which then stops re-fitting on every later
+// resize.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_look_around_without_choosing_a_scale()
+{
+	constexpr sized wide{12000, 1000};
+	constexpr sized viewport{1600, 900};
+
+	// Crossing the viewport sweeps the whole width, and the ends are the ends.
+	const auto middle = df::zoom_view_state::look_around_center({800, 450}, wide, viewport, 1.0);
+	assert_zoom_near(0.5, middle.X, "the middle of the viewport is the middle of the picture");
+
+	const auto right = df::zoom_view_state::look_around_center({1600, 450}, wide, viewport, 1.0);
+	assert_zoom_near(1.0, right.X, "the right edge reaches the right end");
+
+	const auto past = df::zoom_view_state::look_around_center({2400, -100}, wide, viewport, 1.0);
+	assert_zoom_near(1.0, past.X, "and a pointer past it goes no further");
+
+	// Scale decides the vertical axis, not the stored size. The same strip is 1000 tall at 100% in a
+	// 900 viewport, so the pointer drives it; fitted to half that there is nothing to see above or
+	// below, and following the pointer would only be jitter.
+	assert_zoom_near(0.0, df::zoom_view_state::look_around_center({800, 0}, wide, viewport, 1.0).Y,
+	                 "a strip taller than the viewport follows the pointer up");
+	assert_zoom_near(1.0, df::zoom_view_state::look_around_center({800, 900}, wide, viewport, 1.0).Y,
+	                 "and down");
+	assert_zoom_near(0.5, df::zoom_view_state::look_around_center({800, 0}, wide, viewport, 0.5).Y,
+	                 "the same strip scaled to fit is pinned");
+	assert_zoom_near(0.5, df::zoom_view_state::look_around_center({800, 900}, wide, viewport, 0.5).Y,
+	                 "wherever the pointer is");
+
+	// And the sweep itself never chooses a scale, or a chosen Fit width stops re-fitting on resize.
+	df::zoom_view_state state;
+	state.fit_width(wide, viewport);
+	const auto fit_width_scale = state.explicit_scale();
+
+	state.set_center({0.75, 0.5});
+	assert_equal(true, state.mode() == df::zoom_scale_mode::fit_width, "a sweep does not choose a scale");
+	assert_zoom_near(fit_width_scale, state.explicit_scale(), "and does not change the one in force");
+	assert_zoom_near(0.75, state.center().X, "but it does move the centre");
+
+	state.set_explicit(1.0, {0.5, 0.5});
+	state.set_center({1.4, -0.2});
+	assert_equal(true, state.mode() == df::zoom_scale_mode::explicit_scale, "an explicit scale stays explicit");
+	assert_zoom_near(1.0, state.explicit_scale(), "at the scale it already had");
+	assert_zoom_near(1.0, state.center().X, "with the centre clamped to the end of the picture");
+	assert_zoom_near(0.0, state.center().Y, "and to the top");
+}
+
+static void should_accelerate_pan_from_drag_origin()
+{	const auto accelerated = df::zoom_view_state::accelerate_pan({3.0, 4.0}, 10.0);
 	assert_zoom_near(4.5, accelerated.X, "accelerated pan x");
 	assert_zoom_near(6.0, accelerated.Y, "accelerated pan y");
 
@@ -512,7 +980,7 @@ static void should_hold_media_column_still_as_detail_arrives()
 
 	const auto arrange = [&](const std::vector<view_element_ptr>& detail)
 	{
-		const media_column_inputs in{&priority, &detail, &all, pane, true, true};
+		const media_column_inputs in{&priority, &detail, &all, pane, true, true, media};
 		return layout_media_column(in, mc, positions);
 	};
 
@@ -555,7 +1023,7 @@ static void should_fit_the_whole_primary_block_when_verbose_is_closed()
 		const auto media = std::make_shared<flex_test_element>(media_extent);
 		media->flex = media->flex | flex_item::media;
 		const std::vector<view_element_ptr> priority{media, std::make_shared<flex_test_element>(sizei{200, 20}), toggle};
-		const media_column_inputs in{&priority, &no_detail, &priority, pane, false, true};
+		const media_column_inputs in{&priority, &no_detail, &priority, pane, false, true, media};
 		layout_media_column(in, mc, positions);
 		return media;
 	};
@@ -583,11 +1051,75 @@ static void should_fit_the_whole_primary_block_when_verbose_is_closed()
 	squeezed->flex = squeezed->flex | flex_item::media;
 	const auto big_group = std::make_shared<flex_test_element>(sizei{200, 120});
 	const std::vector<view_element_ptr> cramped{squeezed, big_group};
-	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, false, true};
+	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, false, true, squeezed};
 	layout_media_column(cramped_in, mc, positions);
 
 	assert_equal(true, squeezed->bounds.top >= short_pane.top, "an overflowing block is never clipped off the top");
 }
+
+// A description is placed under the block it belongs to rather than at the bottom edge of the pane.
+// Anchoring it to the pane spent the free space the centring created on nothing and put the text a
+// whole pane-height of scrolling away, with nothing on screen saying it was there - and the panel
+// drops its own Description line precisely because the section below is supposed to carry it.
+static void should_follow_a_centred_block_with_its_detail()
+{
+	flex_test_measure_context mc;
+	ui::control_layouts positions;
+	constexpr recti pane{0, 0, 200, 600};
+
+	const auto media = std::make_shared<flex_test_element>(sizei{200, 200});
+	media->flex = media->flex | flex_item::media;
+	const auto group = std::make_shared<flex_test_element>(sizei{200, 40});
+	const auto description = std::make_shared<flex_test_element>(sizei{200, 60});
+
+	const std::vector<view_element_ptr> priority{media, group};
+	const std::vector<view_element_ptr> detail{description};
+	const std::vector<view_element_ptr> all{media, group, description};
+
+	const media_column_inputs in{&priority, &detail, &all, pane, false, true, media};
+	layout_media_column(in, mc, positions);
+
+	assert_equal(group->bounds.bottom, description->bounds.top, "the detail follows the block it belongs to");
+	assert_equal(true, description->bounds.bottom <= pane.bottom, "a short description is read without scrolling");
+	assert_equal(true, media->bounds.top > pane.top, "the block is still centred rather than held at the top");
+}
+
+// The information in the block was unbounded while the media was the only thing that ever gave way,
+// down to the 64-unit floor of flex_item::media, so a container carrying several streams could
+// reduce the picture to a strip. Full screen bounds its overlay against the media; this is the same
+// bound read from the other side.
+static void should_keep_half_the_pane_for_the_media()
+{
+	flex_test_measure_context mc;
+	ui::control_layouts positions;
+	constexpr recti pane{0, 0, 200, 400};
+
+	const auto media = std::make_shared<flex_test_element>(sizei{200, 400});
+	media->flex = media->flex | flex_item::media;
+	// More information than the whole pane can hold: a panel plus a stream table.
+	const auto group = std::make_shared<flex_test_element>(sizei{200, 500});
+
+	const std::vector<view_element_ptr> priority{media, group};
+	const std::vector<view_element_ptr> no_detail;
+
+	const media_column_inputs in{&priority, &no_detail, &priority, pane, false, true, media};
+	const auto content_height = layout_media_column(in, mc, positions);
+
+	assert_equal(pane.height() / 2, media->bounds.height(), "the media keeps half the pane");
+	assert_equal(media->bounds.bottom, group->bounds.top, "the information follows it");
+	assert_equal(true, content_height > pane.height(), "what does not fit scrolls rather than crushing the media");
+
+	// A media pane that never wanted the half keeps its own height; the budget is a floor on shrinking,
+	// never a reservation that pads a small picture out.
+	const auto small = std::make_shared<flex_test_element>(sizei{200, 80});
+	small->flex = small->flex | flex_item::media;
+	const std::vector<view_element_ptr> small_priority{small, group};
+	const media_column_inputs small_in{&small_priority, &no_detail, &small_priority, pane, false, true, small};
+	layout_media_column(small_in, mc, positions);
+
+	assert_equal(80, small->bounds.height(), "a picture shorter than the budget is not grown to it");
+}
+
 
 // Verbose metadata open: the media and the first information group are held at the top, both visible,
 // and the metadata blocks follow immediately. A centred line reports the container height rather than
@@ -639,6 +1171,47 @@ static void should_centre_a_block_with_no_detail_whatever_verbose_is()
 
 	assert_equal(true, above > 0, "a selection panel with no detail does not sit against the top");
 	assert_equal(true, std::abs(above - below) <= 1, "it is centred vertically");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// design.md: the media overlay identifies, it does not summarise. It used to grow with whatever
+// metadata it found and overflow the picture, competing with the only thing the Media view exists
+// for. The bound is a measurement rather than a matter of taste, and it holds at every scaling
+// because it is a fraction of the media rather than a number of pixels.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_bound_the_media_overlay_to_a_quarter()
+{
+	// A file carrying every property it can: the overlay asks for far more than it may have.
+	constexpr auto everything = 4000;
+
+	for (const auto scale : {100, 125, 150, 200, 300})
+	{
+		const auto floor_height = 32 * scale / 100;
+
+		for (const auto media_height : {480, 800, 1200, 2160})
+		{
+			const auto height = calc_media_overlay_height(everything, media_height, floor_height);
+
+			assert_equal(true, height <= std::max(media_height / 4, floor_height),
+			             std::format("at {}% over {}px the overlay stays within a quarter", scale, media_height));
+			assert_equal(true, height < everything,
+			             std::format("at {}% over {}px it truncates rather than growing", scale, media_height));
+		}
+	}
+
+	// An overlay that asks for less than the bound is not padded out to it.
+	assert_equal(40, calc_media_overlay_height(40, 1200, 64), "a short overlay keeps its own height");
+
+	// A window too small for a quarter to hold anything still identifies the item rather than
+	// showing an empty strip.
+	assert_equal(64, calc_media_overlay_height(400, 120, 64), "the floor keeps the identification visible");
+
+	// An audio file or an archive has no picture the panel could compete with - the panel is what the
+	// view is showing - so it is allowed twice as much before it truncates.
+	assert_equal(600, calc_media_overlay_height(everything, 1200, 64, true),
+	             "a panel that is the presentation takes half");
+	assert_equal(300, calc_media_overlay_height(everything, 1200, 64, false),
+	             "a panel over a picture still takes a quarter");
 }
 
 static void should_leave_full_screen_for_task_views()
@@ -1038,6 +1611,123 @@ static void should_edit_single_line_text()
 	filter.wildcard("cat");
 	assert_equal_strict("cat", filter.text(), "filter preserves user input");
 	assert_equal(true, filter.match_text(str::cache("bobcatfish")), "filter applies contains matching");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The Windows date picker was the only platform control left in the UI: it ignores the app's
+// scaling and theme and has no Linux counterpart. Its replacement is a segmented field, and the
+// segments, the typing and the stepping are arithmetic that can be pinned without a window.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_edit_a_segmented_date()
+{
+	using seg = ui::date_segment;
+
+	// Order and separators follow the display locale, so the field is built from it rather than
+	// from one hard-coded arrangement.
+	{
+		const ui::date_edit_model dmy(ui::date_field_order::dmy, false);
+		assert_equal(true, dmy.segments() == std::vector{seg::day, seg::month, seg::year}, "day first");
+
+		const ui::date_edit_model mdy(ui::date_field_order::mdy, false);
+		assert_equal(true, mdy.segments() == std::vector{seg::month, seg::day, seg::year}, "month first");
+
+		const ui::date_edit_model ymd(ui::date_field_order::ymd, true);
+		assert_equal(true, ymd.segments() == std::vector{
+			             seg::year, seg::month, seg::day, seg::hour, seg::minute, seg::second
+		             }, "year first, and a clock is always most significant first");
+	}
+
+	ui::date_edit_model m(ui::date_field_order::dmy, true);
+	m.value(df::date_t(2025, 8, 16, 18, 11, 56));
+
+	// Left and Right walk the segments and stop at the ends, so the arrows stay inside the field and
+	// Tab has a false answer to act on.
+	assert_equal(true, m.active_segment() == seg::day, "the field opens on its first segment");
+	assert_equal(false, m.move(-1), "and there is nothing to the left of it");
+	assert_equal(true, m.move(1), "Right moves on");
+	assert_equal(true, m.active_segment() == seg::month, "to the next segment in locale order");
+	m.active(5);
+	assert_equal(false, m.move(1), "and stops at the last segment rather than wrapping");
+
+	// Every segment is padded to its width, so the field does not change shape as it is edited.
+	assert_equal_strict("16", m.text(0), "day");
+	assert_equal_strict("08", m.text(1), "month is padded");
+	assert_equal_strict("2025", m.text(2), "year is four digits");
+	assert_equal_strict("18", m.text(3), "hour");
+	assert_equal_strict("11", m.text(4), "minute");
+	assert_equal_strict("56", m.text(5), "second");
+
+	// One step is one unit of the active segment applied to the whole date, so a bound rolls into
+	// the neighbour rather than wrapping the segment on its own. That is what a clock does.
+	m.value(df::date_t(2025, 12, 31, 23, 59, 59));
+	m.active(5);
+	m.step(1);
+	assert_equal(df::date_t(2026, 1, 1, 0, 0, 0), m.value(), "a second rolls the whole date over");
+
+	m.value(df::date_t(2025, 12, 31, 0, 0, 0));
+	m.active(1);
+	m.step(1);
+	assert_equal(df::date_t(2026, 1, 31, 0, 0, 0), m.value(), "December rolls into January of the next year");
+
+	m.value(df::date_t(2026, 1, 1, 0, 0, 0));
+	m.active(1);
+	m.step(-1);
+	assert_equal(df::date_t(2025, 12, 1, 0, 0, 0), m.value(), "and back the other way");
+
+	// A month step can land on a day the new month does not have. 31 April is not a date, so the
+	// day is clamped rather than the whole value being refused or silently rolled into May.
+	m.value(df::date_t(2025, 1, 31, 0, 0, 0));
+	m.active(1);
+	m.step(1);
+	assert_equal(df::date_t(2025, 2, 28, 0, 0, 0), m.value(), "31 January steps to the end of February");
+
+	m.value(df::date_t(2024, 1, 31, 0, 0, 0));
+	m.active(1);
+	m.step(1);
+	assert_equal(df::date_t(2024, 2, 29, 0, 0, 0), m.value(), "and a leap year has the extra day");
+
+	// Stepping the year off a leap day does the same.
+	m.value(df::date_t(2024, 2, 29, 0, 0, 0));
+	m.active(2);
+	m.step(1);
+	assert_equal(df::date_t(2025, 2, 28, 0, 0, 0), m.value(), "29 February steps to the 28th");
+
+	// Digits type left to right and the segment advances when it can hold no more, so a date is
+	// typed straight through without reaching for a separator key.
+	m.value(df::date_t(2025, 8, 16, 0, 0, 0));
+	m.active(0);
+	m.type_digit('0');
+	m.type_digit('4');
+	assert_equal(4, m.field(seg::day), "two digits fill the day");
+	assert_equal(true, m.active_segment() == seg::month, "and the field moves on by itself");
+
+	m.type_digit('7');
+	assert_equal(7, m.field(seg::month), "a digit no second digit could follow finishes the segment");
+	assert_equal(true, m.active_segment() == seg::year, "so that one advances too");
+
+	m.type_digit('1');
+	m.type_digit('9');
+	m.type_digit('9');
+	m.type_digit('9');
+	assert_equal(1999, m.field(seg::year), "a year takes four");
+	assert_equal(df::date_t(1999, 7, 4, 0, 0, 0), m.value(), "and the typed date is the value");
+
+	// A value the segment cannot hold starts again from that digit rather than being refused, which
+	// is what a user retyping a wrong month means by it.
+	m.value(df::date_t(2025, 8, 16, 0, 0, 0));
+	m.active(1);
+	m.type_digit('1');
+	assert_equal(1, m.field(seg::month), "1 could still become 10, 11 or 12");
+	m.type_digit('9');
+	assert_equal(9, m.field(seg::month), "19 is not a month, so 9 starts the segment again");
+
+	// Only the month has a name, so it is the only segment worth a drop menu.
+	m.active(1);
+	assert_equal(true, m.active_has_menu(), "the month offers its names");
+	m.active(0);
+	assert_equal(false, m.active_has_menu(), "a day is a number faster to type than to pick");
+	m.active(2);
+	assert_equal(false, m.active_has_menu(), "and so is a year");
 }
 
 static void should_clear_detail_row_layout_metrics()
@@ -1528,6 +2218,16 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should keep zoom model anchor through layout change"s,
 	          should_keep_zoom_anchor_through_layout_change);
 	tests.add("Should zoom model region to viewport"s, should_zoom_model_region_to_viewport);
+	tests.add("Should qualify a panorama by declaration or shape"s, should_qualify_a_panorama_by_declaration_or_shape);
+	tests.add("Should look around inside a projected panorama"s, should_look_around_inside_a_projected_panorama);
+	tests.add("Should step the panorama field of view ladder"s, should_step_the_panorama_field_of_view_ladder);
+	tests.add("Should aim a projected panorama with a held pointer"s,
+	          should_aim_a_projected_panorama_with_a_held_pointer);
+	tests.add("Should place a partial panorama on the sphere"s, should_place_a_partial_panorama_on_the_sphere);
+	tests.add("Should hold a drawn region in source space"s, should_hold_a_drawn_region_in_source_space);
+	tests.add("Should map a drawn region onto stored pixels"s, should_map_a_drawn_region_onto_stored_pixels);
+	tests.add("Should look around without choosing a scale"s, should_look_around_without_choosing_a_scale);
+	tests.add("Should fit a stand in rather than stretch it"s, should_fit_a_stand_in_rather_than_stretch_it);
 	tests.add("Should accelerate zoom pan from drag origin"s, should_accelerate_pan_from_drag_origin);
 	tests.add("Should bound zoom auto-pan velocity"s, should_bound_auto_pan_velocity);
 	tests.add("Should map zoom navigator to source center"s, should_map_zoom_navigator_to_source_center);
@@ -1542,6 +2242,10 @@ void register_view_tests(view_state& state, test_registry& tests)
 	          should_follow_the_primary_block_when_verbose_is_open);
 	tests.add("Should centre a block with no detail whatever verbose is"s,
 	          should_centre_a_block_with_no_detail_whatever_verbose_is);
+	tests.add("Should follow a centred media column block with its detail"s,
+	          should_follow_a_centred_block_with_its_detail);
+	tests.add("Should keep half the media column pane for the media"s, should_keep_half_the_pane_for_the_media);
+	tests.add("Should bound the media overlay to a quarter"s, should_bound_the_media_overlay_to_a_quarter);
 	tests.add("Should leave full screen for task views"s, should_leave_full_screen_for_task_views);
 	tests.add("Should preserve view scroller anchor across layout"s,
 	          should_preserve_view_scroller_anchor_across_layout);
@@ -1555,6 +2259,7 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);
 	tests.add("Should layout selection thumbnail collage"s, should_layout_selection_thumbnail_collage);
 	tests.add("Should edit single-line text"s, should_edit_single_line_text);
+	tests.add("Should edit a segmented date"s, should_edit_a_segmented_date);
 	tests.add("Should clear detail row layout metrics"s, should_clear_detail_row_layout_metrics);
 	tests.add("Should classify aspect ratio groups"s, should_classify_aspect_ratio_groups);
 

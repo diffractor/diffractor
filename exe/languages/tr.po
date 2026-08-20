@@ -2569,6 +2569,9 @@ msgstr "değiştirilmiş"
 msgid "or"
 msgstr "veya"
 
+msgid "original"
+msgstr "orijinal"
+
 msgid "related"
 msgstr "ilgili"
 

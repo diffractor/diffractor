@@ -96,7 +96,7 @@ Use `dd.ps1` from a Developer PowerShell:
 | [docs/metadata.md](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
 | [docs/rendering.md](docs/rendering.md) | Surfaces, color, and the draw backends |
 | [docs/third-party.md](docs/third-party.md) | Vendored dependencies and how they are updated |
-| [docs/v-1.27.1.md](docs/v-1.27.1.md) | What the current release changed, and how it was verified |
+| [docs/v-1.27.2.md](docs/v-1.27.2.md) | What the current release changed, and how it was verified |
 | [docs/v-next.md](docs/v-next.md) | Deferred work, open issues, and constraints that must not be lost |
 
 ## Contributing

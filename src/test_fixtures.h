@@ -86,7 +86,9 @@ public:
 	}
 };
 
-class null_state_strategy final : public state_strategy
+// Not final: a test that needs one member answered differently derives from it rather than
+// restating every override.
+class null_state_strategy : public state_strategy
 {
 public:
 	int toggle_full_screen_count = 0;

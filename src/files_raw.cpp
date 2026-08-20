@@ -1353,7 +1353,7 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 	{
 		const auto& image_data = rp.processor->imgdata;
 
-		// The thumbnail often large enough, lets just use it :)
+		// The thumbnail is often large enough, so just use it
 		if (can_load_preview && unpack_decodable_thumb(*rp.processor))
 		{
 			const auto& thumbnail = image_data.thumbnail;

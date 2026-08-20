@@ -203,6 +203,14 @@ namespace ui
 		P010
 	};
 
+	// True when one pixel is four contiguous bytes, so a software reader may walk the surface as
+	// colour values. NV12 and P010 are planar: their luma plane read as packed pixels is grey and
+	// tiles, which is a defect that looks like a bad projection rather than like a wrong format.
+	constexpr bool is_packed(const texture_format format) noexcept
+	{
+		return format == texture_format::RGB || format == texture_format::ARGB;
+	}
+
 	// Selects the YUV->RGB conversion applied to NV12/P010 textures. A single value
 	// encodes both the colour matrix (BT.601/709/2020) and the signal range: the
 	// *_limited variants are the usual video ranges (Y 16-235), rec601_full is

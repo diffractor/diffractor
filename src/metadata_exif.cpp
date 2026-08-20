@@ -1136,6 +1136,15 @@ class exif_camera_settings_processor
 	bool _has_gps_time = false;
 	double _gps_time[3] = {};
 
+	// An Exif ASCII value spans its whole component count, so it arrives NUL-terminated and may be
+	// space-padded. `+02:00\0` is seven characters and fails every fixed-width test applied to it.
+	static std::string exif_string(const exif_dir_entry& entry)
+	{
+		auto text = entry.text();
+		while (!text.empty() && (text.back() == '\0' || text.back() == ' ')) text.remove_suffix(1);
+		return std::string(text);
+	}
+
 	void add_pending(const pending_date& pending, const prop::date_source source) const
 	{
 		if (pending.text.empty()) return;
@@ -1158,7 +1167,9 @@ class exif_camera_settings_processor
 		if (_gps_date_stamp.empty() || !_has_gps_time) return;
 
 		df::date_t d;
-		if (!d.parse_exif_date(_gps_date_stamp) || !d.is_valid()) return;
+		// `CCYY:MM:DD` with no time: the shared parser has no date-only form for the colon
+		// spelling, so the pair is punctuated here, exactly as add_iptc_date does.
+		if (!d.parse_exif_date(_gps_date_stamp + " 00:00:00") || !d.is_valid()) return;
 
 		const auto seconds = static_cast<uint64_t>(_gps_time[0]) * 3600 +
 			static_cast<uint64_t>(_gps_time[1]) * 60 +
@@ -1398,33 +1409,33 @@ public:
 			break;
 
 		case EXIF_TAG_DATE_TIME:
-			_date_time.text = entry.text();
+			_date_time.text = exif_string(entry);
 			break;
 		case EXIF_TAG_DATE_TIME_ORIGINAL:
-			_date_original.text = entry.text();
+			_date_original.text = exif_string(entry);
 			break;
 		case EXIF_TAG_DATE_TIME_DIGITIZED:
-			_date_digitized.text = entry.text();
+			_date_digitized.text = exif_string(entry);
 			break;
 
 		case EXIF_TAG_OFFSET_TIME:
-			_date_time.offset = entry.text();
+			_date_time.offset = exif_string(entry);
 			break;
 		case EXIF_TAG_OFFSET_TIME_ORIGINAL:
-			_date_original.offset = entry.text();
+			_date_original.offset = exif_string(entry);
 			break;
 		case EXIF_TAG_OFFSET_TIME_DIGITIZED:
-			_date_digitized.offset = entry.text();
+			_date_digitized.offset = exif_string(entry);
 			break;
 
 		case EXIF_TAG_SUB_SEC_TIME:
-			_date_time.sub_second = entry.text();
+			_date_time.sub_second = exif_string(entry);
 			break;
 		case EXIF_TAG_SUB_SEC_TIME_ORIGINAL:
-			_date_original.sub_second = entry.text();
+			_date_original.sub_second = exif_string(entry);
 			break;
 		case EXIF_TAG_SUB_SEC_TIME_DIGITIZED:
-			_date_digitized.sub_second = entry.text();
+			_date_digitized.sub_second = exif_string(entry);
 			break;
 		}
 	}
@@ -1503,14 +1514,19 @@ public:
 			break;
 
 		case EXIF_TAG_GPS_DATE_STAMP:
-			_gps_date_stamp = entry.text();
+			_gps_date_stamp = exif_string(entry);
 			break;
 
 		case EXIF_TAG_GPS_TIME_STAMP:
-			_gps_time[0] = entry.get_urational(0).to_real();
-			_gps_time[1] = entry.get_urational(1).to_real();
-			_gps_time[2] = entry.get_urational(2).to_real();
-			_has_gps_time = true;
+			// Three rationals, or it is not a time. get_urational answers {0,0} out of range, so
+			// without this a one-component entry would record midnight as if it were a reading.
+			if (entry._components >= 3 && entry._format == FMT_URATIONAL)
+			{
+				_gps_time[0] = entry.get_urational(0).to_real();
+				_gps_time[1] = entry.get_urational(1).to_real();
+				_gps_time[2] = entry.get_urational(2).to_real();
+				_has_gps_time = true;
+			}
 			break;
 		}
 	}

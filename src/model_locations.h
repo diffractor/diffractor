@@ -218,7 +218,7 @@ class location_cache final : public df::no_copy
 
 			while (p_out < p_out_limit && p_in < p_in_limit)
 			{
-				*p_out++ = str::normalze_for_compare(str::pop_utf8_char(p_in, p_in_limit));
+				*p_out++ = str::normalize_for_compare(str::pop_utf8_char(p_in, p_in_limit));
 			}
 
 			while (p_out < p_out_limit)

@@ -1099,8 +1099,8 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 		{
 			auto target = date_parts_prop::any;
 			if (order == group_by::date_modified) target = date_parts_prop::modified;
-			if (order == group_by::date_created || order == group_by::date_original)
-				target = date_parts_prop::created;
+			if (order == group_by::date_created) target = date_parts_prop::created;
+			if (order == group_by::date_original) target = date_parts_prop::original;
 
 			if (key.order1 == 0)
 			{
@@ -1562,8 +1562,7 @@ void view_state::update_item_groups()
 
 	groups.clear();
 
-	if (!setting.sort_dates_descending && (group_order == group_by::date_created || group_order ==
-		group_by::date_modified || group_order == group_by::date_original))
+	if (!setting.sort_dates_descending && is_date_group_order(group_order))
 	{
 		std::ranges::reverse(new_item_groups);
 	}
@@ -1661,7 +1660,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 	_layout_bounds.resize(_items.size());
 
 	const auto scale_factor = mc.scale_factor;
-	// maeasure and save calculated layout information
+	// measure and save calculated layout information
 	const double base_line_height = calc_item_line_height() * scale_factor;
 
 	const double cy = base_line_height + mc.padding1;
@@ -2011,9 +2010,9 @@ void df::item_group::update_detail_row_layout(ui::draw_context& dc, const item_e
 		_row_draw_info.flag.extent = std::max(_row_draw_info.flag.extent, dc.icon_cxy);
 	}
 
-	if (!has_related && info.presence != item_presence::unknown)
+	if (!has_related && can_show_duplicates(info))
 	{
-		_row_draw_info.presence.update_extent(dc, str::format_count(info.duplicates, true));
+		_row_draw_info.presence.update_extent(dc, str::format_count(info.duplicates));
 	}
 
 	if (info.sidecars > 0)
@@ -2069,7 +2068,8 @@ void df::item_group::update_detail_row_layout(ui::draw_context& dc, const item_e
 
 	if (_state.group_order() == group_by::date_created || _state.group_order() == group_by::date_original)
 	{
-		_row_draw_info.created.update_extent(dc, platform::format_date_time(info.created));
+		const auto shown = _state.group_order() == group_by::date_created ? info.file_created : info.created;
+		_row_draw_info.created.update_extent(dc, platform::format_date_time(shown));
 	}
 
 	i->row_layout_valid = true;
@@ -2394,9 +2394,15 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 			if (widths.presence.width > 0)
 			{
-				const auto bb = widths.presence.calc_bounds(text_rect, text_x, text_y, text_padding);
-				widths.presence.draw(dc, str::format_count(info.duplicates, true), bg_dups, bb, text_font,
-				                     text_style_center, text_color);
+				// The column is as wide as the widest row in the group, so a row with no duplicate
+				// still has room reserved. Only the rows the layout measured may draw, or a file that
+				// is its own only copy gets the "1" badge issue #137 exists to remove.
+				if (!has_related && can_show_duplicates(info))
+				{
+					const auto bb = widths.presence.calc_bounds(text_rect, text_x, text_y, text_padding);
+					widths.presence.draw(dc, str::format_count(info.duplicates), bg_dups, bb, text_font,
+					                     text_style_center, text_color);
+				}
 				text_x += widths.presence.width + text_padding;
 			}
 
@@ -2499,10 +2505,12 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 			if (widths.created.width > 0)
 			{
-				if (!prop::is_null(info.created))
+				const auto shown = group_order == group_by::date_created ? info.file_created : info.created;
+
+				if (!prop::is_null(shown))
 				{
 					const auto bb = widths.created.calc_bounds(text_rect, text_x, text_y, text_padding);
-					const auto text = platform::format_date_time(info.created);
+					const auto text = platform::format_date_time(shown);
 					widths.created.draw(dc, text, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
 				text_x += widths.created.width + text_padding;
@@ -2802,7 +2810,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			}
 			else if (show_created)
 			{
-				text = prop::format_date(info.created);
+				text = prop::format_date(group_order == group_by::date_created ? info.file_created : info.created);
 			}
 			else if (show_modified)
 			{
@@ -2865,9 +2873,9 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 		if (show_text)
 		{
-			if (!has_related && info.presence != item_presence::unknown)
+			if (!has_related && can_show_duplicates(info))
 			{
-				const auto text = str::format_count(info.duplicates, true);
+				const auto text = str::format_count(info.duplicates);
 				const auto cx = std::max(cxy_flag, dc.measure_text(text, ui::style::font_face::dialog,
 				                                                   ui::style::text_style::single_line_center, 100).cx);
 				const recti bb(x_flag, y_flag, x_flag + cx, y_flag + cxy_flag);
@@ -3240,6 +3248,7 @@ df::item_display_info df::item_element::populate_info() const
 			result.icon = mt->icon;
 			result.modified = _modified.system_to_local();
 			result.created = media_created();
+			result.file_created = file_or_metadata_created();
 		}
 	}
 

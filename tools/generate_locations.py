@@ -161,7 +161,7 @@ def normalize_place_name(name: str) -> str:
 
 
 def fold_for_search(name: str) -> str:
-    """Fold a name the way the search index folds it (str::normalze_for_compare).
+    """Fold a name the way the search index folds it (str::normalize_for_compare).
 
     Case and accents disappear and whitespace runs collapse, but punctuation is kept. Two
     names with the same fold are the same query, so keeping both costs bytes and index

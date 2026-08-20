@@ -1,30 +1,5 @@
-/****************************************************************************
-** libebml : parse EBML files, see http://embl.sourceforge.net/
-**
-** <file/class description>
-**
-** Copyright (C) 2002-2003 Steve Lhomme.  All rights reserved.
-**
-** This library is free software; you can redistribute it and/or
-** modify it under the terms of the GNU Lesser General Public
-** License as published by the Free Software Foundation; either
-** version 2.1 of the License, or (at your option) any later version.
-**
-** This library is distributed in the hope that it will be useful,
-** but WITHOUT ANY WARRANTY; without even the implied warranty of
-** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-** Lesser General Public License for more details.
-**
-** You should have received a copy of the GNU Lesser General Public
-** License along with this library; if not, write to the Free Software
-** Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
-**
-** See http://www.gnu.org/licenses/lgpl-2.1.html for LGPL licensing information.
-**
-** Contact license@matroska.org if any conditions of this licensing are
-** not clear to you.
-**
-**********************************************************************/
+// Copyright © 2002-2002 Steve Lhomme.
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 /*!
   \file
@@ -148,38 +123,8 @@ bool WinIOCallback::open(const wchar_t* Path, const open_mode aMode, DWORD dwFla
 
   // Diffractor patch: always use the Unicode CreateFileW path. The upstream code branches
   // on GetVersion() to fall back to an ANSI CreateFileA on Win9x; GetVersion() is deprecated
-  // (C4996 under /sdl) and Win9x is unsupported. Re-apply this after libebml upgrades.
-  //if ((LONG)GetVersion() >= 0) {
-    mFile = CreateFileW(Path, AccessMode, ShareMode, NULL, Disposition, dwFlags, NULL);
-//  } else {
-//    int errCode;
-//    int pathSize = wcslen(Path);
-//    unsigned int bufferSize = pathSize + sizeof(wchar_t) * 2;
-//    std::string PathA;
-//    PathA.resize(bufferSize);
-//    errCode = WideCharToMultiByte(CP_ACP, 0, Path, pathSize, (char *)PathA.c_str(), bufferSize, NULL, NULL);
-//    if (errCode == 0)
-//      errCode = GetLastError();
-//#ifdef _DEBUG
-//    if (errCode == ERROR_INSUFFICIENT_BUFFER) OutputDebugString(TEXT("WinIOCallback::WideCharToMultiByte::ERROR_INSUFFICIENT_BUFFER"));
-//    if (errCode == ERROR_INVALID_FLAGS) OutputDebugString(TEXT("WinIOCallback::WideCharToMultiByte::ERROR_INVALID_FLAGS"));
-//    if (errCode == ERROR_INVALID_PARAMETER) OutputDebugString(TEXT("WinIOCallback::WideCharToMultiByte::ERROR_INVALID_PARAMETER"));
-//#endif
-//    while (errCode == ERROR_INSUFFICIENT_BUFFER) {
-//      // Increase the buffer size
-//      bufferSize += MAX_PATH;
-//      PathA.resize(bufferSize);
-//      errCode = WideCharToMultiByte(CP_ACP, WC_SEPCHARS, Path, pathSize, (char *)PathA.c_str(), bufferSize, NULL, NULL);
-//      if (errCode == 0)
-//        errCode = GetLastError();
-//    }
-//    if (errCode != 0) {
-//      mFile = CreateFileA(PathA.c_str(), AccessMode, ShareMode, NULL, Disposition, dwFlags, NULL);
-//    } else {
-//      mLastErrorStr = "Couldn't convert Unicode filename to ANSI.";
-//      return mOk = false;
-//    }
-//  }
+  // and trips C4996 under /sdl. Re-apply after libebml upgrades.
+  mFile = CreateFileW(Path, AccessMode, ShareMode, NULL, Disposition, dwFlags, NULL);
   if ((mFile == INVALID_HANDLE_VALUE) || (mFile == (HANDLE)0xffffffff)) {
     //File was not opened
     char err_msg[256];

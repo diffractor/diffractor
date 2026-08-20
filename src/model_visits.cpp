@@ -774,7 +774,7 @@ df::search_t df::visit_node_search(const search_t& current, const visit_node& no
 	apply_visit_location(search, node.centre, node.name, node.named, node.radius_km);
 
 	search.clear_term_type(search_term_type::date);
-	search.date_range(node.first.date(), node.last.date(), date_parts_prop::created);
+	search.date_range(node.first.date(), node.last.date(), date_parts_prop::original);
 
 	return search;
 }
@@ -810,7 +810,7 @@ bool df::is_visit_node_selected(const search_t& current, const visit_node& node)
 
 	for (const auto& t : current.terms())
 	{
-		if (t.type == search_term_type::date && t.date_val.target == date_parts_prop::created)
+		if (t.type == search_term_type::date && t.date_val.target == date_parts_prop::original)
 		{
 			const auto bound = t.modifiers.greater_than ? node.first.date() : node.last.date();
 

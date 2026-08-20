@@ -90,16 +90,66 @@ static void render_toolbar_button(ui::draw_context& dc, const ui::command_ptr& c
 	}
 }
 
+// Discussion #251: the menu the always-visible scroll control opens. Scroll to top is the control's
+// own action and comes first, because the click no longer performs it. Everything after that is the
+// toolbar's own command object, so a second copy of the toolbar cannot disagree with the first about
+// what is offered, enabled or ticked.
+std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bool at_top,
+                                               std::function<void()> scroll_to_top)
+{
+	std::vector<ui::command_ptr> result;
+
+	auto top = std::make_shared<ui::command>();
+	top->icon = icon_index::up;
+	top->text = tt.tooltip_scroll_to_top;
+	top->enable = !at_top;
+	top->invoke = std::move(scroll_to_top);
+	result.emplace_back(std::move(top));
+	result.emplace_back(nullptr);
+
+	if (const auto group = state.find_command(commands::menu_group_toolbar); group && group->menu)
+	{
+		for (auto& c : group->menu()) result.emplace_back(std::move(c));
+	}
+
+	result.emplace_back(nullptr);
+
+	// A null entry is the menu's separator, so an unresolved command must be dropped rather than
+	// emplaced - it would become a divider instead of a visible failure.
+	const auto add_command = [&result, &state](const commands id)
+	{
+		if (auto c = state.find_command(id)) result.emplace_back(std::move(c));
+	};
+
+	for (const auto id : {commands::filter_photos, commands::filter_videos, commands::filter_audio})
+	{
+		add_command(id);
+	}
+
+	result.emplace_back(nullptr);
+	add_command(commands::browse_recursive);
+
+	return result;
+}
+
 // design.md: the base of the item scrollbar is a back-to-top action. It is painted as the foot of
 // the same column as the track above it -- same inset, same band -- so the two read as one control
 // rather than as a button parked under a scrollbar.
+//
+// Discussion #251: it is also the one items-view control that is always on screen. The filter
+// toolbar at the top scrolls away, so changing a filter over a long listing meant scrolling to the
+// top first. Pinning that toolbar would spend vertical space permanently in the view whose whole
+// purpose is showing thumbnails; this control is sticky by construction, so nothing has to be.
 class scroll_to_top_element final : public std::enable_shared_from_this<scroll_to_top_element>, public view_element
 {
 	view_scroller& _scroller;
+	view_state& _state;
+	mutable recti _device_bounds;
 
 public:
-	explicit scroll_to_top_element(view_scroller& scroller) :
-		view_element(view_element_style::can_invoke | view_element_style::has_tooltip), _scroller(scroller)
+	scroll_to_top_element(view_scroller& scroller, view_state& state) :
+		view_element(view_element_style::can_invoke | view_element_style::has_tooltip), _scroller(scroller),
+		_state(state)
 	{
 		padding = {0, 0};
 	}
@@ -122,11 +172,12 @@ public:
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		const auto r = column_bounds(element_offset);
+		_device_bounds = r;
 		const auto bg = calc_background_color(dc);
 		dc.draw_rounded_rect(r, bg.a > 0.0f ? bg : ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha),
 		                     dc.padding1);
 
-		// Dimming says the action has nothing left to do; removing it would resize the track under
+		// Dimming says the scroll has nothing left to do; removing it would resize the track under
 		// the pointer every time the list reached the top.
 		const auto engaged = is_style_bit_set(view_element_style::hover) ||
 			is_style_bit_set(view_element_style::tracking);
@@ -134,26 +185,52 @@ public:
 		xdraw_icon(dc, icon_index::up, r, ui::color(dc.colors.foreground, alpha), {});
 	}
 
+	// What the listing holds, and - when a filter is hiding anything - how much it is not showing.
+	// That second number is the one a user needs before opening the filter menu, not after.
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(icon_index::up, flex_item::no_break));
-		hover.elements->add(std::make_shared<text_element>(tt.tooltip_scroll_to_top));
+		hover.elements->add(std::make_shared<text_element>(
+			format_items_totals(_state.summary_shown(), _state.item_index.is_init_complete()),
+			ui::style::font_face::dialog, ui::style::text_style::single_line, flex_item::line_break));
+		hover.elements->add(std::make_shared<summary_control>(_state.summary_shown(), flex_item::line_break));
+
+		const auto total_count = _state.search_items().size();
+		const auto shown_count = _state.display_items().size();
+
+		// The same guard the footer uses: while a search is running the results run ahead of the items
+		// added to the listing, and reporting that gap as "filtered out" would be a lie that corrects
+		// itself a moment later.
+		const auto is_searching = _state.item_index.searching > 0;
+
+		if (!is_searching && total_count > shown_count)
+		{
+			hover.elements->add(std::make_shared<text_element>(
+				str_format(tt.some_items_filtered_fmt.sv(), total_count - shown_count),
+				ui::style::font_face::dialog, ui::style::text_style::multiline, flex_item::new_line));
+		}
+
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
 	void dispatch_event(const view_element_event& event) override
 	{
-		if (event.type == view_element_event_type::invoke && !is_at_top())
-		{
-			_scroller.scroll_offset(event.host, 0, 0);
-		}
+		if (event.type != view_element_event_type::invoke) return;
+
+		auto& scroller = _scroller;
+		const auto host = event.host;
+		event.host->track_menu(_device_bounds, items_scroll_menu(_state, is_at_top(),
+		                                                         [&scroller, host]
+		                                                         {
+			                                                         scroller.scroll_offset(host, 0, 0);
+		                                                         }));
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
 	                                             const std::vector<recti>& excluded_bounds) override
 	{
-		if (is_at_top()) return nullptr;
+		_device_bounds = column_bounds(element_offset);
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
 };
@@ -678,7 +755,7 @@ items_view::items_view(view_state& s, view_host_ptr host) :
 	};
 	_media_scroller.changed_func = [this] { _state.invalidate_view(view_invalid::view_redraw); };
 
-	_items_scroll_top = std::make_shared<scroll_to_top_element>(_items_scroller);
+	_items_scroll_top = std::make_shared<scroll_to_top_element>(_items_scroller, _state);
 
 	_metadata_tree->invalidate = [this]
 	{
@@ -1223,8 +1300,7 @@ void items_view::items_changed(const bool path_changed)
 		           }));
 	}
 
-	if (has_items && (_state.effective_group_order() == group_by::date_created ||
-		_state.effective_group_order() == group_by::date_modified))
+	if (has_items && is_date_group_order(_state.effective_group_order()))
 	{
 		add_action(setting.sort_dates_descending
 			           ? tt.command_sort_dates_ascending.sv()
@@ -1349,9 +1425,21 @@ public:
 	}
 };
 
-void items_view::update_regions()
+// design.md L5: Escape peels one layer. With a rectangle on the picture it clears it; without one it
+// falls through to the unwind ladder view_state::escape owns, so there is one order rather than two.
+bool items_view::escape()
 {
-	// Single geometry pass. Regions are laid out back to front: the item grid is the background of
+	if (const auto photo = std::dynamic_pointer_cast<photo_control>(_media_element); photo && photo->has_region())
+	{
+		photo->clear_region();
+		return true;
+	}
+
+	return false;
+}
+
+void items_view::update_regions()
+{	// Single geometry pass. Regions are laid out back to front: the item grid is the background of
 	// the view and every piece of chrome that overlaps it is carved out first, so hit testing can
 	// simply walk them in priority order.
 	_regions = {};
@@ -1896,7 +1984,7 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 
 	// Last, and over everything: the address bar above shares this view's background, so without an
 	// edge the two read as one surface and it is not obvious which part scrolls.
-	dc.draw_rect(recti(0, 0, _client_extent.cx, 1), ui::color(0.0f, 0.0f, 0.0f, 0.5f));
+	dc.draw_rect(recti(0, 0, _client_extent.cx, 1), ui::color(0.0f, 0.0f, 0.0f, dc.colors.alpha * 0.5f));
 }
 
 void items_view::layout_chrome(ui::measure_context& mc)
@@ -2045,28 +2133,66 @@ int layout_media_column(const media_column_inputs& in, ui::measure_context& mc, 
 		return layout_detail(0);
 	}
 
-	// Holding the block at the top only earns its place when something can follow it. Verbose metadata
-	// is one global setting, so a selection with no detail form at all - every multiple selection, and
-	// a comparison - would otherwise sit against the top for a reason that does not apply to it. The
-	// test is what the selection can produce, not what has arrived: detail lands late, and keying on
-	// the current list would move the media the moment it did.
-	if (!in.verbose_metadata || !in.detail_possible)
+	// The picture keeps half the pane. Information past that scrolls instead of being paid for by the
+	// media, which is the bound fullscreen puts on its overlay read from the other side. Without it
+	// the media was the only thing that ever gave way, down to the 64-unit floor of flex_item::media.
+	const auto media = in.media && in.media->flex.shrink > 0.0f ? in.media : nullptr;
+	const auto restore_media_min = media ? media->flex.min_size.cy : 0;
+
+	// The element is shared and outlives this call, so the floor has to come back even if measuring
+	// or laying out a child throws - otherwise it keeps a raised minimum height for the session.
+	const df::scope_exit restore_floor([media, restore_media_min]
 	{
-		// The media, the first information group and the verbose toggle own the pane and centre in it.
-		// The media shrinks so all three stay visible; anything else starts past the bottom edge.
-		auto centred = media_column;
-		centred.justify = flex_justify::center;
-		layout_flex_elements(*in.priority, mc, positions, in.bounds, centred);
-		return layout_detail(in.bounds.height());
+		if (media) media->flex.min_size.cy = restore_media_min;
+	});
+
+	if (media)
+	{
+		const auto content_width = std::max(
+			0, in.bounds.width() - df::round(media_column.padding.cx * 2 * mc.scale_factor));
+		const auto natural_media = media->measure(mc, content_width).cy;
+		const auto floor_px = std::min(natural_media, in.bounds.height() / 2);
+		media->flex.min_size.cy = std::max(restore_media_min, df::round(floor_px / mc.scale_factor));
 	}
 
-	// Verbose metadata is open, so the pane scrolls anyway. The media and its first information group
-	// are held at the top with both always visible - the media shrinking to make that true - and the
-	// metadata blocks follow immediately below. Top aligned rather than centred for a second reason:
-	// a centred line reports the container height instead of the content height, so asking where the
-	// group ended left a gap below it the size of the pane's free space.
-	const auto priority_extent = layout_flex_elements(*in.priority, mc, positions, in.bounds, media_column);
-	return layout_detail(priority_extent.cy);
+	const auto arrange = [&]
+	{
+		// Holding the block at the top only earns its place when something can follow it. Verbose metadata
+		// is one global setting, so a selection with no detail form at all - every multiple selection, and
+		// a comparison - would otherwise sit against the top for a reason that does not apply to it. The
+		// test is what the selection can produce, not what has arrived: detail lands late, and keying on
+		// the current list would move the media the moment it did.
+		if (!in.verbose_metadata || !in.detail_possible)
+		{
+			// The media, the first information group and the verbose toggle own the pane and centre in it.
+			// The media shrinks so all three stay visible. Detail follows the block rather than the pane,
+			// so a description short enough to sit in the free space below is read without scrolling.
+			// The centring offset is applied here rather than through flex_justify::center, because a
+			// centred line reports the container height instead of the content height, and the block's own
+			// bottom is what the detail below it starts from.
+			const auto block = calc_flex_layout(*in.priority, mc, in.bounds.extent(), media_column);
+			const auto block_top = std::max(0, in.bounds.height() - block.extent.cy) / 2;
+			const auto origin = pointi{in.bounds.left, in.bounds.top + block_top};
+
+			for (auto i = 0u; i < in.priority->size(); ++i)
+			{
+				(*in.priority)[i]->layout(mc, block.layout_bounds[i].offset(origin), positions);
+			}
+
+			return layout_detail(block_top + block.extent.cy);
+		}
+
+		// Verbose metadata is open, so the pane scrolls anyway. The media and its first information group
+		// are held at the top with both always visible - the media shrinking to make that true - and the
+		// metadata blocks follow immediately below. Top aligned rather than centred for a second reason:
+		// a centred line reports the container height instead of the content height, so asking where the
+		// group ended left a gap below it the size of the pane's free space.
+		const auto priority_extent = layout_flex_elements(*in.priority, mc, positions, in.bounds, media_column);
+		return layout_detail(priority_extent.cy);
+	};
+
+	const auto content_height = arrange();
+	return content_height;
 }
 
 void items_view::layout(ui::measure_context& mc, const sizei extent)
@@ -2137,7 +2263,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	{
 		const media_column_inputs media_inputs{
 			&_media_priority_elements, &_media_detail_elements, &_media_elements,
-			avail_media_bounds, setting.verbose_metadata, _display && _display->is_one()
+			avail_media_bounds, setting.verbose_metadata, _display && _display->is_one(), _media_element
 		};
 		const auto media_height = layout_media_column(media_inputs, mc, positions);
 
@@ -2229,6 +2355,11 @@ void items_view::broadcast_event(const view_element_event& event) const
 
 	_filter_edit->dispatch_event(event);
 	_items_scroll_top->dispatch_event(event);
+
+	// The sidebar is a host of its own and app_frame::dpi_changed already walks it, so only the
+	// broadcasts nothing else delivers are forwarded here - a second dpi_changed would re-measure
+	// every row for nothing.
+	if (_sidebar && event.type != view_element_event_type::dpi_changed) _sidebar->broadcast_event(event);
 }
 
 class copy_clip_element final : public std::enable_shared_from_this<copy_clip_element>, public view_element
@@ -2474,9 +2605,9 @@ public:
 	{
 		view_element::layout(mc, bounds, positions);
 
-		auto contol_bounds = bounds;
-		contol_bounds.left += _cx_surface;
-		_controls->layout(mc, contol_bounds, positions);
+		auto control_bounds = bounds;
+		control_bounds.left += _cx_surface;
+		_controls->layout(mc, control_bounds, positions);
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -2641,6 +2772,22 @@ public:
 		view_element(options), _tree_state(std::move(tree_state))
 	{
 		build(values, id_prefix, {});
+	}
+
+	// A detail control can hold a texture - the embedded thumbnail is a surface_element - and the
+	// rows are this control's own, so the broadcast has to be carried down to them by hand. Only the
+	// broadcast: click, invoke and the rest are this control's own to interpret, and its controller
+	// already does, so forwarding them would give one gesture two readers.
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type != view_element_event_type::free_graphics_resources &&
+			event.type != view_element_event_type::dpi_changed)
+			return;
+
+		for (const auto& r : _rows)
+		{
+			if (r.detail_control) r.detail_control->dispatch_event(event);
+		}
 	}
 
 private:
@@ -3204,7 +3351,15 @@ void items_view::add_description_elements(std::vector<view_element_ptr>& element
 
 	view_element_ptr body;
 
-	if (fields.size() == 1)
+	// A description is prose with no natural end, and an unbounded one takes the panel and evicts
+	// whatever follows it - which is how a video's stream summary came to be the thing that went.
+	// Past a few lines' worth the body collapses to a row that opens on demand, so what comes after
+	// it keeps its place. This is the cause; ordering around it only moves the casualty.
+	constexpr size_t max_unbounded_description = 400;
+
+	const auto is_short = [](const std::string_view text) { return text.size() <= max_unbounded_description; };
+
+	if (fields.size() == 1 && is_short(fields.front().text.sv()))
 	{
 		body = std::make_shared<text_element>(fields.front().text);
 	}
@@ -3223,7 +3378,7 @@ void items_view::add_description_elements(std::vector<view_element_ptr>& element
 			row.detail = metadata_text_detail{std::string(f.text.sv())};
 			row.id = f.id;
 			row.prose = true;
-			row.open_by_default = rows.size() == 1;
+			row.open_by_default = rows.size() == 1 && is_short(f.text.sv());
 		}
 
 		body = std::make_shared<metadata_tree_control>(rows, "description"sv, _metadata_tree, flex_item::grow);
@@ -3243,6 +3398,83 @@ void items_view::add_description_elements(std::vector<view_element_ptr>& element
 	{
 		elements.emplace_back(margin16(std::move(body)));
 	}
+}
+
+// What is inside the container, which is the question a media file raises before any other. It sits
+// in the primary block rather than behind the verbose toggle, because an answer below the fold is
+// not an answer.
+void items_view::add_stream_elements(std::vector<view_element_ptr>& elements, const display_state_ptr& display,
+                                     const df::item_element_ptr& item)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	elements.emplace_back(title_style(std::make_shared<group_title_control>(tt.prop_name_streams)));
+
+	const auto table = std::make_shared<ui::table_element>(flex_item::grow);
+	table->no_shrink_col[0] = true;
+	table->no_shrink_col[1] = true;
+	table->no_shrink_col[2] = false;
+	table->no_shrink_col[3] = true;
+	table->no_shrink_col[4] = true;
+	table->no_shrink_col[5] = true;
+	table->no_shrink_col[6] = true;
+
+	auto audio_track_number = 0;
+
+	for (const auto& st : display->_player_media_info.streams)
+	{
+		std::string type;
+
+		switch (st.type)
+		{
+		case av_stream_type::video: type = tt.video;
+			break;
+		case av_stream_type::audio: type = tt.audio;
+			break;
+		case av_stream_type::data: type = tt.data;
+			break;
+		case av_stream_type::subtitle: type = tt.subtitle;
+			break;
+		}
+
+		auto format = st.pixel_format;
+
+		if (st.type == av_stream_type::audio)
+		{
+			++audio_track_number;
+			format = prop::format_audio_sample_rate(st.audio_sample_rate);
+
+			if (st.audio_channels != 0)
+			{
+				format += "  ";
+				format += prop::format_audio_channels(st.audio_channels);
+			}
+
+			if (st.audio_sample_type != prop::audio_sample_t::none)
+			{
+				format += "  ";
+				format += format_audio_sample_type(st.audio_sample_type);
+			}
+		}
+
+		auto stream = std::make_shared<stream_element>(_state, item, st, audio_track_number);
+
+		std::vector<view_element_ptr> row = {
+			std::make_shared<text_element>(str::to_string(st.index)),
+			std::make_shared<text_element>(type),
+			stream,
+			std::make_shared<text_element>(st.codec),
+			std::make_shared<text_element>(st.fourcc),
+			std::make_shared<text_element>(format),
+			std::make_shared<text_element>(st.rotation == 0.0
+				                               ? std::string{}
+				                               : std::format("rotation={}", st.rotation))
+		};
+
+		table->add(row);
+	}
+
+	elements.emplace_back(margin16(table));
 }
 
 void items_view::update_media_elements()
@@ -3322,7 +3554,7 @@ void items_view::update_media_elements()
 				if (display && !display->_selected_item_data.empty())
 				{
 					elements.emplace_back(media_padding(4));
-					elements.emplace_back(std::make_shared<comodore_disk_control>(display, flex_item::center));
+					elements.emplace_back(std::make_shared<commodore_disk_control>(display, flex_item::center));
 
 					// Single-file program containers also show a hex view of the content.
 					if (file_type->extension == "prg" || file_type->extension == "p00")
@@ -3360,10 +3592,19 @@ void items_view::update_media_elements()
 				}
 			}
 
-			// The toggle only earns its place when there is something behind it to reveal.
+			// The toggle only earns its place when there is something behind it to reveal. The stream
+			// summary is no longer behind it: what is inside the container is the first question a
+			// media file raises, and answering it below the fold is not answering it.
 			const auto& media_info = display->_player_media_info;
-			const auto has_verbose_content = !media_info.streams.empty() ||
-				std::ranges::any_of(media_info.metadata, [](const auto& m) { return !m.values.empty(); });
+			const auto has_streams = !media_info.streams.empty();
+			const auto has_verbose_content = std::ranges::any_of(media_info.metadata,
+			                                                     [](const auto& m) { return !m.values.empty(); });
+
+			if (has_streams)
+			{
+				add_stream_elements(elements, display, item);
+				priority_end_element = elements.back();
+			}
 
 			const auto has_long_form = md && (!is_empty(md->comment) || !is_empty(md->description) ||
 				!is_empty(md->synopsis));
@@ -3398,77 +3639,6 @@ void items_view::update_media_elements()
 
 			if (setting.verbose_metadata)
 			{
-				if (display && !display->_player_media_info.streams.empty())
-				{
-					elements.emplace_back(title_style(std::make_shared<group_title_control>(tt.prop_name_streams)));
-
-					const auto table = std::make_shared<ui::table_element>(flex_item::grow);
-					table->no_shrink_col[0] = true;
-					table->no_shrink_col[1] = true;
-					table->no_shrink_col[2] = false;
-					table->no_shrink_col[3] = true;
-					table->no_shrink_col[4] = true;
-					table->no_shrink_col[5] = true;
-					table->no_shrink_col[6] = true;
-
-					auto audio_track_number = 0;
-					for (const auto& st : display->_player_media_info.streams)
-					{
-						std::string type;
-
-						switch (st.type)
-						{
-						case av_stream_type::video: type = tt.video;
-							break;
-						case av_stream_type::audio: type = tt.audio;
-							break;
-						case av_stream_type::data: type = tt.data;
-							break;
-						case av_stream_type::subtitle: type = tt.subtitle;
-							break;
-						}
-
-						auto format = st.pixel_format;
-
-						if (st.type == av_stream_type::audio)
-						{
-							++audio_track_number;
-							format = prop::format_audio_sample_rate(st.audio_sample_rate);
-
-							if (st.audio_channels != 0)
-							{
-								format += "  ";
-								format += prop::format_audio_channels(st.audio_channels);
-							}
-
-							if (st.audio_sample_type != prop::audio_sample_t::none)
-							{
-								format += "  ";
-								format += format_audio_sample_type(st.audio_sample_type);
-							}
-						}
-
-						auto stream = std::make_shared<stream_element>(_state, item, st, audio_track_number);
-
-						std::vector<view_element_ptr> row = {
-							std::make_shared<text_element>(str::to_string(st.index)),
-							std::make_shared<text_element>(type),
-							stream,
-							std::make_shared<text_element>(st.codec),
-							std::make_shared<text_element>(st.fourcc),
-							//std::make_shared<text_element>(st.language),								
-							std::make_shared<text_element>(format),
-							std::make_shared<text_element>(st.rotation == 0.0
-								                               ? std::string{}
-								                               : std::format("rotation={}", st.rotation))
-						};
-
-						table->add(row);
-					}
-
-					elements.emplace_back(margin16(table));
-				}
-
 				if (display && !display->_player_media_info.metadata.empty())
 				{
 					for (const auto& block : display->_player_media_info.metadata)

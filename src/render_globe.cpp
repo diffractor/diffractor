@@ -117,6 +117,10 @@ bool globe_renderer::render(ui::surface& destination, const globe_projection& pr
 
 	if (radius < 2.0 || dims.cx < 1 || dims.cy < 1) return false;
 
+	// A failed alloc reports the extent it was asked for and holds no memory, so the size is not the
+	// question - whether the surface actually has pixels is.
+	if (destination.empty()) return false;
+
 	const auto& source = *_levels.front();
 	const auto source_cx = static_cast<double>(source.dimensions().cx);
 	const auto source_cy = static_cast<double>(source.dimensions().cy);

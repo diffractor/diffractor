@@ -18,6 +18,7 @@
 #include "ui_elements.h"
 #include "ui_charts.h"
 #include "ui_globe.h"
+#include "ui_panorama.h"
 
 static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const float alpha)
 {
@@ -1050,7 +1051,7 @@ static void should_render_the_globe()
 
 	const auto [date_line, date_line_seams] = seam_at(date_line_view);
 	assert_equal(1, date_line_seams, "the date line is crossed once, not many times", "globe render");
-	// assert_near(0.0, date_line, 2.0, "and it too sits where the view says", "globe render");
+	assert_near(0.0, date_line, 2.0, "and it too sits where the view says", "globe render");
 
 	globe_renderer ramp;
 	ramp.set_source(make_globe_ramp_source());
@@ -1080,6 +1081,179 @@ static void should_render_the_globe()
 	}
 
 	assert_equal(0, jumps, "the row samples the map continuously across the date line", "globe render");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The panorama rasteriser
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	// An equirectangular source whose colour says which quadrant of itself a pixel came from, so a
+	// rendered pixel can be traced back to a longitude and a latitude rather than only to "some
+	// pixel". Green is the northern half; red and blue split the southern half west and east.
+	ui::const_surface_ptr make_panorama_test_source()
+	{
+		auto source = std::make_shared<ui::surface>();
+		source->alloc(512, 256, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 256; ++y)
+		{
+			auto* const line = std::bit_cast<ui::color32*>(source->pixels_line(y));
+
+			for (auto x = 0; x < 512; ++x)
+			{
+				line[x] = y < 128
+					          ? ui::rgba(0, 255, 0)
+					          : x < 256
+					          ? ui::rgba(255, 0, 0)
+					          : ui::rgba(0, 0, 255);
+			}
+		}
+
+		return source;
+	}
+
+	char panorama_hue(const ui::color32 c)
+	{
+		if (ui::get_a(c) < 128) return '-';
+
+		const auto r = ui::get_r(c);
+		const auto g = ui::get_g(c);
+		const auto b = ui::get_b(c);
+
+		if (r > g && r > b) return 'r';
+		if (g > r && g > b) return 'g';
+		if (b > r && b > g) return 'b';
+		return '?';
+	}
+}
+
+static void should_render_a_projected_panorama()
+{
+	panorama_renderer renderer;
+	renderer.set_source(make_panorama_test_source());
+	assert_equal(true, renderer.is_ready(), "the renderer keeps the source it was given", "panorama render");
+
+	const prop::panorama_geometry sphere{512, 256, 0, 0, 512, 256};
+
+	ui::surface destination;
+	destination.alloc(240, 160, ui::texture_format::ARGB);
+
+	constexpr auto middle_x = 120;
+	constexpr auto middle_y = 80;
+
+	panorama_view view;
+	view.reset(sphere);
+	assert_equal(true, renderer.render(destination, sphere, view), "a view renders", "panorama render");
+
+	// Facing the middle of the sphere is facing the boundary of the two southern quadrants, so the
+	// pixel just left of centre is western and the one just right of it is eastern. An asymmetric
+	// probe: "both halves appear" would pass for a mirrored projection too.
+	assert_equal('r', panorama_hue(destination.get_pixel(middle_x - 8, middle_y + 40)),
+	             "west of the centre is the western quadrant", "panorama render");
+	assert_equal('b', panorama_hue(destination.get_pixel(middle_x + 8, middle_y + 40)),
+	             "and east of it is the eastern", "panorama render");
+	assert_equal('g', panorama_hue(destination.get_pixel(middle_x, middle_y - 40)),
+	             "above the horizon is the northern half", "panorama render");
+
+	// Turning east brings the eastern quadrant under the centre. A quarter turn is unambiguous:
+	// nothing else in the source is blue on both sides of the middle.
+	view.look_at(M_PI / 2.0, 0.0);
+	assert_equal(true, renderer.render(destination, sphere, view), "a turned view renders", "panorama render");
+	assert_equal('b', panorama_hue(destination.get_pixel(middle_x - 8, middle_y + 40)),
+	             "a quarter turn east puts the eastern quadrant under the whole centre", "panorama render");
+	assert_equal('b', panorama_hue(destination.get_pixel(middle_x + 8, middle_y + 40)),
+	             "on both sides of it", "panorama render");
+
+	// Looking up fills the frame with the northern half, including below the middle, which the
+	// level view never does.
+	view.look_at(0.0, M_PI / 2.0);
+	assert_equal(true, renderer.render(destination, sphere, view), "an upward view renders", "panorama render");
+	assert_equal('g', panorama_hue(destination.get_pixel(middle_x, middle_y + 40)),
+	             "looking up is the northern half all the way down the frame", "panorama render");
+
+	// A partial panorama ends. Its sky is not stretched to the top of the frame and it is not the
+	// nearest row repeated - it is nothing, which is the honest answer and the one the flat draw
+	// could not give.
+	const auto strip = prop::panorama_geometry::assumed({512, 64});
+	auto strip_source = std::make_shared<ui::surface>();
+	strip_source->alloc(512, 64, ui::texture_format::ARGB);
+	for (auto y = 0; y < 64; ++y)
+	{
+		auto* const line = std::bit_cast<ui::color32*>(strip_source->pixels_line(y));
+		for (auto x = 0; x < 512; ++x) line[x] = ui::rgba(255, 0, 0);
+	}
+
+	panorama_renderer partial;
+	partial.set_source(strip_source);
+
+	panorama_view strip_view;
+	strip_view.reset(strip);
+	assert_equal(true, partial.render(destination, strip, strip_view), "a partial panorama renders",
+	             "panorama render");
+	assert_equal('r', panorama_hue(destination.get_pixel(middle_x, middle_y)),
+	             "the strip itself is drawn on the horizon", "panorama render");
+	assert_equal('-', panorama_hue(destination.get_pixel(middle_x, 2)),
+	             "and above it is sphere the file does not hold", "panorama render");
+	assert_equal('-', panorama_hue(destination.get_pixel(middle_x, 157)),
+	             "as is below it", "panorama render");
+
+	// The drawn area must be the covered area, column by column. A screen row is a curve in
+	// latitude, so a renderer that decides coverage once per segment paints across the edge where
+	// the curve bulges out and bites lumps out of it where it bulges in - both quantised to the
+	// segment width, which is what makes the edge read as ragged instead of as an edge. One pixel
+	// of tolerance for the boundary itself; anything beyond that is a segment-sized error.
+	const auto check_edges = [&](const panorama_view& probe, const std::string_view what)
+	{
+		const auto dims = destination.dimensions();
+		auto over = 0;
+		auto under = 0;
+
+		for (auto x = 0; x < dims.cx; ++x)
+		{
+			auto first = -1;
+			auto last = -2;
+
+			for (auto y = 0; y < dims.cy; ++y)
+			{
+				double u, v;
+				if (!probe.texel_at(x + 0.5, y + 0.5, sized(dims), strip, u, v)) continue;
+				if (first < 0) first = y;
+				last = y;
+			}
+
+			for (auto y = 0; y < dims.cy; ++y)
+			{
+				const auto drawn = ui::get_a(destination.get_pixel(x, y)) >= 128;
+				if (drawn && (y < first - 1 || y > last + 1)) ++over;
+				if (!drawn && y > first && y < last) ++under;
+			}
+		}
+
+		assert_equal(0, over, std::format("{}: nothing is drawn outside the file's own band", what),
+		             "panorama render");
+		assert_equal(0, under, std::format("{}: nothing inside it is left out", what), "panorama render");
+	};
+
+	check_edges(strip_view, "level");
+
+	// Pitched, where the row curve is at its most bowed and a per-segment decision is most wrong.
+	strip_view.look_at(0.0, 12.0 * M_PI / 180.0);
+	assert_equal(true, partial.render(destination, strip, strip_view), "a pitched partial renders",
+	             "panorama render");
+	check_edges(strip_view, "pitched");
+
+	// The decode hands out planar YUV unless something says it will read the pixels itself. Walked
+	// as colour values a luma plane is grey and tiles, and it fails looking like a broken projection
+	// rather than like a surface that cannot be read - so the renderer refuses it outright.
+	auto planar = std::make_shared<ui::surface>();
+	planar->alloc(512, 256, ui::texture_format::NV12);
+
+	panorama_renderer yuv;
+	yuv.set_source(planar);
+	assert_equal(false, yuv.is_ready(), "a planar source is refused rather than misread", "panorama render");
+	assert_equal(false, yuv.render(destination, sphere, view), "and renders nothing", "panorama render");
 }
 
 static void should_scale_month_blocks_logarithmically()
@@ -1381,4 +1555,5 @@ void register_render_tests(view_state& state, test_registry& tests)
 	tests.add("Should rotate 133"s, should_rotate133);
 	tests.add("Should draw the logo"s, should_draw_the_logo);
 	tests.add("Should render the globe"s, should_render_the_globe);
+	tests.add("Should render a projected panorama"s, should_render_a_projected_panorama);
 }

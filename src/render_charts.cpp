@@ -112,13 +112,16 @@ bool chart_surface::prepare(const sizei extent)
 
 	const sizei supersampled(extent.cx * chart_supersample, extent.cy * chart_supersample);
 
-	if (!_scratch || _scratch->dimensions() != supersampled)
+	// is_valid, not the pointer or the size: a failed alloc still reports the requested extent, so a
+	// dimension compare alone recognises the empty buffer as the right one and never asks again -
+	// one transient failure would then stop this chart drawing for the life of the process.
+	if (!ui::is_valid(_scratch) || _scratch->dimensions() != supersampled)
 	{
 		_scratch = std::make_shared<ui::surface>();
 		_scratch->alloc(supersampled, ui::texture_format::ARGB);
 	}
 
-	if (!_pixels || _pixels->dimensions() != extent)
+	if (!ui::is_valid(_pixels) || _pixels->dimensions() != extent)
 	{
 		_pixels = std::make_shared<ui::surface>();
 		_pixels->alloc(extent, ui::texture_format::ARGB);
@@ -130,7 +133,7 @@ bool chart_surface::prepare(const sizei extent)
 		_extent = extent;
 	}
 
-	return true;
+	return is_ready();
 }
 
 void chart_surface::clear()

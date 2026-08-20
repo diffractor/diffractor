@@ -1058,6 +1058,15 @@ public:
 
 	void dispatch_event(const view_element_event& event) override
 	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			// The key cannot see a device change, so the texture is dropped and the pie re-rasterised.
+			_tex.reset();
+			_rendered = {};
+			_pie_invalid = true;
+			return;
+		}
+
 		if (event.type == view_element_event_type::invoke)
 		{
 			if (_center_hover)
@@ -1769,6 +1778,15 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 
 	void dispatch_event(const view_element_event& event) override
 	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			// The key cannot see a device change, so the texture is dropped and the calendar re-rasterised.
+			_tex.reset();
+			_rendered = {};
+			_chart_invalid = true;
+			return;
+		}
+
 		if (event.type != view_element_event_type::invoke) return;
 
 		if (_hover_year != invalid_hover)
@@ -1786,8 +1804,10 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 			const auto m = _hover_month & 0x0F;
 			const auto row = _hover_month >> 8;
 
+			// The calendar buckets on the same capture-first ladder the tile shows, so the click has to
+			// ask for that key rather than the Created concept.
 			const auto ks = ui::current_key_state();
-			const auto type = ks.control ? df::date_parts_prop::modified : df::date_parts_prop::created;
+			const auto type = ks.control ? df::date_parts_prop::modified : df::date_parts_prop::original;
 			const auto search = df::search_t().day(0, m + 1, year_of_row(row), type);
 
 			_state.open(event.host, search, {});
@@ -2180,8 +2200,10 @@ public:
 				}
 				else
 				{
-					std::array<float, df::location_heat_map::map_width * df::location_heat_map::map_height>
-						heat_strength{};
+					// 32768 floats is 128 KB, which is an eighth of the default stack and this runs inside a
+					// UI-thread populate chain.
+					std::vector<float> heat_strength(
+						df::location_heat_map::map_width * df::location_heat_map::map_height, 0.0f);
 					const auto denominator = std::log1p(std::max(max_coord * 16u, 1u));
 
 					for (auto heat_y = 1u; heat_y < df::location_heat_map::map_height - 1; ++heat_y)
@@ -2211,6 +2233,17 @@ public:
 
 					auto surface = std::make_shared<ui::surface>();
 					const auto pixels = surface->alloc(dims, ui::texture_format::ARGB);
+
+					if (!pixels)
+					{
+						// alloc records the requested extent before it asks for the memory, so a failed
+						// surface still reports a full size - only the returned pointer says it is empty.
+						_surface = _surface_original;
+						_renderer.set_source(_surface);
+						_tex_invalid = true;
+						return true;
+					}
+
 					const auto heat_color = ui::bgr(ui::style::color::important_background) | 0xFF000000;
 					memset(pixels, 0, surface->stride() * dims.cy);
 
@@ -2270,7 +2303,14 @@ public:
 			if (!_globe_surface || _globe_surface->dimensions() != extent)
 			{
 				_globe_surface = std::make_shared<ui::surface>();
-				_globe_surface->alloc(extent, ui::texture_format::ARGB);
+
+				if (!_globe_surface->alloc(extent, ui::texture_format::ARGB))
+				{
+					// A failed alloc still reports the requested extent, so the buffer has to be dropped
+					// rather than left to be recognised as the right size on the next frame.
+					_globe_surface.reset();
+					return;
+				}
 			}
 
 			const globe_projection local(_view, pointi(extent.cx / 2, extent.cy / 2),
@@ -2538,6 +2578,19 @@ public:
 		}
 	}
 
+	// A turn in progress is unwound to where the drag started, matching every other drag controller.
+	// Without this Escape falls through to the view and unwinds the whole view mid-turn.
+	bool escape() override
+	{
+		if (!_tracking) return false;
+
+		_tracking = false;
+		_turned = false;
+		_element->drag_to({0, 0}, _element_offset);
+		invalidate();
+		return true;
+	}
+
 	void popup_from_location(view_hover_element& hover) override
 	{
 		_element->tooltip(hover, _last_loc, _element_offset);
@@ -2677,6 +2730,12 @@ public:
 		if (event.type == view_element_event_type::invoke && _interactive)
 		{
 			_state.invoke(commands::view_help);
+		}
+		else if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			// app_frame calls this directly on the copy it owns, but the About dialog creates a
+			// second instance that only the broadcast can reach.
+			free_graphics_resources();
 		}
 	}
 
@@ -3334,17 +3393,32 @@ public:
 	{
 		df::assert_true(ui::is_ui_thread());
 
-		const view_element_event ev{view_element_event_type::dpi_changed, shared_from_this()};
-
-		for (const auto& e : _elements)
-		{
-			e->dispatch_event(ev);
-		}
+		broadcast_event({view_element_event_type::dpi_changed, shared_from_this()});
 
 		if (is_shown())
 		{
 			frame()->layout();
 			frame()->invalidate();
+		}
+	}
+
+	// The globe, the pie and the calendar each cache a texture, so the sidebar has to answer the
+	// app-wide broadcasts the views answer - a hidden sidebar still holds them. The three are owned for
+	// the life of the sidebar and compose_elements only decides which are drawn, so the broadcast walks
+	// the members: routing it through _elements would leave a chart the user switched off holding a
+	// texture belonging to a device that no longer exists, with no way for it ever to be told.
+	void broadcast_event(const view_element_event& event) const
+	{
+		df::assert_true(ui::is_ui_thread());
+
+		if (_indexing_elements) _indexing_elements->dispatch_event(event);
+		if (_type_chart) _type_chart->dispatch_event(event);
+		if (_map) _map->dispatch_event(event);
+		if (_history_chart) _history_chart->dispatch_event(event);
+
+		for (const auto& e : _item_elements)
+		{
+			e->dispatch_event(event);
 		}
 	}
 };

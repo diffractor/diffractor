@@ -178,12 +178,21 @@ metadata outranks it and the filesystem stamp is the last resort. Modified descr
 and there the filesystem is not a fallback but the only thing that tracks an actual edit — a
 metadata modify tag records when some tool last wrote the metadata, which a copy preserves and
 which an editor that does not maintain the tag never touches. The two tags therefore rank below
-the stamp and answer only where no usable stamp exists, such as a remote item or an unhydrated
-placeholder.
+the stamp.
 
 The asymmetry between Created and Modified is the point rather than an inconsistency:
 **copying a file destroys its creation stamp and preserves its modification stamp.** So the
 container outranks the filesystem for Created, and the filesystem outranks every tag for Modified.
+
+**The two filesystem rows are ranked, not filled by the scan.** A scan reads bytes; the stamps
+belong to the index record, which holds `file_created` and `file_modified` of its own. So
+`modified:` searches, Sort by Date modified and the *File modified* row all read that stamp
+directly and always have — that path does not go through the pack, and this ranking does not
+change it. What the ranking settles is what happens the moment anything *does* supply the rung:
+without it, a pack carrying both a stamp and a stale `EXIF DateTime` would answer with the tag,
+and a file edited today would report a modification date from years ago. Until then the pack's
+own Modified answers from `EXIF DateTime` where a file has one, and the stamp is shown beside it
+on its own row.
 
 Three further rows carry reasoning the rest of the table depends on:
 
@@ -213,9 +222,15 @@ Original, else Created, else Modified
 
 so a scan that carries no `DateTimeOriginal` still files under the day it was scanned rather
 than under nothing. **This ladder is implemented once.** Grouping, sorting, the timeline and
-heat map, `created:` and `original:` searches, and the properties panel all call the same
+heat map, the sidebar calendar, `original:` searches and the properties panel all call the same
 resolver; four hand-written ladders that disagreed about the same file is the defect this
 replaces.
+
+The ladder is what `original:` asks for, and it is one of two questions rather than the only one.
+`created:` asks the Created concept alone, whose own fallback is the filesystem stamp. The two
+words name the two keys the two date group orders bucket on, so a day header lists exactly the
+items its cell counted; while they were one term a file answered both months and neither header
+meant what it said.
 
 ### The date pack
 
@@ -223,12 +238,16 @@ The resolved dates and the sources behind them are stored as one property in the
 blob, grouped by value so that agreeing sources cost nothing:
 
 ```
-u8   version
+u8   version         pack layout version
 u8   group_count
-  per group:
-    u32  sources          bitmask naming every source carrying this value
-    i64  wall_clock       100 ns; sorted ascending, delta-encoded after the first
+u8   group_stride    bytes per group record
+u8   trailer_len     bytes after the last group
+  per group (group_stride bytes, of which the first 18 are read):
+    u64  sources          bitmask naming every source carrying this value
+    i64  wall_clock       100 ns; groups are held in ascending order
     i16  utc_offset_mins  INT16_MIN when the source gave no offset
+  trailer (trailer_len bytes, of which the first 8 are read):
+    u64  overflow         sources present in the file whose value did not fit
 ```
 
 The bitmask is what makes provenance answerable: the properties panel can state that Original
@@ -237,13 +256,51 @@ into a question with a visible answer. It is also what keeps the format open —
 a new bit and a new row in the table above, not a new field, a new database column and four
 more ladder edits.
 
-Groups are capped, and sources whose value did not fit are recorded as present-but-unstored
-rather than dropped silently. Because the cap only ever evicts the lowest-authority distinct
-values, no resolution can change as a result.
+**The body states its own shape so that a layout change never costs a re-index.** A reader takes
+the fields it knows from the front of each group record and steps over the rest by the stated
+stride, and does the same with the trailer. A later release can therefore append a field to a
+group, or to the trailer, and every earlier build still reads the dates. The mask is 64 bits for
+the same reason: 21 of them are assigned, and widening a stored field later is exactly the kind
+of change that would force every user to re-read their collection. A bit's meaning is fixed once
+assigned — retire a source by leaving its bit unused, never by reassigning it.
+
+What is *not* open: the group cap. Sources whose value did not fit are recorded as
+present-but-unstored rather than dropped silently, but the cap evicts on arrival rather than on
+authority, so with five or more distinct values a source that would have resolved can be the one
+dropped. [Post-release context](v-next.md#1d-found-by-the-1272-pre-release-review) owns that.
 
 The pack does not save space against the three date fields it replaces; it costs about the
 same and buys provenance and an open source list. It saves a great deal against storing thirty
 sources as thirty properties, which is the alternative it is measured against.
+
+### A row an older Diffractor can still read
+
+The cache database carries one file name, `diffractor-cache.db`, across every version, and a
+build reading it trusts any row stamped with a metadata version at or above its own — it has no
+rule for a version *newer* than it knows. So a row written here is also a row that some earlier
+installation may read, and writing dates only as the pack would leave a user who reinstalls an
+earlier Diffractor with every file dated from the filesystem, and nothing that would ever
+correct it.
+
+Every row therefore also carries `created_exif` and, when the Created reading is a UTC instant,
+`created_utc` — the two properties every pre-pack build reads, in the byte form and the position
+they held before the pack. The position matters as much as the presence: v1.26.4 stops unpacking
+at the first id it cannot name, so a record written after `altitude` never reaches it. A naive
+Created reading is omitted rather than converted, because converting it would write the scanning
+machine's timezone into the index; the older build then falls back to the Original date, which is
+what its own `created()` resolved to anyway. This build ignores both records whenever a pack is
+present, so its own dates always come from the pack.
+
+The version stamp also comes back down. A cache carrying a version above the running build's is
+what a rollback leaves behind; the rows stay readable, but leaving the stamp high would mean that
+going forward again finds a version already satisfied and skips the upgrade it owed, silently
+trusting rows the older build has since rewritten in an older shape. So a newer stamp is lowered to
+this build's own, which costs one background re-scan per direction change and keeps the number
+meaningful in both directions.
+
+That is what makes a second cache file unnecessary. A new name would strand the old file on
+disk and force a fresh index including every thumbnail, which is the expensive half of an
+index; keeping one file and about twenty bytes a row costs neither.
 
 ### Writing a date
 
@@ -421,9 +478,30 @@ are the reason it is worth a byte:
   `unspecified` rather than discarded to `none`, so a value written by a later build does not
   silently un-declare a file for an earlier one.
 - **The value is persisted, so its meaning is fixed once assigned.** Retire one by leaving its
-  number unused; never reuse it. Honouring equirectangular projection is a renderer rather than
-  a flag and is [not in this release](v-next.md) — but the file's own answer is recorded now, so
-  the release that does honour it needs no second re-index.
+  number unused; never reuse it.
+
+### Which patch of the sphere
+
+The projection alone does not say how much of the sphere a file holds, and most phone panoramas
+hold a band rather than all of it. GPano says so in six more numbers: a notional full panorama of
+`FullPanoWidthPixels` x `FullPanoHeightPixels` spanning the whole sphere, and the file's own pixels
+as a crop out of it at `CroppedAreaLeftPixels` / `CroppedAreaTopPixels`, sized
+`CroppedAreaImageWidthPixels` x `CroppedAreaImageHeightPixels`.
+
+These are **not indexed**. They are read from the file when it is displayed, because only the item
+being looked at can be stood inside, and a stored field for it would be a field every other item
+carries for nothing. Reading them at display time also means an existing collection needs no
+re-index to gain the feature.
+
+Two rules keep a bad declaration from bending a good picture:
+
+- **A crop that is not the image is not this file's crop.** If the declared cropped extent differs
+  from the pixels actually decoded, or the crop runs off the full panorama, the declaration is
+  discarded rather than drawn — a GPano block copied between files would otherwise tilt the horizon
+  of the one it landed on.
+- **A file that declares no crop is taken to span the full circle on the horizon.** That is exactly
+  right for a true 2:1 sphere and the least wrong guess for anything else; assuming a strip runs
+  pole to pole would bend the horizon of every panorama ever stitched.
 
 Aspect ratio is deliberately **not** part of this. A 2:1 crop of a landscape is not a panorama,
 and the index stores what the file claims; anything wanting to guess from shape can do so from
@@ -438,7 +516,7 @@ there is one vocabulary to learn — the same rule [locations](locations.md) app
 | Standard or stage | Source |
 |---|---|
 | The date pack, its sources and the one resolution | [model_dates.h](../src/model_dates.h) — `date_source`, `date_sources`, `date_pack` |
-| The panorama declaration | [model_property.h](../src/model_property.h) — `panorama_projection`; read in [metadata_xmp.cpp](../src/metadata_xmp.cpp) |
+| The panorama declaration | [model_property.h](../src/model_property.h) — `panorama_projection`, `panorama_geometry`; read in [metadata_xmp.cpp](../src/metadata_xmp.cpp) |
 | EXIF read and write | [metadata_exif.h](../src/metadata_exif.h), [metadata_exif.cpp](../src/metadata_exif.cpp) |
 | IPTC read | [metadata_iptc.h](../src/metadata_iptc.h), [metadata_iptc.cpp](../src/metadata_iptc.cpp) |
 | XMP read and write, sidecars | [metadata_xmp.h](../src/metadata_xmp.h), [metadata_xmp.cpp](../src/metadata_xmp.cpp) |

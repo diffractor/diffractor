@@ -311,5 +311,6 @@ df::file_path next_free_destination(df::file_path destination);
 std::string format_collision_summary(collision_policy policy, int count);
 
 df::date_t adjusted_item_date(df::date_t created, df::date_t new_start, df::date_t original_start);
+std::string_view adjust_date_source_name(const prop::item_metadata_const_ptr& md);
 
 icon_index drive_icon(platform::drive_type d);

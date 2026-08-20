@@ -2569,6 +2569,9 @@ msgstr "змінений"
 msgid "or"
 msgstr "або"
 
+msgid "original"
+msgstr "оригінал"
+
 msgid "related"
 msgstr "пов'язані"
 

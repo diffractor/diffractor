@@ -1539,6 +1539,17 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// header has been read - otherwise the next decode fails with a bad state.
 		const df::scope_exit close_decoder([this] { _jpeg_decoder.close(); });
 
+		// The budget belongs here rather than at the callers: the const_image_ptr overload of
+		// image_to_surface gates at its head but the df::cspan one does not, and this is the single
+		// point both reach. The header has just been read, so these are the file's own dimensions.
+		if (exceeds_decode_budget(_jpeg_decoder.dimensions()))
+		{
+			df::log(__FUNCTION__, std::format("decode of {} x {} is over the {} budget",
+			                                  _jpeg_decoder.dimensions().cx, _jpeg_decoder.dimensions().cy,
+			                                  df::file_size(df::max_decode_bytes).str()));
+			return {};
+		}
+
 		// _orientation_out is only valid once the header has been parsed.
 		const auto orientation = orientation_override.value_or(_jpeg_decoder._orientation_out);
 
@@ -2380,7 +2391,10 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 						default:
 							// GIF, BMP and TIFF, plus the bitmap types we recognise by extension but
 							// not by signature (TGA, SGI, PPM, DPX), are decoded by ffmpeg. scan_photo
-							// reads the geometry from the header without decoding.
+							// reads the geometry from the header without decoding - but only for the
+							// formats it has a branch for, so a refusal here is the one that can name the
+							// size in the diagnostic, not the one that makes the budget safe. That gate is
+							// inside av_decode_still, which sees every source this reaches.
 							{
 								const auto scanned = scan_photo(stream);
 								const sizei scanned_dimensions{
@@ -2942,7 +2956,7 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 
 // The app UI language is a 2-letter code (app_settings::language). FFmpeg tags id3v2
 // COMM/USLT comments with a lowercase ISO 639-2 3-letter code taken verbatim from the
-// file, so either the bibliographic (e.g. "ger") or terminologic ("deu") variant may
+// file, so either the bibliographic (e.g. "ger") or terminological ("deu") variant may
 // appear. Returns true when `key` is exactly "comment-<code>" for a code matching ui_lang.
 static bool comment_key_matches_ui_language(const std::string_view key, const std::string_view ui_lang)
 {
@@ -3037,12 +3051,17 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 			const auto date = df::date_t::from(kv.value);
 			if (date.is_valid())
 			{
-				result.dates.add_utc(prop::date_source::rip_date, date);
+				// A wall-clock reading like TDOR below, not an instant: a rip tag carries no zone, so
+				// storing it as UTC would shift it by the scanning machine's offset and move a
+				// midnight-valued rip date onto the previous day.
+				result.dates.add(prop::date_source::rip_date, date);
 			}
 		}
 		// TDOR is the recording's own release date, which for a rip is decades before the file. It
-		// is a wall-clock reading rather than an instant: nobody wrote a zone for 1969.
-		else if (is_key(kv.key, "TDOR") || is_key(kv.key, "originalyear") || is_key(kv.key, "original_year"))
+		// is a wall-clock reading rather than an instant: nobody wrote a zone for 1969. TORY is the
+		// same fact in ID3v2.3, and FFmpeg passes both through under their raw four-character name.
+		else if (is_key(kv.key, "TDOR") || is_key(kv.key, "TORY") ||
+			is_key(kv.key, "originalyear") || is_key(kv.key, "original_year"))
 		{
 			const auto date = df::date_t::from(kv.value);
 			if (date.is_valid())
@@ -3197,11 +3216,12 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		metadata_xmp::parse(*result, metadata.xmp);
 	}
 
-	// These fields are 16 bit in the metadata record. High ISO and 96/192 kHz audio exceed that,
-	// so saturate - wrapping would report 96000 Hz as 30464 Hz.
-	const auto to_u16 = [](const int v)
+	// These fields are 16 bit in the metadata record. High ISO, 96/192 kHz audio and a stitched
+	// panorama past 65535 pixels all exceed that, so saturate - wrapping would report 96000 Hz as
+	// 30464 Hz, and a 70000 pixel stitch as 4464, which is a shape no panorama test can recognise.
+	const auto to_u16 = [](const int64_t v)
 	{
-		return static_cast<uint16_t>(std::clamp(v, 0, static_cast<int>(UINT16_MAX)));
+		return static_cast<uint16_t>(std::clamp<int64_t>(v, 0, UINT16_MAX));
 	};
 
 	if (created_utc.is_valid()) result->dates.add_utc(prop::date_source::embedded_created, created_utc);
@@ -3252,8 +3272,8 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		result->tags = str::cache(str::combine(tags));
 	}
 
-	if (!prop::is_null(width)) result->width = width;
-	if (!prop::is_null(height)) result->height = height;
+	if (!prop::is_null(width)) result->width = to_u16(width);
+	if (!prop::is_null(height)) result->height = to_u16(height);
 	if (!prop::is_null(pixel_format)) result->pixel_format = pixel_format;
 	if (orientation_applied || orientation != ui::orientation::top_left) result->orientation = orientation;
 
@@ -3328,10 +3348,21 @@ static void decode_embedded_images(metadata_kv_list& kv)
 
 		if (!binary || !binary->is_image || binary->bytes.empty()) continue;
 
+		// The declared size is the file's, not ours, and a header can claim far more than the bytes
+		// that follow it. Header-scan first and refuse the ones that would allocate past the decode
+		// budget: this is a row in a properties pane, not a reason to take a gigabyte. A header this
+		// cannot read is not waved through - every decoder image_to_surface can reach carries the same
+		// budget refusal, including the ffmpeg fallback.
+		const df::cspan bytes{binary->bytes.data(), binary->bytes.size()};
+		mem_read_stream header_stream(bytes);
+		const auto scanned = scan_photo(header_stream);
+		const sizei scanned_dimensions{static_cast<int>(scanned.width), static_cast<int>(scanned.height)};
+
+		if (!scanned_dimensions.is_empty() && files::exceeds_decode_budget(scanned_dimensions)) continue;
+
 		// Decoded at its own size. A target extent would ENLARGE it: image_to_surface finishes with
 		// scale_if_needed, which scales up to fill whatever size it is given.
-		auto surface = ff.image_to_surface(df::cspan{binary->bytes.data(), binary->bytes.size()},
-		                                   {}, false, decode_intent::thumbnail);
+		auto surface = ff.image_to_surface(bytes, {}, false, decode_intent::thumbnail);
 
 		if (ui::is_valid(surface))
 		{

@@ -228,7 +228,7 @@ namespace df
 
 		while (p < end)
 		{
-			const auto c = static_cast<char32_t>(str::normalze_for_compare(static_cast<int>(str::pop_utf8_char(p, end))));
+			const auto c = static_cast<char32_t>(str::normalize_for_compare(static_cast<int>(str::pop_utf8_char(p, end))));
 
 			if (filled >= 2)
 			{
