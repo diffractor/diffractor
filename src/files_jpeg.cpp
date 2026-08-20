@@ -8,7 +8,8 @@
 
 // Purpose: JPEG image processing. Handles loading, saving, lossless rotation,
 // metadata extraction, thumbnail generation using libjpeg-turbo, and, when the caller asks to
-// inspect rather than index, reporting the file's marker, quantisation and Huffman table structure.
+// inspect rather than index, reporting the file's marker, quantisation and Huffman table structure
+// and the further images a Multi-Picture segment indexes.
 
 #include "pch.h"
 #include "files_jpeg.h"
@@ -876,13 +877,27 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 			memcpy(puvp, py[yy], std::min(stride, uv_buffer_stride));
 		}
 
-		if (taps == 1)
+		// libjpeg returns exactly one iMCU row per call - max_v_samp_factor * the scaled DCT size -
+		// so at 1:8 a source with no vertical subsampling hands back a single luma row and a single
+		// chroma row. An output chroma pair starts on an even luma row, so a call that starts on an
+		// odd one contributes none, and a call holding fewer than taps_y chroma rows averages only
+		// the rows it has: the rest arrive in a later call, and reading them here would take
+		// untouched scratch as chroma. That scratch is zeroed whenever the allocation is fresh, and
+		// zero in both chroma channels is what the YUV shader renders green.
+		const auto chroma_lines = read * taps_y / 2;
+
+		for (auto yy = y & 1u; yy < read && y + yy < cy_div2; yy += 2)
 		{
-			for (auto yy = 0u; yy < read && y + yy < cy_div2; yy += 2)
+			const auto src_row = ((y + yy) / 2) * taps_y - y * taps_y / 2;
+
+			if (src_row >= chroma_lines) break;
+
+			auto* const puvp = pixels + static_cast<size_t>(stride) * (cy_div2 + (y + yy) / 2);
+
+			if (taps == 1)
 			{
-				auto* const puvp = pixels + static_cast<size_t>(stride) * (cy_div2 + (y + yy) / 2);
-				const auto* const pup = pu[yy / 2];
-				const auto* const pvp = pv[yy / 2];
+				const auto* const pup = pu[src_row];
+				const auto* const pvp = pv[src_row];
 
 				for (auto xx = 0u; xx < cx_div2; xx += 2)
 				{
@@ -890,13 +905,10 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 					puvp[xx + 1] = pvp[xx / 2];
 				}
 			}
-		}
-		else
-		{
-			for (auto yy = 0u; yy < read && y + yy < cy_div2; yy += 2)
+			else
 			{
-				auto* const puvp = pixels + static_cast<size_t>(stride) * (cy_div2 + (y + yy) / 2);
-				const auto src_row = (yy / 2) * taps_y;
+				const auto rows = std::min(taps_y, chroma_lines - src_row);
+				const auto n = taps_x * rows;
 
 				for (auto xx = 0u; xx < cx_div2; xx += 2)
 				{
@@ -904,7 +916,7 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 					auto u_sum = 0u;
 					auto v_sum = 0u;
 
-					for (auto sy = 0u; sy < taps_y; sy++)
+					for (auto sy = 0u; sy < rows; sy++)
 					{
 						const auto* const pup = pu[src_row + sy];
 						const auto* const pvp = pv[src_row + sy];
@@ -916,8 +928,8 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 						}
 					}
 
-					puvp[xx + 0] = static_cast<uint8_t>((u_sum + taps / 2) / taps);
-					puvp[xx + 1] = static_cast<uint8_t>((v_sum + taps / 2) / taps);
+					puvp[xx + 0] = static_cast<uint8_t>((u_sum + n / 2) / n);
+					puvp[xx + 1] = static_cast<uint8_t>((v_sum + n / 2) / n);
 				}
 			}
 		}
@@ -1380,6 +1392,125 @@ static str::cached ycbcr_pixel_format(const int luma_h, const int luma_v)
 	return "YCbCr"_c;
 }
 
+// A Multi-Picture APP2 segment indexes further whole JPEGs stored in the same file: the second frame
+// of a burst, a depth or gain map, or the full-size image behind a thumbnail. The index is a TIFF
+// directory whose MPEntry tag holds one 16-byte record per image, so each is reported with the
+// extent it claims. Offsets are relative to the start of this segment's TIFF header, except the
+// first image, which is the file itself and stores zero.
+static void parse_mpf_index(metadata_kv_list& rows, const uint8_t* data, const uint32_t len,
+                            const uint64_t tiff_offset)
+{
+	constexpr uint32_t mpf_signature_len = 4u; // "MPF\0"
+
+	if (len < mpf_signature_len + 8u) return;
+
+	const auto* const tiff = data + mpf_signature_len;
+	const uint64_t tiff_len = len - mpf_signature_len;
+
+	const auto intel = tiff[0] == 'I' && tiff[1] == 'I';
+	const auto motorola = tiff[0] == 'M' && tiff[1] == 'M';
+
+	if (!intel && !motorola) return;
+
+	// Every offset below is read from the file, so the bounds test is done in 64 bits: a 32-bit
+	// offset near the top of the range would otherwise wrap past the check and read out of bounds.
+	const auto fits = [tiff_len](const uint64_t at, const uint64_t need) { return at + need <= tiff_len; };
+
+	const auto read16 = [tiff, intel](const uint64_t at) -> uint32_t
+	{
+		const auto* const p = tiff + at;
+		return intel
+			       ? p[0] | (p[1] << 8)
+			       : (p[0] << 8) | p[1];
+	};
+	const auto read32 = [tiff, intel](const uint64_t at) -> uint32_t
+	{
+		const auto* const p = tiff + at;
+		return intel
+			       ? p[0] | (p[1] << 8) | (p[2] << 16) | (static_cast<uint32_t>(p[3]) << 24)
+			       : (static_cast<uint32_t>(p[0]) << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+	};
+
+	if (read16(2) != 0x002a) return;
+
+	const uint64_t ifd_offset = read32(4);
+
+	if (!fits(ifd_offset, 2u)) return;
+
+	const auto entry_count = read16(ifd_offset);
+
+	uint64_t entries_offset = 0;
+	uint64_t image_count = 0;
+
+	for (auto i = 0u; i < entry_count; ++i)
+	{
+		const auto entry = ifd_offset + 2u + static_cast<uint64_t>(i) * 12u;
+
+		if (!fits(entry, 12u)) return;
+
+		const auto tag = read16(entry);
+		const auto count = read32(entry + 4);
+		const auto value = read32(entry + 8);
+
+		if (tag == 0xb001) image_count = value;
+		// MPEntry is 16 bytes per image, so it never fits the inline value field.
+		else if (tag == 0xb002) entries_offset = count > 4u ? value : 0u;
+	}
+
+	if (image_count == 0 || entries_offset == 0) return;
+
+	// A malformed count must not be trusted into a read; the segment's own length bounds it.
+	const auto available = entries_offset <= tiff_len ? (tiff_len - entries_offset) / 16u : 0u;
+	const auto reported = image_count;
+
+	image_count = std::min(image_count, available);
+
+	for (auto i = 0u; i < image_count; ++i)
+	{
+		const auto at = entries_offset + static_cast<uint64_t>(i) * 16u;
+		const auto attributes = read32(at);
+		const auto size = read32(at + 4);
+		const auto offset = read32(at + 8);
+
+		// Bits 24-30 of the attributes carry the MP type code.
+		const auto type = (attributes >> 24) & 0x7f;
+		const auto representative = (attributes & 0x20000000u) != 0;
+
+		std::string_view role;
+
+		switch (type)
+		{
+		case 0x01: role = "large thumbnail, VGA"; break;
+		case 0x02: role = "large thumbnail, full HD"; break;
+		case 0x03: role = "multi-frame panorama"; break;
+		case 0x04: role = "multi-frame disparity"; break;
+		case 0x05: role = "multi-angle"; break;
+		case 0x30: role = "baseline primary image"; break;
+		default: role = "undefined type"; break;
+		}
+
+		auto& row = rows.emplace_back(
+			std::format("Image {}", i + 1),
+			offset == 0
+				? std::format("{}, {} bytes, this file", role, size)
+				: std::format("{}, {} bytes, offset {}", role, size, tiff_offset + offset));
+
+		row.depth = 1;
+		row.shape = representative ? std::format("0x{:08x}, representative", attributes)
+			                           : std::format("0x{:08x}", attributes);
+		row.id = std::format("jpeg.mpf.{}", i);
+	}
+
+	if (reported > image_count)
+	{
+		auto& row = rows.emplace_back("Unread images"s,
+		                              std::format("{} of {} declared entries lie outside the segment",
+		                                          reported - image_count, reported));
+		row.depth = 1;
+		row.id = "jpeg.mpf.unread";
+	}
+}
+
 file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool want_thumbnail)
 {
 	file_scan_result result;
@@ -1404,6 +1535,7 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 	metadata_kv_list quant_rows;
 	metadata_kv_list huffman_rows;
 	metadata_kv_list comment_rows;
+	metadata_kv_list embedded_image_rows;
 	auto sof_marker = 0;
 	auto sof_precision = 0;
 	auto restart_interval = 0;
@@ -1770,6 +1902,11 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 					const auto icc = block.sub(icc_signature_len);
 					icc_segments.insert_or_assign(seq, std::vector<uint8_t>(icc.begin(), icc.end()));
 				}
+				else if (want_structure && block_data_len >= 4u && memcmp(block_data, "MPF\0", 4) == 0)
+				{
+					// MPF offsets are measured from this segment's TIFF header, which follows the identifier.
+					parse_mpf_index(embedded_image_rows, block_data, block_data_len, block_offset + 4u + 4u);
+				}
 			}
 			break;
 
@@ -1995,6 +2132,10 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 		add_structure_section(kv, "Comments", "jpeg.com");
 		kv.insert(kv.end(), std::make_move_iterator(comment_rows.begin()),
 		          std::make_move_iterator(comment_rows.end()));
+
+		add_structure_section(kv, "Embedded images", "jpeg.embedded");
+		kv.insert(kv.end(), std::make_move_iterator(embedded_image_rows.begin()),
+		          std::make_move_iterator(embedded_image_rows.end()));
 
 		finish_structure_sections(kv);
 		result.structure_metadata = std::move(kv);

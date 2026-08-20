@@ -534,6 +534,14 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 		return l->media_created() > r->media_created();
 	};
 
+	constexpr auto file_created_sorter = [](const df::item_element_ptr& l, const df::item_element_ptr& r)
+	{
+		const auto ll = l->file_or_metadata_created();
+		const auto rr = r->file_or_metadata_created();
+		if (ll == rr) return icmp(l->name(), r->name()) < 0;
+		return ll > rr;
+	};
+
 	constexpr auto pixel_sorter = [](const df::item_element_ptr& l, const df::item_element_ptr& r) -> bool
 	{
 		const auto lmd = l->metadata();
@@ -567,8 +575,9 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 
 	const auto sorts_by_date = group_mode != group_by::related &&
 		(sort_order == sort_by::date_created || sort_order == sort_by::date_modified ||
+			sort_order == sort_by::date_original ||
 			(sort_order == sort_by::def && (group_mode == group_by::date_created || group_mode ==
-				group_by::date_modified)));
+				group_by::date_modified || group_mode == group_by::date_original)));
 	const auto reverse_after = !setting.sort_dates_descending && sorts_by_date;
 
 	// Regrouping re-sorts every group even when nothing that affects order moved, and these comparators
@@ -615,6 +624,10 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 	}
 	else if (sort_order == sort_by::date_created)
 	{
+		apply(file_created_sorter);
+	}
+	else if (sort_order == sort_by::date_original)
+	{
 		apply(created_sorter);
 	}
 	else if (sort_order == sort_by::name)
@@ -630,6 +643,10 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 		apply(modified_sorter);
 	}
 	else if (group_mode == group_by::date_created)
+	{
+		apply(file_created_sorter);
+	}
+	else if (group_mode == group_by::date_original)
 	{
 		apply(created_sorter);
 	}
@@ -1077,11 +1094,13 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 				               search_t(current_search).with(prop::label, key.text1));
 			}
 		}
-		else if (order == group_by::date_created || order == group_by::date_modified)
+		else if (order == group_by::date_created || order == group_by::date_modified ||
+			order == group_by::date_original)
 		{
 			auto target = date_parts_prop::any;
 			if (order == group_by::date_modified) target = date_parts_prop::modified;
-			if (order == group_by::date_created) target = date_parts_prop::created;
+			if (order == group_by::date_created || order == group_by::date_original)
+				target = date_parts_prop::created;
 
 			if (key.order1 == 0)
 			{
@@ -1276,7 +1295,8 @@ void df::item_group::update_scroll_info(const group_by order)
 				}
 			}
 		}
-		else if (order == group_by::date_created || order == group_by::date_modified)
+		else if (order == group_by::date_created || order == group_by::date_modified ||
+			order == group_by::date_original)
 		{
 			if (_key.order1 == 0)
 			{
@@ -1384,6 +1404,10 @@ void view_state::update_item_groups()
 					break;
 
 				case group_by::date_created:
+					groups[date_key(i->file_or_metadata_created(), i)].emplace_back(i);
+					break;
+
+				case group_by::date_original:
 					groups[date_key(i->media_created(), i)].emplace_back(i);
 					break;
 
@@ -1425,6 +1449,10 @@ void view_state::update_item_groups()
 					break;
 
 				case group_by::date_created:
+					groups[date_key(i->file_or_metadata_created(), i)].emplace_back(i);
+					break;
+
+				case group_by::date_original:
 					groups[date_key(i->media_created(), i)].emplace_back(i);
 					break;
 
@@ -1535,7 +1563,7 @@ void view_state::update_item_groups()
 	groups.clear();
 
 	if (!setting.sort_dates_descending && (group_order == group_by::date_created || group_order ==
-		group_by::date_modified))
+		group_by::date_modified || group_order == group_by::date_original))
 	{
 		std::ranges::reverse(new_item_groups);
 	}
@@ -2039,7 +2067,7 @@ void df::item_group::update_detail_row_layout(ui::draw_context& dc, const item_e
 		_row_draw_info.modified.update_extent(dc, platform::format_date_time(info.modified));
 	}
 
-	if (_state.group_order() == group_by::date_created)
+	if (_state.group_order() == group_by::date_created || _state.group_order() == group_by::date_original)
 	{
 		_row_draw_info.created.update_extent(dc, platform::format_date_time(info.created));
 	}
@@ -2512,7 +2540,8 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		const auto show_info = (is_folder || is_hover) && !str::is_empty(info.info);
 		const auto show_size = show_text && !is_folder && (group_order == group_by::size || sort_order ==
 			sort_by::size);
-		const auto show_created = show_text && !is_folder && group_order == group_by::date_created;
+		const auto show_created = show_text && !is_folder && (group_order == group_by::date_created ||
+			group_order == group_by::date_original || sort_order == sort_by::date_original);
 		const auto show_modified = show_text && !is_folder && (group_order == group_by::date_modified || sort_order ==
 			sort_by::date_modified);
 		const auto show_selected = !(is_focus || is_hover) && (is_selected || is_highlight);

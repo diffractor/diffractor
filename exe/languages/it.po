@@ -732,10 +732,10 @@ msgid "Show history chart"
 msgstr "Mostra grafico cronologia"
 
 msgid "Earliest year the history navigator offers. Empty works it out from your photos."
-msgstr ""
+msgstr "Anno più remoto offerto dal navigatore della cronologia. Vuoto viene ricavato dalle tue foto."
 
 msgid "Shows the eight years ending here."
-msgstr ""
+msgstr "Mostra gli otto anni che terminano qui."
 
 msgid "Show favorite searches"
 msgstr "Mostra ricerche preferite"
@@ -3632,3 +3632,12 @@ msgstr "Ripristinato dopo un problema di avvio"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor si è chiuso in modo imprevisto prima di completare l'avvio, quindi questa esecuzione usa il layout predefinito con l'accelerazione hardware disattivata. I tuoi file, la tua collezione e gli elementi recenti sono invariati. Puoi ripristinare le impostazioni da Opzioni."
+
+msgid "Original//date"
+msgstr "Originale"
+
+msgid "Group by Date Original"
+msgstr "Raggruppa per Data originale"
+
+msgid "Sort by Date original"
+msgstr "Ordina per data originale"

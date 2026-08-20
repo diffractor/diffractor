@@ -1703,7 +1703,7 @@ static void should_run_the_search_a_timeline_node_promises()
 		df::index_file_item file;
 		file.ft = files::file_type_from_name("test.jpg");
 		const auto md = file.safe_ps();
-		md->created_utc = df::date_t(y, m, d, 12, 0, 0);
+		md->dates.add(prop::date_source::exif_original, df::date_t(y, m, d, 12, 0, 0));
 		file.calc_search_presence();
 
 		const df::search_matcher matcher(range, platform::now().to_days());

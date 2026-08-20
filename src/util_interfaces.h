@@ -151,6 +151,14 @@ struct metadata_text_detail
 struct metadata_binary_detail
 {
 	std::vector<uint8_t> bytes;
+	// A complete encoded image rather than an opaque payload, so the pane may show it instead of dumping it.
+	bool is_image = false;
+};
+
+// Decoded off the UI thread by whoever built the block, because painting never decodes.
+struct metadata_image_detail
+{
+	ui::const_surface_ptr surface;
 };
 
 struct metadata_numeric_detail
@@ -160,7 +168,7 @@ struct metadata_numeric_detail
 };
 
 using metadata_detail = std::variant<std::monostate, metadata_text_detail, metadata_binary_detail,
-                                     metadata_numeric_detail>;
+                                     metadata_numeric_detail, metadata_image_detail>;
 
 // A metadata row. A list is held in the source block's own document order; `depth` and `container`
 // describe the hierarchy that block actually has, and `detail` holds one typed expanded presentation.

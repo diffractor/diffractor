@@ -756,10 +756,10 @@ msgid "Show history chart"
 msgstr "Zobrazit graf historie"
 
 msgid "Earliest year the history navigator offers. Empty works it out from your photos."
-msgstr ""
+msgstr "Nejstarší rok, který nabízí navigátor historie. Prázdné pole se odvodí z vašich fotografií."
 
 msgid "Shows the eight years ending here."
-msgstr ""
+msgstr "Zobrazí osm let končících zde."
 
 msgid "Show favorite searches"
 msgstr "Zobrazit oblíbená vyhledávání"
@@ -3789,3 +3789,12 @@ msgstr "Obnoveno po problému při spuštění"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor se neočekávaně zavřel dříve, než dokončil spouštění, proto toto spuštění používá výchozí rozvržení s vypnutou hardwarovou akcelerací. Vaše soubory, sbírka a nedávné položky zůstávají beze změny. Nastavení můžete obnovit v nabídce Možnosti."
+
+msgid "Original//date"
+msgstr "Originál"
+
+msgid "Group by Date Original"
+msgstr "Seskupit podle data originálu"
+
+msgid "Sort by Date original"
+msgstr "Řadit podle data originálu"

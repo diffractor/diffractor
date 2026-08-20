@@ -1546,10 +1546,6 @@ namespace ui
 	public:
 		virtual void navigation_complete(std::string_view url) = 0;
 		virtual bool before_navigate(std::string_view url) = 0;
-
-		virtual void select_place(const double lat, const double lng)
-		{
-		}
 	};
 
 	class web_window : public control_base

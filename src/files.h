@@ -1163,7 +1163,7 @@ public:
 	std::optional<std::string> album_artist;
 	std::optional<std::string> genre;
 	std::optional<std::string> show;
-	std::optional<df::date_t> created;
+	std::optional<df::date_t> date_original;
 
 	std::optional<int> season;
 	std::optional<df::xy8> episode;
@@ -1211,7 +1211,7 @@ public:
 			album_artist.has_value() ||
 			genre.has_value() ||
 			show.has_value() ||
-			created.has_value() ||
+			date_original.has_value() ||
 			season.has_value() ||
 			episode.has_value() ||
 			year.has_value() ||

@@ -521,7 +521,7 @@ public:
 
 	prop_test& date(const int y, const int m, const int d)
 	{
-		_f.safe_ps()->created_utc = df::date_t(y, m, d);
+		_f.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(y, m, d));
 		return *this;
 	}
 
@@ -570,7 +570,7 @@ public:
 
 	prop_test& digitized(const int y, const int m, const int d)
 	{
-		_f.safe_ps()->created_digitized = df::date_t(y, m, d);
+		_f.safe_ps()->dates.add(prop::date_source::exif_digitized, df::date_t(y, m, d));
 		return *this;
 	}
 

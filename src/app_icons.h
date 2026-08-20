@@ -28,7 +28,6 @@ enum class icon_index
 	hard_drive = 0xE9EF, // ic_fluent_hard_drive_20_regular
 	back = 0xE115, // ic_fluent_arrow_left_20_regular
 	back_image = 0xEA58, // ic_fluent_image_arrow_back_20_regular
-	back_folder = 0xE8EF, // ic_fluent_folder_arrow_left_20_regular
 	album_artist = 0xED75, // ic_fluent_people_20_regular
 	tools = 0xF5FF, // ic_fluent_wrench_screwdriver_20_regular
 	camera = 0xE3C2, // ic_fluent_camera_20_regular
@@ -60,7 +59,6 @@ enum class icon_index
 	navigation = 0xEB58, // ic_fluent_line_horizontal_3_20_regular
 	next = 0xE141, // ic_fluent_arrow_right_20_regular
 	next_image = 0xEA5C, // ic_fluent_image_arrow_forward_20_regular
-	next_folder = 0xE8F1, // ic_fluent_folder_arrow_right_20_regular
 	network = 0xF005, // ic_fluent_server_20_regular
 	open_items = 0xECF6, // ic_fluent_open_folder_20_regular
 	open_one = 0xECF4, // ic_fluent_open_20_regular
@@ -117,6 +115,8 @@ enum class icon_index
 	cloud = 0xE522, // ic_fluent_cloud_20_regular
 	down = 0xE488, // ic_fluent_chevron_down_20_regular
 	up = 0xE490, // ic_fluent_chevron_up_20_regular
+	left = 0xE48C, // ic_fluent_chevron_left_20_regular
+	right = 0xE48E, // ic_fluent_chevron_right_20_regular
 	small_down = 0xE3D7, // ic_fluent_caret_down_20_filled
 	small_up = 0xE3DF, // ic_fluent_caret_up_20_filled
 	small_left = 0xE3DB, // ic_fluent_caret_left_20_filled

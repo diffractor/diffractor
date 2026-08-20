@@ -78,9 +78,8 @@ void assert_metadata(const prop::item_metadata& expected, const prop::item_metad
 	assert_equal(expected.copyright_notice, actual.copyright_notice, "copyright_notice", message);
 	assert_equal(expected.copyright_source, actual.copyright_source, "copyright_source", message);
 	assert_equal(expected.copyright_url, actual.copyright_url, "copyright_url", message);
-	assert_equal(expected.created_digitized, actual.created_digitized, "created_digitized", message);
-	assert_equal(expected.created_exif, actual.created_exif, "created_exif", message);
-	assert_equal(expected.created_utc, actual.created_utc, "created_utc", message);
+	assert_equal(expected.dates.original(), actual.dates.original(), "date original", message);
+	assert_equal(expected.dates.created(), actual.dates.created(), "date created", message);
 	assert_equal(expected.description, actual.description, "description", message);
 	assert_equal(expected.width, actual.width, "width", message);
 	assert_equal(expected.height, actual.height, "height", message);
@@ -173,8 +172,9 @@ prop::item_metadata_ptr expected_test_jpg()
 	result->camera_model = "Canon EOS 7D"_c;
 	result->coordinate = gps_coordinate(50.08806, 14.42083);
 	result->copyright_notice = "Copyright"_c;
-	result->created_digitized = df::date_t(2012, 9, 14, 19, 21, 14);
-	result->created_exif = df::date_t(2012, 9, 14, 19, 21, 14);
+	result->dates.add(prop::date_source::exif_digitized, df::date_t(2012, 9, 14, 19, 21, 14));
+	result->dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+	result->dates.add(prop::date_source::exif_datetime, df::date_t(2012, 9, 14, 19, 21, 14));
 	result->description = "Caption"_c;
 	result->exposure_time = 1.0f / 100.0f;
 	result->iso_speed = 100;

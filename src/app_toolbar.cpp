@@ -232,6 +232,8 @@ std::string format_items_summary(const group_by grouping, const sort_by order,
 		break;
 	case group_by::date_created: group_text = tt.prop_name_created;
 		break;
+	case group_by::date_original: group_text = tt.prop_name_original;
+		break;
 	case group_by::date_modified: group_text = tt.prop_name_modified;
 		break;
 	case group_by::camera: group_text = tt.prop_name_camera;
@@ -257,6 +259,8 @@ std::string format_items_summary(const group_by grouping, const sort_by order,
 	case sort_by::size: sort_text = tt.sort_by_size;
 		break;
 	case sort_by::date_created: sort_text = tt.prop_name_created;
+		break;
+	case sort_by::date_original: sort_text = tt.prop_name_original;
 		break;
 	case sort_by::date_modified: sort_text = tt.prop_name_modified;
 		break;
@@ -507,6 +511,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::group_aspect_ratio]->enable = can_group;
 	_commands[commands::group_camera]->enable = can_group;
 	_commands[commands::group_created]->enable = can_group;
+	_commands[commands::group_original]->enable = can_group;
 	_commands[commands::group_extension]->enable = can_group;
 	_commands[commands::group_file_type]->enable = can_group;
 	_commands[commands::group_folder]->enable = can_group;
@@ -630,6 +635,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::select_nothing]->enable = is_media_or_items_view && has_selection;
 	_commands[commands::show_raw_preview]->enable = is_media_or_items_view;
 	_commands[commands::sort_date_created]->enable = is_media_or_items_view;
+	_commands[commands::sort_date_original]->enable = is_media_or_items_view;
 	_commands[commands::sort_date_modified]->enable = is_media_or_items_view;
 	_commands[commands::sort_dates_ascending]->enable = is_media_or_items_view;
 	_commands[commands::sort_dates_descending]->enable = is_media_or_items_view;
@@ -805,6 +811,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::group_aspect_ratio]->checked = _state.group_order() == group_by::aspect_ratio;
 	_commands[commands::group_camera]->checked = _state.group_order() == group_by::camera;
 	_commands[commands::group_created]->checked = _state.group_order() == group_by::date_created;
+	_commands[commands::group_original]->checked = _state.group_order() == group_by::date_original;
 	_commands[commands::group_presence]->checked = _state.group_order() == group_by::presence;
 	_commands[commands::group_file_type]->checked = _state.group_order() == group_by::file_type;
 	_commands[commands::group_location]->checked = _state.group_order() == group_by::location;
@@ -819,6 +826,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::sort_name]->checked = _state.sort_order() == sort_by::name;
 	_commands[commands::sort_size]->checked = _state.sort_order() == sort_by::size;
 	_commands[commands::sort_date_created]->checked = _state.sort_order() == sort_by::date_created;
+	_commands[commands::sort_date_original]->checked = _state.sort_order() == sort_by::date_original;
 	_commands[commands::sort_date_modified]->checked = _state.sort_order() == sort_by::date_modified;
 	_commands[commands::english]->checked = setting.language == "en";
 
@@ -993,21 +1001,21 @@ void app_frame::update_command_text()
 	            tt.command_last_played_pos);
 	def_command(commands::browse_back, command_group::navigation, icon_index::back, tt.command_browse_back);
 	def_command(commands::browse_forward, command_group::navigation, icon_index::next, tt.command_browse_forward);
-	def_command(commands::browse_next_folder, command_group::navigation, icon_index::next_folder,
+	def_command(commands::browse_next_folder, command_group::navigation, icon_index::right,
 	            tt.command_browse_next_folder);
 	def_command(commands::browse_next_group, command_group::selection, icon_index::none, tt.command_browse_next_group);
-	def_command(commands::browse_next_item, command_group::selection, icon_index::next_image,
+	def_command(commands::browse_next_item, command_group::selection, icon_index::right,
 	            tt.command_browse_next_item);
-	def_command(commands::browse_next_item_extend, command_group::selection, icon_index::next_image,
+	def_command(commands::browse_next_item_extend, command_group::selection, icon_index::right,
 	            tt.command_browse_next_item_extend);
 	def_command(commands::browse_parent, command_group::navigation, icon_index::parent, tt.command_browse_parent);
-	def_command(commands::browse_previous_folder, command_group::navigation, icon_index::back_folder,
+	def_command(commands::browse_previous_folder, command_group::navigation, icon_index::left,
 	            tt.command_browse_previous_folder);
 	def_command(commands::browse_previous_group, command_group::selection, icon_index::none,
 	            tt.command_browse_previous_group);
-	def_command(commands::browse_previous_item, command_group::selection, icon_index::back_image,
+	def_command(commands::browse_previous_item, command_group::selection, icon_index::left,
 	            tt.command_browse_previous_item);
-	def_command(commands::browse_previous_item_extend, command_group::selection, icon_index::back_image,
+	def_command(commands::browse_previous_item_extend, command_group::selection, icon_index::left,
 	            tt.command_browse_previous_item_extend);
 	def_command(commands::tool_burn, command_group::tools, icon_index::disk, tt.command_burn);
 	def_command(commands::tool_save_current_video_frame, command_group::tools, icon_index::none, tt.command_capture);
@@ -1191,6 +1199,7 @@ void app_frame::update_command_text()
 	def_command(commands::group_presence, command_group::group_by, icon_index::none, tt.command_group_presence);
 	def_command(commands::group_camera, command_group::group_by, icon_index::none, tt.command_group_camera);
 	def_command(commands::group_created, command_group::group_by, icon_index::none, tt.command_group_created);
+	def_command(commands::group_original, command_group::group_by, icon_index::none, tt.command_group_original);
 	def_command(commands::group_file_type, command_group::group_by, icon_index::none, tt.command_group_file_type);
 	def_command(commands::group_location, command_group::group_by, icon_index::none, tt.command_group_location);
 	def_command(commands::group_modified, command_group::group_by, icon_index::none, tt.command_group_modified);
@@ -1209,6 +1218,7 @@ void app_frame::update_command_text()
 	def_command(commands::sort_size, command_group::sort_by, icon_index::none, tt.command_sort_size);
 	def_command(commands::sort_def, command_group::sort_by, icon_index::none, tt.command_sort_def);
 	def_command(commands::sort_date_created, command_group::sort_by, icon_index::none, tt.command_sort_date_created);
+	def_command(commands::sort_date_original, command_group::sort_by, icon_index::none, tt.command_sort_date_original);
 	def_command(commands::sort_date_modified, command_group::sort_by, icon_index::none, tt.command_sort_date_modified);
 	def_command(commands::sync_analyze, command_group::none, icon_index::refresh, tt.analyze);
 	def_command(commands::sync_run, command_group::none, icon_index::play, tt.command_sync);

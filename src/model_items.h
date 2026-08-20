@@ -39,7 +39,10 @@ enum class group_by
 	folder,
 	aspect_ratio,
 	// Not a user choice: a related search always groups by how each item is related.
-	related
+	related,
+	// Appended rather than placed beside date_created: the order is persisted as an integer, so
+	// inserting here would silently change what an existing setting means.
+	date_original
 };
 
 enum class sort_by
@@ -49,6 +52,7 @@ enum class sort_by
 	size,
 	date_modified,
 	date_created,
+	date_original,
 };
 
 enum class aspect_ratio_bucket
@@ -1373,6 +1377,16 @@ namespace df
 			}
 
 			return d;
+		}
+
+		// When this file came to be, as distinct from when its content was made. Metadata answers
+		// it when the file carries a creation tag; the filesystem is the fallback, not the source.
+		date_t file_or_metadata_created() const
+		{
+			assert_true(ui::is_ui_thread());
+			const auto& md = _metadata;
+			const auto d = md ? md->dates.created() : date_t::null;
+			return d.is_valid() ? d : _created.system_to_local();
 		}
 
 		str::cached sidecars() const

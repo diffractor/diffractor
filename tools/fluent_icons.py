@@ -52,7 +52,6 @@ ICONS: dict[str, tuple[str, bool]] = {
     "hard_drive": ("hard_drive", False),
     "back": ("arrow_left", False),
     "back_image": ("image_arrow_back", False),
-    "back_folder": ("folder_arrow_left", False),
     "album_artist": ("people", False),  # MDL2 used a group-of-people glyph here
     "tools": ("wrench_screwdriver", False),
     "camera": ("camera", False),
@@ -84,7 +83,6 @@ ICONS: dict[str, tuple[str, bool]] = {
     "navigation": ("line_horizontal_3", False),
     "next": ("arrow_right", False),
     "next_image": ("image_arrow_forward", False),
-    "next_folder": ("folder_arrow_right", False),
     "network": ("server", False),
     "open_items": ("open_folder", False),
     "open_one": ("open", False),
@@ -146,6 +144,11 @@ ICONS: dict[str, tuple[str, bool]] = {
     "cloud": ("cloud", False),
     "down": ("chevron_down", False),
     "up": ("chevron_up", False),
+    # Step-through navigation: previous/next item, and previous/next folder or search. A chevron
+    # says "one more of the same, that way", which is what stepping is; the image_arrow_* and
+    # folder_arrow_* glyphs read as moving the file somewhere instead.
+    "left": ("chevron_left", False),
+    "right": ("chevron_right", False),
     "small_down": ("caret_down", True),
     "small_up": ("caret_up", True),
     "small_left": ("caret_left", True),
@@ -156,8 +159,7 @@ ICONS: dict[str, tuple[str, bool]] = {
     "maximize": ("maximize", False),
     "restore": ("square_multiple", False),
     "close": ("dismiss", False),
-    # Distinct from next_folder: one moves files, the other navigates, and folder_arrow_right is
-    # already the navigation pair with back_folder.
+    # folder_arrow_right would read as navigation rather than as moving files.
     "move_to_folder": ("folder_swap", False),
     "copy_to_folder": ("copy_arrow_right", False),
     "person": ("person", False),

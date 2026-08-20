@@ -1723,7 +1723,6 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 {
 	constexpr auto font = ui::style::font_face::dialog;
 	const auto md = _item->metadata();
-	const auto metadata_created_date = md ? md->created() : df::date_t::null;
 	const auto file_created_date = _item->file_created();
 	const auto file_modified_date = _item->file_modified();
 	const auto created_date = _item->media_created();
@@ -1741,10 +1740,23 @@ void items_dates_control::tooltip(view_hover_element& hover, const pointi loc, c
 
 	const auto table = std::make_shared<ui::table_element>(flex_item::center);
 
-	if (metadata_created_date.is_valid())
+	// Naming the tag each date came from is what turns "the date is wrong" into a question with a
+	// visible answer, which is the whole difficulty of #184.
+	if (md)
 	{
-		table->add(tt.dates_metadata_created, platform::format_date(metadata_created_date),
-		           platform::format_time(metadata_created_date));
+		const auto add_date_row = [&table, md](const std::string_view label, const prop::date_concept kind)
+		{
+			const auto d = md->dates.resolve(kind);
+			if (!d.is_valid()) return;
+
+			const auto source = prop::date_source_name(md->dates.resolved_source(kind));
+			table->add(label, platform::format_date(d),
+			           std::format("{} - {}", platform::format_time(d), source));
+		};
+
+		add_date_row(tt.prop_name_original.sv(), prop::date_concept::original);
+		add_date_row(tt.prop_name_created.sv(), prop::date_concept::created);
+		add_date_row(tt.prop_name_modified.sv(), prop::date_concept::modified);
 	}
 
 	if (file_created_date.is_valid())

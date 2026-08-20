@@ -271,9 +271,6 @@ namespace df
 		{
 			uint64_t gram;
 			uint32_t id;
-
-			// Lexicographic on (gram, id), which is the order freeze() encodes in.
-			auto operator<=>(const pending_t&) const = default;
 		};
 #pragma pack(pop)
 
@@ -281,6 +278,55 @@ namespace df
 		std::vector<gram_entry> _grams;
 		std::vector<uint8_t> _postings;
 		uint32_t _doc_count = 0;
+
+		// freeze() must see (gram, id) lexicographic order, and this is the whole build's dominant
+		// cost, so it is a stable LSD radix on the gram alone: add() takes ids in ascending order, so
+		// the input is already ordered by id and a stable pass by gram completes the key. Every byte
+		// histogram is built in one read pass, and a pass whose byte never varies - the high halves of
+		// each code point, for anything Latin - is skipped rather than run. Unlike a comparison sort
+		// this is not in place: it costs one scratch buffer the size of the input, freed on return.
+		static void sort_by_gram(std::vector<pending_t>& v)
+		{
+			constexpr size_t passes = sizeof(uint64_t);
+			const auto n = v.size();
+			if (n < 2) return;
+
+			std::array<std::array<size_t, 256>, passes> counts{};
+
+			for (const auto& e : v)
+			{
+				for (size_t p = 0; p < passes; ++p)
+				{
+					++counts[p][static_cast<uint8_t>(e.gram >> (p * 8))];
+				}
+			}
+
+			std::vector<pending_t> scratch;
+
+			for (size_t p = 0; p < passes; ++p)
+			{
+				// Counts are order-independent, so any present byte answers "do all elements share it".
+				if (counts[p][static_cast<uint8_t>(v.front().gram >> (p * 8))] == n) continue;
+
+				if (scratch.size() != n) scratch.resize(n);
+
+				std::array<size_t, 256> at{};
+				size_t offset = 0;
+
+				for (size_t b = 0; b < 256; ++b)
+				{
+					at[b] = offset;
+					offset += counts[p][b];
+				}
+
+				for (const auto& e : v)
+				{
+					scratch[at[static_cast<uint8_t>(e.gram >> (p * 8))]++] = e;
+				}
+
+				v.swap(scratch);
+			}
+		}
 
 		template <typename Fn>
 		void for_each_posting(const gram_entry& entry, Fn&& fn) const
@@ -316,7 +362,7 @@ namespace df
 		// Collapse everything added so far into the queryable form. Call once, after the last add().
 		void freeze()
 		{
-			std::ranges::sort(_pending);
+			sort_by_gram(_pending);
 
 			_grams.clear();
 			_postings.clear();

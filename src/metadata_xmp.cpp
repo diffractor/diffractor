@@ -59,6 +59,32 @@ static df::date_t xmp_parse_date(const std::string_view str)
 	return {};
 }
 
+// parse_xml_date reads the digits and drops the zone, so the caller has to recover it. Without
+// this an XMP date ending in Z is filed as a local reading and lands an hour or more away from the
+// container date it is meant to agree with, which then reads as two dates instead of one.
+static int16_t xmp_date_offset(const std::string_view str)
+{
+	if (str.size() > 10 && (str.back() == 'Z' || str.back() == 'z'))
+	{
+		return prop::date_pack::utc_instant;
+	}
+
+	// ...T18:45:46.309-07:00
+	if (str.size() > 6)
+	{
+		const auto tail = str.substr(str.size() - 6);
+
+		if ((tail[0] == '+' || tail[0] == '-') && tail[3] == ':' &&
+			str::is_num(tail.substr(1, 2)) && str::is_num(tail.substr(4, 2)))
+		{
+			const auto minutes = str::to_int(tail.substr(1, 2)) * 60 + str::to_int(tail.substr(4, 2));
+			return static_cast<int16_t>(tail[0] == '-' ? -minutes : minutes);
+		}
+	}
+
+	return prop::date_pack::no_offset;
+}
+
 static bool xmp_decode_gps_coordinate(const std::string_view str, double& result)
 {
 	const auto len = str.size();
@@ -177,34 +203,45 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 	if (xmp.GetProperty(kXMP_NS_Photoshop, "DateCreated", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
-		if (d.is_valid()) md.created_exif = d;
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::photoshop_created, d, xmp_date_offset(text));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_XMP, "CreateDate", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
 
 		if (d.is_valid())
 		{
-			md.created_digitized = d;
+			md.dates.add(prop::date_source::xmp_create, d, xmp_date_offset(text));
 		}
-		else if (str::is_num(str::utf8_cast(utf8)))
+		else if (str::is_num(text))
 		{
-			md.year = str::to_int(str::utf8_cast(utf8));
+			md.year = str::to_int(text);
 		}
+	}
+
+	if (xmp.GetProperty(kXMP_NS_XMP, "ModifyDate", &utf8, &flags))
+	{
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::xmp_modify, d, xmp_date_offset(text));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_EXIF, "DateTimeDigitized", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
-		if (d.is_valid()) md.created_digitized = d;
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::xmp_exif_digitized, d, xmp_date_offset(text));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_EXIF, "DateTimeOriginal", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
-		if (d.is_valid()) md.created_exif = d;
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::xmp_exif_original, d, xmp_date_offset(text));
 	}
 
 	// A coordinate that failed to decode must not be applied - a zeroed half pins the item to the
@@ -598,9 +635,15 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		meta.SetProperty(kXMP_NS_XMP, "CreateDate", str::utf8_cast2(str::to_string(year.value())));
 	}
 
-	if (created.has_value())
+	if (date_original.has_value())
 	{
-		meta.SetProperty(kXMP_NS_Photoshop, "DateCreated", str::utf8_cast2(created.value().to_xmp_date()));
+		const auto text = str::utf8_cast2(date_original.value().to_xmp_date());
+
+		// Both, because photoshop:DateCreated alone is the lowest-authority capture source and would
+		// be outranked by the file's own DateTimeOriginal - the edit would appear to do nothing. The
+		// toolkit reconciles exif:DateTimeOriginal back into the embedded EXIF on save.
+		meta.SetProperty(kXMP_NS_Photoshop, "DateCreated", text);
+		meta.SetProperty(kXMP_NS_EXIF, "DateTimeOriginal", text);
 	}
 
 	if (episode.has_value())

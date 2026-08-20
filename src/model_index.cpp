@@ -2861,22 +2861,13 @@ void index_histograms::record(const location_cache&, const df::index_file_item& 
 	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
 
 	const auto md = file.metadata.load();
-	auto created = file.file_created;
+	auto created = file.file_created.system_to_local();
 
 	if (md)
 	{
-		if (md->created_exif.is_valid())
-		{
-			created = md->created_exif;
-		}
-		else if (md->created_utc.is_valid())
-		{
-			created = md->created_utc.system_to_local();
-		}
-		else if (md->created_digitized.is_valid())
-		{
-			created = md->created_digitized;
-		}
+		// One resolver: the timeline must bucket an item under the day it groups under.
+		const auto resolved = md->created();
+		if (resolved.is_valid()) created = resolved;
 
 		const auto coord = md->coordinate;
 

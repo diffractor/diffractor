@@ -250,6 +250,66 @@ static void should_invalidate_cached_metadata_written_by_an_older_build()
 	             "media position retained");
 }
 
+// Moving to the date pack asks for a re-read, but a pre-pack row still answers in the meantime. So
+// this upgrade clears only the scan stamp and keeps the cached properties, or every search, group
+// and timeline would go blank until the background re-index caught up.
+static void should_keep_answering_while_upgrading_to_the_date_pack()
+{
+	const auto index_path = _temps.next_path();
+	const auto db_path = df::file_path(index_path.folder(), index_path.file_name_without_extension(), ".db");
+	const auto file_path = test_files_folder.combine_file("Test.jpg");
+
+	null_async_strategy as;
+	location_cache locations;
+
+	{
+		index_state index(as, locations);
+		database db(index);
+		db.open(index_path.folder(), index_path.file_name_without_extension());
+
+		auto md = std::make_shared<prop::item_metadata>();
+		md->album = "test"_c;
+		md->dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+
+		std::deque<item_db_write> writes;
+		item_db_write w;
+		w.path = file_path;
+		w.md = md;
+		w.crc32c = 0x1234u;
+		w.metadata_scanned = df::date_t(2020, 1, 1, 0, 0, 0);
+		writes.emplace_back(std::move(w));
+
+		db.perform_writes(std::move(writes));
+		db.close();
+	}
+
+	// A database written by the build before the pack, rather than one from before version 1.
+	{
+		sqlite3* handle = nullptr;
+		const auto open_result = sqlite3_open(db_path.str().c_str(), &handle);
+		const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> raw(handle, sqlite3_close);
+
+		if (open_result != SQLITE_OK ||
+			sqlite3_exec(raw.get(), "PRAGMA user_version = 1;", nullptr, nullptr, nullptr) != SQLITE_OK)
+		{
+			throw test_assert_exception("Failed to set the database metadata version"s);
+		}
+	}
+
+	index_state index(as, locations);
+	database db(index);
+	db.open(index_path.folder(), index_path.file_name_without_extension());
+
+	const auto item = index.find_item(file_path);
+	const auto item_md = item.metadata.load();
+
+	assert_equal(0ll, item.metadata_scanned.load().to_int64(), "a re-scan is requested");
+	assert_equal(true, item_md != nullptr, "the cached properties are kept");
+	assert_equal(df::date_t(2012, 9, 14, 19, 21, 14), item_md->dates.original(),
+	             "and still answer with the date they held");
+	assert_equal("test", item_md->album.sv(), "the rest of the cached metadata is untouched");
+}
+
 // A cache file this build cannot read must be replaced, not refused. Everything it holds can be
 // rebuilt by re-indexing, while failing to open it closes the app before the user can reach the
 // reset that would repair it.
@@ -1389,6 +1449,10 @@ static void should_query_trigram_index()
 		"hotdog stand", // 3
 		"mountain lake", // 4
 		"DOGMA", // 5 - different case
+		// 6 - UTF-8 for the code points U+65E5 U+672C U+8A9E. Written as escapes so the bytes do not
+		// depend on the source encoding. Above U+3FFF, so these are the only grams here whose top key
+		// bytes are non-zero - the radix passes that an all-Latin corpus lets freeze() skip.
+		"\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e photo",
 	};
 
 	df::trigram_index index;
@@ -1403,7 +1467,7 @@ static void should_query_trigram_index()
 		return out;
 	};
 
-	for (const auto* const q : {"dog", "sunset", "mountain", "og p", "xyz", "DOG"})
+	for (const auto* const q : {"dog", "sunset", "mountain", "og p", "xyz", "DOG", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"})
 	{
 		const auto cand = index.candidates(q);
 		assert_equal(true, cand.has_value(), std::format("'{}' produces trigram candidates", q));
@@ -2193,6 +2257,8 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should store item properties"s, should_store_item_properties);
 	tests.add("Should invalidate cached metadata from an older build"s,
 	          should_invalidate_cached_metadata_written_by_an_older_build);
+	tests.add("Should keep answering while upgrading to the date pack"s,
+	          should_keep_answering_while_upgrading_to_the_date_pack);
 	tests.add("Should replace an unreadable database"s, should_replace_an_unreadable_database);
 	tests.add("Should run without a database"s, should_run_without_a_database);
 	tests.add("Should hand scan results to the database in groups"s,

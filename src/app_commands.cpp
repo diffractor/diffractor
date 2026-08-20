@@ -3886,6 +3886,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::group_aspect_ratio, [this] { _state.group_order(group_by::aspect_ratio, {}); });
 	add_command_invoke(commands::group_camera, [this] { _state.group_order(group_by::camera, {}); });
 	add_command_invoke(commands::group_created, [this] { _state.group_order(group_by::date_created, {}); });
+	add_command_invoke(commands::group_original, [this] { _state.group_order(group_by::date_original, {}); });
 	add_command_invoke(commands::group_presence, [this] { _state.group_order(group_by::presence, {}); });
 	add_command_invoke(commands::group_file_type, [this] { _state.group_order(group_by::file_type, {}); });
 	add_command_invoke(commands::group_location, [this] { _state.group_order(group_by::location, {}); });
@@ -3902,6 +3903,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::sort_name, [this] { _state.group_order({}, sort_by::name); });
 	add_command_invoke(commands::sort_size, [this] { _state.group_order({}, sort_by::size); });
 	add_command_invoke(commands::sort_date_created, [this] { _state.group_order({}, sort_by::date_created); });
+	add_command_invoke(commands::sort_date_original, [this] { _state.group_order({}, sort_by::date_original); });
 	add_command_invoke(commands::sort_date_modified, [this] { _state.group_order({}, sort_by::date_modified); });
 
 	add_command_invoke(commands::tool_import, [this] { _state.view_mode(view_type::import); });
@@ -4161,6 +4163,7 @@ void app_frame::initialise_commands()
 			find_command(commands::group_aspect_ratio),
 			find_command(commands::group_camera),
 			find_command(commands::group_created),
+			find_command(commands::group_original),
 			find_command(commands::group_modified),
 			find_command(commands::group_extension),
 			find_command(commands::group_file_type),
@@ -4175,6 +4178,7 @@ void app_frame::initialise_commands()
 			find_command(commands::sort_name),
 			find_command(commands::sort_size),
 			find_command(commands::sort_date_created),
+			find_command(commands::sort_date_original),
 			find_command(commands::sort_date_modified),
 			nullptr,
 			// A direction, not a sort key, so it sits outside the Sort by group. One item rather than the

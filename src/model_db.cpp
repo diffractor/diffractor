@@ -371,7 +371,30 @@ static std::string load_create_sql()
 // Bump when a release changes what a scan records, so cached metadata written by an older build
 // can no longer be trusted. 1: scanning stopped storing reverse-geocoded place text as though a
 // file had carried it, and older rows cannot be told apart from genuine stored text.
-constexpr int db_metadata_version = 1;
+// 2: dates became the date pack, which records which tag each date came from. A pre-pack row can
+// still answer, at low authority, so this invalidation only asks for a re-scan.
+constexpr int db_metadata_version = 2;
+
+// Only the metadata is dropped. Thumbnails, hashes, playback positions, and import history
+// stay, so the re-index re-reads files but never re-encodes a thumbnail.
+// Stamping the version over an invalidation that failed would mark metadata this build cannot
+// trust as upgraded, and nothing would ever re-read it. The update is one statement, so a
+// failure leaves the rows untouched and the older version stamp in place to retry.
+bool database::invalidate_cached_metadata() const
+{
+	return db_exec(_db, "UPDATE item_properties SET properties = NULL, last_scanned = NULL;"s) == SQLITE_OK;
+}
+
+// The date pack needs the file re-read, but the row it replaces is still usable in the meantime, so
+// `properties` is kept and only `last_scanned` is cleared. Search, grouping and the timeline answer
+// from the legacy dates until the incremental scan reaches each file.
+// One statement, for the same reason as the invalidation above: a row-by-row pass that skipped the
+// types carrying no metadata would have to materialise the whole table to test each name, could
+// half-succeed without saying so, and would save less than re-reading those types costs.
+bool database::request_date_pack_rescan() const
+{
+	return db_exec(_db, "UPDATE item_properties SET last_scanned = NULL;"s) == SQLITE_OK;
+}
 
 void database::upgrade_cached_metadata()
 {
@@ -389,12 +412,11 @@ void database::upgrade_cached_metadata()
 		return;
 	}
 
-	// Only the metadata is dropped. Thumbnails, hashes, playback positions, and import history
-	// stay, so the re-index re-reads files but never re-encodes a thumbnail.
-	// Stamping the version over an invalidation that failed would mark metadata this build cannot
-	// trust as upgraded, and nothing would ever re-read it. The update is one statement, so a
-	// failure leaves the rows untouched and the older version stamp in place to retry.
-	if (db_exec(_db, "UPDATE item_properties SET properties = NULL, last_scanned = NULL;"s) != SQLITE_OK)
+	const auto upgraded = stored_version < 1
+		                      ? invalidate_cached_metadata()
+		                      : request_date_pack_rescan();
+
+	if (!upgraded)
 	{
 		df::log(__FUNCTION__, std::format("Failed to invalidate cached metadata written by version {}",
 		                                  stored_version));
@@ -793,9 +815,6 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 	if (!prop::is_null(md->exposure_time)) write(prop::exposure_time.id, md->exposure_time);
 	if (!prop::is_null(md->f_number)) write(prop::f_number.id, md->f_number);
 
-	if (!prop::is_null(md->created_exif)) write(prop::created_exif.id, md->created_exif.to_int64());
-	if (!prop::is_null(md->created_digitized)) write(prop::created_digitized.id, md->created_digitized.to_int64());
-	if (!prop::is_null(md->created_utc)) write(prop::created_utc.id, md->created_utc.to_int64());
 	if (!prop::is_null(md->year)) write(prop::year.id, md->year);
 
 	if (md->coordinate.is_valid())
@@ -815,6 +834,8 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 	// build reads a database this one has written.
 	if (!prop::is_null(md->altitude)) write(prop::altitude.id, md->altitude);
 	if (!prop::is_null(md->gps_speed)) write(prop::gps_speed.id, md->gps_speed);
+
+	if (!md->dates.is_empty()) write_date_pack(prop::dates_packed.id, md->dates);
 }
 
 
@@ -899,9 +920,27 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::disk_num) read_val(md->disk);
 		else if (t == prop::track_num) read_val(md->track);
 		else if (t == prop::duration) read_val(md->duration);
-		else if (t == prop::created_utc) read_val(md->created_utc);
-		else if (t == prop::created_exif) read_val(md->created_exif);
-		else if (t == prop::created_digitized) read_val(md->created_digitized);
+		else if (t == prop::created_utc)
+		{
+			// A row written before the date pack existed. Ranked as legacy so the background re-scan
+			// replaces it, but read now so search and grouping answer until it does.
+			df::date_t d;
+			read_val(d);
+			md->dates.add_utc(prop::date_source::legacy_created, d);
+		}
+		else if (t == prop::created_exif)
+		{
+			df::date_t d;
+			read_val(d);
+			md->dates.add(prop::date_source::legacy_original, d);
+		}
+		else if (t == prop::created_digitized)
+		{
+			df::date_t d;
+			read_val(d);
+			md->dates.add(prop::date_source::legacy_created, d);
+		}
+		else if (t == prop::dates_packed) read_date_pack(md->dates);
 		else if (t == prop::exposure_time) read_val(md->exposure_time);
 		else if (t == prop::f_number) read_val(md->f_number);
 		else if (t == prop::focal_length) read_val(md->focal_length);

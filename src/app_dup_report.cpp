@@ -213,7 +213,7 @@ int run_duplicate_report(const std::string_view folder_text, const std::string_v
 		entry.path = path;
 		entry.created = created;
 		entry.created_key = created.to_int64();
-		entry.created_from_exif = props->created_exif.is_valid();
+		entry.created_from_exif = props->dates.has_source(prop::date_source::exif_original);
 		photos.emplace_back(entry);
 	}
 

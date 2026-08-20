@@ -316,6 +316,7 @@ struct app_text_t
 	text_t command_group_location = "Group by Location";
 	text_t command_group_rating = "Group by Rating/Label";
 	text_t command_group_created = "Group by Date Created";
+	text_t command_group_original = "Group by Date Original";
 	text_t command_group_modified = "Group by Date Modified";
 	text_t command_group_resolution = "Group by Resolution";
 	text_t command_group_camera = "Group by Camera";
@@ -329,6 +330,7 @@ struct app_text_t
 	text_t command_sort_size = "Sort by Size";
 	text_t command_sort_def = "Sort by Group order (Default)";
 	text_t command_sort_date_created = "Sort by Date created";
+	text_t command_sort_date_original = "Sort by Date original";
 	text_t command_sort_date_modified = "Sort by Date modified";
 	text_t command_highlight_large_items = "Highlight large items in yellow";
 	text_t command_open_google_map = "Open in google maps";
@@ -444,6 +446,7 @@ struct app_text_t
 	text_t prop_name_copyrighturl = "Copyright URL";
 	text_t prop_name_country = "Country//property";
 	text_t prop_name_createdexif = "Created exif";
+	text_t prop_name_original = "Original//date";
 	text_t prop_name_digitized = "Digitized";
 	text_t prop_name_created = "Created";
 	text_t prop_name_disk = "Disk";

@@ -190,11 +190,12 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 							}
 							else if (PKEY_Photo_DateTaken == propKey)
 							{
-								// PKEY_Photo_DateTaken is delivered as a UTC FILETIME. Store it as
-								// created_utc so item_metadata::created() converts it to local time.
+								// The shell's reading of DateTimeOriginal, delivered as a UTC FILETIME.
+								// It is all a cloud placeholder can offer without downloading the file.
 								if (VT_FILETIME == propVar.vt)
 								{
-									properties_out.created_utc = df::date_t(ft_to_ts(propVar.filetime));
+									properties_out.dates.add_utc(prop::date_source::shell_date_taken,
+									                             df::date_t(ft_to_ts(propVar.filetime)));
 								}
 							}
 							else if (PKEY_Keywords == propKey)

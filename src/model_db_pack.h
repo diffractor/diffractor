@@ -103,6 +103,43 @@ public:
 		}
 	}
 
+	// Grouped by value, so the six date tags a phone writes usually cost one group. Written as one
+	// property, so the record framing and the forward-compatible skip both come for free.
+	void write_date_pack(const uint16_t id, const prop::date_pack& dates)
+	{
+		const auto count = dates.group_count();
+		if (count <= 0) return;
+
+		df::blob body;
+		body.reserve(2 + count * 14 + 4);
+		body.push_back(1); // pack version
+		body.push_back(static_cast<uint8_t>(count));
+
+		const auto push = [&body](const void* p, const size_t n)
+		{
+			const auto* const src = static_cast<const uint8_t*>(p);
+			body.insert(body.end(), src, src + n);
+		};
+
+		for (auto i = 0; i < count; ++i)
+		{
+			const auto sources = static_cast<uint32_t>(dates.group_sources(i));
+			const auto value = dates.group_value(i).to_int64();
+			const auto offset = dates.group_offset(i);
+
+			push(&sources, sizeof(sources));
+			push(&value, sizeof(value));
+			push(&offset, sizeof(offset));
+		}
+
+		const auto overflow = static_cast<uint32_t>(dates.overflow());
+		push(&overflow, sizeof(overflow));
+
+		write_prop_id(id);
+		write_len(body.size());
+		_data.insert(_data.end(), body.begin(), body.end());
+	}
+
 	void pack(const prop::item_metadata_ptr& md);
 };
 
@@ -189,6 +226,54 @@ public:
 	void skip_val()
 	{
 		_pos += read_len();
+	}
+
+	// A pack whose body is malformed or written by a newer pack version is stepped over whole. A
+	// half-read pack would claim dates the file does not have, which is worse than having none.
+	void read_date_pack(prop::date_pack& dates)
+	{
+		const auto ser_len = read_len();
+		const auto end = _pos + ser_len;
+
+		if (remaining() < ser_len)
+		{
+			_pos = end;
+			return;
+		}
+
+		const auto* p = _data.data + _pos;
+		const auto version = ser_len >= 2 ? p[0] : 0;
+		const auto count = ser_len >= 2 ? p[1] : 0;
+
+		if (version == 1 && ser_len >= static_cast<size_t>(2 + count * 14 + 4))
+		{
+			p += 2;
+
+			for (auto i = 0; i < count; ++i)
+			{
+				uint32_t sources = 0;
+				uint64_t value = 0;
+				int16_t offset = 0;
+
+				std::memcpy(&sources, p, sizeof(sources));
+				std::memcpy(&value, p + 4, sizeof(value));
+				std::memcpy(&offset, p + 12, sizeof(offset));
+				p += 14;
+
+				// Restored one source at a time, so grouping, ordering and de-duplication are the
+				// same code that filled it and a hand-edited row cannot produce a pack add() would
+				// never build.
+				for (const auto& info : prop::date_sources)
+				{
+					if (sources & static_cast<uint32_t>(info.source))
+					{
+						dates.add(info.source, df::date_t(value), offset);
+					}
+				}
+			}
+		}
+
+		_pos = end;
 	}
 
 	void read_val(str::cached& v)

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model_dates.h"
 #include "model_location.h"
 
 enum class icon_index : int;
@@ -206,6 +207,7 @@ namespace prop
 	extern key created_exif;
 	extern key created_digitized;
 	extern key created_utc;
+	extern key dates_packed;
 	extern key dimensions;
 	extern key duration;
 	extern key encoder;
@@ -343,9 +345,7 @@ namespace prop
 
 		gps_coordinate coordinate;
 
-		df::date_t created_digitized;
-		df::date_t created_exif;
-		df::date_t created_utc;
+		date_pack dates;
 
 		float exposure_time = 0.0f;
 		float f_number = 0.0f;
@@ -377,20 +377,11 @@ namespace prop
 		str::cached sidecars;
 		str::cached xmp;
 
+		// The one date shown where there is room for one. docs/metadata.md#dates owns the ladder;
+		// this is the only place it is implemented.
 		df::date_t created() const
 		{
-			// Prefer the true capture time (EXIF DateTimeOriginal) over the
-			// container/file creation time so "group by / sort by date created"
-			// and the displayed creation date reflect when the media was
-			// captured rather than when the file was written (#184).
-			auto d = created_exif;
-
-			if (!d.is_valid())
-			{
-				d = created_utc.system_to_local();
-			}
-
-			return d;
+			return dates.best();
 		}
 
 		search_presence_mask calc_search_presence() const;

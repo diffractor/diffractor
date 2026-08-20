@@ -1075,11 +1075,6 @@ public:
 		return _cache_items_loaded && _folders_indexed;
 	}
 
-	bool is_cache_loaded() const
-	{
-		return _cache_items_loaded;
-	}
-
 	struct auto_complete_word
 	{
 		std::string text;

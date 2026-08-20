@@ -50,10 +50,11 @@ static void should_parse_searches()
 
 	df::index_file_item info;
 	info.ft = files::file_type_from_name("test.jpg");
-	info.safe_ps()->created_exif = df::date_t(2012, 9, 14);
+	info.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 14));
 	assert_equal(true, matcher.match_item({}, info).is_match(), "date");
 
-	info.safe_ps()->created_exif = df::date_t(2012, 9, 13);
+	info.safe_ps()->dates.clear();
+	info.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 13));
 	assert_equal(false, matcher.match_item({}, info).is_match(), "date");
 }
 
@@ -489,7 +490,7 @@ static void should_match_date(const std::string_view query, const df::date_t d)
 
 	df::index_file_item props_with_val;
 	props_with_val.ft = files::file_type_from_name("test.jpg");
-	props_with_val.safe_ps()->created_utc = d;
+	props_with_val.safe_ps()->dates.add(prop::date_source::exif_original, d);
 
 	const auto search = df::search_t::parse(query);
 	df::search_matcher matcher(search, df::date_t(2000, 1, 1).to_days());
@@ -819,14 +820,15 @@ static void should_match_related_by_capture_time()
 	anchor.metadata_created = df::date_t(2020, 5, 1, 12, 0, 0);
 
 	auto candidate = make_related_candidate("burst.jpg");
-	candidate.safe_ps()->created_exif = df::date_t(2020, 5, 1, 12, 0, 30);
+	candidate.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(2020, 5, 1, 12, 0, 30));
 
 	const auto match = match_related(anchor, "burst.jpg", candidate);
 	assert_equal(true, match.is_match(), "a near capture time is related");
 	assert_equal("time", matched_axis(match), "time axis");
 	assert_equal(30, static_cast<int>(match.distance), "distance is the gap in seconds");
 
-	candidate.safe_ps()->created_exif = df::date_t(2020, 5, 3, 12, 0, 0);
+	candidate.safe_ps()->dates.clear();
+	candidate.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(2020, 5, 3, 12, 0, 0));
 	assert_equal(false, match_related(anchor, "burst.jpg", candidate).is_match(),
 	             "outside the window is not the same time");
 
@@ -866,7 +868,7 @@ static void should_report_the_strongest_related_axis()
 	anchor.album = str::cache("Album");
 
 	auto candidate = make_related_candidate("everything.jpg");
-	candidate.safe_ps()->created_exif = anchor.metadata_created;
+	candidate.safe_ps()->dates.add(prop::date_source::exif_original, anchor.metadata_created);
 	candidate.safe_ps()->coordinate = anchor.gps;
 	candidate.safe_ps()->album = str::cache("Album");
 
@@ -877,7 +879,7 @@ static void should_report_the_strongest_related_axis()
 	assert_equal("time", matched_axis(match_related(anchor, "everything.jpg", candidate)),
 	             "time outranks place");
 
-	candidate.safe_ps()->created_exif.clear();
+	candidate.safe_ps()->dates.clear();
 	assert_equal("location", matched_axis(match_related(anchor, "everything.jpg", candidate)),
 	             "place is the weakest relation");
 }

@@ -2855,26 +2855,12 @@ public:
 		return _scroller.can_scroll();
 	}
 
-	void invalidate_file_type() const
-	{
-		if (is_shown()) frame()->invalidate(_type_chart->bounds.offset(-_scroller.scroll_offset()));
-	}
-
 	void populate_file_types_and_dates() const
 	{
 		const auto histograms = _state.item_index.histograms();
 		_type_chart->populate(histograms->_file_types);
 		_history_chart->populate(histograms->_dates);
 		invalidate();
-	}
-
-	void hover_file_type(const int id)
-	{
-		if (_type_chart->hover_file_type(id))
-		{
-			invalidate_file_type();
-			_state.invalidate_view(view_invalid::tooltip);
-		}
 	}
 
 	// Which chrome sits above the rows, given the same rows. Kept apart from update_content so showing

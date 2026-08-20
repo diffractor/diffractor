@@ -1213,12 +1213,11 @@ void df::search_t::parse_part(const search_part& part)
 	{
 		result = search_term(type, part.term, part.modifier);
 	}
-	else if (type == prop::created_utc || type == prop::created_exif || type == prop::created_digitized ||
-		type == prop::modified)
+	else if (type == prop::created_utc || type == prop::created_exif || type == prop::modified)
 	{
 		auto target = date_parts_prop::any;
 		if (type == prop::modified) target = date_parts_prop::modified;
-		if (type == prop::created_utc || type == prop::created_exif || type == prop::created_digitized)
+		if (type == prop::created_utc || type == prop::created_exif)
 			target = date_parts_prop::created;
 
 		if (is_num)
@@ -2002,11 +2001,10 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 		if (t == prop::disk_num && !prop::is_null(md->disk)) return compare_term(term, md->disk);
 		if (t == prop::track_num && !prop::is_null(md->track)) return compare_term(term, md->track);
 		if (t == prop::duration && !prop::is_null(md->duration)) return compare_term(term, md->duration);
-		if (t == prop::created_utc && !prop::is_null(md->created_utc)) return compare_term(term, md->created_utc);
-		if (t == prop::created_exif && !prop::is_null(md->created_exif)) return compare_term(term, md->created_exif);
-		if (t == prop::created_digitized && !prop::is_null(md->created_digitized))
-			return compare_term(
-				term, md->created_digitized);
+		if (t == prop::created_utc && !prop::is_null(md->dates.created()))
+			return compare_term(term, md->dates.created());
+		if (t == prop::created_exif && !prop::is_null(md->dates.original()))
+			return compare_term(term, md->dates.original());
 		if (t == prop::exposure_time && !prop::is_null(md->exposure_time))
 			return compare_exposure_time(
 				term, md->exposure_time);
@@ -2096,9 +2094,8 @@ bool has_type(const prop::key_ref t, const df::index_file_item& file)
 		if (t == prop::disk_num) return !prop::is_null(md->disk);
 		if (t == prop::track_num) return !prop::is_null(md->track);
 		if (t == prop::duration) return !prop::is_null(md->duration);
-		if (t == prop::created_utc) return !prop::is_null(md->created_utc);
-		if (t == prop::created_exif) return !prop::is_null(md->created_exif);
-		if (t == prop::created_digitized) return !prop::is_null(md->created_digitized);
+		if (t == prop::created_utc) return !prop::is_null(md->dates.created());
+		if (t == prop::created_exif) return !prop::is_null(md->dates.original());
 		if (t == prop::exposure_time) return !prop::is_null(md->exposure_time);
 		if (t == prop::f_number) return !prop::is_null(md->f_number);
 		if (t == prop::focal_length) return !prop::is_null(md->focal_length);
@@ -2200,32 +2197,17 @@ static bool is_date_match(const df::search_term& term, const df::index_file_item
 	if (term.date_val.target == df::date_parts_prop::created || is_any)
 	{
 		const auto md = file.metadata.load();
+		const auto resolved = md ? md->created() : df::date_t::null;
 
-		if (md)
+		// One resolver, and the file date converted the same way the group key converts it. Comparing
+		// a UTC stamp against a local group key is what made "click to open" miss by a day (#184).
+		if (resolved.is_valid())
 		{
-			if (md->created_exif.is_valid())
-			{
-				return is_date_match(term.date_val, md->created_exif, term.modifiers, now_days);
-			}
-			if (md->created_utc.is_valid())
-			{
-				return is_date_match(term.date_val, md->created_utc.system_to_local(), term.modifiers, now_days);
-			}
-			if (md->created_digitized.is_valid())
-			{
-				return is_date_match(term.date_val, md->created_digitized, term.modifiers, now_days);
-			}
-			if (is_date_match(term.date_val, file.file_created, term.modifiers, now_days))
-			{
-				return true;
-			}
+			if (is_date_match(term.date_val, resolved, term.modifiers, now_days)) return true;
 		}
-		else
+		else if (is_date_match(term.date_val, file.file_created.system_to_local(), term.modifiers, now_days))
 		{
-			if (is_date_match(term.date_val, file.file_created, term.modifiers, now_days))
-			{
-				return true;
-			}
+			return true;
 		}
 	}
 
@@ -2253,7 +2235,7 @@ bool df::search_t::is_match(const prop::key& key, const date_t date) const
 			date_term_count += 1;
 
 			if (term.date_val.target == date_parts_prop::created &&
-				(key == prop::created_utc || key == prop::created_digitized || key == prop::created_exif))
+				(key == prop::created_utc || key == prop::created_exif))
 			{
 				if (is_date_match(term.date_val, date, mod, now_days)) ++date_term_match;
 			}

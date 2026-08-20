@@ -116,7 +116,7 @@ metadata_edits batch_tool_view::metadata_changes() const
 	if (setting.set_synopsis) edits.synopsis = _metadata_synopsis;
 	if (setting.set_rating) edits.rating = _metadata_rating;
 	if (setting.set_year) edits.year = _metadata_year;
-	if (setting.set_created) edits.created = _metadata_created;
+	if (setting.set_created) edits.date_original = _metadata_created;
 	if (setting.set_episode) edits.episode = _metadata_episode;
 	if (setting.set_season) edits.season = _metadata_season;
 	if (setting.set_track) edits.track_num = _metadata_track;
@@ -791,7 +791,7 @@ void batch_tool_view::run_dates()
 				                   const auto date = adjusted_item_date(request.media_created, new_start,
 				                                                        original_start);
 				                   metadata_edits edits;
-				                   edits.created = date;
+				                   edits.date_original = date;
 
 				                   // One file that cannot be written must not decide the fate of the rest.
 				                   // The row records the failure and the run carries on - including when the

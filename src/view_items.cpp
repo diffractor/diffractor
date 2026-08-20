@@ -2431,6 +2431,12 @@ public:
 
 	void dispatch_event(const view_element_event& event) override
 	{
+		// The cached texture belongs to the device being torn down, and nothing else releases it.
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_tex.reset();
+		}
+
 		_controls->dispatch_event(event);
 	}
 
@@ -2604,6 +2610,7 @@ class metadata_tree_control final : public std::enable_shared_from_this<metadata
 		int top = 0;
 		int height = 0;
 		int detail_height = 0;
+		int detail_width = 0;
 		uint32_t spines = 0; // bit c set while an ancestor's connector column c passes through
 		bool open = false;
 	};
@@ -2650,6 +2657,11 @@ private:
 			if (const auto binary = std::get_if<metadata_binary_detail>(&r.detail))
 			{
 				added.detail_control = std::make_shared<hex_control>(binary->bytes, flex_item::center);
+			}
+			else if (const auto image = std::get_if<metadata_image_detail>(&r.detail); image && image->surface)
+			{
+				// surface_element releases its texture when the graphics device goes away.
+				added.detail_control = std::make_shared<surface_element>(image->surface, 0, flex_item::center);
 			}
 			else if (const auto numeric = std::get_if<metadata_numeric_detail>(&r.detail);
 				numeric && !numeric->values.empty() && numeric->columns > 0)
@@ -2871,8 +2883,13 @@ public:
 				const auto detail_top = top + _line_height;
 				if (r.detail_control)
 				{
-					r.detail_control->bounds = recti(_detail_left, v.top + _line_height,
-					                                 logical_bounds.width(), v.top + v.height);
+					// The child is drawn in the box it measured, centred. Handing it the whole row
+					// instead stretches any element that fills its bounds, such as an image.
+					const auto avail_width = std::max(0, logical_bounds.width() - _detail_left);
+					const auto cx = v.detail_width > 0 ? std::min(v.detail_width, avail_width) : avail_width;
+					const auto left = _detail_left + (avail_width - cx) / 2;
+
+					r.detail_control->bounds = recti(left, v.top + _line_height, left + cx, v.top + v.height);
 					r.detail_control->render(dc, {logical_bounds.left, logical_bounds.top});
 				}
 				else
@@ -2968,14 +2985,22 @@ public:
 
 			if (v.open && (!r.detail.empty() || r.detail_control))
 			{
-				const auto detail_width = std::max(_indent, width_limit - _detail_left);
-				v.detail_height = r.detail_control
-					                  ? r.detail_control->measure(mc, detail_width).cy
-					                  : mc.measure_text(r.detail,
-					                                    r.prose
-						                                    ? ui::style::font_face::dialog
-						                                    : ui::style::font_face::code,
-					                                    ui::style::text_style::multiline, detail_width).cy;
+				const auto avail_width = std::max(_indent, width_limit - _detail_left);
+
+				if (r.detail_control)
+				{
+					const auto extent = r.detail_control->measure(mc, avail_width);
+					v.detail_height = extent.cy;
+					v.detail_width = extent.cx;
+				}
+				else
+				{
+					v.detail_height = mc.measure_text(r.detail,
+					                                  r.prose
+						                                  ? ui::style::font_face::dialog
+						                                  : ui::style::font_face::code,
+					                                  ui::style::text_style::multiline, avail_width).cy;
+				}
 			}
 
 			v.height = _line_height + v.detail_height;

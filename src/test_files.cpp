@@ -617,6 +617,88 @@ static void should_render_ycbcr_jpeg_as_nv12()
 	assert_equal(false, jpeg_uses_nv12(ff, "cmyk.jpg"), "cmyk avoids nv12");
 }
 
+// A 1:8 decode - what a very large image gets - returns one iMCU row per call, which for a source
+// with no vertical chroma subsampling is a single luma row. read_nv12 averaged two chroma rows per
+// output pair out of a buffer holding one, and indexed the pair from the call rather than from the
+// image, so each output row took the wrong source row mixed with scratch libjpeg had never written.
+//
+// The fixture is eight-pixel bands alternating saturated and neutral, so at 1:8 every decoded row
+// is one band and a correct decode reads the even, saturated ones. The assertion is on the distance
+// between Cr and Cb, which is what each half of the defect destroys: reading the odd band collapses
+// it to zero, and mixing in an unwritten row halves it. It is also what the unknown scratch value
+// cancels out of - an absolute threshold depends on whatever the heap happened to hold, which is
+// how the first version of this test passed against the bug it was written for.
+static void should_decode_scaled_422_jpeg_as_nv12()
+{
+	files ff;
+
+	// Re-encoding through a 4:2:2 source adopts its sampling factors, giving a 4:2:2 image large
+	// enough for the smallest scale factor.
+	const auto donor = ff.load(test_files_folder.combine_file("Small.jpg"), false);
+	assert_equal(true, is_valid(donor.i), "loaded 4:2:2 source");
+
+	// The encoder consumes the surface as BGRX, so this is a saturated primary rather than the blue
+	// the argument order reads as. Which primary it is does not matter, only that it is far off
+	// neutral in chroma while the alternating band sits exactly on it.
+	constexpr auto extent = 1024;
+	const auto saturated = ui::rgba(0, 0, 255);
+	const auto neutral = ui::rgba(128, 128, 128);
+
+	const auto banded = std::make_shared<ui::surface>();
+	banded->alloc(extent, extent, ui::texture_format::RGB);
+
+	for (auto y = 0; y < extent; ++y)
+	{
+		const auto band = ((y / 8) & 1) == 0 ? saturated : neutral;
+
+		for (auto x = 0; x < extent; ++x)
+		{
+			banded->set_pixel(x, y, band);
+		}
+	}
+
+	file_encode_params params;
+	params.jpeg_source = donor.i->data();
+
+	const auto encoded = ff.surface_to_image(banded, {}, params, ui::image_format::JPEG);
+	assert_equal(true, is_valid(encoded), "encoded jpeg");
+
+	// Without this the test is vacuous: 4:2:0 returns two luma rows per call, never reaches the
+	// defect, and averages the two bands together as its own correct answer.
+	const auto encoded_path = _temps.next_path(".jpg");
+	df::blob_save_to_file(encoded->data(), encoded_path);
+	assert_equal("yuv422", ff_scan_file(ff, encoded_path).pixel_format.sv(), "re-encoded as 4:2:2");
+
+	jpeg_decoder_x decoder;
+	assert_equal(true, decoder.read_header(encoded->data()), "read jpeg header");
+	assert_equal(true, decoder.can_render_nv12(), "scaled 4:2:2 renders as nv12");
+	assert_equal(true, decoder.start_decompress(8, true, false), "1:8 decompress starts");
+
+	const auto dims = decoder.dimensions_out();
+	ui::surface nv12;
+	nv12.alloc({dims.cx & ~1, dims.cy & ~1}, ui::texture_format::NV12);
+
+	const auto decoded = decoder.read_nv12(nv12.pixels(), static_cast<int>(nv12.stride()),
+	                                       static_cast<int>(nv12.size()), {});
+	decoder.close();
+
+	assert_equal(true, decoded, "decoded nv12 at 1:8");
+
+	auto worst = 255;
+
+	for (auto y = 0u; y < nv12.height() / 2; ++y)
+	{
+		const auto* const row = nv12.pixels() + nv12.stride() * (nv12.height() + y);
+
+		for (auto x = 0u; x < nv12.width(); x += 2)
+		{
+			worst = std::min(worst, std::abs(static_cast<int>(row[x + 1]) - static_cast<int>(row[x])));
+		}
+	}
+
+	assert_equal(true, worst >= 130, std::format("every chroma row reads its own band - lowest |Cr-Cb| {}", worst));
+}
+
 // Fixtures for the deep-precision and transfer-function paths are four flat horizontal bands, so a
 // correct decode lands on known 8-bit values and a truncating or unconverted one visibly does not.
 static void should_decode_bands(const char* const name, const std::initializer_list<int> expected, const int tolerance)
@@ -1485,6 +1567,7 @@ void register_files_tests(view_state& state, test_registry& tests)
 	          should_reuse_jpeg_encoder_after_abandoned_encode);
 	tests.add("Should rotate lossless"s, should_rotate_lossless);
 	tests.add("Should render ycbcr jpeg as nv12"s, should_render_ycbcr_jpeg_as_nv12);
+	tests.add("Should decode scaled 422 jpeg as nv12"s, should_decode_scaled_422_jpeg_as_nv12);
 	tests.add("Should report jpeg chroma subsampling"s, should_report_jpeg_chroma_subsampling);
 	tests.add("Should decode 12bit gray jpeg"s, should_decode_12bit_gray_jpeg);
 	tests.add("Should decode 12bit colour jpeg"s, should_decode_12bit_colour_jpeg);

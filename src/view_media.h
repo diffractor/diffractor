@@ -43,9 +43,9 @@ public:
 	media_view(view_state& state, view_host_ptr host) :
 		_state(state),
 		_host(std::move(host)),
-		_left_arrow_element(make_icon_link_element2(icon_index::back_image, commands::browse_previous_item,
+		_left_arrow_element(make_icon_link_element2(icon_index::left, commands::browse_previous_item,
 		                                            view_element_style::none)),
-		_right_arrow_element(make_icon_link_element2(icon_index::next_image, commands::browse_next_item,
+		_right_arrow_element(make_icon_link_element2(icon_index::right, commands::browse_next_item,
 		                                             view_element_style::none))
 	{
 	}

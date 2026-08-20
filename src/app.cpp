@@ -48,7 +48,7 @@
 
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1296";
+const std::string_view g_app_build = "1300";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -973,6 +973,12 @@ static constexpr auto s_group_order = "group_order";
 static constexpr auto s_sort_order = "sort_order";
 static constexpr auto s_media_filter = "media_filter";
 static constexpr auto s_unsettled_starts = "unsettled_starts";
+static constexpr auto s_options_version = "options_version";
+
+// Bump when a release changes what a stored option means, so a value written by an older build can
+// be translated once. 1: "date created" used to resolve the capture time, which is now its own
+// order. Migrating on every start instead would make the order it migrates away from unreachable.
+static constexpr uint32_t options_version = 1;
 
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
@@ -1010,6 +1016,17 @@ void app_frame::load_options(const platform::setting_file_ptr& store)
 		_starting_group_order = static_cast<group_by>(group_order);
 		_starting_sort_order = static_cast<sort_by>(sort_order);
 
+		uint32_t stored_options_version = 0;
+		store->read({}, s_options_version, stored_options_version);
+
+		// Someone who chose "date created" wanted when the picture was taken, so keep giving them that
+		// (#184). Once only: after this the two orders are separate choices and both must stick.
+		if (stored_options_version < 1)
+		{
+			if (_starting_group_order == group_by::date_created) _starting_group_order = group_by::date_original;
+			if (_starting_sort_order == sort_by::date_created) _starting_sort_order = sort_by::date_original;
+		}
+
 		std::string media_filter;
 		store->read({}, s_media_filter, media_filter);
 		const auto parsed_filter = media_filter_from_string(media_filter);
@@ -1026,6 +1043,7 @@ void app_frame::save_options(const bool search_only)
 	store->write({}, s_search, _state.search().text());
 	store->write({}, s_group_order, static_cast<uint32_t>(_state.group_order()));
 	store->write({}, s_sort_order, static_cast<uint32_t>(_state.sort_order()));
+	store->write({}, s_options_version, options_version);
 
 	store->write({}, s_media_filter, media_filter_to_string(_state.filter()));
 

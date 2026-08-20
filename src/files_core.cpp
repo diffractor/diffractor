@@ -3027,12 +3027,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 
 				if (date.is_valid())
 				{
-					if (!result.created_digitized.is_valid())
-					{
-						result.created_digitized = date;
-					}
-
-					result.created_utc = date;
+					result.dates.add_utc(prop::date_source::container_created, date);
 					result.year = date.year();
 				}
 			}
@@ -3042,7 +3037,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 			const auto date = df::date_t::from(kv.value);
 			if (date.is_valid())
 			{
-				result.created_digitized = date;
+				result.dates.add_utc(prop::date_source::rip_date, date);
 			}
 		}
 		else if (is_key(kv.key, "id3v2_priv.Windows Media Player 9 Series"))
@@ -3193,7 +3188,7 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		return static_cast<uint16_t>(std::clamp(v, 0, static_cast<int>(UINT16_MAX)));
 	};
 
-	if (prop::is_null(result->created_utc)) result->created_utc = created_utc;
+	if (created_utc.is_valid()) result->dates.add_utc(prop::date_source::embedded_created, created_utc);
 	if (prop::is_null(result->iso_speed)) result->iso_speed = to_u16(iso_speed);
 	if (prop::is_null(result->exposure_time)) result->exposure_time = exposure_time;
 	if (prop::is_null(result->f_number)) result->f_number = f_number;
@@ -3304,6 +3299,50 @@ void finish_structure_sections(metadata_kv_list& kv)
 	kv = std::move(kept);
 }
 
+// A row may carry a complete encoded image rather than an opaque payload. Decoding belongs here, on
+// the scan worker, because the pane draws what it is given and never decodes while painting. What
+// will not decode keeps its bytes and stays a hex dump, trimmed back to dump size.
+static void decode_embedded_images(metadata_kv_list& kv)
+{
+	files ff;
+
+	for (auto& row : kv)
+	{
+		auto* const binary = std::get_if<metadata_binary_detail>(&row.detail);
+
+		if (!binary || !binary->is_image || binary->bytes.empty()) continue;
+
+		// Decoded at its own size. A target extent would ENLARGE it: image_to_surface finishes with
+		// scale_if_needed, which scales up to fill whatever size it is given.
+		auto surface = ff.image_to_surface(df::cspan{binary->bytes.data(), binary->bytes.size()},
+		                                   {}, false, decode_intent::thumbnail);
+
+		if (ui::is_valid(surface))
+		{
+			// Only a payload bigger than the pane will ever draw is reduced, and only downwards.
+			constexpr sizei preview_limit{1024, 1024};
+			const auto dims = surface->dimensions();
+
+			if (dims.cx > preview_limit.cx || dims.cy > preview_limit.cy)
+			{
+				surface = ff.scale_if_needed(std::move(surface), preview_limit);
+			}
+		}
+
+		if (ui::is_valid(surface))
+		{
+			row.detail = metadata_image_detail{std::move(surface)};
+			// An image is the point of the row, so it is shown without being asked for.
+			row.open_by_default = true;
+		}
+		else
+		{
+			binary->is_image = false;
+			if (binary->bytes.size() > str::max_hex_dump_bytes) binary->bytes.resize(str::max_hex_dump_bytes);
+		}
+	}
+}
+
 av_media_info file_scan_result::to_info() const
 {
 	av_media_info result;
@@ -3358,6 +3397,11 @@ av_media_info file_scan_result::to_info() const
 	if (!structure_metadata.empty())
 	{
 		result.metadata.emplace_back(metadata_standard::structure, structure_metadata);
+	}
+
+	for (auto& block : result.metadata)
+	{
+		decode_embedded_images(block.values);
 	}
 
 	return result;

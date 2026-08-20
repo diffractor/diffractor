@@ -732,10 +732,10 @@ msgid "Show history chart"
 msgstr "Показати діаграму історії"
 
 msgid "Earliest year the history navigator offers. Empty works it out from your photos."
-msgstr ""
+msgstr "Найраніший рік, який пропонує навігатор історії. Порожнє значення визначається за вашими фотографіями."
 
 msgid "Shows the eight years ending here."
-msgstr ""
+msgstr "Показує вісім років, що закінчуються тут."
 
 msgid "Show favorite searches"
 msgstr "Показати улюблені пошукові запити"
@@ -3688,3 +3688,12 @@ msgstr "Відновлено після проблеми із запуском"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor несподівано закрився, не завершивши запуск, тому цей сеанс використовує типове компонування з вимкненим апаратним прискоренням. Ваші файли, колекція та останні елементи не змінилися. Відновити налаштування можна в розділі «Опції»."
+
+msgid "Original//date"
+msgstr "Оригінал"
+
+msgid "Group by Date Original"
+msgstr "Групувати за датою оригіналу"
+
+msgid "Sort by Date original"
+msgstr "Сортувати за датою оригіналу"

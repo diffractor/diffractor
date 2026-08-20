@@ -732,10 +732,10 @@ msgid "Show history chart"
 msgstr "Geçmiş grafiğini göster"
 
 msgid "Earliest year the history navigator offers. Empty works it out from your photos."
-msgstr ""
+msgstr "Geçmiş gezgininin sunduğu en eski yıl. Boş bırakılırsa fotoğraflarınızdan hesaplanır."
 
 msgid "Shows the eight years ending here."
-msgstr ""
+msgstr "Burada biten sekiz yılı gösterir."
 
 msgid "Show favorite searches"
 msgstr "Favori aramaları göster"
@@ -3628,3 +3628,12 @@ msgstr "Başlatma sorunundan kurtarıldı"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor başlatmayı tamamlamadan beklenmedik şekilde kapandı, bu nedenle bu çalıştırma donanım hızlandırma kapalıyken varsayılan düzeni kullanıyor. Dosyalarınız, koleksiyonunuz ve son öğeleriniz değişmedi. Ayarlarınızı Seçenekler'den geri yükleyebilirsiniz."
+
+msgid "Original//date"
+msgstr "Orijinal"
+
+msgid "Group by Date Original"
+msgstr "Orijinal Tarihe Göre Gruplandır"
+
+msgid "Sort by Date original"
+msgstr "Orijinal tarihe göre sırala"
