@@ -1902,7 +1902,10 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 		}
 
 		const auto surface = std::make_shared<ui::surface>();
-		surface->alloc(diameter, diameter, ui::texture_format::ARGB);
+
+		// A failed alloc still reports the requested extent, so the marker has to be abandoned before
+		// the loop below writes through the null it handed back. Leaving the key unset retries.
+		if (!surface->alloc(diameter, diameter, ui::texture_format::ARGB)) return;
 
 		const auto centre = (diameter - 1) / 2.0;
 		const auto radius = diameter / 2.0;
@@ -2055,7 +2058,10 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 
 		const auto dims = map->dimensions();
 		const auto result = std::make_shared<ui::surface>();
-		result->alloc(dims, ui::texture_format::ARGB);
+
+		// A failed alloc still reports the requested extent, so the composite is abandoned rather than
+		// written through the null it handed back. The uncomposited map draws, over a black ocean.
+		if (!result->alloc(dims, ui::texture_format::ARGB)) return map;
 
 		// Land is one flat tone, so its colour is whatever the first opaque pixel carries - and a
 		// fully opaque pixel reads the same whether the decode premultiplied alpha or not.

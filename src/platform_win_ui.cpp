@@ -4603,19 +4603,23 @@ public:
 			case GID_ZOOM:
 				{
 					const auto distance = gi.ullArguments;
+					POINT loc{gi.ptsLocation.x, gi.ptsLocation.y};
+					ScreenToClient(m_hWnd, &loc);
+					bool handled = false;
+					const auto h = _host.lock();
+
 					if (gi.dwFlags & GF_BEGIN)
 					{
 						_zoom_gesture_distance = distance;
+						// Opens the gesture, so whatever a previous pinch left part-way through a detent
+						// is discarded rather than spent on this one.
+						if (h) h->on_pinch({loc.x, loc.y}, 0, true, handled);
 					}
 					else if (_zoom_gesture_distance > 0 && distance > 0)
 					{
-						POINT loc{gi.ptsLocation.x, gi.ptsLocation.y};
-						ScreenToClient(m_hWnd, &loc);
 						const auto delta = df::round(
 							std::log(distance / static_cast<double>(_zoom_gesture_distance)) * 480.0);
-						bool handled = false;
-						const auto h = _host.lock();
-						if (h && delta != 0) h->on_mouse_wheel({loc.x, loc.y}, delta, {true, false, false}, handled);
+						if (h && delta != 0) h->on_pinch({loc.x, loc.y}, delta, false, handled);
 						_zoom_gesture_distance = distance;
 					}
 					if (gi.dwFlags & GF_END) _zoom_gesture_distance = 0;

@@ -1164,6 +1164,7 @@ public:
 	std::optional<std::string> genre;
 	std::optional<std::string> show;
 	std::optional<df::date_t> date_original;
+	std::optional<df::date_t> date_created;
 
 	std::optional<int> season;
 	std::optional<df::xy8> episode;
@@ -1212,6 +1213,7 @@ public:
 			genre.has_value() ||
 			show.has_value() ||
 			date_original.has_value() ||
+			date_created.has_value() ||
 			season.has_value() ||
 			episode.has_value() ||
 			year.has_value() ||

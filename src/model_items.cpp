@@ -2549,7 +2549,11 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		const auto show_size = show_text && !is_folder && (group_order == group_by::size || sort_order ==
 			sort_by::size);
 		const auto show_created = show_text && !is_folder && (group_order == group_by::date_created ||
-			group_order == group_by::date_original || sort_order == sort_by::date_original);
+			group_order == group_by::date_original || sort_order == sort_by::date_original ||
+			sort_order == sort_by::date_created);
+		// The group order names the key when it is a date order; otherwise the sort order does.
+		const auto created_shown_is_file = group_order == group_by::date_created ||
+			(group_order != group_by::date_original && sort_order == sort_by::date_created);
 		const auto show_modified = show_text && !is_folder && (group_order == group_by::date_modified || sort_order ==
 			sort_by::date_modified);
 		const auto show_selected = !(is_focus || is_hover) && (is_selected || is_highlight);
@@ -2810,7 +2814,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			}
 			else if (show_created)
 			{
-				text = prop::format_date(group_order == group_by::date_created ? info.file_created : info.created);
+				text = prop::format_date(created_shown_is_file ? info.file_created : info.created);
 			}
 			else if (show_modified)
 			{
@@ -2970,6 +2974,14 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 					                  item->_cover_art_surface = std::move(cover_art_surface);
 					                  item->set_thumbnail_state(thumbnail_state::surface_cached,
 					                                            item->_thumbnail_surface || item->_cover_art_surface);
+
+					                  // The selection panel measures the displayed item's cover art, so a
+					                  // result carrying it changes the panel's layout, not only its pixels.
+					                  if (item->_cover_art_surface && item->is_selected())
+					                  {
+						                  async.invalidate_view(
+							                  view_invalid::view_layout | view_invalid::view_redraw);
+					                  }
 				                  }
 				                  else
 				                  {

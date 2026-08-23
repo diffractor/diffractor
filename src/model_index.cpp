@@ -4218,6 +4218,9 @@ bool index_state::scan_items(const item_scan_requests& requests,
 			{
 				const auto folder_path = request.folder;
 				const auto node = validate_folder(folder_path, refresh_from_file_system, now);
+				// A folder that cannot be enumerated and was never indexed answers null, and
+				// update_folder dereferences whatever record it is handed.
+				if (!node.folder) continue;
 				// Re-summarising a folder is not a metadata refresh. Reporting one unconditionally made
 				// every scan of a listing that contains a folder re-invalidate index_summary (and
 				// group_layout via queue_scan_displayed_items), which never settled.

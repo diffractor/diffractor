@@ -552,6 +552,31 @@ static void should_write_an_edited_original_date()
 	assert_equal(df::date_t(1980, 6, 1, 9, 30, 0), after->created(), "and it is the date the item shows");
 }
 
+// The same rule on the Created axis: Test.jpg carries its own EXIF DateTimeDigitized, which outranks
+// xmp:CreateDate, so writing only the XMP property would leave that tag winning and the edit would
+// silently do nothing. Original must survive it - correcting when a file was made says nothing about
+// when the picture was taken.
+static void should_write_an_edited_created_date()
+{
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
+	const auto save_path = _temps.next_path(".jpg");
+
+	files ff;
+	const auto before = ff_scan_file(ff, load_path).to_props();
+	assert_equal(df::date_t(2012, 9, 14, 19, 21, 14), before->dates.created(), "the file starts with its own date");
+
+	metadata_edits edits;
+	edits.date_created = df::date_t(1994, 3, 7, 14, 5, 0);
+
+	auto written = ff.update(load_path, save_path, edits, {}, {}, false, {}, {},
+	                         ff_inspect_rescan(save_path));
+	assert_equal(true, written.success(), std::format("date written ({})", written.format_error()));
+
+	const auto after = ff_scan_after_update(ff, written, save_path).to_props();
+	assert_equal(df::date_t(1994, 3, 7, 14, 5, 0), after->dates.created(), "the edited date is what the file reports");
+	assert_equal(before->dates.original(), after->dates.original(), "an edit to one date leaves the others alone");
+}
+
 static void should_update_exif_rating()
 {
 	const auto load_path = test_files_folder.combine_file("exif-rating.jpg");
@@ -1523,6 +1548,7 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	tests.add("Should save as with distinct xmp sidecar"s, should_save_as_with_distinct_xmp_sidecar);
 	tests.add("Should update exif rating"s, should_update_exif_rating);
 	tests.add("Should write an edited original date"s, should_write_an_edited_original_date);
+	tests.add("Should write an edited created date"s, should_write_an_edited_created_date);
 	tests.add("Should update formatted description"s, should_update_formatted_text);
 	tests.add("Should update synopsis"s, should_update_synopsis);
 

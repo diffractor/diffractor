@@ -317,7 +317,11 @@ rules matter more than the mapping:
   The mirror alone is the lowest-authority capture source, so a file carrying its own
   `DateTimeOriginal` would outrank the edit and the correction would appear to do nothing. The XMP
   toolkit reconciles `exif:DateTimeOriginal` into the embedded EXIF on save, which is what makes
-  the edit reach the tag that decides.
+  the edit reach the tag that decides. Created is written to `exif:DateTimeDigitized` beside
+  `xmp:CreateDate` for the same reason.
+- **`year` and Created are the same XMP property**, told apart on read by whether the value parses
+  as a date. A write that sets both would leave whichever went last, so the date wins: it is the
+  more specific answer and the year is still recoverable from it.
 
 Two dates are **not** stable across a write, by design rather than by defect: the toolkit updates
 `xmp:ModifyDate` on every save, and on a file that carried no XMP it can add an `xmp:CreateDate`.

@@ -48,7 +48,7 @@
 
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1303";
+const std::string_view g_app_build = "1304";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -3459,8 +3459,18 @@ void app_frame::free_graphics_resources(const bool items_only, const bool offscr
 	const auto logical_bounds = _view_items->calc_logical_items_bounds();
 	const auto expanded_logical_bounds = logical_bounds.inflate(0, logical_bounds.height());
 
+	// The selection panel draws cover art from the displayed item's staged surface, and nothing
+	// restages an item the listing has scrolled past, so the two items a panel can be showing keep
+	// theirs. A full release still takes them: the texture belongs to the device that is going, and
+	// the restage below puts the surfaces back.
+	const auto displayed = _state._display;
+	const auto displayed1 = displayed ? displayed->_item1 : nullptr;
+	const auto displayed2 = displayed ? displayed->_item2 : nullptr;
+
 	for (const auto& i : _state.search_items().items())
 	{
+		if (offscreen_only && (i == displayed1 || i == displayed2)) continue;
+
 		if (!offscreen_only || !i->bounds.intersects(expanded_logical_bounds))
 		{
 			i->clear_cached_surface();

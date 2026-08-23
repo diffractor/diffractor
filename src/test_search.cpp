@@ -1882,6 +1882,12 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_match_date("(April or June) (2013 or 2015)", df::date_t(2015, 6, 7));
 	register_match_date("age:4", df::date_t(1999, 12, 30));
 
+	// A bare month is a month whether or not a date scope names which date it applies to.
+	// Scoped, it used to parse as a YEAR, so every one of these returned nothing.
+	register_match_date("august", df::date_t(2019, 8, 3));
+	register_match_date("original:august", df::date_t(2019, 8, 3));
+	register_match_date("taken:august", df::date_t(2019, 8, 3));
+
 	//
 	// Search format round-trip
 	//
@@ -1922,6 +1928,9 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_assert_format(df::search_t().age(7, df::date_parts_prop::created));
 	register_assert_format(df::search_t().age(7, df::date_parts_prop::original));
 	register_assert_format(df::search_t().day(0, 5, 2019, df::date_parts_prop::original));
+	register_assert_format(df::search_t().month(5, df::date_parts_prop::original));
+	register_assert_format(df::search_t().month(5, df::date_parts_prop::created));
+	register_assert_format(df::search_t().month(5, df::date_parts_prop::modified));
 	register_assert_format(df::search_t().fuzzy(prop::duration, 33));
 	register_assert_format(df::search_t().location(gps_coordinate(-30.515, 151.665), 5.0));
 	register_assert_format(df::search_t().with_extension("jpg"));

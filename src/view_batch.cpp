@@ -28,45 +28,38 @@ struct agreed_date_row
 	std::string_view source;
 };
 
-// A read-only report of the dates the editor does not offer. Stated only where every selected item
-// agrees on both the value and the tag it came from: a set carrying two answers has no single one
-// to state, and inventing one would be worse than saying nothing.
-static std::vector<agreed_date_row> agreed_dates(const df::item_set& items)
+// A read-only report of the date an item holds now, and the tag it came from. Stated only where
+// every selected item agrees on both: a set carrying two answers has no single one to state, and
+// inventing one would be worse than saying nothing.
+static std::optional<agreed_date_row> agreed_date(const df::item_set& items, const std::string_view label,
+                                                  const prop::date_concept kind)
 {
-	std::vector<agreed_date_row> result;
-	if (items.is_empty()) return result;
+	if (items.is_empty()) return {};
 
-	const auto add = [&result, &items](const std::string_view label, const prop::date_concept kind)
+	df::date_t value;
+	auto source = prop::date_source::none;
+	auto first = true;
+
+	for (const auto& item : items.items())
 	{
-		df::date_t value;
-		auto source = prop::date_source::none;
-		auto first = true;
+		const auto md = item->metadata();
+		const auto item_value = md ? md->dates.resolve(kind) : df::date_t{};
+		const auto item_source = md ? md->dates.resolved_source(kind) : prop::date_source::none;
 
-		for (const auto& item : items.items())
+		if (first)
 		{
-			const auto md = item->metadata();
-			const auto item_value = md ? md->dates.resolve(kind) : df::date_t{};
-			const auto item_source = md ? md->dates.resolved_source(kind) : prop::date_source::none;
-
-			if (first)
-			{
-				value = item_value;
-				source = item_source;
-				first = false;
-			}
-			else if (value != item_value || source != item_source)
-			{
-				return;
-			}
+			value = item_value;
+			source = item_source;
+			first = false;
 		}
+		else if (value != item_value || source != item_source)
+		{
+			return {};
+		}
+	}
 
-		if (!value.is_valid()) return;
-		result.emplace_back(label, platform::format_date_time(value), prop::date_source_name(source));
-	};
-
-	add(tt_prep(tt.prop_name_created.sv()), prop::date_concept::created);
-	add(tt_prep(tt.prop_name_modified.sv()), prop::date_concept::modified);
-	return result;
+	if (!value.is_valid()) return {};
+	return agreed_date_row{label, platform::format_date_time(value), prop::date_source_name(source)};
 }
 
 // Offer the built-in genres that suit the selected media, merged with the genres already present
@@ -170,7 +163,8 @@ metadata_edits batch_tool_view::metadata_changes() const
 	if (setting.set_synopsis) edits.synopsis = _metadata_synopsis;
 	if (setting.set_rating) edits.rating = _metadata_rating;
 	if (setting.set_year) edits.year = _metadata_year;
-	if (setting.set_created) edits.date_original = _metadata_created;
+	if (setting.set_original) edits.date_original = _metadata_date_original;
+	if (setting.set_created) edits.date_created = _metadata_date_created;
 	if (setting.set_episode) edits.episode = _metadata_episode;
 	if (setting.set_season) edits.season = _metadata_season;
 	if (setting.set_track) edits.track_num = _metadata_track;
@@ -291,7 +285,8 @@ void batch_tool_view::refresh_metadata()
 	// The date picker cannot show an empty date, so an untouched control displays today while an
 	// unset value would be written. Seed the value that the control already shows so the preview,
 	// the control and the written date agree.
-	if (!_metadata_created.is_valid()) _metadata_created = platform::now();
+	if (!_metadata_date_original.is_valid()) _metadata_date_original = platform::now();
+	if (!_metadata_date_created.is_valid()) _metadata_date_created = platform::now();
 
 	std::vector<std::string_view> fields;
 	if (setting.set_title) fields.emplace_back(tt.prop_name_title.sv());
@@ -299,6 +294,7 @@ void batch_tool_view::refresh_metadata()
 	if (setting.set_synopsis) fields.emplace_back(tt.prop_name_synopsis.sv());
 	if (setting.set_rating) fields.emplace_back(tt.prop_name_rating.sv());
 	if (setting.set_year) fields.emplace_back(tt.prop_name_year.sv());
+	if (setting.set_original) fields.emplace_back(tt.prop_name_original.sv());
 	if (setting.set_created) fields.emplace_back(tt.prop_name_created.sv());
 	if (setting.set_episode) fields.emplace_back(tt.prop_name_episode.sv());
 	if (setting.set_season) fields.emplace_back(tt.prop_name_season.sv());
@@ -330,7 +326,9 @@ void batch_tool_view::refresh_metadata()
 		const auto overwrites = md && ((setting.set_title && !prop::is_null(md->title)) ||
 			(setting.set_comment && !prop::is_null(md->comment)) ||
 			(setting.set_synopsis && !prop::is_null(md->synopsis)) || (setting.set_rating && md->rating != 0) ||
-			(setting.set_year && md->year != 0) || (setting.set_created && md->created().is_valid()) ||
+			(setting.set_year && md->year != 0) ||
+			(setting.set_original && md->dates.original().is_valid()) ||
+			(setting.set_created && md->dates.created().is_valid()) ||
 			(setting.set_episode && (md->episode.x != 0 || md->episode.y != 0)) ||
 			(setting.set_season && md->season != 0) ||
 			(setting.set_track && (md->track.x != 0 || md->track.y != 0)) ||
@@ -1026,15 +1024,35 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 		add_control_field(tt.prop_name_year, setting.set_year,
 		                  std::make_shared<ui::num_control>(frame, std::string_view{}, _metadata_year, true,
 		                                                    [this](int) { refresh(); }));
-		add_control_field(tt_prep(tt.prop_name_original.sv()), setting.set_created,
-		                  std::make_shared<ui::date_control>(frame, _metadata_created, true, [this] { refresh(); }));
-		// Created and Modified are facts about the file, so the editor reports them and does not
-		// offer them. They are only named where the whole selection agrees; a single line claiming
-		// one value for a set that holds several would be worse than saying nothing.
-		if (const auto agreed = agreed_dates(items); !agreed.empty())
+		// A date field carries what the item holds now, inside the checkbox: the value a run is about
+		// to replace is worth seeing beside its replacement, and worth nothing while the field is not
+		// in the run.
+		auto add_date_field = [&](const text_t& label, bool& selected, df::date_t& value,
+		                          const prop::date_concept kind)
+		{
+			const auto group = std::make_shared<ui::group_control>();
+			group->add(std::make_shared<ui::date_control>(frame, value, true, [this] { refresh(); }));
+
+			if (const auto current = agreed_date(items, label.sv(), kind))
+			{
+				const auto table = std::make_shared<ui::table_element>();
+				table->add(current->label, current->value, current->source);
+				group->add(table);
+			}
+
+			add_control_field(label, selected, group);
+		};
+		add_date_field(tt_prep(tt.prop_name_original.sv()), setting.set_original, _metadata_date_original,
+		               prop::date_concept::original);
+		add_date_field(tt_prep(tt.prop_name_created.sv()), setting.set_created, _metadata_date_created,
+		               prop::date_concept::created);
+		// Modified is a fact about the file rather than a field, so the editor reports it and does not
+		// offer it. Named only where the whole selection agrees, for the reason above.
+		if (const auto modified = agreed_date(items, tt_prep(tt.prop_name_modified.sv()),
+		                                      prop::date_concept::modified))
 		{
 			const auto table = std::make_shared<ui::table_element>();
-			for (const auto& [label, value, source] : agreed) table->add(label, value, source);
+			table->add(modified->label, modified->value, modified->source);
 			controls.emplace_back(table);
 		}
 		add_control_field(tt.prop_name_episode, setting.set_episode,

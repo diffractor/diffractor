@@ -664,9 +664,23 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		meta.SetProperty(kXMP_NS_DM, "show", str::utf8_cast2(show.value()));
 	}
 
-	if (year.has_value())
+	if (year.has_value() && !date_created.has_value())
 	{
+		// A bare year and a Created date are the same XMP property, told apart on read by whether it
+		// parses as a date. Writing both would leave whichever went last, so the date wins: it is the
+		// more specific answer and it still carries the year.
 		meta.SetProperty(kXMP_NS_XMP, "CreateDate", str::utf8_cast2(str::to_string(year.value())));
+	}
+
+	if (date_created.has_value())
+	{
+		const auto text = str::utf8_cast2(date_created.value().to_xmp_date());
+
+		// Both, as Original writes both below: xmp:CreateDate is the fourth-ranked Created source, so
+		// wherever the file's own DateTimeDigitized survives the write it would outrank the edit and
+		// the correction would appear to do nothing.
+		meta.SetProperty(kXMP_NS_XMP, "CreateDate", text);
+		meta.SetProperty(kXMP_NS_EXIF, "DateTimeDigitized", text);
 	}
 
 	if (date_original.has_value())

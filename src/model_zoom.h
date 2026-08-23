@@ -138,15 +138,6 @@ namespace df
 			};
 		}
 
-		static int accumulate_wheel_steps(double& pending, const double delta, const double detent = 60.0) noexcept
-		{
-			if (detent <= 0.0) return 0;
-			pending += delta;
-			const auto steps = static_cast<int>(pending / detent);
-			pending -= steps * detent;
-			return steps;
-		}
-
 		static constexpr int navigator_dip = 160;
 
 		// Sized for navigator_dip at the highest display scaling we support, so the overview stays sharp.

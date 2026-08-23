@@ -247,6 +247,9 @@ public:
 	bool set_synopsis = false;
 	bool set_rating = false;
 	bool set_year = false;
+	// The stored keys are legacy: set_created has always selected the Original date, so renaming the
+	// key would silently drop the field selection of every existing user.
+	bool set_original = false;
 	bool set_created = false;
 	bool set_episode = false;
 	bool set_season = false;

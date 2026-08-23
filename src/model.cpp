@@ -2808,8 +2808,10 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 				elements->add(std::make_shared<summary_control>(summary, flex_item::new_line));
 			}
 
+			// A set of files, drawn as a stack of sheets. It used to borrow the recursion glyph, which
+			// is an expand-all arrow and reads as a download.
 			auto icon = file_type::folder.icon;
-			if (item_count > 0) icon = icon_index::recursive;
+			if (item_count > 0) icon = icon_index::set;
 			result->add(std::make_shared<split_element>(platform::create_icon_surface(static_cast<char32_t>(icon)),
 			                                            elements, flex_item::center));
 			result->add(std::make_shared<divider_element>());
@@ -4920,7 +4922,25 @@ void display_state_t::populate(const view_state& state)
 			{
 				if (const auto display = weak.lock())
 				{
-					display->_surfaces = std::move(surfaces);
+					// A thumbnail the decoder refuses yields no surface, and the collage reads the two
+					// lists by the same index, so an empty entry is dropped from both rather than left
+					// for the layout to take dimensions from.
+					std::vector<ui::const_surface_ptr> kept;
+					df::item_elements kept_items;
+					kept.reserve(surfaces.size());
+					kept_items.reserve(std::min(surfaces.size(), display->_collage_source_items.size()));
+
+					for (auto i = 0_z; i < surfaces.size(); ++i)
+					{
+						if (!ui::is_valid(surfaces[i])) continue;
+						if (i < display->_collage_source_items.size())
+							kept_items.emplace_back(display->_collage_source_items[i]);
+						kept.emplace_back(std::move(surfaces[i]));
+					}
+
+					display->_surfaces = std::move(kept);
+					display->_collage_source_items = std::move(kept_items);
+					display->_textures.clear();
 					async.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw);
 				}
 			});

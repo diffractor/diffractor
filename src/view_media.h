@@ -33,7 +33,6 @@ constexpr int calc_media_overlay_height(const int measured, const int media_heig
 class media_view final : public view_base
 {
 	df::zoom_view_state _touch_pan_start_zoom;
-	double _zoom_wheel_delta = 0.0;
 	using this_type = media_view;
 
 	view_state& _state;
@@ -92,29 +91,57 @@ public:
 		return menu_type::media;
 	}
 
-	void mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys) override
+	// zoom.md 11: fullscreen has one surface, so the modifier alone chooses which of its axes moves.
+	bool mouse_wheel(const pointi loc, const ui::wheel_notch notch) override
 	{
-		if (_display && (_display->is_temporary_zoom() || (keys.control && _display->is_zoom_mode())))
+		if (!_display) return false;
+
+		const auto magnified = _display->is_temporary_zoom() || _display->is_zoom_mode();
+
+		if (magnified)
 		{
-			_display->active_zoom_pane_at(pointd(loc));
-			const auto steps = df::zoom_view_state::accumulate_wheel_steps(_zoom_wheel_delta, zDelta);
-			const auto anchor = _display->zoom_anchor_at(pointd(loc));
-			for (auto step = 0; step < std::abs(steps); ++step)
-				_display->adjust_zoom_scale(steps > 0 ? 1 : -1, anchor);
+			// Horizontal is the secondary axis in every magnified state, inspect zoom included: a tilt is
+			// not a magnification gesture, and its steps come from the other accumulator anyway.
+			if (notch.is_horizontal())
+			{
+				_display->active_zoom_pane_at(pointd(loc));
+				_display->pan_zoom_by({-notch.delta / 2.0, 0.0});
+				return true;
+			}
+
+			// Inspect zoom is a gesture the user is already holding, so its wheel adjusts the temporary
+			// magnification whatever the modifier says; in durable zoom mode Ctrl is the ladder.
+			if (_display->is_temporary_zoom() || notch.keys.control)
+			{
+				return step_zoom(loc, notch.steps);
+			}
 		}
-		else
+		else if (notch.keys.control)
 		{
-			_state.select_next(_host, zDelta <= 0, false, keys.shift);
+			// Not an entry into zoom mode. Consumed so the cheapest possible input cannot reach
+			// something else's scale instead.
+			return true;
 		}
+
+		if (!notch.is_vertical()) return false;
+		if (notch.delta == 0) return true;
+		_state.select_next(_host, notch.delta <= 0, false, notch.keys.shift);
+		return true;
 	}
 
-	void mouse_hwheel(const pointi loc, const int zDelta, const ui::key_state keys) override
+	bool pinch(const pointi loc, const int steps) override
 	{
-		if (_display && _display->zoom())
-		{
-			_display->active_zoom_pane_at(pointd(loc));
-			_display->pan_zoom_by({-zDelta / 2.0, 0.0});
-		}
+		return _display && _display->can_zoom() && step_zoom(loc, steps);
+	}
+
+	bool step_zoom(const pointi loc, const int steps)
+	{
+		if (steps == 0) return true;
+		_display->active_zoom_pane_at(pointd(loc));
+		const auto anchor = _display->zoom_anchor_at(pointd(loc));
+		for (auto step = 0; step < std::abs(steps); ++step)
+			_display->adjust_zoom_scale(steps > 0 ? 1 : -1, anchor);
+		return true;
 	}
 
 	void pan_start(const pointi start_loc) override

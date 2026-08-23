@@ -560,7 +560,11 @@ namespace df
 				d = md->created();
 			}
 
-			return d.is_valid() ? d : file_created;
+			if (d.is_valid()) return d;
+
+			// A metadata date is a wall clock and the index stamp is an instant. This is compared
+			// against item_element::media_created(), which converts the same stamp.
+			return file_created.is_valid() ? file_created.system_to_local() : date_t{};
 		}
 
 		item_online_status calc_online_status() const
@@ -1170,6 +1174,15 @@ namespace df
 		{
 			assert_true(ui::is_ui_thread());
 			return _cover_art;
+		}
+
+		// Decoded by the render worker and published through queue_ui, so a caller that wants pixels
+		// reads this rather than decoding the encoded blob again. Empty until it has been staged, and
+		// empty again after resource cleanup until the visible-items pass restages it.
+		ui::const_surface_ptr cover_art_surface() const
+		{
+			assert_true(ui::is_ui_thread());
+			return _cover_art_surface;
 		}
 
 		bool is_selected() const

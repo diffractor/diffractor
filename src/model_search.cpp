@@ -1275,9 +1275,9 @@ void df::search_t::parse_part(const search_part& part)
 		else if (str::month(part.term) != 0)
 		{
 			date_parts dd;
-			dd.year = str::month(part.term);
+			dd.month = str::month(part.term);
 			dd.target = target;
-			result = search_term(search_term_type::date, dd, true);
+			result = search_term(search_term_type::date, dd, part.modifier);
 		}
 		else if (is_date)
 		{
@@ -1419,9 +1419,9 @@ void df::search_t::parse_part(const search_part& part)
 	}
 	else if (type == prop::file_size)
 	{
-// Not 0ull: under LP64 unsigned long long is a distinct type from uint64_t, so the
-			// search_term overload set has no exact match and the call is ambiguous.
-			uint64_t size = 0;
+		// Not 0ull: under LP64 unsigned long long is a distinct type from uint64_t, so the
+		// search_term overload set has no exact match and the call is ambiguous.
+		uint64_t size = 0;
 
 		if (str::ends(part.term, "gb"))
 		{

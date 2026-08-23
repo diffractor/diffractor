@@ -36,23 +36,30 @@ inline bool panorama_wraps_longitude(const prop::panorama_geometry& g) noexcept
 	return g.cropped_left <= 1 && g.cropped_width >= g.full_width - 2;
 }
 
+// The denominators come straight from the file. A zero one yields an infinity that the longitude
+// wrap below spins on forever, so an undeclared extent reads as the whole sphere rather than as a
+// hang - the geometry is rejected upstream, and this is what stops a future caller reaching it.
 inline double panorama_longitude_at_left(const prop::panorama_geometry& g) noexcept
 {
+	if (g.full_width <= 0) return -M_PI;
 	return g.cropped_left * 2.0 * M_PI / g.full_width - M_PI;
 }
 
 inline double panorama_longitude_span(const prop::panorama_geometry& g) noexcept
 {
+	if (g.full_width <= 0) return 2.0 * M_PI;
 	return g.cropped_width * 2.0 * M_PI / g.full_width;
 }
 
 inline double panorama_latitude_at_top(const prop::panorama_geometry& g) noexcept
 {
+	if (g.full_height <= 0) return M_PI / 2.0;
 	return M_PI / 2.0 - g.cropped_top * M_PI / g.full_height;
 }
 
 inline double panorama_latitude_span(const prop::panorama_geometry& g) noexcept
 {
+	if (g.full_height <= 0) return M_PI;
 	return g.cropped_height * M_PI / g.full_height;
 }
 

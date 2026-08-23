@@ -1548,6 +1548,39 @@ namespace ui
 		bool alt = false;
 	};
 
+	enum class wheel_axis
+	{
+		vertical,
+		horizontal
+	};
+
+	// Whole detents from a possibly-fractional delta. A precision wheel or a touchpad emits many
+	// small deltas that a consumer dividing by the detent would round away entirely, so the
+	// remainder is carried rather than discarded.
+	inline int accumulate_wheel_steps(double& pending, const double delta, const double detent = 120.0) noexcept
+	{
+		if (detent <= 0.0) return 0;
+		pending += delta;
+		const auto steps = static_cast<int>(pending / detent);
+		pending -= steps * detent;
+		return steps;
+	}
+
+	// One wheel event, accumulated once at the frame boundary. `steps` is whole detents, for the
+	// surfaces that move by detent; `delta` is the same movement in logical units, for the ones that
+	// scroll smoothly. Accumulating in one place is what stops each consumer inventing its own
+	// rounding, and what keeps a touchpad from being divided down to nothing on the way through.
+	struct wheel_notch
+	{
+		wheel_axis axis = wheel_axis::vertical;
+		int steps = 0;
+		int delta = 0;
+		key_state keys;
+
+		bool is_vertical() const noexcept { return axis == wheel_axis::vertical; }
+		bool is_horizontal() const noexcept { return axis == wheel_axis::horizontal; }
+	};
+
 	class toolbar : public control_base
 	{
 	public:
@@ -1791,6 +1824,14 @@ namespace ui
 		}
 
 		virtual void on_mouse_hwheel(const pointi loc, const int delta, const key_state keys, bool& was_handled)
+		{
+		}
+
+		// A pinch is unambiguous, so it arrives as itself rather than as a wheel wearing a modifier:
+		// the modifier then had to be disambiguated by what the pointer was over, and over a grid it
+		// meant something else entirely. `begins` opens a gesture, so the accumulator carrying its
+		// sub-detent remainder belongs to that gesture rather than to the window.
+		virtual void on_pinch(const pointi loc, const int delta, const bool begins, bool& was_handled)
 		{
 		}
 

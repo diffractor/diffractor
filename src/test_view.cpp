@@ -48,16 +48,24 @@ static void should_select_settled_zoom_sampler()
 	             ui::texture_sampler::bicubic, "settled magnification uses quality sampler");
 }
 
-static void should_accumulate_precision_zoom_wheel_deltas()
+static void should_accumulate_precision_wheel_deltas()
 {
+	// The frame boundary accumulates the raw platform delta, one detent being 120.
 	auto pending = 0.0;
-	assert_equal(0, df::zoom_view_state::accumulate_wheel_steps(pending, 20.0), "first partial detent");
-	assert_equal(0, df::zoom_view_state::accumulate_wheel_steps(pending, 20.0), "second partial detent");
-	assert_equal(0, df::zoom_view_state::accumulate_wheel_steps(pending, 19.0), "detent not rounded early");
-	assert_equal(1, df::zoom_view_state::accumulate_wheel_steps(pending, 1.0), "exact detent steps once");
+	assert_equal(0, ui::accumulate_wheel_steps(pending, 40.0), "first partial detent");
+	assert_equal(0, ui::accumulate_wheel_steps(pending, 40.0), "second partial detent");
+	assert_equal(0, ui::accumulate_wheel_steps(pending, 39.0), "detent not rounded early");
+	assert_equal(1, ui::accumulate_wheel_steps(pending, 1.0), "exact detent steps once");
 	assert_zoom_near(0.0, pending, "positive detent consumed exactly");
-	assert_equal(-2, df::zoom_view_state::accumulate_wheel_steps(pending, -120.0), "multiple reverse detents");
+	assert_equal(-2, ui::accumulate_wheel_steps(pending, -240.0), "multiple reverse detents");
 	assert_zoom_near(0.0, pending, "negative detents consumed exactly");
+
+	// The scroll answer is quantised to whole logical units by the same carry, so a device reporting
+	// a single raw unit at a time scrolls rather than halving to nothing on every event.
+	auto scroll = 0.0;
+	assert_equal(0, ui::accumulate_wheel_steps(scroll, 1.0 / 2.0, 1.0), "half a unit is carried, not dropped");
+	assert_equal(1, ui::accumulate_wheel_steps(scroll, 1.0 / 2.0, 1.0), "two halves make a unit");
+	assert_equal(60, ui::accumulate_wheel_steps(scroll, 120.0 / 2.0, 1.0), "a whole detent scrolls its full amount");
 }
 
 static void should_validate_zoom_navigator_mode()
@@ -982,10 +990,11 @@ static void should_stage_neighbour_stand_ins()
 }
 
 // The items preview fills in as the file is read: the metadata blocks, and any property whose value
-// was not in the index, are emitted long after the panel is laid out. None of that may move or resize
-// what is already on screen. This is the shape of every jump reported against 1.27.1 - the media pane
-// was the column's shrink target, so each late row was paid for by shrinking the picture, and the
-// column centred on the total, so each late row moved everything above it.
+// was not in the index, are emitted long after the panel is laid out. Once the column is taller than
+// the pane, none of that may move or resize what is already on screen - which is the shape of every
+// jump reported against 1.27.1, where the media pane was the column's shrink target so each late row
+// was paid for by shrinking the picture. While the column still fits, the composition stays centred,
+// so a late row moves the media by half its own height and no more.
 static void should_hold_media_column_still_as_detail_arrives()
 {
 	flex_test_measure_context mc;
@@ -1001,38 +1010,45 @@ static void should_hold_media_column_still_as_detail_arrives()
 
 	const auto arrange = [&](const std::vector<view_element_ptr>& detail)
 	{
-		const media_column_inputs in{&priority, &detail, &all, pane, true, true, media};
+		const media_column_inputs in{&priority, &detail, &all, pane, media};
 		return layout_media_column(in, mc, positions);
 	};
 
+	// Enough detail to take the column past the pane, which is where a late row could have cost the
+	// picture its height.
+	const auto row = [] { return std::make_shared<flex_test_element>(sizei{200, 300}); };
+	const std::vector<view_element_ptr> many_rows{row(), row()};
+	const auto height_with_many = arrange(many_rows);
+	const auto overflowing_bounds = media->bounds;
+
+	assert_equal(pane.top, overflowing_bounds.top, "an overflowing column starts at the top of the pane");
+	assert_equal(400, overflowing_bounds.height(), "the media keeps its own height");
+
+	const std::vector<view_element_ptr> more_rows{row(), row(), row()};
+	const auto height_with_more = arrange(more_rows);
+
+	assert_equal(true, media->bounds == overflowing_bounds, "detail past the pane height never moves the media");
+	assert_equal(true, height_with_more > height_with_many, "detail grows the scrollable height instead");
+
+	// While the column fits, it is centred as one composition, so the media gives up exactly half of
+	// what the new row took and never any of its own height.
 	const std::vector<view_element_ptr> no_detail;
 	arrange(no_detail);
-	const auto first_bounds = media->bounds;
+	const auto centred_bounds = media->bounds;
 
-	assert_equal(false, first_bounds.is_empty(), "the media pane was laid out");
+	assert_equal(true, centred_bounds.top > pane.top, "a column that fits does not sit against the top");
 
-	// One metadata block lands. It is below the primary content and it is not the media.
 	const std::vector<view_element_ptr> one_row{std::make_shared<flex_test_element>(sizei{200, 40})};
-	const auto height_with_row = arrange(one_row);
+	arrange(one_row);
 
-	assert_equal(true, media->bounds == first_bounds, "a detail row neither moves nor resizes the media");
-
-	// Enough detail to take the column past the pane, which is where the arrangement used to change.
-	const std::vector<view_element_ptr> many_rows{
-		std::make_shared<flex_test_element>(sizei{200, 300}),
-		std::make_shared<flex_test_element>(sizei{200, 300}),
-		std::make_shared<flex_test_element>(sizei{200, 300})
-	};
-	const auto height_with_many = arrange(many_rows);
-
-	assert_equal(true, media->bounds == first_bounds, "detail past the pane height still does not move the media");
-	assert_equal(true, height_with_many > height_with_row, "detail grows the scrollable height instead");
+	assert_equal(centred_bounds.height(), media->bounds.height(), "a detail row never resizes the media");
+	assert_equal(centred_bounds.top - 20, media->bounds.top, "it moves the composition by half the row");
 }
 
-// Verbose metadata closed: the media, the first information group and the toggle own the pane and
-// centre in it. The media shrinks to keep all three visible - a portrait image that took the whole
-// pane pushed the information group off the bottom, where nothing said it was there.
-static void should_fit_the_whole_primary_block_when_verbose_is_closed()
+// The media shrinks to keep the first information group visible - a portrait image that took the
+// whole pane pushed that group off the bottom, where nothing said it was there - and it stops at the
+// half-pane floor rather than being centred off the top of an overflowing column.
+static void should_fit_the_whole_primary_block_in_the_media_column()
 {
 	flex_test_measure_context mc;
 	ui::control_layouts positions;
@@ -1044,7 +1060,7 @@ static void should_fit_the_whole_primary_block_when_verbose_is_closed()
 		const auto media = std::make_shared<flex_test_element>(media_extent);
 		media->flex = media->flex | flex_item::media;
 		const std::vector<view_element_ptr> priority{media, std::make_shared<flex_test_element>(sizei{200, 20}), toggle};
-		const media_column_inputs in{&priority, &no_detail, &priority, pane, false, true, media};
+		const media_column_inputs in{&priority, &no_detail, &priority, pane, media};
 		layout_media_column(in, mc, positions);
 		return media;
 	};
@@ -1072,7 +1088,7 @@ static void should_fit_the_whole_primary_block_when_verbose_is_closed()
 	squeezed->flex = squeezed->flex | flex_item::media;
 	const auto big_group = std::make_shared<flex_test_element>(sizei{200, 120});
 	const std::vector<view_element_ptr> cramped{squeezed, big_group};
-	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, false, true, squeezed};
+	const media_column_inputs cramped_in{&cramped, &no_detail, &cramped, short_pane, squeezed};
 	layout_media_column(cramped_in, mc, positions);
 
 	assert_equal(true, squeezed->bounds.top >= short_pane.top, "an overflowing block is never clipped off the top");
@@ -1097,7 +1113,7 @@ static void should_follow_a_centred_block_with_its_detail()
 	const std::vector<view_element_ptr> detail{description};
 	const std::vector<view_element_ptr> all{media, group, description};
 
-	const media_column_inputs in{&priority, &detail, &all, pane, false, true, media};
+	const media_column_inputs in{&priority, &detail, &all, pane, media};
 	layout_media_column(in, mc, positions);
 
 	assert_equal(group->bounds.bottom, description->bounds.top, "the detail follows the block it belongs to");
@@ -1123,7 +1139,7 @@ static void should_keep_half_the_pane_for_the_media()
 	const std::vector<view_element_ptr> priority{media, group};
 	const std::vector<view_element_ptr> no_detail;
 
-	const media_column_inputs in{&priority, &no_detail, &priority, pane, false, true, media};
+	const media_column_inputs in{&priority, &no_detail, &priority, pane, media};
 	const auto content_height = layout_media_column(in, mc, positions);
 
 	assert_equal(pane.height() / 2, media->bounds.height(), "the media keeps half the pane");
@@ -1135,16 +1151,18 @@ static void should_keep_half_the_pane_for_the_media()
 	const auto small = std::make_shared<flex_test_element>(sizei{200, 80});
 	small->flex = small->flex | flex_item::media;
 	const std::vector<view_element_ptr> small_priority{small, group};
-	const media_column_inputs small_in{&small_priority, &no_detail, &small_priority, pane, false, true, small};
+	const media_column_inputs small_in{&small_priority, &no_detail, &small_priority, pane, small};
 	layout_media_column(small_in, mc, positions);
 
 	assert_equal(80, small->bounds.height(), "a picture shorter than the budget is not grown to it");
 }
 
 
-// Verbose metadata open: the media and the first information group are held at the top, both visible,
-// and the metadata blocks follow immediately. A centred line reports the container height rather than
-// the content height, which left a gap the size of the pane's free space between the two.
+// Verbose metadata open. More of it than the pane can hold is the normal case, and the column then
+// starts at the top so none of the pane is spent on nothing. A file carrying only a little metadata
+// is the case that read as a picture pinned to the ceiling over an empty pane, so a column that fits
+// centres instead - and because the offset is the free space halved, it slides to the top as the
+// metadata grows rather than snapping there.
 static void should_follow_the_primary_block_when_verbose_is_open()
 {
 	flex_test_measure_context mc;
@@ -1160,19 +1178,33 @@ static void should_follow_the_primary_block_when_verbose_is_open()
 	const std::vector<view_element_ptr> detail{verbose};
 	const std::vector<view_element_ptr> all{media, group, verbose};
 
-	const media_column_inputs in{&priority, &detail, &all, pane, true, true};
+	const media_column_inputs in{&priority, &detail, &all, pane, media};
 	const auto content_height = layout_media_column(in, mc, positions);
 
-	assert_equal(pane.top, media->bounds.top, "the block is aligned to the top");
-	assert_equal(true, group->bounds.bottom <= pane.bottom, "the information group is visible");
+	const auto above = media->bounds.top - pane.top;
+	const auto below = pane.bottom - verbose->bounds.bottom;
+
+	assert_equal(true, above > 0, "a little metadata does not pin the picture to the top");
+	assert_equal(true, std::abs(above - below) <= 1, "the column centres as one composition");
 	assert_equal(group->bounds.bottom, verbose->bounds.top, "verbose metadata follows with no gap");
 	assert_equal(true, content_height >= verbose->bounds.bottom - pane.top, "the scroll extent reaches it");
+
+	// More metadata than the pane can hold: there is nothing to centre in, so the column starts at the
+	// top and the rest scrolls.
+	const auto long_verbose = std::make_shared<flex_test_element>(sizei{200, 400});
+	const std::vector<view_element_ptr> long_detail{long_verbose};
+	const std::vector<view_element_ptr> long_all{media, group, long_verbose};
+	const media_column_inputs long_in{&priority, &long_detail, &long_all, pane, media};
+	const auto long_height = layout_media_column(long_in, mc, positions);
+
+	assert_equal(pane.top, media->bounds.top, "an overflowing column is aligned to the top");
+	assert_equal(group->bounds.bottom, long_verbose->bounds.top, "and still follows with no gap");
+	assert_equal(true, long_height > pane.height(), "what does not fit scrolls");
 }
 
-// Verbose metadata is one global setting, but a multiple selection has no metadata blocks to open, so
-// its panel has nothing below it to be held clear of. It centres like a single item rather than
-// sitting against the top for a reason that does not apply to it.
-static void should_centre_a_block_with_no_detail_whatever_verbose_is()
+// A column that is all primary content and has no detail form at all - every multiple selection, and
+// a comparison - centres by the same rule as one that has.
+static void should_centre_a_media_column_with_no_detail()
 {
 	flex_test_measure_context mc;
 	ui::control_layouts positions;
@@ -1184,7 +1216,7 @@ static void should_centre_a_block_with_no_detail_whatever_verbose_is()
 	const std::vector<view_element_ptr> priority{collage, controls};
 	const std::vector<view_element_ptr> no_detail;
 
-	const media_column_inputs in{&priority, &no_detail, &priority, pane, true, false};
+	const media_column_inputs in{&priority, &no_detail, &priority, pane, nullptr};
 	layout_media_column(in, mc, positions);
 
 	const auto above = collage->bounds.top - pane.top;
@@ -1409,6 +1441,87 @@ static void should_survive_a_host_with_no_window()
 	scroller.scroll_offset(host, 0, 500);
 	scroller.offset(host, 0, 120);
 	assert_equal(true, scroller.scroll_offset().y > 0, "the scroller still tracks its position");
+}
+
+// A gesture that guards its own completion on having been cancelled, which every controller in the
+// tree does. What is under test is whether it is still there to be asked.
+class cancellable_test_controller final : public view_controller
+{
+public:
+	bool tracking = false;
+	bool cancelled = false;
+	int performed = 0;
+
+	cancellable_test_controller(view_host_ptr host, const recti bounds) : view_controller(std::move(host), bounds)
+	{
+	}
+
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		view_controller::on_mouse_left_button_down(loc, keys);
+		tracking = true;
+	}
+
+	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
+	{
+		if (!cancelled) ++performed;
+		tracking = false;
+	}
+
+	bool escape() override
+	{
+		if (!tracking) return false;
+		cancelled = true;
+		return true;
+	}
+};
+
+class cancelling_test_host final : public std::enable_shared_from_this<cancelling_test_host>, public view_host
+{
+public:
+	std::vector<std::shared_ptr<cancellable_test_controller>> built;
+
+	const ui::frame_ptr frame() const override { return ui::no_frame(); }
+	const ui::control_frame_ptr owner() override { return nullptr; }
+
+	void on_window_layout(ui::measure_context& mc, const sizei extent, bool is_minimized) override {}
+	void on_window_paint(ui::draw_context& dc) override {}
+	void tick() override {}
+	void activate(bool is_active) override {}
+	bool key_down(const int c, const ui::key_state keys) override { return false; }
+	void invoke(const commands cmd) override {}
+	bool is_command_checked(const commands cmd) override { return false; }
+	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override {}
+	void controller_changed() override {}
+	void invalidate_element(const view_element_ptr& e) override {}
+	void invalidate_view(const view_invalid invalid) override {}
+
+	view_controller_ptr controller_from_location(const pointi loc) override
+	{
+		auto controller = std::make_shared<cancellable_test_controller>(shared_from_this(), recti(0, 0, 200, 400));
+		built.emplace_back(controller);
+		return controller;
+	}
+};
+
+// Escape cancels a gesture the button is still holding, so the release belongs to the controller
+// that was cancelled. Replacing it at the moment of the cancel handed the release to a fresh one
+// with no memory of it, which then performed the gesture Escape had just refused.
+static void should_not_perform_a_cancelled_gesture_on_release()
+{
+	const auto host = std::make_shared<cancelling_test_host>();
+	host->_extent = {200, 400};
+
+	host->on_mouse_move({10, 10}, false);
+	host->on_mouse_left_button_down({10, 10}, {});
+	assert_equal(1u, static_cast<unsigned>(host->built.size()), "the press latched one controller");
+
+	assert_equal(true, host->escape_controller(), "escape cancelled the gesture");
+	assert_equal(1u, static_cast<unsigned>(host->built.size()), "the cancelled controller was not replaced");
+	assert_equal(true, host->built.front()->cancelled, "the cancel reached the controller holding the button");
+
+	host->on_mouse_left_button_up({12, 12}, {});
+	assert_equal(0, host->built.front()->performed, "the release did not perform the cancelled gesture");
 }
 
 // The list view's chrome is measured in text lines, so unlike the flex stub this one has to report a
@@ -2225,7 +2338,7 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should track the active row across a reorder"s, should_track_the_active_row_across_a_reorder);
 	tests.add("Should resolve list rows by work index"s, should_resolve_list_rows_by_work_index);
 	tests.add("Should select settled zoom sampler"s, should_select_settled_zoom_sampler);
-	tests.add("Should accumulate precision zoom wheel deltas"s, should_accumulate_precision_zoom_wheel_deltas);
+	tests.add("Should accumulate precision wheel deltas"s, should_accumulate_precision_wheel_deltas);
 	tests.add("Should validate zoom navigator mode"s, should_validate_zoom_navigator_mode);
 	tests.add("Should keep comparison zoom panes matched"s, should_keep_comparison_zoom_panes_matched);
 	tests.add("Should calculate zoom model fit without enlarging"s, should_calculate_zoom_fit_without_enlarging);
@@ -2259,12 +2372,12 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should stage neighbour stand ins"s, should_stage_neighbour_stand_ins);
 	tests.add("Should show selected thumbnail without waiting"s, should_show_selected_thumbnail_without_waiting);
 	tests.add("Should hold media column still as detail arrives"s, should_hold_media_column_still_as_detail_arrives);
-	tests.add("Should fit the whole primary block when verbose is closed"s,
-	          should_fit_the_whole_primary_block_when_verbose_is_closed);
+	tests.add("Should fit the whole primary block in the media column"s,
+	          should_fit_the_whole_primary_block_in_the_media_column);
 	tests.add("Should follow the primary block when verbose is open"s,
 	          should_follow_the_primary_block_when_verbose_is_open);
-	tests.add("Should centre a block with no detail whatever verbose is"s,
-	          should_centre_a_block_with_no_detail_whatever_verbose_is);
+	tests.add("Should centre a media column with no detail"s,
+	          should_centre_a_media_column_with_no_detail);
 	tests.add("Should follow a centred media column block with its detail"s,
 	          should_follow_a_centred_block_with_its_detail);
 	tests.add("Should keep half the media column pane for the media"s, should_keep_half_the_pane_for_the_media);
@@ -2277,6 +2390,8 @@ void register_view_tests(view_state& state, test_registry& tests)
 	          should_drag_view_scroller_thumb_from_grab_point);
 	tests.add("Should close view scroller bands over track"s, should_close_view_scroller_bands_over_track);
 	tests.add("Should survive a host with no window"s, should_survive_a_host_with_no_window);
+	tests.add("Should not perform a cancelled gesture on release"s,
+	          should_not_perform_a_cancelled_gesture_on_release);
 	tests.add("Should keep the processing row clear of the view chrome"s,
 	          should_keep_the_processing_row_clear_of_the_view_chrome);
 	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);

@@ -105,6 +105,7 @@ static constexpr auto s_set_synopsis = "set_synopsis";
 static constexpr auto s_set_rating = "set_rating";
 static constexpr auto s_set_year = "set_year";
 static constexpr auto s_set_created = "set_created";
+static constexpr auto s_set_date_created = "set_date_created";
 static constexpr auto s_set_episode = "set_episode";
 static constexpr auto s_set_season = "set_season";
 static constexpr auto s_set_track = "set_track";
@@ -468,6 +469,7 @@ settings_t::settings_t()
 	set_synopsis = false;
 	set_rating = false;
 	set_year = false;
+	set_original = false;
 	set_created = false;
 	set_episode = false;
 	set_season = false;
@@ -851,7 +853,8 @@ void settings_t::read()
 	store.read({}, s_set_synopsis, set_synopsis);
 	store.read({}, s_set_rating, set_rating);
 	store.read({}, s_set_year, set_year);
-	store.read({}, s_set_created, set_created);
+	store.read({}, s_set_created, set_original);
+	store.read({}, s_set_date_created, set_created);
 	store.read({}, s_set_episode, set_episode);
 	store.read({}, s_set_season, set_season);
 	store.read({}, s_set_track, set_track);
@@ -1030,7 +1033,8 @@ void settings_t::write() const
 	store.write({}, s_set_synopsis, set_synopsis);
 	store.write({}, s_set_rating, set_rating);
 	store.write({}, s_set_year, set_year);
-	store.write({}, s_set_created, set_created);
+	store.write({}, s_set_created, set_original);
+	store.write({}, s_set_date_created, set_created);
 	store.write({}, s_set_episode, set_episode);
 	store.write({}, s_set_season, set_season);
 	store.write({}, s_set_track, set_track);

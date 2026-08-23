@@ -133,7 +133,7 @@ void rename_view::run()
 
 			vacating.emplace(source_key);
 			for (const auto& [source, destination] : rename.sidecars)
-				if (source.icmp(destination) != 0) vacating.emplace(source.pack());
+				if (df::compare_path_key(source.pack(), destination.pack()) != 0) vacating.emplace(source.pack());
 		}
 
 		struct parked_path

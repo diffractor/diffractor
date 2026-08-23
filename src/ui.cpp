@@ -378,7 +378,20 @@ public:
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
+		// Escape may already have ended the gesture and restored the view. The release still arrives --
+		// the button was down when it was cancelled -- so completing here would restore a second time,
+		// and for a cancelled region draw would restore a zoom state captured when this controller was
+		// built rather than when the drag began.
+		const auto was_tracking = _tracking;
 		_tracking = false;
+
+		if (!was_tracking)
+		{
+			_drawing_region = false;
+			_inspect_active = false;
+			_committed = false;
+			return;
+		}
 
 		if (_drawing_region)
 		{

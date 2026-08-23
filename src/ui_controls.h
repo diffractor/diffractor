@@ -1063,6 +1063,8 @@ class items_dates_control final : public std::enable_shared_from_this<items_date
 	view_state& _state;
 	const df::item_element_ptr _item;
 	std::string _text;
+	df::date_t _shown_date;
+	df::date_parts_prop _shown_target = df::date_parts_prop::original;
 	bool _invalid = false;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
@@ -1087,11 +1089,15 @@ public:
 		{
 			style |= view_element_style::important;
 			_text = platform::format_date(created_concept);
+			_shown_date = created_concept;
+			_shown_target = df::date_parts_prop::created;
 		}
 		else if (search.is_match(prop::modified, modified_date))
 		{
 			style |= view_element_style::important;
 			_text = platform::format_date(modified_date);
+			_shown_date = modified_date;
+			_shown_target = df::date_parts_prop::modified;
 		}
 		else
 		{
@@ -1105,6 +1111,8 @@ public:
 			if (created_date.is_valid())
 			{
 				_text = platform::format_date(created_date);
+				_shown_date = created_date;
+				_shown_target = df::date_parts_prop::original;
 			}
 		}
 
@@ -1135,12 +1143,12 @@ public:
 	{
 		if (event.type == view_element_event_type::invoke)
 		{
-			const auto created_date = _item->media_created();
-
-			if (created_date.is_valid())
+			// The bubble names one of the three dates, so it opens that one. Asking for the union
+			// would return a day the bubble did not show.
+			if (_shown_date.is_valid())
 			{
-				const auto st = created_date.date();
-				const auto search = df::search_t().day(st.day, st.month, st.year);
+				const auto st = _shown_date.date();
+				const auto search = df::search_t().day(st.day, st.month, st.year, _shown_target);
 				_state.open(event.host, search, {});
 			}
 		}
@@ -3422,7 +3430,10 @@ public:
 		const auto visible_without_overflow = std::min(_display->_surfaces.size(), cell_capacity);
 		const auto has_overflow = _display->_selection_item_count > visible_without_overflow;
 		_display->_collage_image_count = std::min(_display->_surfaces.size(), cell_capacity - (has_overflow ? 1 : 0));
-		_display->_selection_overflow_count = _display->_selection_item_count - _display->_collage_image_count;
+		// Unsigned: a selection smaller than the cells built for it would otherwise read as billions.
+		_display->_selection_overflow_count = _display->_selection_item_count > _display->_collage_image_count
+			                                      ? _display->_selection_item_count - _display->_collage_image_count
+			                                      : 0;
 		_display->_surface_bounds = ui::layout_collage(
 			collage_bounds, surface_dims(_display->_collage_image_count, has_overflow));
 
@@ -3443,8 +3454,13 @@ public:
 		dc.draw_rounded_rect(_panel_bounds.offset(element_offset),
 		                     ui::color(ui::style::color::group_background, dc.colors.alpha), dc.padding1);
 
-		if (_display->_textures.empty())
+		// Keyed on the surface count rather than on being non-empty, so a set published after the first
+		// paint is uploaded rather than half-drawn against a cache built for a shorter one.
+		if (_display->_textures.size() != _display->_surfaces.size())
 		{
+			_display->_textures.clear();
+			_display->_textures.reserve(_display->_surfaces.size());
+
 			for (const auto& s : _display->_surfaces)
 			{
 				auto t = dc.create_texture();
@@ -3487,7 +3503,15 @@ public:
 		{
 			const auto overflow_bounds = _display->_surface_bounds[_display->_collage_image_count].offset(
 				element_offset);
-			const auto text = std::format("+{}", _display->_selection_overflow_count);
+
+			// With no cells beside it there is nothing for a "+N" to be additional to, so while the
+			// thumbnails are still decoding the cell names the whole selection and becomes a remainder
+			// once they arrive.
+			const auto text = _display->_collage_image_count == 0
+				                  ? format_plural_text(tt.title_item_count_fmt,
+				                                       static_cast<int64_t>(_display->_selection_item_count))
+				                  : std::format("+{}", _display->_selection_overflow_count);
+
 			dc.draw_rect(overflow_bounds, ui::color(ui::style::color::group_background, dc.colors.alpha));
 			dc.draw_text(text, overflow_bounds, ui::style::font_face::dialog,
 			             ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, dc.colors.alpha),
@@ -3512,6 +3536,18 @@ public:
 		const auto cell = _display->_surface_bounds.front();
 		const auto cxy = std::min({icon_cxy * 3 / 2, cell.width(), cell.height()});
 		return {cell.left, cell.top, cell.left + cxy, cell.top + cxy};
+	}
+
+	// The collage fills its texture cache only while the cache is empty, and the cache lives on the
+	// display state rather than on this element, so nothing else releases it. After a device loss
+	// or a fall back to the CPU renderer it held textures belonging to the device that went away
+	// and the collage drew nothing for the rest of the session.
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_display->_textures.clear();
+		}
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,

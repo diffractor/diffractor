@@ -796,7 +796,11 @@ namespace df
 
 		date_t created() const
 		{
-			return metadata_created.is_valid() ? metadata_created : file_created;
+			if (metadata_created.is_valid()) return metadata_created;
+
+			// file_created is the index's instant. It is compared against
+			// index_file_item::created(), which converts the same stamp.
+			return file_created.is_valid() ? file_created.system_to_local() : date_t{};
 		}
 
 		// Position within an album or a series, used to answer with the neighbouring tracks or
