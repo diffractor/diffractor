@@ -42,7 +42,6 @@ static void should_scan_jpeg()
 	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	prop::item_metadata expected_exif;
-	expected_exif.created_exif = df::date_t(2012, 9, 14);
 	expected_exif.camera_manufacturer = "Canon"_c;
 	expected_exif.camera_model = "Canon EOS 7D"_c;
 	expected_exif.lens = "EF-S15-85mm f/3.5-5.6 IS USM"_c;
@@ -53,8 +52,9 @@ static void should_scan_jpeg()
 	expected_exif.exposure_time = 1.0f / 100.0f;
 	expected_exif.iso_speed = 100;
 	expected_exif.focal_length = 15.0f;
-	expected_exif.created_digitized = df::date_t(2012, 9, 14, 19, 21, 14);
-	expected_exif.created_exif = df::date_t(2012, 9, 14, 19, 21, 14);
+	expected_exif.dates.add(prop::date_source::exif_digitized, df::date_t(2012, 9, 14, 19, 21, 14));
+	expected_exif.dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+	expected_exif.dates.add(prop::date_source::exif_datetime, df::date_t(2012, 9, 14, 19, 21, 14));
 	expected_exif.rating = 0;
 
 	assert_metadata(expected_exif, *extract_properties(load_path, metadata_type::EXIF), "EXIF");
@@ -68,13 +68,14 @@ static void should_scan_jpeg()
 	expected_iptc.location_country = "Czech Republic"_c;
 	expected_iptc.copyright_notice = "Copyright"_c;
 	expected_iptc.rating = 0;
+	// 2:55 and 2:60, which agree with the EXIF original this file also carries.
+	expected_iptc.dates.add(prop::date_source::iptc_created, df::date_t(2012, 9, 14, 19, 21, 14));
 
 	assert_metadata(expected_iptc, *extract_properties(load_path, metadata_type::IPTC), "IPTC");
 
 	const auto actual_xmp = extract_properties(load_path, metadata_type::XMP);
 
 	prop::item_metadata expected_xmp;
-	expected_xmp.created_exif = df::date_t(2012, 9, 14);
 	expected_xmp.title = "Title"_c;
 	expected_xmp.description = "Caption"_c;
 	expected_xmp.tags = "key1 key2 key3"_c;
@@ -84,8 +85,9 @@ static void should_scan_jpeg()
 	expected_xmp.lens = "EF-S15-85mm f/3.5-5.6 IS USM"_c;
 	expected_xmp.copyright_notice = "Copyright"_c;
 	expected_xmp.rating = 4;
-	expected_xmp.created_digitized = df::date_t(2012, 9, 14, 19, 21, 14);
-	expected_xmp.created_exif = df::date_t(2012, 9, 14, 19, 21, 14);
+	expected_xmp.dates.add(prop::date_source::xmp_exif_digitized, df::date_t(2012, 9, 14, 19, 21, 14));
+	expected_xmp.dates.add(prop::date_source::xmp_exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+	expected_xmp.dates.add(prop::date_source::xmp_modify, df::date_t(2012, 9, 14, 19, 21, 14));
 
 	assert_metadata(expected_xmp, *actual_xmp, "XMP");
 
@@ -111,12 +113,73 @@ static void should_parse_xmp()
 	assert_equal("Canon EOS 50D", actual.camera_model);
 	assert_equal("IMG_0604.CR2", actual.raw_file_name);
 	assert_equal("Denmark", actual.location_country);
+	assert_equal(false, actual.is_panorama(), "an ordinary photograph declares no panorama");
+}
+
+// The flag records what the file says about itself, not what its shape suggests: a 2:1 crop of a
+// landscape is not a panorama, and a photo sphere that has been cropped square still is one.
+static void should_read_the_declared_panorama_projection()
+{
+	const auto write_sidecar = [](const std::string_view gpano_body)
+	{
+		const auto path = _temps.next_path(".xmp");
+		const auto xml = std::format(
+			"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+			"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+			"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+			"<rdf:Description rdf:about=\"\" "
+			"xmlns:GPano=\"http://ns.google.com/photos/1.0/panorama/\">{}</rdf:Description>"
+			"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+			gpano_body);
+
+		std::ofstream f(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
+		f.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+		f.close();
+
+		prop::item_metadata md;
+		metadata_xmp::parse(md, path);
+		return md.panorama;
+	};
+
+	assert_equal(static_cast<int>(prop::panorama_projection::equirectangular),
+	             static_cast<int>(write_sidecar("<GPano:ProjectionType>equirectangular</GPano:ProjectionType>")),
+	             "a photo sphere");
+	assert_equal(static_cast<int>(prop::panorama_projection::cylindrical),
+	             static_cast<int>(write_sidecar("<GPano:ProjectionType>cylindrical</GPano:ProjectionType>")),
+	             "a cylindrical stitch");
+
+	// A projection this build does not know still answers the question the flag exists to answer.
+	assert_equal(static_cast<int>(prop::panorama_projection::unspecified),
+	             static_cast<int>(write_sidecar("<GPano:ProjectionType>mercator</GPano:ProjectionType>")),
+	             "an unrecognised projection is still a panorama");
+
+	// Writers that declare a panorama without naming its projection must not be read as ordinary.
+	assert_equal(static_cast<int>(prop::panorama_projection::unspecified),
+	             static_cast<int>(write_sidecar("<GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>")),
+	             "declared without a projection");
+	assert_equal(static_cast<int>(prop::panorama_projection::unspecified),
+	             static_cast<int>(write_sidecar("<GPano:FullPanoWidthPixels>8192</GPano:FullPanoWidthPixels>")),
+	             "declared by its full extent");
+
+	assert_equal(static_cast<int>(prop::panorama_projection::none),
+	             static_cast<int>(write_sidecar("")),
+	             "and a file carrying no GPano at all is not a panorama");
+
+	// The presence bit is what lets the index reject candidates before it loads them.
+	prop::item_metadata pano;
+	pano.panorama = prop::panorama_projection::equirectangular;
+	assert_equal(true, (pano.calc_search_presence().types & search_presence_mask::panorama) != 0,
+	             "a panorama carries the presence bit");
+
+	constexpr prop::item_metadata plain;
+	assert_equal(false, (plain.calc_search_presence().types & search_presence_mask::panorama) != 0,
+	             "and an ordinary file does not");
 }
 
 static void should_merge_xmp_sidecar()
 {
 	const auto cr2_path = test_files_folder.combine_file("Gherkin.CR2");
-	const auto xmp_path = test_files_folder.combine_file("Gherkin.XMP");
+	const auto xmp_path = test_files_folder.combine_file("Gherkin.xmp");
 
 	const auto actual = extract_properties(cr2_path);
 
@@ -190,8 +253,7 @@ static void should_scan_mp3()
 	expected3.audio_channels = 2;
 	expected3.track.x = 2;
 	expected3.audio_codec = "mp3float"_c;
-	expected3.created_utc = df::date_t(2006, 6, 20, 0, 0, 0);
-	expected3.created_digitized = df::date_t(2006, 6, 20, 0, 0, 0);
+	expected3.dates.add_utc(prop::date_source::container_created, df::date_t(2006, 6, 20, 0, 0, 0));
 	expected3.publisher = "Interscope"_c;
 
 	assert_metadata(expected3, *actual3.to_props(), "Is It Any Wonder.mp3");
@@ -216,8 +278,8 @@ static void should_scan_mp4()
 	expected.width = 560;
 	expected.height = 320;
 	expected.rating = 4;
-	expected.created_utc = df::date_t(2010, 3, 20, 21, 29, 11);
-	expected.created_digitized = df::date_t(2010, 3, 20, 21, 29, 11);
+	expected.dates.add_utc(prop::date_source::container_created, df::date_t(2010, 3, 20, 21, 29, 11));
+	expected.dates.add_utc(prop::date_source::xmp_modify, df::date_t(2010, 3, 20, 21, 29, 12));
 	expected.year = 2010;
 	expected.video_codec = "h264"_c;
 	expected.encoder = "HandBrake 0.9.4 2009112300"_c;
@@ -235,8 +297,7 @@ static void should_scan_mp4()
 	expected2.composer = "David Gray"_c;
 	expected2.album = "David Gray: Greatest Hits"_c;
 	expected2.copyright_notice = "\u2117 2007 Iht Records Ltd under exclusive licence to Warner Music UK Ltd"_c;
-	expected2.created_utc = df::date_t(2007, 11, 9, 8, 0, 0);
-	expected2.created_digitized = df::date_t(2007, 11, 9, 8, 0, 0);
+	expected2.dates.add_utc(prop::date_source::container_created, df::date_t(2007, 11, 9, 8, 0, 0));
 	expected2.genre = "Pop"_c;
 	expected2.duration = 10;
 	expected2.audio_codec = "aac"_c;
@@ -362,8 +423,8 @@ static void should_scan_mov()
 	expected.height = 480;
 	expected.rating = 4;
 	expected.video_codec = "mpeg4"_c;
-	expected.created_digitized = df::date_t(2005, 10, 17, 22, 54, 32);
-	expected.created_utc = df::date_t(2005, 10, 17, 22, 54, 32);
+	expected.dates.add_utc(prop::date_source::container_created, df::date_t(2005, 10, 17, 22, 54, 32));
+	expected.dates.add_utc(prop::date_source::xmp_modify, df::date_t(2005, 10, 17, 22, 56, 39));
 	expected.year = 2005;
 
 	assert_metadata(expected, *actual.to_props(), "ipod.mov");
@@ -372,8 +433,7 @@ static void should_scan_mov()
 	const auto actual2 = ff_scan_file(ff, load_path2);
 
 	prop::item_metadata expected2;
-	expected2.created_utc = df::date_t(2011, 3, 13, 15, 13, 49);
-	expected2.created_digitized = df::date_t(2011, 3, 13, 15, 13, 49);
+	expected2.dates.add_utc(prop::date_source::container_created, df::date_t(2011, 3, 13, 15, 13, 49));
 	expected2.audio_codec = "aac"_c;
 	// Issue #61: the QuickTime ISO6709 location tag must reach the coordinate, or the world map
 	// cannot plot the video.
@@ -443,7 +503,7 @@ static void should_scan_raw()
 	expected.focal_length = 100;
 	expected.iso_speed = 100;
 	expected.pixel_format = "RGBG"_c;
-	expected.created_utc = df::date_t(2011, 9, 23, 23, 49, 16);
+	expected.dates.add_utc(prop::date_source::embedded_created, df::date_t(2011, 9, 23, 23, 49, 16));
 
 	null_async_strategy as;
 	const location_cache locations;
@@ -647,6 +707,326 @@ static void should_present_exif_block_by_ifd()
 	assert_equal(true, exif_ifd->open_by_default, "exif ifd open by default", file_name);
 }
 
+// The maker note is a vendor directory carried inside Exif. libexif decodes the makes it knows, so it
+// is listed as its own section instead of staying the binary blob the Exif entry reports.
+static void should_present_maker_note_section()
+{
+	constexpr auto file_name = "Test.jpg";
+
+	files ff;
+	const auto sr = ff_scan_file(ff, test_files_folder.combine_file(file_name));
+	const auto info = sr.to_info();
+	const auto block = find_block(info, metadata_standard::exif);
+
+	assert_equal(true, block != nullptr, "exif block", file_name);
+
+	size_t section_index = block->values.size();
+
+	for (size_t i = 0; i < block->values.size(); ++i)
+	{
+		if (block->values[i].id == "exif.mnote") section_index = i;
+	}
+
+	assert_equal(true, section_index < block->values.size(), "maker note section", file_name);
+
+	const auto& section = block->values[section_index];
+
+	assert_equal(true, section.container, "maker note is a section", file_name);
+	assert_equal(0, section.depth, "maker note section depth", file_name);
+	// This is a Canon body, so the section names the make rather than reading as an anonymous blob.
+	assert_equal(true, section.key.find("Canon") != std::string::npos, "maker note names the make", file_name);
+
+	// The decoded entries follow it, before any later section.
+	auto decoded = 0;
+
+	for (size_t i = section_index + 1; i < block->values.size() && !block->values[i].container; ++i)
+	{
+		if (!block->values[i].id.starts_with("exif.mnote.")) break;
+
+		++decoded;
+		assert_equal(1, block->values[i].depth, "maker note value depth", file_name);
+		assert_equal(false, block->values[i].key.empty(), "maker note value name", file_name);
+		assert_equal(false, block->values[i].shape.empty(), "maker note value shape", file_name);
+	}
+
+	assert_equal(true, decoded > 0, "maker note values", file_name);
+
+	// The raw Exif entry is kept alongside the decoded reading rather than replaced by it.
+	auto has_raw_entry = false;
+
+	for (const auto& r : block->values)
+	{
+		if (r.id == "exif.2.927c") has_raw_entry = true;
+	}
+
+	assert_equal(true, has_raw_entry, "maker note raw entry retained", file_name);
+}
+
+// Derived rows are arithmetic over tags listed above them. Test.jpg is an 18 MP EOS 7D shot at f/6.3
+// and 1/100, so both figures are known independently of the code that computes them.
+static void should_present_derived_exif_section()
+{
+	constexpr auto file_name = "Test.jpg";
+
+	files ff;
+	const auto sr = ff_scan_file(ff, test_files_folder.combine_file(file_name));
+	const auto info = sr.to_info();
+	const auto block = find_block(info, metadata_standard::exif);
+
+	assert_equal(true, block != nullptr, "exif block", file_name);
+
+	const auto* section = static_cast<const metadata_kv*>(nullptr);
+
+	for (const auto& r : block->values)
+	{
+		if (r.id == "exif.derived") section = &r;
+	}
+
+	assert_equal(true, section != nullptr, "derived section", file_name);
+	assert_equal(true, section->container, "derived is a section", file_name);
+	assert_equal(0, section->depth, "derived section depth", file_name);
+
+	const auto find_derived = [&block](const std::string_view key) -> const metadata_kv*
+	{
+		for (const auto& r : block->values)
+		{
+			if (!r.container && r.id.starts_with("exif.derived.") && r.key == key) return &r;
+		}
+
+		return nullptr;
+	};
+
+	// 2 * log2(6.3) - log2(1/100) = 11.96
+	const auto* const light = find_derived("Light value");
+	assert_equal(true, light != nullptr, "light value row", file_name);
+	assert_equal("12.0 EV", light->value, "light value", file_name);
+
+	// 5184 x 3456
+	const auto* const megapixels = find_derived("Megapixels");
+	assert_equal(true, megapixels != nullptr, "megapixels row", file_name);
+	assert_equal("17.9 MP", megapixels->value, "megapixels", file_name);
+
+	// A derived row states what it was computed from, so it cannot be mistaken for a recorded tag.
+	assert_equal(false, light->shape.empty(), "light value shape", file_name);
+	assert_equal(1, light->depth, "light value depth", file_name);
+
+	// This body records no 35 mm equivalent, so nothing that needs one is invented.
+	assert_equal(true, find_derived("Crop factor") == nullptr, "no crop factor without focal.35", file_name);
+	assert_equal(true, find_derived("Hyperfocal distance") == nullptr, "no hyperfocal without focal.35",
+	             file_name);
+}
+
+// The focal-length family needs a 35 mm equivalent, which the EOS 7D fixture does not record. A
+// synthetic block fixes 15 mm at 24 mm equivalent and f/6.3 so each figure has one known answer.
+static void should_derive_focal_length_facts()
+{
+	std::vector<uint8_t> buf;
+	const auto put16 = [&buf](const uint16_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
+	const auto put_entry = [&put16, &put32](const uint16_t tag, const uint16_t fmt, const uint32_t count,
+	                                        const uint32_t value)
+	{
+		put16(tag);
+		put16(fmt);
+		put32(count);
+		put32(value);
+	};
+
+	constexpr uint16_t fmt_short = 3;
+	constexpr uint16_t fmt_long = 4;
+	constexpr uint16_t fmt_rational = 5;
+
+	constexpr uint32_t ifd0_offset = 8;
+	constexpr uint32_t exif_ifd_offset = ifd0_offset + 2 + 12 + 4; // one IFD0 entry: the Exif pointer
+	constexpr uint32_t data_offset = exif_ifd_offset + 2 + 3 * 12 + 4; // three Exif entries
+
+	put16(0x4949); // little-endian TIFF header
+	put16(0x002a);
+	put32(ifd0_offset);
+
+	put16(1);
+	put_entry(0x8769, fmt_long, 1, exif_ifd_offset); // ExifIFDPointer
+	put32(0);
+
+	put16(3);
+	put_entry(0x920a, fmt_rational, 1, data_offset); // FocalLength, 15 mm
+	put_entry(0xa405, fmt_short, 1, 24); // FocalLengthIn35mmFilm
+	put_entry(0x829d, fmt_rational, 1, data_offset + 8); // FNumber, f/6.3
+	put32(0);
+
+	put32(15);
+	put32(1);
+	put32(63);
+	put32(10);
+
+	const auto kv = metadata_exif::to_info(df::cspan{buf.data(), buf.size()});
+
+	const auto find_derived = [&kv](const std::string_view key) -> const metadata_kv*
+	{
+		for (const auto& r : kv)
+		{
+			if (!r.container && r.id.starts_with("exif.derived.") && r.key == key) return &r;
+		}
+
+		return nullptr;
+	};
+
+	// 24 / 15
+	const auto* const crop = find_derived("Crop factor");
+	assert_equal(true, crop != nullptr, "crop factor row");
+	assert_equal("1.60x", crop->value, "crop factor");
+
+	// 2 * atan(36 / 48) = 73.74 degrees
+	const auto* const fov = find_derived("Field of view");
+	assert_equal(true, fov != nullptr, "field of view row");
+	assert_equal("73.7\u00b0 horizontal", fov->value, "field of view");
+
+	// 0.03 / 1.6
+	const auto* const coc = find_derived("Circle of confusion");
+	assert_equal(true, coc != nullptr, "circle of confusion row");
+	assert_equal("0.019 mm", coc->value, "circle of confusion");
+
+	// 15^2 / (6.3 * 0.01875) + 15 = 1919.8 mm
+	const auto* const hyperfocal = find_derived("Hyperfocal distance");
+	assert_equal(true, hyperfocal != nullptr, "hyperfocal row");
+	assert_equal("1.92 m", hyperfocal->value, "hyperfocal distance");
+}
+
+// The block inspector reports what the file holds: an entry libexif has no name for is numbered
+// rather than dropped, and a mandatory entry the file omits is not invented to fill the gap.
+static void should_present_exif_tags_as_stored()
+{
+	// DNG UniqueCameraModel: outside libexif's tag table, so it has no name in any directory.
+	constexpr uint16_t unnamed_tag = 0xc614;
+	constexpr uint16_t fmt_ascii = 2;
+	const std::string_view value = "Diffractor";
+
+	std::vector<uint8_t> buf;
+	const auto put16 = [&buf](const uint16_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
+
+	constexpr uint32_t ifd0_offset = 8;
+	constexpr uint32_t data_start = ifd0_offset + 2 + 12 + 4; // one entry
+	const auto size = static_cast<uint32_t>(value.size() + 1);
+
+	put16(0x4949); // little-endian TIFF header
+	put16(0x002a);
+	put32(ifd0_offset);
+	put16(1); // entry count
+	put16(unnamed_tag);
+	put16(fmt_ascii);
+	put32(size);
+	put32(data_start);
+	put32(0); // no IFD1
+	buf.insert(buf.end(), value.begin(), value.end());
+	buf.push_back(0);
+
+	const auto kv = metadata_exif::to_info(df::cspan{buf.data(), buf.size()});
+
+	const auto* row = static_cast<const metadata_kv*>(nullptr);
+
+	for (const auto& r : kv)
+	{
+		if (r.id == "exif.0.c614") row = &r;
+	}
+
+	assert_equal(true, row != nullptr, "unnamed tag row");
+	assert_equal("Tag 0xc614", row->key, "unnamed tag key");
+	assert_equal("Diffractor", row->value, "unnamed tag value");
+	assert_equal(1, row->depth, "unnamed tag depth");
+
+	// The file holds exactly one entry, so the directory reports one and nothing was added to it.
+	auto entries = 0;
+
+	for (const auto& r : kv)
+	{
+		if (!r.container && r.id.starts_with("exif.0.")) ++entries;
+	}
+
+	assert_equal(1, entries, "entries in IFD0");
+
+	// ColorSpace is mandatory in the Exif directory, and libexif would otherwise invent it.
+	for (const auto& r : kv)
+	{
+		assert_equal(false, r.key == "ColorSpace", "no fabricated mandatory tag");
+	}
+}
+
+// An embedded thumbnail is a picture, so the pane shows it rather than dumping its bytes, and shows
+// it without being asked. A payload that will not decode keeps the hex dump, which stays closed.
+static void should_present_embedded_thumbnail_as_an_image()
+{
+	constexpr auto file_name = "Test.jpg";
+
+	files ff;
+	const auto sr = ff_scan_file(ff, test_files_folder.combine_file(file_name));
+	const auto info = sr.to_info();
+	const auto block = find_block(info, metadata_standard::exif);
+
+	assert_equal(true, block != nullptr, "exif block", file_name);
+
+	const auto* thumbnail = static_cast<const metadata_kv*>(nullptr);
+
+	for (const auto& r : block->values)
+	{
+		if (r.id == "exif.thumbnail") thumbnail = &r;
+	}
+
+	assert_equal(true, thumbnail != nullptr, "embedded thumbnail row", file_name);
+
+	const auto* const image = std::get_if<metadata_image_detail>(&thumbnail->detail);
+
+	assert_equal(true, image != nullptr, "thumbnail is an image", file_name);
+	assert_equal(true, ui::is_valid(image->surface), "thumbnail surface", file_name);
+	assert_equal(true, thumbnail->open_by_default, "thumbnail opens by default", file_name);
+
+	// The surface is the payload's own size. Handing the decoder a target extent enlarges a small
+	// payload to fill it, which draws blurred at a size the file never held.
+	assert_equal(160, static_cast<int>(image->surface->width()), "thumbnail width", file_name);
+	assert_equal(120, static_cast<int>(image->surface->height()), "thumbnail height", file_name);
+
+	// The bytes are not also kept as a dump: one reading of the payload, not two.
+	assert_equal(true, std::get_if<metadata_binary_detail>(&thumbnail->detail) == nullptr,
+	             "thumbnail is not a hex dump", file_name);
+
+	// Payloads that are not images keep their dump, and a dump is never opened unasked.
+	auto binary_rows = 0;
+
+	for (const auto& r : block->values)
+	{
+		const auto* const binary = std::get_if<metadata_binary_detail>(&r.detail);
+		if (!binary) continue;
+
+		++binary_rows;
+		assert_equal(false, binary->is_image, "undecoded payload is not marked an image", file_name);
+		assert_equal(false, r.open_by_default, "hex dump stays closed", file_name);
+		assert_equal(true, binary->bytes.size() <= str::max_hex_dump_bytes, "hex dump is bounded", file_name);
+	}
+
+	// The maker note and other binary entries are still reported, so the check above means something.
+	assert_equal(true, binary_rows > 0, "binary rows", file_name);
+}
+
 // A raw file carries the same kind of detail as Exif, so LibRaw's flat report is grouped into
 // sections and any xmp sidecar is presented as the file's xmp block.
 static void should_present_raw_block_sections()
@@ -752,6 +1132,51 @@ static void should_present_jpeg_structure_block()
 	}
 
 	assert_equal(true, tables_with_detail > 0, "structure table detail", file_name);
+
+	// This file indexes no further images, so no empty heading is offered for them.
+	assert_equal(true, find_row_prefix(*block, "Embedded images") == nullptr, "no empty embedded section",
+	             file_name);
+}
+
+// A Multi-Picture APP2 segment indexes further whole JPEGs inside the same file. Sony.JPG carries
+// one, so the images it declares are listed with the extent each claims rather than left inside an
+// anonymous APP2 row.
+static void should_present_jpeg_embedded_images()
+{
+	constexpr auto file_name = "Sony.JPG";
+
+	files ff;
+	const auto sr = ff_scan_file(ff, test_files_folder.combine_file(file_name));
+	const auto info = sr.to_info();
+	const auto block = find_block(info, metadata_standard::structure);
+
+	assert_equal(true, block != nullptr, "structure block", file_name);
+
+	const auto section = find_row_prefix(*block, "Embedded images");
+
+	assert_equal(true, section != nullptr, "embedded images section", file_name);
+	assert_equal(true, section->container, "embedded images is a section", file_name);
+
+	auto images = 0;
+
+	for (const auto& r : block->values)
+	{
+		if (!r.id.starts_with("jpeg.mpf.")) continue;
+
+		++images;
+		assert_equal(1, r.depth, "embedded image depth", file_name);
+		assert_equal(false, r.value.empty(), "embedded image extent", file_name);
+	}
+
+	// The primary image plus at least one further stored image is what makes the segment worth writing.
+	assert_equal(true, images > 1, "embedded image count", file_name);
+
+	// The first entry is the file itself, which stores a zero offset.
+	const auto first = find_row(*block, "Image 1");
+
+	assert_equal(true, first != nullptr, "first embedded image", file_name);
+	assert_equal(true, first->value.find("this file") != std::string::npos, "first image is the file",
+	             file_name);
 }
 
 static void should_present_webp_structure_block()
@@ -785,7 +1210,7 @@ static void should_present_heif_structure_block()
 
 static void should_present_icc_block_sections()
 {
-	constexpr auto file_name = "cmyk.JPG";
+	constexpr auto file_name = "cmyk.jpg";
 
 	files ff;
 	const auto sr = ff_scan_file(ff, test_files_folder.combine_file(file_name));
@@ -1355,28 +1780,339 @@ static void should_parse_korean_tags()
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Issue #184 - 'Group by date created' uses the wrong date (ignores DateTimeOriginal)
-// The media "created" date (used for group-by/sort-by date created and the
-// displayed creation date) must prefer the EXIF DateTimeOriginal capture time
-// over the container/file creation time, falling back to the latter only when
-// no capture time is present.
+// The one date an item shows must be its capture time when it has one, and the container date
+// only when it does not.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 static void should_prefer_datetimeoriginal_for_created()
 {
-	// DateTimeOriginal (created_exif) wins over the file/container date (created_utc).
 	prop::item_metadata md;
-	md.created_utc = df::date_t(2020, 1, 1, 12, 0, 0); // e.g. date the file was written
-	md.created_exif = df::date_t(2005, 6, 15, 9, 30, 0); // capture time
+	md.dates.add_utc(prop::date_source::container_created, df::date_t(2020, 1, 1, 12, 0, 0));
+	md.dates.add(prop::date_source::exif_original, df::date_t(2005, 6, 15, 9, 30, 0));
 	assert_equal(df::date_t(2005, 6, 15, 9, 30, 0), md.created(), "prefers DateTimeOriginal");
 
-	// With no capture time, fall back to the container/file creation date.
+	// With no capture time, fall back to the container date - converted, because it is an instant.
 	prop::item_metadata md2;
-	md2.created_utc = df::date_t(2020, 1, 1, 12, 0, 0);
-	assert_equal(md2.created_utc.system_to_local(), md2.created(), "falls back to created_utc");
+	md2.dates.add_utc(prop::date_source::container_created, df::date_t(2020, 1, 1, 12, 0, 0));
+	assert_equal(df::date_t(2020, 1, 1, 12, 0, 0).system_to_local(), md2.created(), "falls back to the container date");
 
 	// With neither set the date is invalid (the item then uses the file date).
-	constexpr prop::item_metadata md3;
+	const prop::item_metadata md3;
 	assert_equal(false, md3.created().is_valid(), "no dates -> invalid");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The date pack - docs/metadata.md#dates
+// Three dates resolved from many tags by one authority table. These tests own the rules that
+// table encodes, because every other date behaviour in the application reads through it.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// resolve walks date_sources in table order and takes the first source the file supplied, so the
+// table order IS the precedence rule. A row inserted in the wrong place would silently repoint
+// every date in the application, and nothing else would fail.
+static void should_hold_date_sources_in_authority_order()
+{
+	uint64_t seen = 0;
+	auto kind_count = 0;
+
+	for (auto kind : {
+		     prop::date_concept::original, prop::date_concept::created,
+		     prop::date_concept::modified, prop::date_concept::reference
+	     })
+	{
+		auto previous_authority = 0;
+		auto found = 0;
+
+		for (const auto& info : prop::date_sources)
+		{
+			if (info.kind != kind) continue;
+
+			assert_equal(previous_authority + 1, static_cast<int>(info.authority),
+			             "authority runs 1..n in table order");
+			previous_authority = info.authority;
+			++found;
+
+			const auto bit = static_cast<uint64_t>(info.source);
+			assert_equal(0ull, seen & bit, "each source appears exactly once");
+			assert_equal(true, bit != 0 && (bit & (bit - 1)) == 0, "each source is one bit");
+			seen |= bit;
+		}
+
+		assert_equal(true, found > 0, "every kind has at least one source");
+		++kind_count;
+	}
+
+	assert_equal(4, kind_count, "four kinds of date");
+	assert_equal(static_cast<int>(std::size(prop::date_sources)), std::popcount(seen),
+	             "every table row contributes a distinct source");
+}
+
+// The same instant arrives whole-second and unzoned from EXIF, and with milliseconds and an offset
+// from XMP. If those are two values the pack stores six dates for a phone photograph and the
+// tooltip claims disagreement where there is none.
+static void should_collapse_sources_that_agree_to_the_second()
+{
+	prop::date_pack pack;
+	pack.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+	pack.add(prop::date_source::exif_digitized, df::date_t(2025, 8, 16, 18, 11, 56));
+
+	// The XMP reading of the same second, carrying 368 ms and a +01:00 offset.
+	const auto with_millis = df::date_t(df::date_t(2025, 8, 16, 18, 11, 56).to_int64() +
+		368 * (df::date_t::intervals_per_second / 1000));
+	pack.add(prop::date_source::xmp_create, with_millis, 60);
+
+	assert_equal(1, pack.group_count(), "one value, not three");
+	assert_equal(with_millis, pack.group_value(0), "the more precise reading is kept");
+	assert_equal(60, static_cast<int>(pack.group_offset(0)), "the offset the zoned source supplied is kept");
+	assert_equal(true, pack.has_source(prop::date_source::exif_original), "every agreeing source is recorded");
+	assert_equal(true, pack.has_source(prop::date_source::xmp_create), "every agreeing source is recorded");
+}
+
+// #184 - an image editor rewrites photoshop:DateCreated on save, so a retouched photograph carries
+// one ten months after its capture. It may never outrank the shutter.
+static void should_rank_editor_rewritten_dates_below_the_shutter()
+{
+	prop::date_pack pack;
+	pack.add(prop::date_source::photoshop_created, df::date_t(2026, 6, 2, 7, 22, 9));
+	pack.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+
+	assert_equal(df::date_t(2025, 8, 16, 18, 11, 56), pack.original(), "DateTimeOriginal wins");
+	assert_equal(true, pack.resolved_source(prop::date_concept::original) == prop::date_source::exif_original,
+	             "and the panel can say so");
+
+	// With nothing better it is still the best answer available, which is why it is read at all.
+	prop::date_pack only_editor;
+	only_editor.add(prop::date_source::photoshop_created, df::date_t(2026, 6, 2, 7, 22, 9));
+	assert_equal(df::date_t(2026, 6, 2, 7, 22, 9), only_editor.original(), "used when nothing else answers");
+}
+
+// #184 - EXIF 0x0132 is the time the file last changed. Reading it as a creation date is what put
+// an edited photograph under the day of its edit, and IFD0 is walked first so order cannot save us.
+static void should_read_exif_datetime_as_modified()
+{
+	prop::date_pack pack;
+	pack.add(prop::date_source::exif_datetime, df::date_t(2023, 8, 1, 0, 0, 0));
+	pack.add(prop::date_source::exif_original, df::date_t(1990, 2, 1, 0, 0, 0));
+
+	assert_equal(df::date_t(1990, 2, 1, 0, 0, 0), pack.original(), "capture time");
+	assert_equal(df::date_t(2023, 8, 1, 0, 0, 0), pack.modified(), "0x0132 is the file change time");
+	assert_equal(false, pack.created().is_valid(), "and it is not a creation date");
+	assert_equal(df::date_t(1990, 2, 1, 0, 0, 0), pack.best(), "so the item files under 1990");
+}
+
+// Modified describes the file, so the filesystem answers it. A metadata modify tag records when a
+// tool last wrote the metadata: a copy preserves it and an editor that does not maintain it never
+// touches it, so it is stale exactly when the user is asking. Nothing fills the filesystem rung
+// during a scan - the stamps belong to the index record, and `modified:` reads them directly - so
+// this pins the ranking against the moment something does, which is what the bit exists for.
+static void should_take_the_modified_date_from_the_filesystem()
+{
+	prop::date_pack pack;
+	pack.add(prop::date_source::exif_datetime, df::date_t(2019, 5, 4, 9, 0, 0));
+	pack.add(prop::date_source::xmp_modify, df::date_t(2019, 5, 4, 9, 0, 0));
+	pack.add(prop::date_source::file_modified, df::date_t(2026, 8, 19, 21, 30, 0));
+
+	assert_equal(df::date_t(2026, 8, 19, 21, 30, 0), pack.modified(), "the stamp, not the stale tag");
+	assert_equal("File modified", prop::date_source_name(pack.resolved_source(prop::date_concept::modified)),
+	             "and it says so");
+
+	// Copying destroys the creation stamp and preserves the modification stamp, which is why the
+	// two concepts rank the filesystem differently rather than by accident.
+	prop::date_pack copied;
+	copied.add(prop::date_source::container_created, df::date_t(2020, 1, 2, 3, 4, 5));
+	copied.add(prop::date_source::file_created, df::date_t(2026, 8, 19, 21, 30, 0));
+
+	assert_equal(df::date_t(2020, 1, 2, 3, 4, 5), copied.created(), "the container, not the copy time");
+
+	// With no stamp - a remote item, or a placeholder that was never hydrated - the tag still answers.
+	prop::date_pack no_stamp;
+	no_stamp.add(prop::date_source::exif_datetime, df::date_t(2019, 5, 4, 9, 0, 0));
+	assert_equal(df::date_t(2019, 5, 4, 9, 0, 0), no_stamp.modified(), "rather than nothing at all");
+}
+
+// #184 - the date bubble names the tag behind each date, then lists the filesystem stamps. A stamp
+// that already answered one of the three named dates must not be repeated under its own name, or
+// the bubble shows the same instant twice and reads as a contradiction.
+static void should_not_repeat_a_filesystem_stamp_in_the_date_bubble()
+{
+	// The ordinary photograph: metadata answers Original and Created, the stamp answers Modified.
+	prop::date_pack photo;
+	photo.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+	photo.add(prop::date_source::xmp_create, df::date_t(2025, 8, 16, 18, 12, 30));
+	photo.add(prop::date_source::file_modified, df::date_t(2026, 8, 19, 21, 30, 0));
+
+	assert_equal(true, prop::shows_own_file_stamp_row(photo, prop::date_source::file_created),
+	             "the creation stamp answered nothing, so it gets its own row");
+	assert_equal(false, prop::shows_own_file_stamp_row(photo, prop::date_source::file_modified),
+	             "the modification stamp is already the Modified row");
+
+	// A file carrying no metadata dates at all: both stamps are rows of their own, and they are the
+	// only rows there are.
+	prop::date_pack bare;
+	assert_equal(true, prop::shows_own_file_stamp_row(bare, prop::date_source::file_created),
+	             "nothing above claimed the creation stamp");
+	assert_equal(true, prop::shows_own_file_stamp_row(bare, prop::date_source::file_modified),
+	             "nothing above claimed the modification stamp");
+
+	// A copy: the creation stamp is the copy time and the container still states when the content
+	// was made, so Created is answered by the container and the stamp stands on its own.
+	prop::date_pack copied;
+	copied.add(prop::date_source::container_created, df::date_t(2020, 1, 2, 3, 4, 5));
+	copied.add(prop::date_source::file_created, df::date_t(2026, 8, 19, 21, 30, 0));
+	assert_equal(true, prop::shows_own_file_stamp_row(copied, prop::date_source::file_created),
+	             "the container answered Created, so the copy time is still worth showing");
+
+	// The filesystem stamps are read from the item rather than stored with the metadata, so in
+	// practice the pack does not carry them and asking which tag won cannot answer on its own. A row
+	// carrying an instant already on screen under another tag is the duplicate this exists to stop.
+	prop::date_pack unstamped;
+	unstamped.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+	unstamped.add(prop::date_source::xmp_modify, df::date_t(2026, 8, 19, 21, 30, 0));
+
+	assert_equal(false, prop::shows_own_file_stamp_row(unstamped, prop::date_source::file_modified,
+	                                                   df::date_t(2026, 8, 19, 21, 30, 0)),
+	             "the same instant under another tag is the same row");
+	assert_equal(true, prop::shows_own_file_stamp_row(unstamped, prop::date_source::file_modified,
+	                                                  df::date_t(2026, 8, 19, 21, 31, 0)),
+	             "a minute apart is a different fact and says something");
+	assert_equal(true, prop::shows_own_file_stamp_row(unstamped, prop::date_source::file_created,
+	                                                  df::date_t(2026, 8, 19, 22, 0, 0)),
+	             "and a stamp nothing above matches keeps its row");
+}
+
+// A zone and a fraction are separate EXIF tags from the date they qualify, and OffsetTime lives in
+// a different directory from DateTime, so neither can be applied where it is read. Every one of
+// these is stored rather than displayed today: they exist so the release that uses them needs no
+// re-index of its own.
+static void should_carry_the_zone_and_fraction_a_date_was_written_with()
+{
+	assert_equal(120, prop::parse_utc_offset("+02:00"), "a bare EXIF offset");
+	assert_equal(-450, prop::parse_utc_offset("-07:30"), "west of Greenwich, and not a whole hour");
+	assert_equal(120, prop::parse_utc_offset("2019-05-04T09:00:00+02:00"), "the tail of an ISO timestamp");
+	assert_equal(prop::date_pack::utc_instant, prop::parse_utc_offset("2019-05-04T09:00:00Z"), "an instant");
+	assert_equal(prop::date_pack::no_offset, prop::parse_utc_offset("2019:05:04 09:00:00"), "EXIF states no zone");
+	assert_equal(prop::date_pack::no_offset, prop::parse_utc_offset("+0200"), "and a malformed one claims nothing");
+
+	// An Exif ASCII value spans its whole component count, so OffsetTimeOriginal arrives as seven
+	// characters, not six. Measuring the tail without trimming reads the zone off by one and finds
+	// nothing at all.
+	assert_equal(120, prop::parse_utc_offset(std::string_view("+02:00\0", 7)), "NUL-terminated, as Exif stores it");
+	assert_equal(-450, prop::parse_utc_offset(std::string_view("-07:30 \0", 8)), "and space-padded besides");
+
+	// EXIF writes the fraction as digits after an implied point, so `5` is half a second, not five
+	// of anything. Reading it as an integer would put a burst frame 5 seconds late.
+	assert_equal(5'000'000ull, prop::parse_sub_second_intervals("5"), "one digit is tenths");
+	assert_equal(1'200'000ull, prop::parse_sub_second_intervals("12"), "two digits are hundredths");
+	assert_equal(3'090'000ull, prop::parse_sub_second_intervals("309"), "three digits are milliseconds");
+	assert_equal(0ull, prop::parse_sub_second_intervals(""), "an absent fraction adds nothing");
+	assert_equal(0ull, prop::parse_sub_second_intervals("x"), "and neither does a malformed one");
+
+	// The fraction is what keeps two frames of a burst apart; without it they collapse to one group
+	// and order by name instead of by time.
+	prop::date_pack burst;
+	burst.add(prop::date_source::exif_original, df::date_t(df::date_t(2024, 6, 1, 12, 0, 0).to_int64() + 2'000'000));
+	burst.add(prop::date_source::xmp_exif_original, df::date_t(2024, 6, 1, 12, 0, 0));
+	assert_equal(1, burst.group_count(), "the same second is one group");
+	assert_equal(2'000'000ll, burst.group_value(0).to_int64() % df::date_t::intervals_per_second,
+	             "and it keeps the more precise reading");
+}
+
+// GPSDateStamp is `CCYY:MM:DD` and nothing else - no time, and colons where the shared parser's
+// date-only form expects hyphens. Handing it over as it is read parses nothing, so the GPS instant
+// was recorded for no file at all: the rung was filled and dead at the same time.
+static void should_read_a_gps_date_stamp_as_a_date()
+{
+	df::date_t bare;
+	assert_equal(false, bare.parse_exif_date("2023:07:14"),
+	             "the colon spelling has no date-only form in the shared parser");
+
+	df::date_t punctuated;
+	assert_equal(true, punctuated.parse_exif_date("2023:07:14 00:00:00"),
+	             "so the stamp is punctuated to midnight before parsing, as IPTC dates already are");
+	assert_equal(df::date_t(2023, 7, 14, 0, 0, 0), punctuated, "and it reads as the day the file states");
+
+	// The stamp is only half of it: the pair becomes one UTC instant, which is what makes it able to
+	// recover a zone an EXIF reading never stated.
+	constexpr auto seconds = 9ull * 3600 + 41 * 60 + 6;
+	const df::date_t instant(punctuated.to_int64() + seconds * df::date_t::intervals_per_second);
+
+	prop::date_pack pack;
+	pack.add_utc(prop::date_source::gps_stamp, instant);
+
+	assert_equal(true, pack.has_source(prop::date_source::gps_stamp), "the reference date is recorded");
+	assert_equal(df::date_t(2023, 7, 14, 9, 41, 6), pack.group_value(0), "with the time the stamp carries");
+	assert_equal(prop::date_pack::utc_instant, pack.group_offset(0), "and as an instant, not a wall clock");
+}
+
+// A print made in 1980 and scanned in 2024 is the case the three dates exist for: both are true,
+// they are decades apart, and the collection must file it under the older one.
+static void should_separate_original_from_created_for_a_scan()
+{
+	prop::date_pack pack;
+	pack.add(prop::date_source::exif_original, df::date_t(1980, 6, 1, 12, 0, 0));
+	pack.add(prop::date_source::exif_digitized, df::date_t(2024, 3, 9, 16, 45, 0));
+	pack.add(prop::date_source::file_modified, df::date_t(2024, 3, 9, 16, 50, 0));
+
+	assert_equal(df::date_t(1980, 6, 1, 12, 0, 0), pack.original(), "when the photograph was taken");
+	assert_equal(df::date_t(2024, 3, 9, 16, 45, 0), pack.created(), "when the file was made");
+	assert_equal(df::date_t(2024, 3, 9, 16, 50, 0), pack.modified(), "when the file last changed");
+	assert_equal(df::date_t(1980, 6, 1, 12, 0, 0), pack.best(), "the item files under 1980");
+}
+
+// A scan carrying no capture time must still land somewhere a user can find it.
+static void should_fall_back_through_created_to_modified()
+{
+	prop::date_pack created_only;
+	created_only.add(prop::date_source::container_created, df::date_t(2024, 3, 9, 16, 45, 0));
+	assert_equal(df::date_t(2024, 3, 9, 16, 45, 0), created_only.best(), "falls back to created");
+
+	prop::date_pack modified_only;
+	modified_only.add(prop::date_source::file_modified, df::date_t(2024, 3, 9, 16, 50, 0));
+	assert_equal(df::date_t(2024, 3, 9, 16, 50, 0), modified_only.best(), "falls back to modified");
+
+	constexpr prop::date_pack empty;
+	assert_equal(false, empty.best().is_valid(), "and claims nothing when the file carries no date");
+	assert_equal(true, empty.is_empty(), "an empty pack is empty");
+}
+
+// Parse order is an accident of which parser ran first. Two files carrying the same dates must
+// produce the same pack, or an unchanged file dirties its database row on every re-scan.
+static void should_pack_dates_canonically_regardless_of_parse_order()
+{
+	prop::date_pack forward;
+	forward.add(prop::date_source::exif_original, df::date_t(1980, 6, 1, 12, 0, 0));
+	forward.add(prop::date_source::exif_digitized, df::date_t(2024, 3, 9, 16, 45, 0));
+
+	prop::date_pack reverse;
+	reverse.add(prop::date_source::exif_digitized, df::date_t(2024, 3, 9, 16, 45, 0));
+	reverse.add(prop::date_source::exif_original, df::date_t(1980, 6, 1, 12, 0, 0));
+
+	assert_equal(true, forward == reverse, "the pack is canonical");
+	assert_equal(df::date_t(1980, 6, 1, 12, 0, 0), forward.group_value(0), "groups run oldest first");
+
+	// A source with no date says nothing, and must not erase one already recorded.
+	auto with_empty = forward;
+	with_empty.add(prop::date_source::xmp_create, {});
+	assert_equal(true, forward == with_empty, "an absent date changes nothing");
+}
+
+// Overflow only ever evicts the lowest-authority distinct values, so no resolution can change -
+// but the sources are recorded rather than dropped, so the panel can say how many it did not keep.
+static void should_record_dates_that_do_not_fit()
+{
+	prop::date_pack pack;
+	pack.add(prop::date_source::exif_original, df::date_t(2001, 1, 1));
+	pack.add(prop::date_source::exif_digitized, df::date_t(2002, 1, 1));
+	pack.add(prop::date_source::xmp_create, df::date_t(2003, 1, 1));
+	pack.add(prop::date_source::exif_datetime, df::date_t(2004, 1, 1));
+	pack.add(prop::date_source::rip_date, df::date_t(2005, 1, 1));
+
+	assert_equal(prop::date_pack::max_groups, pack.group_count(), "the pack is full");
+	assert_equal(true, pack.overflow() && prop::date_source::rip_date, "the source that did not fit is recorded");
+	assert_equal(true, pack.has_source(prop::date_source::rip_date), "and is still reported as present");
+	assert_equal(df::date_t(2001, 1, 1), pack.original(), "the dates that resolve are unaffected");
+	assert_equal(df::date_t(2002, 1, 1), pack.created(), "the dates that resolve are unaffected");
+	assert_equal(df::date_t(2004, 1, 1), pack.modified(), "the dates that resolve are unaffected");
 }
 
 // tag_set is what every keyword edit passes through, and it is the reason a written file keeps its
@@ -1440,6 +2176,29 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should prefer DateTimeOriginal for created"s, should_prefer_datetimeoriginal_for_created);
 
 	//
+	// Dates - docs/metadata.md#dates
+	//
+	tests.add("Should hold date sources in authority order"s, should_hold_date_sources_in_authority_order);
+	tests.add("Should collapse date sources that agree to the second"s,
+	          should_collapse_sources_that_agree_to_the_second);
+	tests.add("Should rank editor rewritten dates below the shutter"s,
+	          should_rank_editor_rewritten_dates_below_the_shutter);
+	tests.add("Should read exif DateTime as modified date"s, should_read_exif_datetime_as_modified);
+	tests.add("Should take the modified date from the filesystem"s,
+	          should_take_the_modified_date_from_the_filesystem);
+	tests.add("Should not repeat a filesystem stamp in the date bubble"s,
+	          should_not_repeat_a_filesystem_stamp_in_the_date_bubble);
+	tests.add("Should carry the zone and fraction a date was written with"s,
+	          should_carry_the_zone_and_fraction_a_date_was_written_with);
+	tests.add("Should read a gps date stamp as a date"s, should_read_a_gps_date_stamp_as_a_date);
+	tests.add("Should separate original from created date for a scan"s,
+	          should_separate_original_from_created_for_a_scan);
+	tests.add("Should fall back through created to modified date"s, should_fall_back_through_created_to_modified);
+	tests.add("Should pack dates canonically regardless of parse order"s,
+	          should_pack_dates_canonically_regardless_of_parse_order);
+	tests.add("Should record dates that do not fit"s, should_record_dates_that_do_not_fit);
+
+	//
 	// Scan Metadata
 	//
 	tests.add("Should scan jpg metadata"s, should_scan_jpeg);
@@ -1462,10 +2221,17 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should not double apply heif rotation"s, should_not_double_apply_heif_rotation);
 	tests.add("Should scan avif metadata"s, should_scan_avif);
 	tests.add("Should parse Xmp"s, should_parse_xmp);
+	tests.add("Should read the declared panorama projection"s, should_read_the_declared_panorama_projection);
 	tests.add("Should present exif metadata by ifd"s, should_present_exif_block_by_ifd);
+	tests.add("Should present maker note section"s, should_present_maker_note_section);
+	tests.add("Should present derived exif section"s, should_present_derived_exif_section);
+	tests.add("Should derive focal length facts"s, should_derive_focal_length_facts);
+	tests.add("Should present exif tags as stored"s, should_present_exif_tags_as_stored);
+	tests.add("Should present embedded thumbnail as an image"s, should_present_embedded_thumbnail_as_an_image);
 	tests.add("Should present raw metadata sections"s, should_present_raw_block_sections);
 	tests.add("Should present icc metadata sections"s, should_present_icc_block_sections);
 	tests.add("Should present jpeg structure"s, should_present_jpeg_structure_block);
+	tests.add("Should present jpeg embedded images"s, should_present_jpeg_embedded_images);
 	tests.add("Should present webp structure"s, should_present_webp_structure_block);
 	tests.add("Should present heif structure"s, should_present_heif_structure_block);
 	tests.add("Should merge Xmp sidecar"s, should_merge_xmp_sidecar);

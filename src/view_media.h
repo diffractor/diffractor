@@ -13,16 +13,26 @@
 
 inline view_element_ptr make_icon_link_element2(const icon_index i, commands cmd, const view_element_options& style_in)
 {
-	const wchar_t text[2] = {static_cast<wchar_t>(i), 0};
-	auto element = std::make_shared<link_element>(str::utf16_to_utf8(text), cmd, ui::style::font_face::icons,
+	auto element = std::make_shared<link_element>(icon_to_utf8(i), cmd, ui::style::font_face::icons,
 	                                              ui::style::text_style::single_line_center, style_in, true);
 	return element;
+}
+
+// design.md: the media overlay identifies rather than summarises, and this is the invariant that
+// stops it returning to a summary. Never more than a quarter of the media's height, truncated rather
+// than grown. The floor keeps a small window showing the identification rather than nothing at all.
+// Where the media is not a picture - audio, an archive, a file the viewer cannot decode - the panel
+// is the presentation rather than a caption on one, so it may take half.
+constexpr int calc_media_overlay_height(const int measured, const int media_height, const int min_height,
+                                        const bool panel_is_the_presentation = false)
+{
+	const auto limit = panel_is_the_presentation ? media_height / 2 : media_height / 4;
+	return std::min(measured, std::max(min_height, limit));
 }
 
 class media_view final : public view_base
 {
 	df::zoom_view_state _touch_pan_start_zoom;
-	double _zoom_wheel_delta = 0.0;
 	using this_type = media_view;
 
 	view_state& _state;
@@ -44,9 +54,9 @@ public:
 	media_view(view_state& state, view_host_ptr host) :
 		_state(state),
 		_host(std::move(host)),
-		_left_arrow_element(make_icon_link_element2(icon_index::back_image, commands::browse_previous_item,
+		_left_arrow_element(make_icon_link_element2(icon_index::left, commands::browse_previous_item,
 		                                            view_element_style::none)),
-		_right_arrow_element(make_icon_link_element2(icon_index::next_image, commands::browse_next_item,
+		_right_arrow_element(make_icon_link_element2(icon_index::right, commands::browse_next_item,
 		                                             view_element_style::none))
 	{
 	}
@@ -81,29 +91,57 @@ public:
 		return menu_type::media;
 	}
 
-	void mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys) override
+	// zoom.md 11: fullscreen has one surface, so the modifier alone chooses which of its axes moves.
+	bool mouse_wheel(const pointi loc, const ui::wheel_notch notch) override
 	{
-		if (_display && (_display->is_temporary_zoom() || (keys.control && _display->is_zoom_mode())))
+		if (!_display) return false;
+
+		const auto magnified = _display->is_temporary_zoom() || _display->is_zoom_mode();
+
+		if (magnified)
 		{
-			_display->active_zoom_pane_at(pointd(loc));
-			const auto steps = df::zoom_view_state::accumulate_wheel_steps(_zoom_wheel_delta, zDelta);
-			const auto anchor = _display->zoom_anchor_at(pointd(loc));
-			for (auto step = 0; step < std::abs(steps); ++step)
-				_display->adjust_zoom_scale(steps > 0 ? 1 : -1, anchor);
+			// Horizontal is the secondary axis in every magnified state, inspect zoom included: a tilt is
+			// not a magnification gesture, and its steps come from the other accumulator anyway.
+			if (notch.is_horizontal())
+			{
+				_display->active_zoom_pane_at(pointd(loc));
+				_display->pan_zoom_by({-notch.delta / 2.0, 0.0});
+				return true;
+			}
+
+			// Inspect zoom is a gesture the user is already holding, so its wheel adjusts the temporary
+			// magnification whatever the modifier says; in durable zoom mode Ctrl is the ladder.
+			if (_display->is_temporary_zoom() || notch.keys.control)
+			{
+				return step_zoom(loc, notch.steps);
+			}
 		}
-		else
+		else if (notch.keys.control)
 		{
-			_state.select_next(_host, zDelta <= 0, false, keys.shift);
+			// Not an entry into zoom mode. Consumed so the cheapest possible input cannot reach
+			// something else's scale instead.
+			return true;
 		}
+
+		if (!notch.is_vertical()) return false;
+		if (notch.delta == 0) return true;
+		_state.select_next(_host, notch.delta <= 0, false, notch.keys.shift);
+		return true;
 	}
 
-	void mouse_hwheel(const pointi loc, const int zDelta, const ui::key_state keys) override
+	bool pinch(const pointi loc, const int steps) override
 	{
-		if (_display && _display->zoom())
-		{
-			_display->active_zoom_pane_at(pointd(loc));
-			_display->pan_zoom_by({-zDelta / 2.0, 0.0});
-		}
+		return _display && _display->can_zoom() && step_zoom(loc, steps);
+	}
+
+	bool step_zoom(const pointi loc, const int steps)
+	{
+		if (steps == 0) return true;
+		_display->active_zoom_pane_at(pointd(loc));
+		const auto anchor = _display->zoom_anchor_at(pointd(loc));
+		for (auto step = 0; step < std::abs(steps); ++step)
+			_display->adjust_zoom_scale(steps > 0 ? 1 : -1, anchor);
+		return true;
 	}
 
 	void pan_start(const pointi start_loc) override
@@ -148,6 +186,12 @@ public:
 
 			if (_controls_element && !_controls_element->bounds.is_empty())
 			{
+				// The overlay is laid out into at most a quarter of the media height, which is less
+				// than it measured, so it truncates rather than growing. Without the clip the excess
+				// paints over the picture the view exists to show. The clip admits the rounded
+				// background the element paints outside its bounds, as the description's does.
+				const auto pad = _controls_element->padding * dc.scale_factor;
+				const ui::scoped_clip clip(dc, _controls_element->bounds.inflate(pad.cx, pad.cy));
 				_controls_element->render(dc, {0, 0});
 			}
 			if (_description_element && !_description_element->bounds.is_empty())
@@ -155,9 +199,8 @@ public:
 				// The clip caps overlong prose, so it must admit the rounded background the element
 				// paints outside its bounds or the panel loses its corners.
 				const auto pad = _description_element->padding * dc.scale_factor;
-				dc.clip_bounds(_description_element->bounds.inflate(pad.cx, pad.cy));
+				const ui::scoped_clip clip(dc, _description_element->bounds.inflate(pad.cx, pad.cy));
 				_description_element->render(dc, {0, 0});
-				dc.restore_clip();
 			}
 
 			_left_arrow_element->render(dc, {0, 0});
@@ -200,7 +243,7 @@ public:
 			avail_bounds = avail_bounds.inflate(df::round(-4 * scale_factor));
 		}
 
-		const int minumum_media_control_width = df::round(32 * 7 * scale_factor);
+		const int minimum_media_control_width = df::round(32 * 7 * scale_factor);
 		// Zoom and compare give the whole client to the media element, as items_view does, so its
 		// navigator and rating overlays stay in the client corners after a resize.
 		const auto media_owns_client = _display && (_display->is_zoom_mode() || _display->comparing());
@@ -210,7 +253,7 @@ public:
 		if (_controls_element) _controls_element->bounds.clear();
 		if (_description_element) _description_element->bounds.clear();
 
-		if (avail_bounds.width() > minumum_media_control_width && _controls_element)
+		if (avail_bounds.width() > minimum_media_control_width && _controls_element)
 		{
 			const auto control_limit = avail_bounds.inflate(-mc.padding2);
 			const auto panel_gap = mc.padding2;
@@ -218,9 +261,16 @@ public:
 			                                     std::max(df::round(360 * scale_factor),
 			                                              df::mul_div(control_limit.width(), 5, 11)));
 			const auto controls_extent = _controls_element->measure(mc, controls_width);
+			// design.md: the overlay identifies rather than summarises, and this is the bound that
+			// stops it growing back into a summary as a file turns out to carry more metadata. An item
+			// with no picture of its own reserves space for the panel instead of floating over the media,
+			// and the panel is then what the view is showing, so it is allowed twice as much.
+			const auto panel_is_the_presentation = !overlay_media_control && _display && _display->is_one();
+			const auto controls_height = calc_media_overlay_height(controls_extent.cy, avail_bounds.height(),
+			                                                       mc.icon_cxy * 2, panel_is_the_presentation);
 			const auto controls_left = (control_limit.left + control_limit.right - controls_width) / 2;
 			const recti control_bounds{
-				controls_left, control_limit.bottom - controls_extent.cy,
+				controls_left, control_limit.bottom - controls_height,
 				controls_left + controls_width, control_limit.bottom
 			};
 
@@ -228,7 +278,7 @@ public:
 
 			// The description takes only the free space between the controls and the right edge, so
 			// showing one never narrows the controls or moves them.
-			auto panel_height = controls_extent.cy;
+			auto panel_height = controls_height;
 			const auto description_avail = control_limit.right - control_bounds.right - panel_gap;
 			const auto min_description_width = df::round(220 * scale_factor);
 
@@ -329,7 +379,8 @@ public:
 				controller = _right_arrow_element->controller_from_location(host, loc, media_offset, {});
 			}
 
-			if (!controller && _controls_element && !_controls_element->bounds.is_empty())
+			if (!controller && _controls_element && !_controls_element->bounds.is_empty() &&
+				_controls_element->bounds.contains(loc))
 			{
 				controller = _controls_element->controller_from_location(host, loc, media_offset, {});
 			}
@@ -354,6 +405,20 @@ public:
 		}
 
 		return controller;
+	}
+
+	// design.md L5: Escape peels one layer. A region can be drawn here too, so clearing it comes
+	// before the unwind ladder that would otherwise leave fullscreen with the rectangle still on the
+	// picture.
+	bool escape() override
+	{
+		if (const auto photo = std::dynamic_pointer_cast<photo_control>(_media_element); photo && photo->has_region())
+		{
+			photo->clear_region();
+			return true;
+		}
+
+		return false;
 	}
 
 	void display_changed() override

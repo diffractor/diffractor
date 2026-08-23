@@ -44,11 +44,9 @@ struct media_column_inputs
 	const std::vector<view_element_ptr>* detail = nullptr;
 	const std::vector<view_element_ptr>* all = nullptr;
 	recti bounds;
-	bool verbose_metadata = false;
-	// Whether this selection can ever put detail below the block. A single item can, and its detail
-	// arrives late, so the arrangement must not depend on whether it has arrived yet. Every other
-	// selection has no detail form at all.
-	bool detail_possible = false;
+	// The picture in the block, if there is one. The column budgets how far it may be reduced, so
+	// naming it is what lets the arrangement bound the information instead of the media.
+	view_element_ptr media;
 };
 
 // Returns the scrollable content height.
@@ -95,6 +93,12 @@ struct item_and_group
 		return !(lhs < rhs);
 	}
 };
+
+// Discussion #251: the menu opened by the always-visible control in the scroller track. Only
+// "Scroll to top" belongs to that control; every other entry is the toolbar's own command object,
+// so the two copies cannot disagree about availability.
+std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, bool at_top,
+                                               std::function<void()> scroll_to_top);
 
 class items_view final : public view_base
 {
@@ -189,6 +193,23 @@ public:
 		recti items;
 	};
 
+	// The answer region_at gives, in the same priority order. Named so the wheel and the context menu
+	// consume the walk rather than each writing their own and drifting from it.
+	enum class view_region
+	{
+		none,
+		sidebar_splitter,
+		sidebar,
+		splitter,
+		items_scroll,
+		items_scroll_top,
+		media_scroll,
+		media,
+		items
+	};
+
+	view_region region_at(pointi loc) const;
+
 	view_regions _regions;
 
 	std::shared_ptr<sidebar_host> _sidebar;
@@ -201,7 +222,6 @@ public:
 	std::vector<item_and_group> _draw_items;
 	bool _visible_items_valid = false;
 	double _next_thumbnail_retry = 0.0;
-	double _zoom_wheel_delta = 0.0;
 
 	items_view(view_state& s, view_host_ptr host);
 	~items_view() override;
@@ -219,7 +239,10 @@ public:
 	void stage_visible_thumbnails();
 	void retry_visible_thumbnails(double time_now);
 	void layout(ui::measure_context& mc, sizei extent) override;
-	void mouse_wheel(pointi loc, int zDelta, ui::key_state keys) override;
+	bool mouse_wheel(pointi loc, ui::wheel_notch notch) override;
+	bool media_wheel(pointi loc, ui::wheel_notch notch);
+	bool step_zoom(pointi loc, int steps);
+	bool pinch(pointi loc, int steps) override;
 	void mouse_down(pointi loc) override;
 	void focus(bool has_focus) override;
 	bool key_down(char32_t key, ui::key_state keys) override;
@@ -241,21 +264,26 @@ public:
 		return !r.is_empty() && r.contains(loc);
 	}
 
+	// Deliberately the loose test rather than region_at: the scroll bar and the scroll control are
+	// drawn inside the grid's rectangle, and a file dropped on either is meant for the folder the grid
+	// is showing. The strict answer belongs to hit testing and the context menu, which have to tell the
+	// scroll furniture apart from the items under it.
 	bool is_over_items(const pointi loc) const override
 	{
 		return region_hit(_regions.items, loc);
 	}
 
-	bool is_over_media(const pointi loc) const
-	{
-		return region_hit(_regions.media, loc);
-	}
-
 	int splitter_pos() const
 	{
 		const auto left = content_left();
-		return left + df::mul_div(setting.item_splitter_pos, std::max(0, _client_extent.cx - left),
-		                          settings_t::item_splitter_max);
+		// The stored value is a ratio, so a splitter dragged to its right-hand limit on a wide
+		// window reappears past the grid's own floor once the window narrows. Clamped here rather
+		// than in the drag handler, because that clamp is against the width at the time of the
+		// drag: without this the media region overlapped the strip the item grid reserves, and
+		// being hit tested first it painted over the grid and swallowed its clicks.
+		const auto x_max = std::max(left, _client_extent.cx - _scroll_width * 3);
+		return std::clamp(left + df::mul_div(setting.item_splitter_pos, std::max(0, _client_extent.cx - left),
+		                                     settings_t::item_splitter_max), left, x_max);
 	}
 
 	void splitter_pos(const int x, bool tracking) const
@@ -332,7 +360,10 @@ public:
 	void items_changed(bool path_changed) override;
 	void display_changed() override;
 	void update_media_elements() override;
+	bool escape() override;
 	void add_metadata_elements(std::vector<view_element_ptr>& elements, const metadata_block& block);
+	void add_stream_elements(std::vector<view_element_ptr>& elements, const display_state_ptr& display,
+	                         const df::item_element_ptr& item);
 	void add_description_elements(std::vector<view_element_ptr>& elements, const df::item_element_ptr& item,
 	                              const prop::item_metadata_const_ptr& md);
 

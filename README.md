@@ -1,5 +1,5 @@
 # Diffractor
-[![CI](https://github.com/diffractor/diffractor/actions/workflows/msbuild.yml/badge.svg)](https://github.com/diffractor/diffractor/actions/workflows/msbuild.yml)
+[![CI](https://github.com/diffractor/diffractor/actions/workflows/windows.yml/badge.svg)](https://github.com/diffractor/diffractor/actions/workflows/windows.yml)
 
 Free, high-performance photo and video organizer for Windows. Optimized for speed and local file control—no cloud storage or subscriptions required.
 
@@ -47,7 +47,21 @@ Both Desktop and Store builds share the same codebase. The `WINSTORE` preprocess
 git clone --recursive https://github.com/diffractor/diffractor.git
 ```
 
-Open `df.sln` in Visual Studio 2026; the projects use the `v145` toolset. Submodules: [FFmpeg](https://github.com/diffractor/FFmpeg), [XMP-SDK](https://github.com/diffractor/XMP-Toolkit-SDK).
+The build is CMake on both platforms. Submodules: [FFmpeg](https://github.com/diffractor/FFmpeg), [XMP-SDK](https://github.com/diffractor/XMP-Toolkit-SDK).
+
+Everything goes through the `dd` gateway, which finds Visual Studio, configures with Ninja and puts the binary in `exe/`:
+
+```powershell
+.\dd.ps1 test                                            # build, lint, test, check translations
+python tools/dd.py build --config Release --arch x86     # the 32-bit desktop binary
+python tools/dd.py build --winstore                      # the Store binary
+```
+
+For debugging and profiling in the IDE, generate projects on demand — they are not checked in:
+
+```powershell
+cmake -S . -B tmp/vs -G "Visual Studio 18 2026" -A x64
+```
 
 ### Build Script
 
@@ -82,7 +96,7 @@ Use `dd.ps1` from a Developer PowerShell:
 | [docs/metadata.md](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
 | [docs/rendering.md](docs/rendering.md) | Surfaces, color, and the draw backends |
 | [docs/third-party.md](docs/third-party.md) | Vendored dependencies and how they are updated |
-| [docs/v-1.27.1.md](docs/v-1.27.1.md) | What the current release changed, and how it was verified |
+| [docs/v-1.27.2.md](docs/v-1.27.2.md) | What the current release changed, and how it was verified |
 | [docs/v-next.md](docs/v-next.md) | Deferred work, open issues, and constraints that must not be lost |
 
 ## Contributing

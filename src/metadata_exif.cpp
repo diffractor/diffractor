@@ -7,7 +7,9 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: EXIF metadata extraction and writing. Parses camera settings, dates, GPS
-// coordinates, and other EXIF tags from JPEG and other image formats.
+// coordinates, and other EXIF tags from JPEG and other image formats. For the verbose pane it also
+// presents the maker note as its own directory and derives the facts the camera implied but did not
+// record.
 
 #include "pch.h"
 #include "metadata_exif.h"
@@ -22,6 +24,7 @@
 #include <libexif/exif-entry.h>
 #include <libexif/exif-format.h>
 #include <libexif/exif-byte-order.h>
+#include <libexif/exif-mnote-data.h>
 
 #include <utility>
 
@@ -314,13 +317,15 @@ public:
 					constexpr size_t offset = 8;
 					p = p + offset;
 					const auto length = len - offset;
-					const auto char_length = length / sizeof(wchar_t);
+					// Exif spells this UTF-16, so the code unit is two bytes on every platform.
+					// wchar_t is only two on Windows.
+					const auto char_length = length / sizeof(char16_t);
 
 					if (_is_intel)
 					{
-						// p is a file offset, so it carries no wchar_t alignment of its own.
-						std::wstring aligned(char_length, L'\0');
-						std::memcpy(aligned.data(), p, char_length * sizeof(wchar_t));
+						// p is a file offset, so it carries no char16_t alignment of its own.
+						std::u16string aligned(char_length, u'\0');
+						std::memcpy(aligned.data(), p, char_length * sizeof(char16_t));
 						return str::strip_and_cache(aligned);
 					}
 
@@ -338,7 +343,9 @@ public:
 						pos += 2;
 					}
 
-					return str::strip_and_cache({std::bit_cast<const wchar_t*>(dst), char_length});
+					std::u16string aligned(char_length, u'\0');
+					std::memcpy(aligned.data(), dst, char_length * sizeof(char16_t));
+					return str::strip_and_cache(aligned);
 				}
 			}
 			else if (len > 5 && memcmp(p, "ASCII", 5) == 0)
@@ -360,8 +367,8 @@ public:
 			else if (str::is_utf16(p, len))
 			{
 				const auto char_length = len / 2;
-				std::wstring aligned(char_length, L'\0');
-				std::memcpy(aligned.data(), p, char_length * sizeof(wchar_t));
+				std::u16string aligned(char_length, u'\0');
+				std::memcpy(aligned.data(), p, char_length * sizeof(char16_t));
 				return str::strip_and_cache(aligned);
 			}
 			else if (str::is_utf8(std::bit_cast<const char*>(p), len))
@@ -1078,8 +1085,10 @@ bool exif_gps_coordinate_builder::is_valid() const
 
 gps_coordinate exif_gps_coordinate_builder::build() const
 {
-	auto lat = abs(_latitude);
-	auto lng = abs(_longitude);
+	// std::fabs, not abs: these are doubles, and the C abs takes and returns int, so a coordinate
+	// would arrive here as whole degrees with the minutes and seconds truncated away.
+	auto lat = std::fabs(_latitude);
+	auto lng = std::fabs(_longitude);
 
 	if (_south == NorthSouth::South)
 	{
@@ -1105,14 +1114,75 @@ class exif_camera_settings_processor
 {
 	prop::item_metadata& _metadata;
 	exif_gps_coordinate_builder _gps_coordinate;
-	bool _created_date_set;
-	bool _created_date_is_original = false;
 	bool _below_sea_level = false;
 	float _gps_speed = 0.0f;
 	float _speed_to_kmh = 1.0f;
 
+	// A date, its zone and its fraction are three separate tags that may appear in any order, and
+	// OffsetTime lives in the Exif SubIFD while DateTime lives in IFD0. So the readings are held
+	// until the walk is over and combined once, rather than applied as they arrive.
+	struct pending_date
+	{
+		std::string text;
+		std::string offset;
+		std::string sub_second;
+	};
+
+	pending_date _date_time;
+	pending_date _date_original;
+	pending_date _date_digitized;
+
+	std::string _gps_date_stamp;
+	bool _has_gps_time = false;
+	double _gps_time[3] = {};
+
+	// An Exif ASCII value spans its whole component count, so it arrives NUL-terminated and may be
+	// space-padded. `+02:00\0` is seven characters and fails every fixed-width test applied to it.
+	static std::string exif_string(const exif_dir_entry& entry)
+	{
+		auto text = entry.text();
+		while (!text.empty() && (text.back() == '\0' || text.back() == ' ')) text.remove_suffix(1);
+		return std::string(text);
+	}
+
+	void add_pending(const pending_date& pending, const prop::date_source source) const
+	{
+		if (pending.text.empty()) return;
+
+		df::date_t d;
+		if (!d.parse_exif_date(pending.text) || !d.is_valid()) return;
+
+		if (const auto fraction = prop::parse_sub_second_intervals(pending.sub_second); fraction != 0)
+		{
+			d = df::date_t(d.to_int64() + fraction);
+		}
+
+		_metadata.dates.add(source, d, prop::parse_utc_offset(pending.offset));
+	}
+
+	// GPSDateStamp and GPSTimeStamp are a true UTC instant for the moment of capture, which is the
+	// one thing that can recover a zone an EXIF reading never stated. Stored, never displayed.
+	void add_gps_stamp() const
+	{
+		if (_gps_date_stamp.empty() || !_has_gps_time) return;
+
+		df::date_t d;
+		// `CCYY:MM:DD` with no time: the shared parser has no date-only form for the colon
+		// spelling, so the pair is punctuated here, exactly as add_iptc_date does.
+		if (!d.parse_exif_date(_gps_date_stamp + " 00:00:00") || !d.is_valid()) return;
+
+		const auto seconds = static_cast<uint64_t>(_gps_time[0]) * 3600 +
+			static_cast<uint64_t>(_gps_time[1]) * 60 +
+			static_cast<uint64_t>(_gps_time[2]);
+
+		if (seconds >= 24 * 3600) return;
+
+		_metadata.dates.add_utc(prop::date_source::gps_stamp,
+		                        df::date_t(d.to_int64() + seconds * df::date_t::intervals_per_second));
+	}
+
 public:
-	explicit exif_camera_settings_processor(prop::item_metadata& pd) : _metadata(pd), _created_date_set(false)
+	explicit exif_camera_settings_processor(prop::item_metadata& pd) : _metadata(pd)
 	{
 	}
 
@@ -1125,6 +1195,11 @@ public:
 
 		if (_below_sea_level) _metadata.altitude = -_metadata.altitude;
 		_metadata.gps_speed = _gps_speed * _speed_to_kmh;
+
+		add_pending(_date_original, prop::date_source::exif_original);
+		add_pending(_date_digitized, prop::date_source::exif_digitized);
+		add_pending(_date_time, prop::date_source::exif_datetime);
+		add_gps_stamp();
 	}
 
 	void tag(const exif_dir_entry& entry)
@@ -1172,7 +1247,7 @@ public:
 					const auto low = low_focal_len / static_cast<double>(focal_units);
 					const auto high = high_focal_len / static_cast<double>(focal_units);
 
-					if (abs(low - high) < 0.1 || low < 0.1)
+					if (std::fabs(low - high) < 0.1 || low < 0.1)
 					{
 						lens_text = str::cache(std::format("{:.1}mm", high));
 					}
@@ -1334,49 +1409,34 @@ public:
 			break;
 
 		case EXIF_TAG_DATE_TIME:
-			{
-				df::date_t ft;
-
-				// DateTime (0x0132) is the file/container change date and lives in IFD0, which is
-				// walked before the Exif SubIFD holding DateTimeOriginal (0x9003). Take it only as a
-				// provisional value so the authoritative capture time can still override it (#184).
-				if (!_created_date_set &&
-					ft.parse_exif_date(entry.text()) &&
-					ft.is_valid())
-				{
-					_metadata.created_exif = ft;
-					_created_date_set = true;
-				}
-			}
+			_date_time.text = exif_string(entry);
 			break;
 		case EXIF_TAG_DATE_TIME_ORIGINAL:
-			{
-				df::date_t ft;
-
-				// DateTimeOriginal is the authoritative capture time and always wins over a value
-				// provisionally taken from DateTime, regardless of IFD enumeration order (#184).
-				if (!_created_date_is_original &&
-					ft.parse_exif_date(entry.text()) &&
-					ft.is_valid())
-				{
-					_metadata.created_exif = ft;
-					_created_date_set = true;
-					_created_date_is_original = true;
-				}
-			}
+			_date_original.text = exif_string(entry);
 			break;
 		case EXIF_TAG_DATE_TIME_DIGITIZED:
-			{
-				df::date_t ft;
+			_date_digitized.text = exif_string(entry);
+			break;
 
-				if (ft.parse_exif_date(entry.text()) &&
-					ft.is_valid())
-				{
-					_metadata.created_digitized = ft;
-					_created_date_set = true;
-				}
-				break;
-			}
+		case EXIF_TAG_OFFSET_TIME:
+			_date_time.offset = exif_string(entry);
+			break;
+		case EXIF_TAG_OFFSET_TIME_ORIGINAL:
+			_date_original.offset = exif_string(entry);
+			break;
+		case EXIF_TAG_OFFSET_TIME_DIGITIZED:
+			_date_digitized.offset = exif_string(entry);
+			break;
+
+		case EXIF_TAG_SUB_SEC_TIME:
+			_date_time.sub_second = exif_string(entry);
+			break;
+		case EXIF_TAG_SUB_SEC_TIME_ORIGINAL:
+			_date_original.sub_second = exif_string(entry);
+			break;
+		case EXIF_TAG_SUB_SEC_TIME_DIGITIZED:
+			_date_digitized.sub_second = exif_string(entry);
+			break;
 		}
 	}
 
@@ -1452,6 +1512,22 @@ public:
 			else if (first_char_is(entry.text(), 'N')) _speed_to_kmh = 1.852f;
 			else _speed_to_kmh = 1.0f;
 			break;
+
+		case EXIF_TAG_GPS_DATE_STAMP:
+			_gps_date_stamp = exif_string(entry);
+			break;
+
+		case EXIF_TAG_GPS_TIME_STAMP:
+			// Three rationals, or it is not a time. get_urational answers {0,0} out of range, so
+			// without this a one-component entry would record midnight as if it were a reading.
+			if (entry._components >= 3 && entry._format == FMT_URATIONAL)
+			{
+				_gps_time[0] = entry.get_urational(0).to_real();
+				_gps_time[1] = entry.get_urational(1).to_real();
+				_gps_time[2] = entry.get_urational(2).to_real();
+				_has_gps_time = true;
+			}
+			break;
 		}
 	}
 };
@@ -1511,6 +1587,216 @@ static std::string_view exif_ifd_title(const ExifIfd ifd)
 	}
 }
 
+// The maker note is a vendor's own directory carried inside Exif, so it is listed as its own section
+// rather than left as the binary blob the Exif entry reports. libexif decodes Canon, Nikon, Fuji,
+// Olympus, Sanyo, Epson, Pentax and Casio; anything else keeps only that binary row.
+static void add_maker_note_section(metadata_kv_list& result, ExifData* ed, char* const buffer,
+                                   const unsigned int buffer_size)
+{
+	auto* const md = exif_data_get_mnote_data(ed);
+
+	if (!md) return;
+
+	const auto count = exif_mnote_data_count(md);
+
+	if (count == 0) return;
+
+	std::string title = "MakerNote";
+
+	// libexif does not report which vendor it recognised, so the camera's own Make names the section.
+	if (auto* const make = exif_data_get_entry(ed, EXIF_TAG_MAKE))
+	{
+		buffer[0] = 0;
+		const auto* const text = exif_entry_get_value(make, buffer, buffer_size);
+
+		if (text)
+		{
+			const auto trimmed = str::trim(std::string_view{text, strnlen(text, buffer_size)});
+			if (!trimmed.empty() && !is_binary_text(trimmed))
+				title = std::format("MakerNote ({})", str::utf8_cast(trimmed));
+		}
+	}
+
+	auto& section = result.emplace_back(std::format("{} ({})", title, count), std::string{});
+	section.container = true;
+	section.id = "exif.mnote";
+
+	for (auto i = 0u; i < count; ++i)
+	{
+		buffer[0] = 0;
+		const auto* const text = exif_mnote_data_get_value(md, i, buffer, buffer_size);
+		const auto len = text ? strnlen(text, buffer_size) : 0;
+		const std::string_view rendered{text ? text : "", len};
+		const auto readable = !rendered.empty() &&
+			!is_junk(std::bit_cast<const uint8_t*>(rendered.data()), static_cast<uint32_t>(len)) &&
+			!is_binary_text(rendered);
+
+		const auto id = exif_mnote_data_get_id(md, i);
+		const auto* const name = exif_mnote_data_get_name(md, i);
+
+		auto& row = result.emplace_back(
+			name ? std::string(name) : std::format("Tag 0x{:04x}", id),
+			readable ? std::string(str::utf8_cast(rendered)) : std::string{"binary"});
+
+		row.depth = 1;
+		row.shape = std::format("0x{:04x}", id);
+		row.id = std::format("exif.mnote.{:04x}", id);
+	}
+}
+
+// Reads one numeric tag from a named directory. Exif stores the same quantity as a rational in one
+// tag and a short in another, so the caller asks for a number and not for a storage format.
+static bool exif_read_number(ExifData* ed, const ExifIfd ifd, const ExifTag tag, double& out)
+{
+	const auto* const e = exif_content_get_entry(ed->ifd[ifd], tag);
+
+	if (!e || !e->data || e->components == 0) return false;
+
+	const auto order = exif_data_get_byte_order(ed);
+	const auto size = exif_format_get_size(e->format);
+
+	if (size == 0 || e->size < size) return false;
+
+	switch (e->format)
+	{
+	case EXIF_FORMAT_SHORT:
+		out = exif_get_short(e->data, order);
+		return true;
+	case EXIF_FORMAT_SSHORT:
+		out = exif_get_sshort(e->data, order);
+		return true;
+	case EXIF_FORMAT_LONG:
+		out = exif_get_long(e->data, order);
+		return true;
+	case EXIF_FORMAT_SLONG:
+		out = exif_get_slong(e->data, order);
+		return true;
+	case EXIF_FORMAT_RATIONAL:
+		{
+			const auto r = exif_get_rational(e->data, order);
+			if (r.denominator == 0) return false;
+			out = static_cast<double>(r.numerator) / r.denominator;
+			return true;
+		}
+	case EXIF_FORMAT_SRATIONAL:
+		{
+			const auto r = exif_get_srational(e->data, order);
+			if (r.denominator == 0) return false;
+			out = static_cast<double>(r.numerator) / r.denominator;
+			return true;
+		}
+	default:
+		return false;
+	}
+}
+
+// Facts the camera implied but did not record. These are annotations on the block: every one is
+// arithmetic over tags listed above it, and none replaces the tag it came from.
+static void add_derived_section(metadata_kv_list& result, ExifData* ed)
+{
+	metadata_kv_list rows;
+
+	double focal_length = 0.0;
+	double focal_35 = 0.0;
+	double f_number = 0.0;
+	double exposure = 0.0;
+	double pixel_x = 0.0;
+	double pixel_y = 0.0;
+
+	const auto has_focal = exif_read_number(ed, EXIF_IFD_EXIF, EXIF_TAG_FOCAL_LENGTH, focal_length) &&
+		focal_length > 0.0;
+	const auto has_focal_35 = exif_read_number(ed, EXIF_IFD_EXIF, EXIF_TAG_FOCAL_LENGTH_IN_35MM_FILM,
+	                                           focal_35) && focal_35 > 0.0;
+	const auto has_f_number = exif_read_number(ed, EXIF_IFD_EXIF, EXIF_TAG_FNUMBER, f_number) && f_number > 0.0;
+	const auto has_exposure = exif_read_number(ed, EXIF_IFD_EXIF, EXIF_TAG_EXPOSURE_TIME, exposure) &&
+		exposure > 0.0;
+	const auto has_pixels = exif_read_number(ed, EXIF_IFD_EXIF, EXIF_TAG_PIXEL_X_DIMENSION, pixel_x) &&
+		exif_read_number(ed, EXIF_IFD_EXIF, EXIF_TAG_PIXEL_Y_DIMENSION, pixel_y) &&
+		pixel_x > 0.0 && pixel_y > 0.0;
+
+	// The 35 mm equivalent divided by the real focal length is the format's crop factor, and every
+	// focal-length-relative figure below is scaled by it.
+	const auto crop = (has_focal && has_focal_35) ? focal_35 / focal_length : 0.0;
+
+	if (crop > 0.0)
+	{
+		auto& row = rows.emplace_back("Crop factor"s, std::format("{:.2f}x", crop));
+		row.shape = "focal.35 / focal";
+	}
+
+	if (has_focal_35)
+	{
+		// Horizontal angle of view across the 36 mm width of a 35 mm frame.
+		const auto fov = to_degrees(2.0 * std::atan(36.0 / (2.0 * focal_35)));
+		auto& row = rows.emplace_back("Field of view"s, std::format("{:.1f}\u00b0 horizontal", fov));
+		row.shape = "36mm / focal.35";
+	}
+
+	// 0.03 mm on a 35 mm frame is the conventional circle of confusion; it is a viewing assumption,
+	// not a measurement, so the depth-of-field figures derived from it are approximate.
+	const auto coc = crop > 0.0 ? 0.03 / crop : 0.0;
+
+	if (coc > 0.0)
+	{
+		auto& row = rows.emplace_back("Circle of confusion"s, std::format("{:.3f} mm", coc));
+		row.shape = "0.03mm / crop";
+	}
+
+	if (coc > 0.0 && has_f_number)
+	{
+		const auto hyperfocal = (focal_length * focal_length) / (f_number * coc) + focal_length;
+		auto& row = rows.emplace_back("Hyperfocal distance"s, std::format("{:.2f} m", hyperfocal / 1000.0));
+		row.shape = "focal2 / (fnumber x coc)";
+	}
+
+	if (has_f_number && has_exposure)
+	{
+		const auto light_value = 2.0 * std::log2(f_number) - std::log2(exposure);
+		auto& row = rows.emplace_back("Light value"s, std::format("{:.1f} EV", light_value));
+		row.shape = "aperture + shutter, ISO 100";
+	}
+
+	if (has_pixels)
+	{
+		const auto megapixels = (pixel_x * pixel_y) / 1'000'000.0;
+		auto& row = rows.emplace_back("Megapixels"s, std::format("{:.1f} MP", megapixels));
+		row.shape = "width x height";
+	}
+
+	if (rows.empty()) return;
+
+	auto& section = result.emplace_back(std::format("Derived ({})", rows.size()), std::string{});
+	section.container = true;
+	section.id = "exif.derived";
+
+	auto index = 0;
+
+	for (auto& row : rows)
+	{
+		row.depth = 1;
+		row.id = std::format("exif.derived.{}", index++);
+		result.emplace_back(std::move(row));
+	}
+}
+
+// The pane reports what the file holds, so libexif's two normalising defaults are cleared for it.
+// IGNORE_UNKNOWN_TAGS drops every entry libexif has no name for; FOLLOW_SPECIFICATION fabricates the
+// mandatory entries a directory omits, removes entries not recorded for their directory, and rewrites
+// off-spec entries in place, which would make the reported format and the hex dump disagree with the
+// file. Both stay on everywhere else, where writing a conformant file is the point.
+static std::unique_ptr<ExifData, exif_free> exif_load_as_stored(const uint8_t* data, const size_t size)
+{
+	std::unique_ptr<ExifData, exif_free> ed(exif_data_new());
+
+	if (!ed) return ed;
+
+	exif_data_unset_option(ed.get(), EXIF_DATA_OPTION_IGNORE_UNKNOWN_TAGS);
+	exif_data_unset_option(ed.get(), EXIF_DATA_OPTION_FOLLOW_SPECIFICATION);
+	exif_data_load_data(ed.get(), data, static_cast<unsigned int>(size));
+
+	return ed;
+}
+
 metadata_kv_list metadata_exif::to_info(const df::cspan data)
 {
 	metadata_kv_list result;
@@ -1518,8 +1804,7 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 
 	if (is_exif_signature(data))
 	{
-		ed = std::unique_ptr<ExifData, exif_free>(
-			exif_data_new_from_data(data.data, static_cast<unsigned int>(data.size)));
+		ed = exif_load_as_stored(data.data, data.size);
 	}
 	else
 	{
@@ -1527,8 +1812,7 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 		with_sig.reserve(data.size + exif_signature.size());
 		with_sig.assign(exif_signature.begin(), exif_signature.end());
 		with_sig.insert(with_sig.end(), data.data, data.data + data.size);
-		ed = std::unique_ptr<ExifData, exif_free>(
-			exif_data_new_from_data(with_sig.data(), static_cast<unsigned int>(with_sig.size())));
+		ed = exif_load_as_stored(with_sig.data(), with_sig.size());
 	}
 
 	if (ed)
@@ -1570,8 +1854,13 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 					!is_junk(std::bit_cast<const uint8_t*>(rendered.data()), static_cast<uint32_t>(len)) &&
 					!is_binary_text(rendered);
 
+				// libexif answers no name for a tag it cannot place in this directory.
+				const auto* const tag_name = exif_tag_get_name_in_ifd(e->tag, ifd);
+
 				auto& row = result.emplace_back(
-					str::cache(exif_tag_get_name_in_ifd(e->tag, ifd)),
+					tag_name
+						? std::string(tag_name)
+						: std::format("Tag 0x{:04x}", static_cast<unsigned>(e->tag)),
 					readable
 						? std::string(str::utf8_cast(rendered))
 						: std::format("{}, {} bytes", vendor.empty() ? std::string_view{"binary"} : vendor,
@@ -1592,13 +1881,19 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 			}
 		}
 
+		add_maker_note_section(result, ed.get(), buffer, buffer_size);
+		add_derived_section(result, ed.get());
+
 		if (ed->data && ed->size > 0)
 		{
 			auto& row = result.emplace_back("Embedded thumbnail"_c, std::format("{} bytes", ed->size));
 			row.id = "exif.thumbnail";
 			row.shape = "binary"_c;
-			const auto kept = std::min<size_t>(ed->size, str::max_hex_dump_bytes);
-			row.detail = metadata_binary_detail{std::vector<uint8_t>(ed->data, ed->data + kept)};
+			// The whole payload is kept rather than a hex-sized prefix: a truncated image cannot decode.
+			// Whoever fails to decode it trims the bytes back to dump size.
+			constexpr size_t max_embedded_image_bytes = 8_z * 1024_z * 1024_z;
+			const auto kept = std::min<size_t>(ed->size, max_embedded_image_bytes);
+			row.detail = metadata_binary_detail{std::vector<uint8_t>(ed->data, ed->data + kept), true};
 		}
 	}
 
@@ -1817,17 +2112,23 @@ df::blob metadata_exif::make_exif(const prop::item_metadata_ptr& md)
 			add_ascii(exif, EXIF_IFD_0, EXIF_TAG_IMAGE_DESCRIPTION, md->description.sv());
 		if (!prop::is_null(md->comment)) add_user_comment(exif, md->comment.sv());
 
-		const auto created = md->created();
+		const auto original = md->dates.original();
 
-		if (created.is_valid())
+		// Never the resolved date: writing that into DateTimeOriginal would forge a capture time for
+		// any file whose Original was inferred from a lower-authority source (#184, #192).
+		if (original.is_valid())
 		{
-			add_date(exif, EXIF_IFD_0, EXIF_TAG_DATE_TIME, created);
-			add_date(exif, EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_ORIGINAL, created);
+			add_date(exif, EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_ORIGINAL, original);
 		}
 
-		if (md->created_digitized.is_valid())
+		if (md->dates.modified().is_valid())
 		{
-			add_date(exif, EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_DIGITIZED, md->created_digitized);
+			add_date(exif, EXIF_IFD_0, EXIF_TAG_DATE_TIME, md->dates.modified());
+		}
+
+		if (md->dates.created().is_valid())
+		{
+			add_date(exif, EXIF_IFD_EXIF, EXIF_TAG_DATE_TIME_DIGITIZED, md->dates.created());
 		}
 
 		////  All these tags are created with default values by exif_data_fix() 

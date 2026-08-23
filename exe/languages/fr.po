@@ -593,11 +593,11 @@ msgstr "Trier par Date de modification"
 msgid "Sort by Date created"
 msgstr "Trier par date de création"
 
-msgid "Sort dates ascending"
-msgstr "Trier les dates par ordre croissant"
+msgid "Show oldest items first"
+msgstr "Afficher d'abord les éléments les plus anciens"
 
-msgid "Sort dates descending"
-msgstr "Trier les dates par ordre décroissant"
+msgid "Show newest items first"
+msgstr "Afficher d'abord les éléments les plus récents"
 
 msgid "Sort by Group order (Default)"
 msgstr "Trier par ordre du groupe (par défaut)"
@@ -731,11 +731,11 @@ msgstr "Afficher les lecteurs"
 msgid "Show history chart"
 msgstr "Afficher le graphique de l'historique"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Année de début du graphique d'historique. Vide correspond à 10 ans par défaut."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Année la plus ancienne proposée par le navigateur d'historique. Vide, elle est déduite de vos photos."
 
-msgid "Show collection folders"
-msgstr "Afficher les dossiers de la collection"
+msgid "Shows the eight years ending here."
+msgstr "Affiche les huit années se terminant ici."
 
 msgid "Show favorite searches"
 msgstr "Afficher les recherches favorites"
@@ -1019,17 +1019,8 @@ msgstr "Votre collection, ce sont les dossiers que vous choisissez, y compris le
 msgid "folder"
 msgstr "Dossier"
 
-msgid "music"
-msgstr "Musique"
-
 msgid "folders"
 msgstr "Dossiers"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "image"
 
 msgid "Folder"
 msgstr "Dossier"
@@ -2578,6 +2569,9 @@ msgstr "Modifié"
 msgid "or"
 msgstr "ou"
 
+msgid "original"
+msgstr "original"
+
 msgid "related"
 msgstr "en rapport"
 
@@ -3637,3 +3631,12 @@ msgstr "Récupéré après un problème de démarrage"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor s'est fermé de façon inattendue avant la fin de son démarrage ; cette exécution utilise donc la disposition par défaut avec l'accélération matérielle désactivée. Vos fichiers, votre collection et vos éléments récents sont inchangés. Vous pouvez restaurer vos paramètres depuis Options."
+
+msgid "Original//date"
+msgstr "Original"
+
+msgid "Group by Date Original"
+msgstr "Regrouper par date d'origine"
+
+msgid "Sort by Date original"
+msgstr "Trier par date d'origine"

@@ -18,7 +18,13 @@
 
 
 #define TXMP_STRING_TYPE std::string
+// The toolkit rejects more than one of these, and the client has to name the same one the library
+// was built with or the two disagree about structure layout.
+#ifdef _WIN32
 #define WIN_ENV 1
+#else
+#define UNIX_ENV 1
+#endif
 #define XMP_INCLUDE_XMPFILES 1
 #define XML_STATIC
 #define XMP_StaticBuild 1
@@ -51,6 +57,14 @@ static df::date_t xmp_parse_date(const std::string_view str)
 	}
 
 	return {};
+}
+
+// parse_xml_date reads the digits and drops the zone, so the caller has to recover it. Without
+// this an XMP date ending in Z is filed as a local reading and lands an hour or more away from the
+// container date it is meant to agree with, which then reads as two dates instead of one.
+static int16_t xmp_date_offset(const std::string_view str)
+{
+	return prop::parse_utc_offset(str);
 }
 
 static bool xmp_decode_gps_coordinate(const std::string_view str, double& result)
@@ -164,6 +178,53 @@ static str::cached xmp_load_array(const SXMPMeta& xmp, const char* schema_ns, co
 	return result;
 }
 
+// Google's photo sphere namespace, which is what a phone panorama mode and most stitchers write.
+// It is not one the toolkit knows, so it is registered at startup before any file is parsed.
+constexpr auto ns_gpano = "http://ns.google.com/photos/1.0/panorama/";
+
+// Records what the file itself declares, never what its shape suggests. `UsePanoramaViewer` and the
+// cropped-area properties are read only to answer "is this a panorama" for a writer that omitted
+// ProjectionType; a file carrying none of them is not one.
+static void read_panorama_projection(const SXMPMeta& xmp, prop::item_metadata& md)
+{
+	std::string utf8;
+	XMP_OptionBits flags = 0;
+
+	if (xmp.GetProperty(ns_gpano, "ProjectionType", &utf8, &flags))
+	{
+		const auto text = str::trim(str::utf8_cast(utf8));
+
+		if (str::icmp(text, "equirectangular") == 0)
+		{
+			md.panorama = prop::panorama_projection::equirectangular;
+			return;
+		}
+
+		if (str::icmp(text, "cylindrical") == 0)
+		{
+			md.panorama = prop::panorama_projection::cylindrical;
+			return;
+		}
+
+		if (!text.empty())
+		{
+			md.panorama = prop::panorama_projection::unspecified;
+			return;
+		}
+	}
+
+	for (const auto* const declares_panorama : {
+		     "UsePanoramaViewer", "FullPanoWidthPixels", "CroppedAreaImageWidthPixels"
+	     })
+	{
+		if (xmp.GetProperty(ns_gpano, declares_panorama, &utf8, &flags))
+		{
+			md.panorama = prop::panorama_projection::unspecified;
+			return;
+		}
+	}
+}
+
 static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 {
 	XMP_OptionBits flags = 0;
@@ -171,34 +232,45 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 
 	if (xmp.GetProperty(kXMP_NS_Photoshop, "DateCreated", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
-		if (d.is_valid()) md.created_exif = d;
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::photoshop_created, d, xmp_date_offset(text));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_XMP, "CreateDate", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
 
 		if (d.is_valid())
 		{
-			md.created_digitized = d;
+			md.dates.add(prop::date_source::xmp_create, d, xmp_date_offset(text));
 		}
-		else if (str::is_num(str::utf8_cast(utf8)))
+		else if (str::is_num(text))
 		{
-			md.year = str::to_int(str::utf8_cast(utf8));
+			md.year = str::to_int(text);
 		}
+	}
+
+	if (xmp.GetProperty(kXMP_NS_XMP, "ModifyDate", &utf8, &flags))
+	{
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::xmp_modify, d, xmp_date_offset(text));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_EXIF, "DateTimeDigitized", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
-		if (d.is_valid()) md.created_digitized = d;
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::xmp_exif_digitized, d, xmp_date_offset(text));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_EXIF, "DateTimeOriginal", &utf8, &flags))
 	{
-		const auto d = xmp_parse_date(str::utf8_cast(utf8));
-		if (d.is_valid()) md.created_exif = d;
+		const auto text = str::utf8_cast(utf8);
+		const auto d = xmp_parse_date(text);
+		if (d.is_valid()) md.dates.add(prop::date_source::xmp_exif_original, d, xmp_date_offset(text));
 	}
 
 	// A coordinate that failed to decode must not be applied - a zeroed half pins the item to the
@@ -411,16 +483,30 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	{
 		md.raw_file_name = str::strip_and_cache(utf8);
 	}
+
+	read_panorama_projection(xmp, md);
 }
 
 
 void metadata_xmp::initialise()
 {
 	SXMPMeta::Initialize();
-	SXMPFiles::Initialize(0UL);
+	// Spelled with its own type: a bare zero is also a null pointer constant, which makes the
+	// option and plugin-folder overloads ambiguous where unsigned long is not unsigned int.
+#ifdef _WIN32
+	SXMPFiles::Initialize(XMP_OptionBits{0});
+#else
+	// The toolkit refuses to start on generic UNIX without this. There is no system code page to
+	// reconcile legacy local-encoded text against, so such text is left exactly as stored rather
+	// than transcoded by guess.
+	SXMPFiles::Initialize(kXMPFiles_IgnoreLocalText);
+#endif
 
 	// https://github.com/nomacs/nomacs/blob/master/exiv2-0.25/src/xmp.cpp	
 	//SXMPMeta::RegisterNamespace(kXMP_NS_MicrosoftPhoto, "MicrosoftPhoto", &microsoft_photo_prefix);
+
+	std::string gpano_prefix;
+	SXMPMeta::RegisterNamespace(ns_gpano, "GPano", &gpano_prefix);
 }
 
 void metadata_xmp::term()
@@ -578,14 +664,34 @@ void metadata_edits::apply(SXMPMeta& meta) const
 		meta.SetProperty(kXMP_NS_DM, "show", str::utf8_cast2(show.value()));
 	}
 
-	if (year.has_value())
+	if (year.has_value() && !date_created.has_value())
 	{
+		// A bare year and a Created date are the same XMP property, told apart on read by whether it
+		// parses as a date. Writing both would leave whichever went last, so the date wins: it is the
+		// more specific answer and it still carries the year.
 		meta.SetProperty(kXMP_NS_XMP, "CreateDate", str::utf8_cast2(str::to_string(year.value())));
 	}
 
-	if (created.has_value())
+	if (date_created.has_value())
 	{
-		meta.SetProperty(kXMP_NS_Photoshop, "DateCreated", str::utf8_cast2(created.value().to_xmp_date()));
+		const auto text = str::utf8_cast2(date_created.value().to_xmp_date());
+
+		// Both, as Original writes both below: xmp:CreateDate is the fourth-ranked Created source, so
+		// wherever the file's own DateTimeDigitized survives the write it would outrank the edit and
+		// the correction would appear to do nothing.
+		meta.SetProperty(kXMP_NS_XMP, "CreateDate", text);
+		meta.SetProperty(kXMP_NS_EXIF, "DateTimeDigitized", text);
+	}
+
+	if (date_original.has_value())
+	{
+		const auto text = str::utf8_cast2(date_original.value().to_xmp_date());
+
+		// Both, because photoshop:DateCreated alone is the lowest-authority capture source and would
+		// be outranked by the file's own DateTimeOriginal - the edit would appear to do nothing. The
+		// toolkit reconciles exif:DateTimeOriginal back into the embedded EXIF on save.
+		meta.SetProperty(kXMP_NS_Photoshop, "DateCreated", text);
+		meta.SetProperty(kXMP_NS_EXIF, "DateTimeOriginal", text);
 	}
 
 	if (episode.has_value())
@@ -770,6 +876,78 @@ df::file_path probe_xmp_path(const df::file_path src_path, const std::string_vie
 	return src_path.extension(".xmp");
 }
 
+// GPano writes these as plain integers. A property the file omits leaves its member zero, which
+// prop::panorama_geometry reads as an incomplete declaration and resolves against the pixels.
+static void read_panorama_geometry(const SXMPMeta& xmp, prop::panorama_geometry& g)
+{
+	const auto read = [&xmp](const char* const name, int& out)
+	{
+		XMP_Int32 value = 0;
+		XMP_OptionBits flags = 0;
+		if (xmp.GetProperty_Int(ns_gpano, name, &value, &flags)) out = value;
+	};
+
+	read("FullPanoWidthPixels", g.full_width);
+	read("FullPanoHeightPixels", g.full_height);
+	read("CroppedAreaLeftPixels", g.cropped_left);
+	read("CroppedAreaTopPixels", g.cropped_top);
+	read("CroppedAreaImageWidthPixels", g.cropped_width);
+	read("CroppedAreaImageHeightPixels", g.cropped_height);
+}
+
+prop::panorama_geometry metadata_xmp::panorama(const df::file_path path)
+{
+	prop::panorama_geometry result;
+
+	try
+	{
+		const auto* const ft = files::file_type_from_name(path);
+
+		if (ft->has_trait(file_traits::embedded_xmp))
+		{
+			SXMPFiles f;
+
+			if (f.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(path)), kXMP_UnknownFile,
+			               kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
+			{
+				SXMPMeta xmp;
+				const auto found = f.GetXMP(&xmp);
+				f.CloseFile();
+
+				if (found)
+				{
+					read_panorama_geometry(xmp, result);
+					if (result.is_valid()) return result;
+				}
+			}
+		}
+
+		// A stitcher that wrote a sidecar rather than an embedded packet still declared the sphere. The
+		// embedded reading is discarded first: read_panorama_geometry fills only what a packet declares,
+		// so joining an incomplete embedded declaration to the sidecar's would describe neither file.
+		result = {};
+
+		const auto sidecar = blob_from_file(probe_xmp_path(path, {}));
+
+		if (!sidecar.empty())
+		{
+			SXMPMeta xmp;
+			xmp.ParseFromBuffer(std::bit_cast<const char*>(sidecar.data()), static_cast<uint32_t>(sidecar.size()));
+			read_panorama_geometry(xmp, result);
+		}
+	}
+	catch (const std::exception& e)
+	{
+		record_xmp_error(__FUNCTION__, e.what());
+	}
+	catch (const XMP_Error& e)
+	{
+		record_xmp_error(__FUNCTION__, e.GetErrMsg());
+	}
+
+	return result;
+}
+
 bool metadata_xmp::has_embedded_xmp(const df::file_path path)
 {
 	try
@@ -782,9 +960,8 @@ bool metadata_xmp::has_embedded_xmp(const df::file_path path)
 		}
 
 		SXMPFiles f;
-		const auto w = platform::to_file_system_path(path);
 
-		if (!f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+		if (!f.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(path)), kXMP_UnknownFile,
 		                kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
 		{
 			return false;
@@ -829,11 +1006,10 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 		if (is_embedded_src)
 		{
 			SXMPFiles f;
-			const auto w = platform::to_file_system_path(src_path);
 			// Read only - the source is never modified here. If it cannot be read the existing
 			// packet is unknown, and applying the edits to an empty one would write away every
 			// property the file already holds.
-			if (f.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+			if (f.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(src_path)), kXMP_UnknownFile,
 			               kXMPFiles_OpenForRead | kXMPFiles_OpenUseSmartHandler))
 			{
 				f.GetXMP(&xmp);
@@ -887,9 +1063,9 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 		if (is_embedded_dst)
 		{
 			SXMPFiles xmp_dst_file;
-			const auto w = platform::to_file_system_path(update_path);
 
-			if (xmp_dst_file.OpenFile(str::utf8_cast2(str::utf16_to_utf8(w)), kXMP_UnknownFile,
+			if (xmp_dst_file.OpenFile(str::utf8_cast2(platform::to_utf8_file_system_path(update_path)),
+			                          kXMP_UnknownFile,
 			                          kXMPFiles_OpenForUpdate | kXMPFiles_OpenUseSmartHandler))
 			{
 				const auto can_put = xmp_dst_file.CanPutXMP(xmp);

@@ -79,6 +79,9 @@ std::string prop::key::text() const
 }
 
 static text_t prop_name_crc32c = "crc32c"sv;
+// Never displayed and never typed by a user - `@panorama` is the spelling they see - so it carries
+// a local name rather than a catalog entry in thirteen languages.
+static text_t prop_name_panorama = "panorama"sv;
 
 prop::key prop::album('al', "", "album", tt.prop_name_album, icon_index::star, data_type::string,
                       style::groupable | style::sortable | style::auto_complete, search_presence_mask::album);
@@ -145,15 +148,17 @@ prop::key prop::location_country('cn', "", "country", tt.prop_name_country, icon
                                  data_type::string,
                                  style::groupable | style::sortable | style::auto_complete,
                                  search_presence_mask::location);
-prop::key prop::created_exif('c', "", "created.exif", tt.prop_name_createdexif, icon_index::time,
+prop::key prop::created_exif('c', "", "original", tt.prop_name_original, icon_index::time,
                              data_type::date,
                              style::groupable | style::sortable | style::auto_complete, search_presence_mask::created);
+// Registered only so a row written before the date pack can still be read; "digitized" as a search
+// word is aliased to the created date, which is the concept it merged into.
 prop::key prop::created_digitized('cz', "", "digitized", tt.prop_name_digitized, icon_index::time,
-                                  data_type::date,
-                                  style::groupable | style::sortable | style::auto_complete,
-                                  search_presence_mask::created);
+                                  data_type::date, style::none, search_presence_mask::created);
 prop::key prop::created_utc('cu', "", "created", tt.prop_name_created, icon_index::time, data_type::date,
                             style::groupable | style::sortable | style::auto_complete, search_presence_mask::created);
+prop::key prop::dates_packed('dp', "", "date.pack", tt.prop_name_created, icon_index::time, data_type::date,
+                             style::none, search_presence_mask::created);
 prop::key prop::disk_num('dk', "", "disk", tt.prop_name_disk, icon_index::star, data_type::int_pair,
                          style::groupable | style::sortable, 0);
 prop::key prop::dimensions('di', "", "dimensions", tt.prop_name_dimensions, icon_index::star,
@@ -259,6 +264,8 @@ prop::key prop::label('lb', "", "label", tt.prop_name_label, icon_index::flag, d
                       search_presence_mask::rating_label);
 prop::key prop::doc_id('ii', "", "document.id", tt.prop_name_doc_id, icon_index::star, data_type::int32,
                        style::none, search_presence_mask::doc_id);
+prop::key prop::panorama('pj', "", "panorama.projection", prop_name_panorama, icon_index::world,
+                         data_type::int32, style::none, search_presence_mask::panorama);
 
 
 static df::hash_map<unsigned short, prop::key_ref> build_properties_by_id()
@@ -305,6 +312,9 @@ static property_map build_properties_by_name()
 	result["countries"] = prop::location_country;
 	result["country"] = prop::location_country;
 	result["created"] = prop::created_utc;
+	result["created.exif"] = prop::created_exif;
+	result["digitized"] = prop::created_utc;
+	result["original"] = prop::created_exif;
 	result["credit"] = prop::copyright_credit;
 	result["credits"] = prop::copyright_credit;
 	result["comm"] = prop::comment;
@@ -344,10 +354,10 @@ static property_map build_properties_by_name()
 	result["tag"] = prop::tag;
 	result["tagged"] = prop::tag;
 	result["tags"] = prop::tag;
-	result["taken"] = prop::created_utc;
-	result["timeline"] = prop::created_utc;
+	result["taken"] = prop::created_exif;
+	result["timeline"] = prop::created_exif;
 	result["updated"] = prop::modified;
-	result["when"] = prop::created_utc;
+	result["when"] = prop::created_exif;
 	result["x"] = prop::latitude;
 	result["years"] = prop::year;
 	result["year"] = prop::year;
@@ -355,7 +365,7 @@ static property_map build_properties_by_name()
 	// single-letter shortcuts - note "y" is the year, not the longitude
 	result["y"] = prop::year;
 	result["m"] = prop::modified;
-	result["c"] = prop::created_utc;
+	result["c"] = prop::created_exif;
 
 	return result;
 }
@@ -396,6 +406,11 @@ std::vector<prop::prop_scope> prop::search_scopes()
 		game,
 		crc32c,
 		doc_id,
+		// Internal storage, not vocabulary: neither has an arm in compare_val, so offering them in
+		// the picker gives the user a term that silently matches nothing. `@panorama` is the
+		// spelling a user sees for the second one.
+		dates_packed,
+		panorama,
 	};
 
 	std::vector<prop_scope> result;
@@ -424,10 +439,24 @@ std::vector<prop::prop_scope> prop::search_scopes()
 
 std::vector<prop::prop_scope> prop::key_scopes()
 {
+	// `with:` completes from this list, so a name here is a promise that asking for it answers.
+	// `date.pack` is the storage the three dates live in rather than a date anyone asks for, and
+	// `digitized` is the old spelling of the concept now called `created` - offering both teaches a
+	// fourth date that no longer exists. `panorama` has no arm in has_type for the same reason it has
+	// none in compare_val; `@panorama` is the spelling that answers.
+	const std::unordered_set<const key*> exclusions
+	{
+		created_digitized,
+		dates_packed,
+		panorama,
+	};
+
 	std::vector<prop_scope> result;
 
 	for (const auto& i : all_props)
 	{
+		if (exclusions.contains(i.second)) continue;
+
 		prop_scope s;
 		s.scope = i.first;
 		s.type = i.second;
@@ -495,9 +524,9 @@ search_presence_mask prop::item_metadata::calc_search_presence() const
 	if (!is_null(episode)) result.types |= prop::episode.search_presence_bit;
 	if (!is_null(exposure_time)) result.types |= prop::exposure_time.search_presence_bit;
 	if (!is_null(f_number)) result.types |= prop::f_number.search_presence_bit;
-	if (!is_null(created_exif)) result.types |= prop::created_exif.search_presence_bit;
-	if (!is_null(created_digitized)) result.types |= prop::created_digitized.search_presence_bit;
-	if (!is_null(created_utc)) result.types |= prop::created_utc.search_presence_bit;
+	if (!is_null(dates.original())) result.types |= prop::created_exif.search_presence_bit;
+	if (!is_null(dates.created())) result.types |= prop::created_utc.search_presence_bit;
+	if (is_panorama()) result.types |= prop::panorama.search_presence_bit;
 	if (!is_null(year)) result.types |= prop::year.search_presence_bit;
 	if (orientation != ui::orientation::top_left) result.types |= prop::orientation.search_presence_bit;
 	if (coordinate.is_valid()) result.types |= latitude.search_presence_bit;
@@ -588,6 +617,11 @@ prop::key_ref prop::from_prefix(const std::string_view scope)
 	if (str::icmp(scope, "created") == 0 || str::icmp(scope, tt.query_created) == 0)
 	{
 		return created_utc;
+	}
+
+	if (str::icmp(scope, tt.query_original) == 0)
+	{
+		return created_exif;
 	}
 
 	if (str::icmp(scope, "modified") == 0 || str::icmp(scope, tt.query_modified) == 0)

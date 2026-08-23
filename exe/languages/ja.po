@@ -593,11 +593,11 @@ msgstr "更新日時で並べ替え"
 msgid "Sort by Date created"
 msgstr "作成日で並べ替え"
 
-msgid "Sort dates ascending"
-msgstr "日付を昇順で並べ替え"
+msgid "Show oldest items first"
+msgstr "古いアイテムを先に表示"
 
-msgid "Sort dates descending"
-msgstr "日付を降順で並べ替え"
+msgid "Show newest items first"
+msgstr "新しいアイテムを先に表示"
 
 msgid "Sort by Group order (Default)"
 msgstr "グループ順（デフォルト）で並べ替え"
@@ -731,11 +731,11 @@ msgstr "ドライブを表示"
 msgid "Show history chart"
 msgstr "履歴チャートを表示"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "履歴チャートの開始年。空欄の場合は既定で 10 年になります。"
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "履歴ナビゲーターが表示する最も古い年。空欄の場合は写真から判断されます。"
 
-msgid "Show collection folders"
-msgstr "コレクションフォルダーを表示"
+msgid "Shows the eight years ending here."
+msgstr "ここで終わる8年間を表示します。"
 
 msgid "Show favorite searches"
 msgstr "お気に入りの検索を表示"
@@ -1019,17 +1019,8 @@ msgstr "コレクションとは、選んだフォルダーとそのサブフォ
 msgid "folder"
 msgstr "フォルダー"
 
-msgid "music"
-msgstr "ミュージック"
-
 msgid "folders"
 msgstr "フォルダー"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "ピクチャ"
 
 msgid "Folder"
 msgstr "フォルダー"
@@ -2576,6 +2567,9 @@ msgstr "更新日時"
 msgid "or"
 msgstr "or"
 
+msgid "original"
+msgstr "元の日時"
+
 msgid "related"
 msgstr "関連"
 
@@ -3637,3 +3631,12 @@ msgstr "起動時の問題から復帰しました"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor は起動を完了する前に予期せず終了したため、今回はハードウェアアクセラレーションを無効にした既定のレイアウトで実行しています。ファイル、コレクション、最近使用した項目は変更されていません。設定はオプションから復元できます。"
+
+msgid "Original//date"
+msgstr "元の日時"
+
+msgid "Group by Date Original"
+msgstr "元の日時でグループ化"
+
+msgid "Sort by Date original"
+msgstr "元の日時で並べ替え"

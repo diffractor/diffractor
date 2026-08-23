@@ -125,6 +125,52 @@ static void should_icmp_natural()
 	assert_equal(true, str::icmp_natural("IMG_9999.png", "IMG_10000.png") < 0, "IMG sequence overflow");
 }
 
+static void should_follow_the_filesystem_for_path_identity()
+{
+	// The subject is identity, not spelling, so the literals use the running platform's root.
+	const auto root = df::folder_path(df::windows_path_semantics ? "c:\\photos" : "/photos");
+	const auto root_upper = df::folder_path(df::windows_path_semantics ? "C:\\PHOTOS" : "/PHOTOS");
+	const auto lower = root.combine_file("holiday.jpg");
+	const auto upper = root.combine_file("HOLIDAY.JPG");
+	const auto other = root.combine_file("apple.jpg");
+
+	// Case-folded where the filesystem folds, and two distinct files where it does not.
+	constexpr auto same = df::case_insensitive_path_identity;
+	assert_equal(same, root.compare(root_upper) == 0, "folder identity");
+	assert_equal(same, lower.icmp(upper) == 0, "file identity");
+	assert_equal(same, lower == upper, "file equality follows the comparison");
+
+	// A hash that disagreed with the comparison would leave one file in two buckets.
+	const df::ihash hash;
+	assert_equal(same, hash(lower) == hash(upper), "file hash agrees with file identity");
+	assert_equal(same, hash(root) == hash(root_upper), "folder hash agrees with folder identity");
+	assert_equal(true, hash(lower) == hash(root.combine_file("holiday.jpg")), "one path, one hash");
+
+	df::hash_set<df::file_path, df::ihash, df::ieq> paths;
+	paths.emplace(lower);
+	paths.emplace(upper);
+	assert_equal(same ? 1 : 2, static_cast<int>(paths.size()), "a set holds one entry per file");
+
+	// Ordering still folds case on both platforms, so a case variant sorts beside its twin rather
+	// than ahead of every lower-case name. A byte comparison would put "HOLIDAY.JPG" before
+	// "apple.jpg", which is what this asserts against.
+	assert_equal(true, lower.icmp(other) > 0, "ordering is lexicographic");
+	assert_equal(true, upper.icmp(other) > 0, "a case variant orders with its twin, not before it");
+
+	// Type is a different question and never follows the filesystem: an upper-case extension names
+	// the same format on every platform.
+	assert_equal(0, str::icmp(lower.extension(), upper.extension()), "extension matching stays folded");
+	const auto ft_lower = files::file_type_from_name(lower);
+	const auto ft_upper = files::file_type_from_name(upper);
+	assert_equal(true, ft_lower == ft_upper, "file type does not follow path identity");
+
+	// A key held as a string has to answer the same way, or the rename planner disagrees with the
+	// index about whether a destination is occupied.
+	assert_equal(same, df::compare_path_key(lower.pack(), upper.pack()) == 0, "packed key identity");
+	assert_equal(same, df::path_text_starts(root_upper.text(), root.text()), "prefix match identity");
+	assert_equal(true, df::path_text_starts(root.text(), root.text()), "a path contains itself");
+}
+
 static void should_group_elements_by_folder()
 {
 	struct element
@@ -134,26 +180,36 @@ static void should_group_elements_by_folder()
 		bool skip = false;
 	};
 
+	// The subject is grouping, not path spelling, so the literals use the running platform's root.
+	constexpr auto a = df::windows_path_semantics ? "c:\\a" : "/a";
+	constexpr auto b = df::windows_path_semantics ? "c:\\b" : "/b";
+	constexpr auto c = df::windows_path_semantics ? "c:\\c" : "/c";
+	constexpr auto a_upper = df::windows_path_semantics ? "C:\\A" : "/A";
+
 	const std::vector<element> elements{
-		{df::folder_path("c:\\a"), 1},
-		{df::folder_path("c:\\b"), 2},
-		{df::folder_path("c:\\a"), 3},
-		{df::folder_path("c:\\b"), 4, true},
-		{df::folder_path("C:\\A"), 5},
-		{df::folder_path("c:\\c"), 6},
+		{df::folder_path(a), 1},
+		{df::folder_path(b), 2},
+		{df::folder_path(a), 3},
+		{df::folder_path(b), 4, true},
+		{df::folder_path(a_upper), 5},
+		{df::folder_path(c), 6},
 	};
+
+	// Path identity follows the filesystem, so the case variant is a fourth folder where two
+	// spellings are two places and a member of the first group where they are one.
+	constexpr auto expected_groups = df::case_insensitive_path_identity ? 3 : 4;
 
 	df::folder_groups groups;
 	groups.build(elements,
 	             [](const element& e) { return e.folder; },
 	             [](const element& e) { return !e.skip; });
 
-	assert_equal(3, static_cast<int>(groups.groups().size()), "one group per distinct folder");
+	assert_equal(expected_groups, static_cast<int>(groups.groups().size()), "one group per distinct folder");
 
 	// Groups are in first-seen order and each keeps its elements in input order.
-	assert_equal("c:\\a", groups.groups()[0].folder.text().str(), "first group");
-	assert_equal("c:\\b", groups.groups()[1].folder.text().str(), "second group");
-	assert_equal("c:\\c", groups.groups()[2].folder.text().str(), "third group");
+	assert_equal(a, groups.groups()[0].folder.text().str(), "first group");
+	assert_equal(b, groups.groups()[1].folder.text().str(), "second group");
+	assert_equal(c, groups.groups()[expected_groups - 1].folder.text().str(), "last group");
 
 	const auto ids = [&](const size_t g)
 	{
@@ -162,19 +218,23 @@ static void should_group_elements_by_folder()
 		return result;
 	};
 
-	// Interning is case sensitive, so "C:\A" must still reach the group "c:\a" created.
-	assert_equal("135", ids(0), "case variants share one group");
+	assert_equal(df::case_insensitive_path_identity ? "135" : "13", ids(0), "case variant follows path identity");
 	assert_equal("2", ids(1), "excluded element is dropped");
-	assert_equal("6", ids(2), "single element group");
+	assert_equal("6", ids(expected_groups - 1), "single element group");
 
 	groups.build(elements, [](const element& e) { return e.folder; });
-	assert_equal(3, static_cast<int>(groups.groups().size()), "rebuild replaces the previous grouping");
+	assert_equal(expected_groups, static_cast<int>(groups.groups().size()),
+	             "rebuild replaces the previous grouping");
 	assert_equal("24", ids(1), "no predicate includes every element");
 
 	// Enough distinct folders to force the lookup tables to grow and rehash.
 	std::vector<element> many;
-	for (auto i = 0; i < 500; ++i) many.emplace_back(df::folder_path(std::format("c:\\f{}", i)), i);
-	for (auto i = 0; i < 500; ++i) many.emplace_back(df::folder_path(std::format("c:\\f{}", i)), i);
+	const auto numbered = [](const int i)
+	{
+		return df::folder_path(df::windows_path_semantics ? std::format("c:\\f{}", i) : std::format("/f{}", i));
+	};
+	for (auto i = 0; i < 500; ++i) many.emplace_back(numbered(i), i);
+	for (auto i = 0; i < 500; ++i) many.emplace_back(numbered(i), i);
 
 	groups.build(many, [](const element& e) { return e.folder; });
 	assert_equal(500, static_cast<int>(groups.groups().size()), "grown tables keep folders distinct");
@@ -297,7 +357,9 @@ static void should_calc_perceptual_hashes()
 	assert_equal(0, crypto::phash_distance(hash, hash), "distance to itself");
 
 	// Bit 0 comes from the DC coefficient, which is excluded, so it is free to mark a declined hash.
-	assert_equal(0ull, hash & 1ull, "a real hash never sets the reserved bit");
+	// Typed rather than 0ull: under LP64 unsigned long long is distinct from uint64_t, so the
+	// assert_equal overload set has no exact match.
+	assert_equal(uint64_t{0}, hash & uint64_t{1}, "a real hash never sets the reserved bit");
 	assert_equal(false, crypto::phash_is_usable(crypto::phash_declined), "the declined marker is not a hash");
 	assert_equal(false, crypto::phash_is_usable(0), "not computed is not a hash");
 
@@ -451,8 +513,8 @@ static void should_convert_utf8()
 	constexpr wchar_t icon_old_text[2] = {static_cast<wchar_t>(icon_index::fit), 0};
 	const auto icon_old = str::utf16_to_utf8(icon_old_text);
 	assert_equal(icon_old, icon_new, "icon_to_utf8 matches old approach");
-	assert_equal(false, icon_is_mirrored(icon_index::rotate_clockwise), "clockwise icon is not mirrored");
-	assert_equal(true, icon_is_mirrored(icon_index::rotate_anticlockwise), "anticlockwise icon is mirrored");
+	assert_equal(true, icon_index::rotate_clockwise != icon_index::rotate_anticlockwise,
+	             "the two rotations are different glyphs");
 
 	// Verify char32_to_utf8 round-trips for icon code points
 	std::string char32_result;
@@ -505,7 +567,7 @@ static void should_convert_utf8()
 static void should_split()
 {
 	constexpr auto to_be_split = "H:\\2-Archief VIDEO privé\\Eigen video's\nF:\\1-Archief FOTOGRAFIE privé";
-	const auto parts = str::split(to_be_split, false, [](const wchar_t c) { return c == '\n' || c == '\r'; });
+	const auto parts = str::split(to_be_split, false, [](const char c) { return c == '\n' || c == '\r'; });
 
 	assert_equal("H:\\2-Archief VIDEO privé\\Eigen video's", parts[0], "Split 1");
 	assert_equal("F:\\1-Archief FOTOGRAFIE privé", parts[1], "Split 2");
@@ -696,7 +758,8 @@ static void should_parse_command_line()
 	assert_equal(false, cl2.no_indexing, "no_indexing");
 
 
-	const auto path3 = test_files_folder.combine_file("test.jpg");
+	// The fixture's own spelling: a case-folded name only resolves on a case-insensitive volume.
+	const auto path3 = test_files_folder.combine_file("Test.jpg");
 	command_line_t cl3;
 	cl3.parse(std::format("{} -no-indexing", path3));
 
@@ -706,10 +769,15 @@ static void should_parse_command_line()
 	assert_equal(false, cl3.no_gpu, "no_gpu");
 	assert_equal(true, cl3.no_indexing, "no_indexing");
 
+	// The subject is that quotes hold a spaced path together as one part, so the folder is made
+	// here rather than borrowed from whatever the platform happens to install.
+	temp_files temps;
+	const auto spaced = temps.next_folder("program files");
+
 	command_line_t cl4;
-	cl4.parse("--no-gpu \"C:\\Program Files\"");
+	cl4.parse(std::format("--no-gpu \"{}\"", spaced));
 	assert_equal(true, cl4.no_gpu, "no_gpu");
-	assert_equal(false, cl4.folder_path.is_empty(), "folder_path program Files");
+	assert_equal(false, cl4.folder_path.is_empty(), "folder_path with a space");
 
 	command_line_t cl5;
 	cl5.parse("----- --no-gpu");
@@ -827,7 +895,7 @@ static void should_intern_strings()
 	assert_equal(true, str::cache(std::string_view{}).is_empty(), "empty interns to empty");
 
 	const std::string largest(platform::memory_pool::block_size -
-	                          offsetof(str::chached_string_storage_t, sz) - 1, 'x');
+	                          offsetof(str::cached_string_storage_t, sz) - 1, 'x');
 	assert_equal(largest.size(), str::cache(largest).size(), "largest pool record is interned");
 	const std::string too_large(largest.size() + 1, 'x');
 	assert_equal(true, str::cache(too_large).is_empty(), "oversized pool record is rejected");
@@ -883,7 +951,7 @@ static void should_report_file_presence()
 	const auto scratch = _temps.next_folder("file-presence");
 	const auto present = scratch.combine_file("present.txt");
 	{
-		std::ofstream fs(platform::to_file_system_path(present));
+		std::ofstream fs(platform::to_stream_path(present));
 		fs << "content";
 	}
 
@@ -902,7 +970,7 @@ static void should_report_file_presence()
 	// An empty file must not read as absent just because it has no bytes.
 	const auto empty_path = scratch.combine_file("empty.txt");
 	{
-		std::ofstream fs(platform::to_file_system_path(empty_path));
+		std::ofstream fs(platform::to_stream_path(empty_path));
 	}
 	const auto empty = platform::file_attributes(empty_path);
 	assert_equal(true, empty.exists(), "empty file exists");
@@ -1034,7 +1102,7 @@ static void should_case_fold_korean()
 	assert_equal(0, str::icmp(family, family), "Korean icmp equal");
 
 	// A single Hangul syllable normalises to itself for comparison.
-	assert_equal(0xAC00, str::normalze_for_compare(0xAC00), "Hangul normalise identity");
+	assert_equal(0xAC00, str::normalize_for_compare(0xAC00), "Hangul normalise identity");
 
 	// Different Korean words must not compare equal.
 	assert_equal(true, str::icmp(family, "\uC5EC\uD589") != 0, "different Korean words differ");
@@ -1247,6 +1315,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should abort result scope during exception"s, should_abort_result_scope_during_exception);
 	tests.add("Should cancel superseded tokens"s, should_cancel_superseded_tokens);
 	tests.add("Should group elements by folder"s, should_group_elements_by_folder);
+	tests.add("Should follow the filesystem for path identity"s, should_follow_the_filesystem_for_path_identity);
 	tests.add("Should report file presence"s, should_report_file_presence);
 	tests.add("Should map files"s, should_map_files);
 	tests.add("Should intern strings"s, should_intern_strings);

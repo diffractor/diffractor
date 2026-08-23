@@ -63,7 +63,7 @@ Center is expressed in **source-image space**, not as a fraction of the scrollab
 | `Fit` → zoom mode | `Ctrl+Space` |
 | Zoom mode → `Fit` | `Escape`, the `Fit` command, or stepping out past the fit scale |
 
-Nothing else enters zoom mode. In particular `Ctrl`+wheel over a fitted image does not: a wheel notch is far too easy to produce by accident to be allowed to replace the entire browsing interface, and a user who wants to magnify already has press-and-hold directly under the pointer. Once inside zoom mode the wheel steps the ladder normally.
+Nothing else enters zoom mode. In particular `Ctrl`+wheel over a fitted image does not: a wheel notch is far too easy to produce by accident to be allowed to replace the entire browsing interface, and a user who wants to magnify already has press-and-hold directly under the pointer. A pinch is the one exception, and §11.2 says why. Inside zoom mode `Ctrl`+wheel steps the ladder; the unmodified wheel keeps its meaning there and moves to the next image.
 
 **Committing an inspection.** Peeking often turns into working, and the user should not have to let go, lose the position, and navigate back. So inspect zoom can be promoted in place: pressing `Space` while the button is still held converts the temporary view into durable zoom mode, and releasing then leaves the view exactly where it was. The promotion is explicit and observable — the readout drops its temporary styling at that instant, the chrome does not return, and the image does not move — which is what keeps it from undermining the disposability of inspect zoom. A silent promotion, where an adjustment becomes permanent merely because the user changed magnification or held the button a long time, is a defect.
 
@@ -182,7 +182,44 @@ Limits bracket the fit scale rather than being fixed constants: the minimum expl
 - Touch and touchpad flicks carry momentum with friction and settle at the edges. Mouse panning does not; a mouse drag that ends should stop.
 - Held arrow keys accelerate from a single precise step to a smooth glide, so the keyboard can cross a large image without dozens of presses.
 - Inspect-zoom traversal is *positional*, not relative: the viewport acts as a map of the whole image and the pointer picks the visible region. This is deliberately a different gesture from panning, and the two are never mixed within one interaction. The activation frame anchors the pressed source point under the pointer; movement afterwards traverses.
-- Region zoom scales the selected rectangle to the viewport preserving aspect ratio and centers on it. Rectangles below the minimum drag threshold are ignored.
+- Zooming to a region scales that rectangle to the viewport preserving aspect ratio and centers on it. Rectangles below the minimum drag threshold are ignored. The rectangle itself is drawn and kept rather than consumed on release; §6.3 owns it.
+
+### 6.2 Looking around a wide picture
+
+Fitted to a browsing window a 12000 × 1000 stitch is a bright line, and the ladder's first stop above `Fit` is still nothing to read. A picture wide enough to look around is therefore treated as a place to move through rather than an image to magnify.
+
+- **What qualifies.** A `GPano` declaration qualifies a file outright. Failing that, an aspect ratio of at least 2:1 **and** a long edge of at least 4000 pixels. Both are stored dimensions, so the shape test costs no field and can be retuned without a re-index. Aspect alone would claim every wide screenshot, which is what the size floor excludes.
+- **Zooming a qualifying picture goes straight to `100%`**, where the strip is legible, rather than stepping the ladder.
+- **The pointer then drives the centre**, so crossing the viewport sweeps the whole width. No button is held, so press-and-hold [inspect zoom](#21-two-magnified-states-one-zoom) is untouched and no layer is added for `Escape` to peel.
+- **The vertical axis is pinned unless there is something to see.** Taller than the viewport at that scale, the pointer drives it too; otherwise it is fixed, because following the pointer with nowhere to go is only jitter. The pin is per axis, so a tall stitch is held horizontally by the same rule.
+- **A file that declares a sphere gets one.** `GPano:ProjectionType` of `equirectangular` is not a wide picture, it is a place, and §6.4 owns what happens then. Everything above is the treatment for a picture that is merely wide: an undeclared stitch, a cylindrical panorama, or a declared sphere the user has asked to see flat. `@panorama` searches the declaration alone, because a search is an assertion about the file rather than about how it is drawn — [metadata](metadata.md#panorama) owns the attribute.
+
+### 6.4 Standing inside an equirectangular panorama
+
+An equirectangular file is a sphere unrolled onto a rectangle. Drawn flat, its horizon bows and its verticals lean, and the wider the field the worse it gets — so a file that declares that projection is not shown as a long strip to sweep along but as a place to stand in and turn around.
+
+- **What qualifies.** `GPano:ProjectionType` of `equirectangular`, and nothing else. `cylindrical` names no vertical mapping the writers agree on and `unspecified` names no projection at all, so both keep §6.2's flat treatment. Shape never qualifies a file for this: reprojecting a picture that merely looks wide would bend a picture that was never bent.
+- **Magnifying a qualifying file enters the projection** rather than stepping the ladder, and it opens facing the middle of what the file actually holds. *Every* way in, because [§2.1](#21-two-magnified-states-one-zoom) makes inspect zoom and zoom mode two durations of one mechanism sharing one renderer: press and hold shows the sphere, `Space` commits it without moving the view, and `Ctrl+Space` enters it directly. A projection reachable one way and not the other would be the second feature §2.1 exists to forbid.
+- **A held pointer aims; a free pointer's drag turns.** Under a held button the viewport maps the whole file and the pointer picks the direction, which is §6's positional inspect traversal applied to a sphere. In durable zoom mode nothing is held, so dragging grabs the world instead: crossing the viewport turns by exactly one field of view, whatever the field of view is, so the gesture feels the same at every stop. Straight up and straight down are both reachable and neither rolls past. §6.2's pointer sweep is *replaced*, not added to: one picture must not answer the same movement twice.
+- **Scale becomes field of view.** There is no pixel to be one-to-one with inside a sphere, so the ladder is a field of view from 120° down to 9°, and the readout says degrees instead of a percentage that would mean nothing. Stepping out from the widest stop leaves the projection entirely, which is [L2](#3-the-laws)'s floor in the ladder that replaces it.
+- **Asking for actual size leaves the projection.** `100%` means one source pixel per device pixel, which a sphere cannot offer, so that command answers with the file's own pixels rather than quietly redefining its own name.
+- **A partial panorama ends.** Most phone panoramas cover a band rather than a whole sphere, and where the file holds nothing the frame shows nothing — not the nearest row stretched, and not the sky invented. [metadata](metadata.md#panorama) owns which patch a file declares.
+- **The user can ask for the flat pixels.** Judging a stitching seam or focus means seeing what is stored, so a control in the zoom chrome switches between the two and shows which is in force ([L6](#3-the-laws)). It is per item, because it is a judgement about one picture rather than a preference about panoramas.
+- **The navigator shows the whole file with the camera's patch marked on it**, which is [L10](#3-the-laws) answered in the projection's own terms.
+- **Both backends show the same picture.** The camera, the coverage and the ladder are one piece of arithmetic; only the filtering differs, and only in sharpness. [rendering](rendering.md) owns which backend draws it and how.
+
+### 6.3 A region drawn on the picture
+
+`Ctrl` and drag draws a rectangle on the displayed picture and **keeps** it. Dragging inside moves it, and it carries three icon buttons: close, zoom to it, and open Edit with it as the crop.
+
+- **It lives in source space**, so it survives a resize, a layout change and a zoom, for the same reason [the model](#2-the-model) keeps its centre there. A rectangle that slid off the subject would be worse than none.
+- **It is clamped to the picture** rather than naming pixels that are not there, and a drag that runs backwards is still a rectangle.
+- **It does not outlive the item.** A region is about one picture, so it is held keyed to the item rather than on the panel that draws it — that panel is rebuilt for anything from a sidecar arriving to index progress, and a background update must not erase what the user just drew.
+- **The buttons are hidden during a drag**, and sit outside the rectangle when it is too small to hold them, clamped into the pane so a rectangle at the edge is still something to act on rather than something to redraw larger first.
+- **`Escape` peels one layer** ([L5](#3-the-laws)): with a rectangle it clears it, without one it falls through to the unwind ladder. It does so in the Media view as well as in Items, because a region can be drawn in both.
+- **The zoom chrome keeps its precedence.** The region's own three buttons answer first, but the zoom tools and the navigator answer before the rectangle body, so a rectangle drawn across them does not make them unclickable.
+- Zoom-to is the region-to-viewport primitive of §6; open-in-Edit maps the same rectangle onto the stored pixel grid the crop is expressed in, which for a rotated capture is not the space it was drawn in. Neither is a new model.
+- **Compare mode keeps the transient gesture**, because a region belongs to one picture.
 
 ### 6.1 Reaching the far side of a large image
 
@@ -251,7 +288,7 @@ That collapses the earlier auto-hide, pinned, and off triple to a single on/off 
 
 **The grading row.** In zoom mode a compact row in the bottom-right corner shows the displayed image's reject state, colour label, and rating, each as an inline control that is checked when set and cleared by choosing it again. It is the whole of the mode's editing vocabulary made visible, so what a keystroke will change, and what it just changed, are the same object on screen. The identical controls appear in the Items and fullscreen information panels, so the grading gesture is learned once and the row is not a zoom-only invention. It carries no menus, no pin, and no destructive command. [Selection controls](selection-controls.md#grading-controls) owns the row order, the icon and colour vocabulary, the exclusivity rules, and the bubble contract.
 
-**The cursor.** Magnifier over a fitted image, the native Windows `IDC_SIZEALL` cursor throughout zoom mode and while panning, and crosshair while drawing a zoom region. Cursor state changes with zoom state rather than waiting for the next pointer move.
+**The cursor.** Magnifier over a fitted image, the native Windows `IDC_SIZEALL` cursor throughout zoom mode and while panning, and crosshair while drawing a region (§6.3). Cursor state changes with zoom state rather than waiting for the next pointer move, so arming a region with `Ctrl` shows the crosshair before the pointer moves again.
 
 **The quality mark.** A small, quiet indication while a magnified view is drawn from a lower-resolution decode, cleared the moment the exact pixels arrive. Users judging focus must be able to tell provisional softness from a soft photograph, which is L12 stated as an interface element.
 
@@ -283,23 +320,67 @@ Responsiveness and honesty are both promises, so they are resolved by ordering r
 | Release or cancel | Return to the exact previous state, unless the view was committed |
 | Left drag while magnified | Pan with the DPI-scaled origin-based acceleration ramp |
 | Double-click on the image | No zoom action |
-| `Ctrl`+wheel in zoom mode | Ladder step anchored at the pointer |
-| `Ctrl`+wheel over a fitted image | Nothing; it is not an entry into zoom mode |
-| `Ctrl`+left drag | Draw and apply a zoom region |
+| `Ctrl`+left drag | Draw a region on the picture and keep it (§6.3) |
+| Drag inside a drawn region | Move it |
 | `Shift`+left / `Shift`+right press | Step in / step out anchored at the pointer; the context menu is suppressed once |
 | Middle click | Start or stop auto-pan |
 | Middle drag | Pan directly, regardless of modifiers |
-| Unmodified wheel over the image | Previous / next image |
-| Horizontal wheel or tilt | Pan horizontally while magnified |
-| Two-finger touchpad scroll | Pan both axes while magnified, previous / next while fitted |
-| `Ctrl` plus two-finger scroll | Ladder step anchored at the cursor |
-| Wheel over the toolbar | Ladder step anchored at the viewport center |
 | Drag inside the navigator | Pan directly to that region |
 | Plain right-click | Normal selection and context menu |
 
-Unmodified wheel navigating rather than zooming is a deliberate departure from the file-manager convention, justified by comparing the same region across a sequence being a primary workflow. Being a deliberate exception, it is communicated visibly rather than merely chosen.
+The wheel, the tilt wheel, two-finger scroll and pinch are §11.1 and §11.2, because they are the inputs that reach every surface rather than only the picture.
 
 Modifiers are read at two different moments, and that is what keeps `Ctrl` from being overloaded: the modifier state **at button-down chooses the gesture**, while a modifier pressed **during** a gesture only modulates it. A gesture never changes identity mid-flight.
+
+### 11.1 The wheel
+
+One rule covers every surface in the application: **the pointer chooses the surface, and the modifier chooses which of that surface's axes moves.** A modifier never changes meaning with position — only what it acts on. Written the other way round, as a chain that tests a modifier between two positions, the same `Ctrl` came to mean three different things and to mean nothing at all in one place, which is not a vocabulary a user can learn.
+
+| Modifier | Meaning |
+|---|---|
+| none | move the surface along its primary axis |
+| `Ctrl` | change the surface's scale |
+| horizontal wheel or tilt | move the surface along its secondary axis |
+
+Each surface then declares those three once. A dash means the notch is not claimed at all, so it is reported unhandled; *Ignored* means the surface claims it and does nothing, which is how a modifier is stopped from reaching past the thing it is pointing at.
+
+| Surface | Unmodified | `Ctrl` | Horizontal |
+|---|---|---|---|
+| Item grid, its scroll bar and the scroll control | Scroll the listing | Thumbnail size | — |
+| Sidebar | Scroll the sidebar | Scroll the sidebar | — |
+| Preview pane, fitted | Scroll the pane; previous / next item when it cannot scroll | Ignored; it is not an entry into zoom mode | — |
+| Preview pane, magnified | Previous / next item | Ladder step anchored at the pointer | Pan horizontally |
+| Preview pane, during inspect zoom | Adjust temporary magnification | Adjust temporary magnification | Pan horizontally |
+| Fullscreen media, fitted | Previous / next item | Ignored; it is not an entry into zoom mode | — |
+| Fullscreen media, magnified | Previous / next item | Ladder step anchored at the pointer | Pan horizontally |
+| Fullscreen media, during inspect zoom | Adjust temporary magnification | Adjust temporary magnification | Pan horizontally |
+| Map | Zoom | Zoom | — |
+| Selector strip | Scroll the strip | Scroll the strip | Scroll the strip |
+| List and task views | Scroll | Scroll | — |
+| Edit view | — | — | — |
+
+A surface with no scale of its own reads `Ctrl` as nothing to apply it to and moves along its primary axis, rather than claiming a scale it does not have.
+
+Three consequences of the rule are worth stating because each replaced something narrower:
+
+- **`Ctrl` over a fitted picture is ignored rather than passed on**, in both the preview pane and fullscreen. It used to fall through and resize thumbnails, which is a neighbouring surface's scale reached by pointing at something else.
+- **Unmodified wheel navigating rather than zooming** is a deliberate departure from the file-manager convention, justified by comparing the same region across a sequence being a primary workflow. Being a deliberate exception, it is communicated visibly rather than merely chosen. Where a surface has something to scroll it scrolls first, because a column of text under the pointer is a thing to read before it is a thing to page past.
+- **A splitter consumes nothing.** It is chrome with no content of its own, so a notch over it belongs to neither neighbour rather than to whichever was tested first.
+
+Whole detents are accumulated once, at the render view's frame boundary, and every surface below it is handed both the whole steps and the smooth movement. A device reporting fractions of a detent therefore accumulates rather than being divided down to nothing by each consumer in turn, and no view below that boundary sets its own rounding or its own scroll rate. Windows that are not the render view — dialogs, the embedded map control, the task panels' own frames — still scroll themselves, and are outside this rule because they are outside that boundary.
+
+A wheel notch a surface does not claim is reported as unhandled rather than being silently swallowed. Nothing above the render view consumes one today; the answer exists so a surface cannot claim an input it does not act on, which is the state that made the old chain unreadable.
+
+### 11.2 Pinch
+
+A pinch is its own gesture, not a wheel wearing a modifier. Carried as a synthesised `Ctrl`+wheel it had to be disambiguated by what the pointer was over, which meant it resized thumbnails over a grid and did nothing at all over a fitted picture.
+
+| Surface | Pinch |
+|---|---|
+| Item grid | Thumbnail size |
+| Preview pane, fullscreen media | Ladder step anchored at the pointer, entering zoom mode from fitted |
+
+Pinch is allowed the entry into zoom mode that `Ctrl`+wheel is refused (§14), and the reason is the same one that refuses it: the objection is to *one accidental notch* replacing the browsing interface. A two-finger pinch is not producible by accident, and on a touch device it is the gesture a user will try first.
 
 | Keyboard input | Behavior |
 |---|---|
@@ -328,7 +409,7 @@ At `Fit`, zoom owns only `Ctrl+Space`. Unmodified digits, letters, `/`, `*`, `+`
 - Two-finger scroll is the primary pan, acting on both axes at once rather than discarding horizontal input, and a flick continues with inertia and settles at the edges.
 - High-resolution deltas that are fractions of a detent are accumulated and applied exactly, because rounding each message to a notch turns smooth movement into a stutter.
 - System scroll direction, scroll amount, and inactive-window scrolling settings are honoured.
-- `Ctrl` plus two-finger scroll zooms, anchored at the cursor, matching every browser. A touchpad pinch has no on-screen location and is likewise anchored at the cursor, never at the viewport center.
+- `Ctrl` plus two-finger scroll follows the same rule as `Ctrl`+wheel (§11.1): it is the surface's scale where the surface has one, and over a fitted picture it is nothing. A touchpad pinch has no on-screen location and is anchored at the cursor, never at the viewport center.
 - Most touchpads have no middle button, so auto-pan is also reachable from the keyboard and from the zoom control.
 - Mouse inspect zoom is intentionally immediate. Touch keeps its platform hold gesture because a touch contact must still distinguish inspection from scrolling and panning.
 
@@ -477,3 +558,20 @@ post-release work:
 - Source-pixel coordinate/colour readout and the high-magnification pixel grid remain the
     optional Study additions described in §9; they are not part of the version 1.27
     interface.
+
+## Where this lives
+
+| Zoom subject | Source |
+|---|---|
+| Scale, source-space centre, anchoring, bounds, navigator timing | [model_zoom.h](../src/model_zoom.h) — `zoom_scale_mode`, `fit_scale`, `fit_variant_scale`, `clamp_center` |
+| The magnified surface, pan input, comparison | [view_media.h](../src/view_media.h), [ui.cpp](../src/ui.cpp) |
+| Which surface a wheel notch or a pinch belongs to, and the accumulation that precedes it | [ui.h](../src/ui.h) — `wheel_notch`, `accumulate_wheel_steps`; [app.h](../src/app.h) — `view_frame`; [view_items.cpp](../src/view_items.cpp) — `region_at` |
+| The panorama camera, its field-of-view ladder, and where a viewport pixel lands on the sphere | [ui_panorama.h](../src/ui_panorama.h) — `panorama_view` |
+| Resampling an equirectangular file through that camera | [render_panorama.cpp](../src/render_panorama.cpp) — `panorama_renderer` |
+| Rendering tiers and the decode that feeds them | [render_surface.cpp](../src/render_surface.cpp), [files_core.cpp](../src/files_core.cpp) — and [file-io.md](file-io.md) for the decode ladder |
+| Zoom mode as a mode, and what it suppresses | [model.h](../src/model.h) — `view_state` |
+
+The model is deliberately pure: [model_zoom.h](../src/model_zoom.h) has no window, no surface and no
+file access, which is why `/test:*zoom*` runs in microseconds and covers fit, stepping, anchoring,
+panning and navigator visibility directly. A zoom rule that cannot be expressed against that header
+is usually a rule about the media surface instead — check where it belongs before adding state.

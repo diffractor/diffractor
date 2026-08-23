@@ -593,11 +593,11 @@ msgstr "Değiştirilme tarihine göre sırala"
 msgid "Sort by Date created"
 msgstr "Oluşturulma tarihine göre sırala"
 
-msgid "Sort dates ascending"
-msgstr "Tarihleri artan şekilde sırala"
+msgid "Show oldest items first"
+msgstr "Önce en eski öğeleri göster"
 
-msgid "Sort dates descending"
-msgstr "Tarihleri azalan şekilde sırala"
+msgid "Show newest items first"
+msgstr "Önce en yeni öğeleri göster"
 
 msgid "Sort by Group order (Default)"
 msgstr "Grup sırasına göre sırala (varsayılan)"
@@ -731,11 +731,11 @@ msgstr "Sürücüleri göster"
 msgid "Show history chart"
 msgstr "Geçmiş grafiğini göster"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Geçmiş grafiğinin başlangıç yılı. Boş bırakılırsa varsayılan 10 yıldır."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Geçmiş gezgininin sunduğu en eski yıl. Boş bırakılırsa fotoğraflarınızdan hesaplanır."
 
-msgid "Show collection folders"
-msgstr "Koleksiyon klasörlerini göster"
+msgid "Shows the eight years ending here."
+msgstr "Burada biten sekiz yılı gösterir."
 
 msgid "Show favorite searches"
 msgstr "Favori aramaları göster"
@@ -1019,17 +1019,8 @@ msgstr "Koleksiyonunuz, alt klasörleri dahil olmak üzere seçtiğiniz klasörl
 msgid "folder"
 msgstr "klasör"
 
-msgid "music"
-msgstr "müzik"
-
 msgid "folders"
 msgstr "klasörler"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "resim"
 
 msgid "Folder"
 msgstr "Klasör"
@@ -2578,6 +2569,9 @@ msgstr "değiştirilmiş"
 msgid "or"
 msgstr "veya"
 
+msgid "original"
+msgstr "orijinal"
+
 msgid "related"
 msgstr "ilgili"
 
@@ -3637,3 +3631,12 @@ msgstr "Başlatma sorunundan kurtarıldı"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor başlatmayı tamamlamadan beklenmedik şekilde kapandı, bu nedenle bu çalıştırma donanım hızlandırma kapalıyken varsayılan düzeni kullanıyor. Dosyalarınız, koleksiyonunuz ve son öğeleriniz değişmedi. Ayarlarınızı Seçenekler'den geri yükleyebilirsiniz."
+
+msgid "Original//date"
+msgstr "Orijinal"
+
+msgid "Group by Date Original"
+msgstr "Orijinal Tarihe Göre Gruplandır"
+
+msgid "Sort by Date original"
+msgstr "Orijinal tarihe göre sırala"

@@ -32,16 +32,26 @@ The controls are created in [model.cpp](../src/model.cpp) and consumed in two pr
 
 - **Items preview:** `items_view::update_media_elements` calls the non-compact builder. For one item it may append the Description section, stream details, and raw metadata below the selection panel. The selection panel ends the primary block; a Show/Hide verbose metadata affordance closes the optional detail below it, so the Description section is always read as detail rather than as primary content. The affordance appears only when the item actually has stream or raw metadata to reveal, and when verbose metadata is closed and nothing else would sit below the primary block it joins that block, so a lone toggle never turns a centred media pane into a scrolling one.
 
-  The pane holds two arrangements. Which one applies is decided by the verbose toggle, but only for a selection that can put detail below the block at all — a single item. Every other selection has no detail form, so a multiple selection or a comparison always takes the centred arrangement rather than being held at the top for a reason that does not apply to it. The test is what the selection *can* produce, never what has arrived: detail lands late, and keying on the current list would move the media the moment it did.
+  The pane holds one arrangement, not two. **The column is centred in the pane, and starts at the top once it is taller than the pane.** The offset is the free space halved, so it shrinks continuously to nothing as the content grows: a column that outgrows the pane slides to the top rather than snapping there, and there is no state in which the arrangement changes without the content changing.
 
-  **Verbose metadata closed.** The media, the first information group and the toggle own the pane: all three are visible and the block centres vertically in it. The media shrinks to make that true, which is what `flex_item::media` is for. Anything else starts past the bottom edge, so a lone affordance never turns a centred pane into a scrolling one.
+  **A column that fits.** The media, the first information group, the toggle and whatever detail has arrived centre together as one composition. The media shrinks to keep the first information group visible, which is what `flex_item::media` is for. Verbose metadata open on a file carrying only a little of it is this case, and it used to be held at the top unconditionally — a picture pinned to the ceiling of an empty pane, for a reason that only applies when there is more metadata than the pane can hold.
 
-  **Verbose metadata open.** The pane scrolls regardless, so the media and the first information group are held at the *top* — both still always visible, the media still shrinking to make that true — and the metadata blocks follow immediately below. Top aligned rather than centred for a second reason: `calc_flex_layout` reports the container height rather than the content height for a line that spends free space positioning itself, so asking a centred block where it ended returned the bottom of the pane and left a gap the size of the free space beneath it.
+  **A column that does not fit.** The pane scrolls, so the column starts at the top: the media and the first information group are both visible where the budget allows, and everything below follows immediately, with none of the pane spent on nothing. This is the normal case with verbose metadata open.
 
-  Detail arrives from the file long after the panel is laid out — the metadata blocks come from a background scan of the whole file — so it stacks below and may never move what is above it. What the media *may* pay for is its own information group: keeping that group visible is worth more than keeping the image a fixed size, because a property that is off the bottom of the pane is one nothing tells the reader is there.
+  Detail arrives from the file long after the panel is laid out — the metadata blocks come from a background scan of the whole file — so it stacks below and never resizes what is above it. While the column overflows the pane it never *moves* it either. While the column still fits, a late row moves the composition by half its own height, which is the cost of centring at all and is the movement a user reads as the panel settling rather than as a jump. What the media *may* pay for is its own information group: keeping that group visible is worth more than keeping the image a fixed size, because a property that is off the bottom of the pane is one nothing tells the reader is there.
 
-  The arrangement is `layout_media_column` in [view_items.cpp](../src/view_items.cpp), a free function taking the two element lists and the pane rather than a method on the view, so all of the above is testable without a window. Four tests in [test_view.cpp](../src/test_view.cpp) drive it with a stub measure context and assert element bounds: the closed block fits and centres, the open block starts at the top and is followed with no gap, a block with no detail form centres whatever the toggle says, and detail cannot move the media. Each was confirmed to fail against the arrangement it replaced, which is the only reason to trust them — nothing else in this section is defended by anything but prose.
+  The centring offset is computed rather than asked for. `calc_flex_layout` reports the container height rather than the content height for a line that spends free space positioning itself, so asking a centred block where it ended returned the bottom of the pane and left a gap the size of the free space beneath it — and the block's own bottom is where the detail below it starts.
+
+  **The media keeps half the pane.** That payment is bounded: the picture is never reduced below half the pane height, and information past that scrolls instead. Without the bound the media was the only thing that ever gave way — down to the 64-unit floor of `flex_item::media` — so a container carrying several streams could reduce the picture to a strip. It is the bound fullscreen puts on its overlay, read from the other side. The budget is a floor on shrinking and never a reservation: a picture shorter than half the pane keeps its own height, and where the information alone is taller than the remaining half, its tail is what goes below the fold.
+
+  A media pane sized from something other than a picture states the same priority in its own measurement. An audio file's pane is its cover art scaled to the width, and where there is no art it is a band for the visualizer rather than a square, because an audio file is the case where the information below is what the user came for.
+
+  The arrangement is `layout_media_column` in [view_items.cpp](../src/view_items.cpp), a free function taking the two element lists, the media pane and the column's bounds rather than a method on the view, so all of the above is testable without a window. Six tests in [test_view.cpp](../src/test_view.cpp) drive it with a stub measure context and assert element bounds: the block fits and centres, a column that outgrows the pane starts at the top and is followed with no gap, detail cannot resize the media and cannot move it once the column overflows, detail follows the block into the free space, and the media keeps half the pane. Two of the six pin the rule itself and were confirmed to fail against the arrangement they replaced — that a column which fits centres as one composition, and that one which does not starts at the top. The other four pin bounds the change did not move, and would pass against either.
 - **Fullscreen:** `media_view::update_media_elements` calls the compact builder. The panel is hidden below a minimum usable width, and keeps one centred width whether or not a description exists. On wide displays a bounded panel holding the item's leading prose field occupies the free space between the controls and the right edge, so showing it never narrows or moves the controls. Zoom and compare states overlay both panels on the media; otherwise they reserve space below the media.
+
+  The panel's height is bounded by `calc_media_overlay_height` and truncates rather than growing, because the overlay identifies media that is already on screen instead of summarising it. The bound is a fraction of the media, so it holds at every scaling: a quarter over a picture, and half where the item has no picture of its own — audio, an archive, a file the viewer cannot decode — because the panel is then the presentation rather than a caption on one. Those are the same items that reserve space below the media instead of floating over it, so one fact decides both.
+
+  The panel, the description beside it and the step arrows fade out together after five idle seconds, and any pointer movement brings them back. They fade only where the item's own picture is what the user is watching, and playable media fades only while it is actually playing: a **paused** video keeps them, because the transport is both how the user resumes and the only thing saying where in the file they stopped. Audio, archives, and files the viewer cannot decode never fade at all, for the same reason they are allowed half the height.
 
 The current top-level classification is not the intended three-form model:
 
@@ -68,7 +78,7 @@ The non-compact panel creates these regions in order:
 8. Tags: current tags capped at six plus a `+N` remainder, or the Edit Tags command when empty.
 9. Description: a Description label, or the Edit Metadata command when empty. The description text itself is rendered later by Items or beside the fullscreen panel.
 
-Compact density reduces region 5 to the capture date alone and removes the encoding facts within region 6 — codecs, pixel format, bitrate, and audio format. It keeps dimensions, camera, album, artist, retro system, and copyright, because fullscreen is where the picture is being read and those facts describe the subject rather than the container. The date stays for the same reason: when a photograph was taken is a fact about the subject, and dropping it with the folder, filename, and size left fullscreen unable to answer "when was this?". Long-form prose is not a compact concern; fullscreen renders the leading field in its own bounded panel beside the controls.
+Compact density keeps what identifies the item and what describes its subject, and drops what describes the container. Of region 5 it keeps the capture date alone: when a photograph was taken is a fact about the subject, and dropping it with the folder, filename and size left fullscreen unable to answer "when was this?". Of region 6 it keeps location on the same argument — where it was taken describes the subject as much as when it was — and drops dimensions, camera, codecs, pixel format, bitrate, audio format and copyright, which describe the file rather than what is in it. Album, artist, and retro system are kept only for music, where the media is not a picture and the panel is the presentation rather than a caption on one. Location appears in compact as a plain fact with no edit command in front of it, because the overlay identifies rather than invites an edit; a compact panel therefore shows no line at all for a place the item does not have. Long-form prose is not a compact concern: fullscreen renders the leading field in its own bounded panel beside the controls.
 
 ### The Description section
 
@@ -82,7 +92,7 @@ The section has one header and one body:
 - **Link button.** Links are gathered across all fields. One link opens directly; several offer a menu, because there is then no single obvious destination.
 - **Body, one field.** The text alone. No field label, no tree, no expander.
 - **Body, several fields.** The verbose-metadata tree, one row per field. The leading field opens by default; the rest collapse to a one-line preview and open on click, with the choice remembered per field. A field marked as a repeat shows the word Duplicate rather than its preview, so the user can see that both fields really are populated without reading the same passage twice.
-- **Cover art.** Shown to the left of the body when the item has it and it fits within half the available width.
+- **Cover art.** Shown to the left of the body when the item has it and it fits within half the available width. It is the surface the index staged for the item's own tile rather than a second decode, so it arrives with the thumbnail and the section reflows once when it does. The displayed item keeps that surface however far the listing scrolls away from its tile.
 
 Comparison keeps one row per field instead. A table exists to align like against like, so folding three fields into one row would hide exactly the difference the form is for.
 
@@ -115,7 +125,8 @@ Larger size, later created date, later modified date, and larger pixel area rece
 
 The summary branch creates, in this order:
 
-- A thumbnail collage for three or more files, capped at 24 cells with an overflow cell. The pinned item is always the first cell.
+- A thumbnail collage for three or more files, capped at 24 cells with an overflow cell. The pinned item is always the first cell. A file whose thumbnail cannot be decoded contributes no cell and is counted in the overflow instead, so the collage never holds a blank one.
+- Until any thumbnail has been decoded there are no cells, and the panel states the selection's own count rather than a remainder: `+N` answers "and how many more", which is a question nothing has asked while nothing is shown. It becomes a remainder as soon as the first cells arrive.
 - Separate folder and file count titles beside the stack glyph.
 - A file-group histogram with icon, count, type name, and total size.
 - One centred command row holding navigation and the selected-set actions, followed by a Pin control and the held item's name when an item is pinned.
@@ -335,16 +346,19 @@ Verbose metadata is a block inspector, not a curated summary. It reports what th
 
 - Each embedded block (media, EXIF, IPTC, XMP, ICC, raw) is a separate section headed by the standard's name, its byte extent, its value count, and whether it was understood. A block that could not be parsed is distinguishable from a block that is absent.
 - A further `File structure` block reports how the container itself is assembled, as read by the format scanner rather than by a metadata parser. It is not a metadata standard, so it carries a plain descriptive heading, and it survives having the metadata stripped.
-	- For JPEG it lists every marker segment in file order with its offset, length and APP identifier; the frame's encoding process, sample precision, component sampling factors and the chroma subsampling they imply; each quantisation table with its coefficient grid and the quality that table implies; each Huffman table classified as the standard Annex K example table or as one the encoder fitted to the image; the restart interval; any comment segments; and whether the end-of-image marker is present and whether anything follows it.
+	- For JPEG it lists every marker segment in file order with its offset, length and APP identifier; the frame's encoding process, sample precision, component sampling factors and the chroma subsampling they imply; each quantisation table with its coefficient grid and the quality that table implies; each Huffman table classified as the standard Annex K example table or as one the encoder fitted to the image; the restart interval; any comment segments; the further whole images a Multi-Picture APP2 segment indexes, each with the role it declares and the extent it claims; and whether the end-of-image marker is present and whether anything follows it.
 	- For WebP it lists the RIFF chunks with their offsets, sizes and roles, and whether the image data is lossy or lossless.
 	- For HEIF and AVIF it reports the declared brands, the number of top-level images, the primary item, the stored and displayed sizes, bit depth, alpha, colour profile kind, thumbnail, depth and auxiliary image counts, and the metadata items with their types and sizes.
 	- These are observations, not verdicts. The block states what the file contains and leaves the reading to the reader; where a fact is conventionally significant, such as camera firmware writing the Annex K tables while software encoders fit their own, the convention is stated next to the fact rather than turned into a conclusion.
 - Each block is presented in its own native shape: EXIF grouped by the IFD each entry was read from, XMP as a tree grouped by schema namespace with arrays, structs and qualifiers retained, ICC as a labelled summary, header, and tag directory in file order, and raw grouped by subject (identification, lens, shooting, exposure, environment, GPS, sizes, thumbnails, colour, and the maker-specific groups the file actually has).
+- The maker note is a vendor's own directory carried inside EXIF, so it reads as its own section named for the make rather than as the binary entry EXIF reports it to be. The entry itself stays in the EXIF directory alongside it: the decoded reading never replaces the bytes it came from. Makes the parser does not recognise keep only that binary entry, which is the honest report of what could be read.
+- A `Derived` section carries the facts the camera implied but did not record — crop factor, angle of view, circle of confusion, hyperfocal distance, light value, megapixels. Each appears only when every tag it needs is present, so nothing is invented from a default. These are annotations, never substitutes: the shape column carries the derivation rather than a storage type, because a derived row has no storage, and the conventional assumptions behind the depth-of-field figures make them approximate.
 - A file's XMP is presented as an ordinary XMP block whether it is embedded in the file or held in a sidecar beside it, and whether the file is a still image, a raw capture, or a playing video. Only one XMP block is shown; which source wins follows the same rule the scanner and the writer use for that format.
 - A shape column carries the block's own typing: EXIF format and component count with the tag number, XMP array or struct kind, ICC tag type and size.
 - Decoded values are shown alongside their raw form, never instead of it. Derived facts such as an ICC profile's approximate gamut or tone response are annotations on the block, not replacements for the tags they came from.
-- Nothing is silently dropped. Entries the parser could not render appear as binary rows with their size, and bytes the parser skipped are accounted for as unread.
+- Nothing is silently dropped. Entries the parser could not render appear as binary rows with their size, and bytes the parser skipped are accounted for as unread. An entry whose tag the parser cannot name is listed under its tag number rather than omitted, and a mandatory entry the file does not contain is never supplied on its behalf: the block reports the file, not the standard the file was meant to follow.
 - Content too long to read inline is not truncated. It moves behind an expander and is shown as a hex-and-text dump in the code font.
+- A row whose payload is a complete image is shown as that image, at its own size unless the pane is narrower, and it opens without being asked because the picture is the point of the row. The hex dump is what a payload falls back to when it cannot be decoded, and a dump never opens unasked. Decoding happens where the block is built, never while painting.
 - Duplication between a decoded summary and the raw block is deliberate and labelled, so the reader knows which reading they are looking at.
 - Nesting is drawn, not lettered. Each parent runs a connector line down to its children in the manner of the archive contents listing, so structure is read from the shape of the listing rather than from indent glyphs or disclosure arrows.
 - Sections expand and collapse in place by clicking the row itself. Small sections open by default; large ones stay closed until asked for, except where a block names a section as the one readers came for — the EXIF `Exif` directory opens however many tags it holds. The posture is remembered for the session and survives changing selection, so a reader who opens a block keeps it open while moving through files, and a section closed by hand stays closed.
@@ -357,7 +371,7 @@ Compact and regular presentations share region order and command placement. Comp
 ### Regular Items preview
 
 - Pack panel regions at natural height with normal inter-region spacing. No child grows merely to distribute unused vertical space.
-- When media plus primary properties is shorter than the pane, centre that combined block as specified by product design; blank space is outside the block, not inserted between its rows.
+- When the whole column — media, primary properties and whatever detail has arrived — is shorter than the pane, centre it; blank space is outside the column, not inserted between its rows. Once it is taller than the pane it starts at the top, and the transition is continuous rather than a switch between two arrangements.
 - Long-form Description, Comment, Synopsis, and verbose stream/raw metadata follow the primary panel. They are not duplicated inside it. The prose fields share one Description section rather than a header each.
 - The verbose toggle follows primary content. Showing verbose metadata must not change the ordering or width of primary regions.
 - The toggle is omitted for items with no stream or raw metadata, because an affordance that reveals nothing is noise.
@@ -367,11 +381,10 @@ Compact and regular presentations share region order and command placement. Comp
 ### Compact fullscreen
 
 - Apply compact budgets to all three forms, not only singular media.
-- Singular keeps the one-line Title, Presence, Viewing, Actions, one primary media-facts line, Location, Tags, and Description groups. Omit file path, raw dates, capture details, and secondary technical facts.
-- Singular shows at most six tag values followed by `+N`.
+- Singular keeps the one-line Title, Presence, Viewing, Actions, the capture date, and Location. Album, artist, and retro system join them where the media is not a picture. Omit file path, filename, size, dimensions, capture details, and secondary technical facts. Tags and the Description affordance are absent; the item's leading prose field is rendered in its own bounded panel beside the controls.
 - Comparison shows its headers, per-column controls, Presence, equality status, and default high-value rows. Details and selected-set command rows stay out of the transient panel.
 - Selection summary shows the headline count, common state, applicable batch actions, and at most four type-breakdown rows followed by `+N types`; it never introduces single-item viewing controls.
-- The panel is content-height, bottom aligned, and bounded by the existing minimum-width and description-height rules. It never reserves blank rows for omitted content.
+- The panel is content-height, bottom aligned, and bounded by the existing minimum-width and description-height rules. It never reserves blank rows for omitted content. Its height bound is a quarter of the media, or half where the item has no picture of its own, and it truncates rather than growing past it.
 
 ### Width adaptation
 
@@ -384,6 +397,8 @@ Compact and regular presentations share region order and command placement. Comp
 ## Spacing rules
 
 - Use one panel inset and one inter-region gap in every form.
+- **A section is one panel carrying its own heading**, in the same form as the selection panel above it, and the gap between panels is what separates one section from the next. Drawn as a titled band over unbacked content, the heading read as a control and the sections needed a rule between them to be told apart; as one panel each, a rule as well would be saying it twice.
+- Nothing inside a section claims free space. The column measures a section at its natural height, so a child that grew would open a gap between the heading and its own content rather than between sections.
 - Use dividers only between semantic groups, never as leading/trailing decoration.
 - Do not reserve height for an omitted row or an empty optional group.
 - Explicit empty values are limited to one-sided comparison cells; empty Location, Tags, and Description show only their blue edit command icons.
@@ -460,3 +475,20 @@ Scenarios 2, 6, 7, 8, 9, and the presence half of 1 verify the 1.27.0 scope. The
 - Summary needs common/Mixed user state, one headline total size, actions below the information, and no Previous/Next controls.
 - Folder facts must use existing published summaries only; no layout or paint path may scan the filesystem.
 - The side-by-side media surface, comparison hit testing, zoom linking, and pair CRC work still key off cardinality and must move to the eligibility predicate.
+
+## Where this lives
+
+| Panel subject | Source |
+|---|---|
+| Form classification, region order, and the panel build | [view_items.cpp](../src/view_items.cpp) — the selection detail pane, including the verbose metadata block tree |
+| The building blocks a region is made of | [ui_elements.h](../src/ui_elements.h) — text, icons, links, dividers, thumbnails, tables |
+| Rating, label and other grading controls | [ui_controls.h](../src/ui_controls.h), [ui_controls.cpp](../src/ui_controls.cpp) |
+| Wrapping, grow/shrink, minimums, alignment, gaps, density | [ui_flex.cpp](../src/ui_flex.cpp) |
+| The regions the panel shares with the browser and media column | [view_items.h](../src/view_items.h) |
+| What a property is called and how it is formatted | [model_property.h](../src/model_property.h), [model_property.cpp](../src/model_property.cpp) |
+| Tag presentation and comparison | [model_tags.h](../src/model_tags.h) — `tag_set` |
+
+The panel is the clearest case of the rule that a paint path may not scan: folder facts come from
+published summaries only. Layout is measured through a stub measure context in the tests, so
+`/test:*layout*` and `/test:*selection*` do not depend on the machine's fonts or DPI — keep new
+layout decisions expressible that way rather than reachable only from a real device.

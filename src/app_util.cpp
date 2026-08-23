@@ -14,8 +14,32 @@
 #include "model.h"
 #include "model_db.h"
 #include "app_command_status.h"
+#include "app_command_line.h"
 #include "app_util.h"
 #include "model_index.h"
+#include "util_crash_files_db.h"
+
+// Process-level state, declared in app_command_line.h and app.h. It is used across the model and
+// file layers, so it does not belong to the application frame that used to define it.
+
+command_line_t command_line;
+
+crash_files_db& crash_files()
+{
+	static crash_files_db instance(df::probe_data_file("diffractor-files-that-crash.txt"),
+	                               crash_files_db::release_tag(s_app_version));
+	return instance;
+}
+
+void flush_open_files_to_crash_files_list()
+{
+	crash_files().flush_open_files();
+}
+
+void log_open_files_to_crash_files_list()
+{
+	crash_files().log_open_files();
+}
 
 void view_state::modify_items(const df::results_ptr& results, icon_index icon, const std::string_view title,
                               const df::item_elements& items_to_modify, const metadata_edits& edits,
@@ -260,6 +284,11 @@ bool rename_path_exists(const df::file_path path, const bool is_folder)
 	return is_folder ? platform::exists(path.folder().combine(path.name())) : path.exists();
 }
 
+std::string rename_path_key(const df::file_path path, const bool is_folder)
+{
+	return is_folder ? std::string(path.folder().combine(path.name()).text()) : path.pack();
+}
+
 std::vector<rename_source> snapshot_rename_sources(const df::item_set& items)
 {
 	std::vector<rename_source> result;
@@ -285,8 +314,30 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
                                            const int start, const collision_policy policy)
 {
 	std::vector<rename_item> results;
-	std::map<std::string, int, df::iless> destination_counts;
+	results.reserve(items.size());
+	std::vector<char> name_is_usable;
+	name_is_usable.reserve(items.size());
+
+	// Every path this plan moves away from. A destination held by one of them is free by the time
+	// the run reaches it, so renaming a set onto the names it is vacating is not a collision.
+	std::set<std::string, df::path_key_less> vacated;
 	auto seq = start;
+
+	const auto assign_sidecars = [](rename_item& rename, const rename_source& i, const df::file_path primary)
+	{
+		rename.sidecars.clear();
+		rename.sidecar_destinations_exist.clear();
+		if (i.is_folder) return;
+
+		for (const auto sidecar_source : i.sidecars)
+		{
+			const auto sidecar_destination =
+				primary.folder().combine_file(primary.file_name_without_extension()).extension(
+					sidecar_source.extension());
+			rename.sidecar_destinations_exist.emplace_back(sidecar_destination.exists());
+			rename.sidecars.emplace_back(sidecar_source, sidecar_destination);
+		}
+	};
 
 	for (const auto& i : items)
 	{
@@ -301,61 +352,87 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 		rename.policy = policy;
 		rename.original_name = original_name;
 		rename.new_name = name;
+		rename.destination = rename_destination(i, name);
 
-		const auto source = rename.source;
-		auto destination = rename_destination(i, name);
-		rename.destination = destination;
-		// A folder path packs with a trailing separator and an empty name, so compare the
-		// folders themselves rather than the packed file paths.
-		rename.noop = rename.is_folder
-			              ? source.folder().combine(source.name()).text() ==
-			              destination.folder().combine(destination.name()).text()
-			              : source.pack() == destination.pack();
-		const auto name_is_usable = platform::is_valid_file_name(name) && destination.is_save_valid();
-		auto assign_sidecars = [&](const df::file_path primary)
+		const auto source_key = rename_path_key(rename.source, rename.is_folder);
+		const auto destination_key = rename_path_key(rename.destination, rename.is_folder);
+		rename.noop = source_key == destination_key;
+		assign_sidecars(rename, i, rename.destination);
+
+		// A case-only rename does not free the path it renames within, so it vacates nothing - but only
+		// where the filesystem agrees the two spellings are one path.
+		if (df::compare_path_key(source_key, destination_key) != 0)
 		{
-			rename.sidecars.clear();
-			rename.sidecar_destinations_exist.clear();
-			if (!i.is_folder)
-				for (const auto sidecar_source : i.sidecars)
-				{
-					auto sidecar_destination =
-						primary.folder().combine_file(primary.file_name_without_extension()).extension(
-							sidecar_source.extension());
-					rename.sidecar_destinations_exist.emplace_back(sidecar_destination.exists());
-					rename.sidecars.emplace_back(sidecar_source, sidecar_destination);
-				}
-		};
+			vacated.emplace(source_key);
+
+			for (const auto& [sidecar_source, sidecar_destination] : rename.sidecars)
+				if (df::compare_path_key(sidecar_source.pack(), sidecar_destination.pack()) != 0)
+					vacated.emplace(sidecar_source.pack());
+		}
+
+		name_is_usable.emplace_back(
+			platform::is_valid_file_name(name) && rename.destination.is_save_valid() ? 1 : 0);
+		seq += 1;
+		results.emplace_back(std::move(rename));
+	}
+
+	// Resolve the collision with the one named policy before validity is decided.
+	for (auto index = 0_z; index < results.size(); ++index)
+	{
+		auto& rename = results[index];
+		const auto& i = items[index];
+		const auto source_key = rename_path_key(rename.source, rename.is_folder);
+
 		auto group_collides = [&]
 		{
+			const auto destination_key = rename_path_key(rename.destination, rename.is_folder);
 			rename.destination_exists = rename_path_exists(rename.destination, rename.is_folder);
-			if (!rename.noop && source.icmp(rename.destination) != 0 && rename.destination_exists) return true;
-			for (auto index = 0_z; index < rename.sidecars.size(); ++index)
+
+			if (df::compare_path_key(source_key, destination_key) != 0 && rename.destination_exists &&
+				!vacated.contains(destination_key))
+				return true;
+
+			for (auto sidecar = 0_z; sidecar < rename.sidecars.size(); ++sidecar)
 			{
-				const auto& sidecar = rename.sidecars[index];
-				if (sidecar.first.icmp(sidecar.second) != 0 && rename.sidecar_destinations_exist[index]) return true;
+				const auto& [sidecar_source, sidecar_destination] = rename.sidecars[sidecar];
+				if (df::compare_path_key(sidecar_source.pack(), sidecar_destination.pack()) != 0 &&
+					rename.sidecar_destinations_exist[sidecar] &&
+					!vacated.contains(sidecar_destination.pack()))
+					return true;
 			}
 			return false;
 		};
-		assign_sidecars(destination);
+
 		rename.collides = group_collides();
 
-		// Resolve the collision with the one named policy before validity is decided.
 		if (rename.collides && policy == collision_policy::auto_rename)
 		{
+			const auto base_name = rename.new_name;
+			const auto base_destination = rename.destination;
+
 			for (auto suffix = 2; suffix < 10000; ++suffix)
 			{
-				destination = df::file_path(destination.folder(),
-				                            std::format("{} ({})", name, suffix), destination.extension());
-				rename.destination = destination;
-				assign_sidecars(destination);
+				const auto candidate = std::format("{} ({})", base_name, suffix);
+				rename.destination = df::file_path(rename.destination.folder(), candidate,
+				                                   rename.destination.extension());
+				assign_sidecars(rename, i, rename.destination);
+
 				if (!group_collides())
 				{
-					rename.new_name = std::string(destination.file_name_without_extension());
+					rename.new_name = std::string(rename.destination.file_name_without_extension());
 					rename.renamed_to_avoid_collision = true;
 					rename.collides = false;
 					break;
 				}
+			}
+
+			// Exhausted: the row stays invalid, but it must not keep pointing at the last candidate.
+			// destination feeds the duplicate-destination pass, so a name this row will never write
+			// would invalidate whichever row legitimately asked for it.
+			if (rename.collides)
+			{
+				rename.destination = base_destination;
+				assign_sidecars(rename, i, rename.destination);
 			}
 		}
 		else if (rename.collides && policy == collision_policy::skip)
@@ -367,18 +444,63 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 			rename.collides = false;
 		}
 
-		rename.valid = name_is_usable && (!rename.collides || policy == collision_policy::replace);
-		++destination_counts[rename.destination.pack()];
-		for (const auto& sidecar : rename.sidecars) ++destination_counts[sidecar.second.pack()];
-		seq += 1;
-		results.emplace_back(rename);
+		rename.valid = name_is_usable[index] != 0 && (!rename.collides || policy == collision_policy::replace);
+	}
+
+	if (policy == collision_policy::skip)
+	{
+		// Skip resolves a collision by leaving the source where it is, so it no longer frees that
+		// path for whatever row was cleared to take it, and settling that can cascade.
+		std::map<std::string, size_t, df::path_key_less> wanted;
+
+		for (auto index = 0_z; index < results.size(); ++index)
+		{
+			wanted.emplace(rename_path_key(results[index].destination, results[index].is_folder), index);
+			for (const auto& sidecar : results[index].sidecars) wanted.emplace(sidecar.second.pack(), index);
+		}
+
+		std::vector<size_t> stalled;
+		for (auto index = 0_z; index < results.size(); ++index)
+			if (results[index].skipped) stalled.emplace_back(index);
+
+		while (!stalled.empty())
+		{
+			const auto& stalled_row = results[stalled.back()];
+			stalled.pop_back();
+
+			std::vector<std::string> released{rename_path_key(stalled_row.source, stalled_row.is_folder)};
+			for (const auto& sidecar : stalled_row.sidecars) released.emplace_back(sidecar.first.pack());
+
+			for (const auto& key : released)
+			{
+				if (vacated.erase(key) == 0) continue;
+
+				const auto found = wanted.find(key);
+				if (found == wanted.end()) continue;
+
+				auto& blocked = results[found->second];
+				if (blocked.noop) continue;
+
+				blocked.skipped = true;
+				blocked.noop = true;
+				stalled.emplace_back(found->second);
+			}
+		}
 	}
 
 	// Two rows targeting the same new name is a collision the policy cannot resolve
 	// safely without reordering, so it always blocks.
+	std::map<std::string, int, df::path_key_less> destination_counts;
+
+	for (const auto& rename : results)
+	{
+		++destination_counts[rename_path_key(rename.destination, rename.is_folder)];
+		for (const auto& sidecar : rename.sidecars) ++destination_counts[sidecar.second.pack()];
+	}
+
 	for (auto& rename : results)
 	{
-		const auto duplicates = destination_counts[rename.destination.pack()] > 1 ||
+		const auto duplicates = destination_counts[rename_path_key(rename.destination, rename.is_folder)] > 1 ||
 			std::ranges::any_of(rename.sidecars, [&](const auto& sidecar)
 			{
 				return destination_counts[sidecar.second.pack()] > 1;
@@ -405,6 +527,27 @@ bool can_rename_items(const std::vector<rename_item>& renames)
 {
 	return !renames.empty() && std::ranges::all_of(renames, [](const rename_item& item) { return item.valid; }) &&
 		std::ranges::any_of(renames, [](const rename_item& item) { return !item.noop; });
+}
+
+int count_rename_collisions(const std::vector<rename_item>& renames, const collision_policy policy)
+{
+	const auto count = [&renames](auto&& predicate)
+	{
+		return static_cast<int>(std::ranges::count_if(renames, predicate));
+	};
+
+	switch (policy)
+	{
+	case collision_policy::skip: return count([](const rename_item& item) { return item.skipped; });
+	case collision_policy::auto_rename: return count([](const rename_item& item)
+		{
+			return item.renamed_to_avoid_collision;
+		});
+	case collision_policy::replace:
+	case collision_policy::block_run: break;
+	}
+
+	return count([](const rename_item& item) { return item.collides; });
 }
 
 std::string format_sequence(const std::string_view original_name, const std::string_view template_name,
@@ -931,8 +1074,15 @@ static bool path_contains(const df::folder_path parent, const df::folder_path ch
 	const auto parent_text = parent.text().sv();
 	const auto child_text = child.text().sv();
 	if (parent_text.size() >= child_text.size()) return parent == child;
-	return str::icmp(parent_text, child_text.substr(0, parent_text.size())) == 0 &&
-		df::is_path_sep(child_text[parent_text.size()]);
+	if (!df::path_text_starts(child_text, parent_text)) return false;
+
+	// A root keeps its separator - "C:\" and "/" normalise with one - so the boundary to test is the
+	// text without it. Testing the raw length instead makes every drive root contain nothing, and the
+	// overlap guard would then let Sync run a folder into its own subtree.
+	const auto boundary = parent_text.empty()
+		                      ? 0_z
+		                      : parent_text.size() - (df::is_path_sep(parent_text.back()) ? 1 : 0);
+	return child_text.size() == boundary || df::is_path_sep(child_text[boundary]);
 }
 
 std::string sync_invalid_message(const sync_analysis_result& analysis)
@@ -980,8 +1130,8 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 
 	// Which local root owns each relative folder, and the relative folders claimed by more than one
 	// root. A relative folder claimed twice cannot name a local destination for a remote-only file.
-	std::map<std::string, df::folder_path, df::iless> local_roots_by_relative;
-	std::set<std::string, df::iless> ambiguous_relatives;
+	std::map<std::string, df::folder_path, df::path_key_less> local_roots_by_relative;
+	std::set<std::string, df::path_key_less> ambiguous_relatives;
 
 	std::vector<sync_analysis_folder> local_folders_to_scan;
 
@@ -1350,7 +1500,7 @@ std::vector<std::string> check_overwrite(const df::folder_path write_folder, con
 	const auto contents = platform::iterate_file_items(write_folder, true);
 	if (!contents.success) return {};
 
-	std::set<std::string, df::iless> existing;
+	std::set<std::string, df::path_key_less> existing;
 	for (const auto& f : contents.files) existing.emplace(f.name.str());
 	for (const auto& f : contents.folders) existing.emplace(f.name.str());
 
@@ -1474,6 +1624,27 @@ std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_
 df::date_t adjusted_item_date(const df::date_t created, const df::date_t new_start, const df::date_t original_start)
 {
 	return created.is_valid() && original_start.is_valid() ? created + (new_start - original_start) : new_start;
+}
+
+// Adjust dates writes Original, shifting whatever the item resolves to now - Original where the file
+// carries one, the rung below it where it does not. Naming that tag before the run is what makes
+// mixed provenance in a selection visible: the same shift does not mean the same thing to a file
+// dated by its shutter and a file dated by the day it landed on this disk.
+std::string_view adjust_date_source_name(const prop::item_metadata_const_ptr& md)
+{
+	if (md)
+	{
+		for (const auto kind : {
+			     prop::date_concept::original, prop::date_concept::created, prop::date_concept::modified
+		     })
+		{
+			if (md->dates.resolve(kind).is_valid()) return prop::date_source_name(md->dates.resolved_source(kind));
+		}
+	}
+
+	// Mirrors calc_media_created: with no metadata date the filesystem creation stamp is what is
+	// being shifted, and saying so is the whole point of the column.
+	return prop::date_source_name(prop::date_source::file_created);
 }
 
 icon_index drive_icon(const platform::drive_type d)

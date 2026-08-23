@@ -46,7 +46,7 @@ private:
 	/*
 	* Take result of an FFT and calculate the intensities of each frequency
 	* Note: only produces half as many data points as the input had.
-	* This is roughly a consequence of the Nyquist sampling theorm thingy.
+	* This is roughly a consequence of the Nyquist sampling theorem.
 	* (FIXME - make this comment better, and helpful.)
 	*
 	* The two divisions by 4 are also a consequence of this: the contributions
@@ -416,7 +416,7 @@ public:
 				const double a = std::clamp((yy + scaleY / 2.0) / (scaleY * 2.0) * alpha, 0.4, 1.0);
 				const double inflate = step / 2.0 + yy * (step / 2.0) / (scaleY * 3.0);
 
-				// Cosign palete based colors
+				// Cosine palette based colors
 				constexpr auto pi4 = M_PI / 0.25;
 				const auto ic = (0.25 + i * 0.003 + yy * 0.04 / scaleY) * pi4;
 				const auto rr = static_cast<float>((cos(ic) + 1.0) / 2.0);

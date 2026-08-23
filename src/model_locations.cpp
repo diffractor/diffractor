@@ -1455,7 +1455,7 @@ location_t location_cache::find_by_name(const std::string_view query) const
 	if (query.empty()) return result;
 
 	// locations.md 3.1: a place query is a name, optionally qualified by region and country.
-	auto query_parts = str::split(query, true, [](const wchar_t c) { return c == ','; });
+	auto query_parts = str::split(query, true, [](const char c) { return c == ','; });
 
 	for (auto&& part : query_parts)
 	{

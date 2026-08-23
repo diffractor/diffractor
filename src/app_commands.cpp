@@ -1054,11 +1054,16 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 				// A move empties the folders it came from, and only the destination was ever reported.
 				// A search that names no folder is not watched, so it would keep listing what moved.
 				df::unique_folders sources;
+				df::item_element_ptr next;
 
 				if (is_move)
 				{
 					for (const auto& path : items.file_paths(true)) sources.emplace(path.folder());
 					for (const auto& path : items.folder_paths()) sources.emplace(path.parent());
+
+					// #250: what the cursor should settle on once the set has gone, taken before the
+					// operation because afterwards the items are no longer in the listing to step from.
+					next = s.next_unselected_item();
 				}
 
 				const auto result = platform::move_or_copy(
@@ -1075,6 +1080,18 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 						detach.keep_display_closed();
 						s.open(view, df::search_t().add_selector(write_folder),
 						       make_unique_paths(result.created_files));
+					}
+					else if (is_move)
+					{
+						// #249: the listing used to be updated only when the queued re-enumeration
+						// happened to notice the folder had changed, which is why moved files
+						// sometimes stayed. The move has completed here, so its own completion
+						// re-runs the listing; the validation above still follows and confirms it.
+						// #250: and the cursor lands on what followed the set rather than resetting,
+						// so sorting a folder is not a re-navigation after every action.
+						df::unique_paths selection;
+						if (next) next->add_to(selection);
+						s.open(view, s.search(), selection);
 					}
 				}
 				else if (result.code != platform::file_op_result_code::CANCELLED)
@@ -1773,6 +1790,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 
 	static bool search_date_from = false;
 	static bool search_date_until = false;
+	static bool search_date_original = false;
 	static bool search_date_created = false;
 	static bool search_date_modified = false;
 	static df::date_t from_val;
@@ -1813,6 +1831,7 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 	});
 
 	auto date_type_control = std::make_shared<ui::col_control>(std::vector<view_element_ptr>{
+		std::make_shared<ui::check_control>(dlg_parent, tt_prep(tt.prop_name_original.sv()), search_date_original),
 		std::make_shared<ui::check_control>(dlg_parent, tt.prop_name_created, search_date_created),
 		std::make_shared<ui::check_control>(dlg_parent, tt.prop_name_modified, search_date_modified)
 	});
@@ -2247,9 +2266,18 @@ static void advanced_search_invoke(view_state& state, const ui::control_frame_pt
 			new_search.with(df::search_term(file_group::audio, df::search_term_modifier{}));
 		}
 
+		// One box narrows the range to that date; none or several leave it against all of them, which
+		// is what the range means with nothing said about which date it applies to.
 		auto date_target = df::date_parts_prop::any;
-		if (search_date_created && !search_date_modified) date_target = df::date_parts_prop::created;
-		if (!search_date_created && search_date_modified) date_target = df::date_parts_prop::modified;
+		const auto date_boxes_checked = (search_date_original ? 1 : 0) + (search_date_created ? 1 : 0) +
+			(search_date_modified ? 1 : 0);
+
+		if (date_boxes_checked == 1)
+		{
+			if (search_date_original) date_target = df::date_parts_prop::original;
+			else if (search_date_created) date_target = df::date_parts_prop::created;
+			else date_target = df::date_parts_prop::modified;
+		}
 
 		if (search_date_from)
 		{
@@ -3192,7 +3220,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	custom_index->add(std::make_shared<text_element>(tt.collection_options_more_folders));
 
 	auto more_folders_parts = str::split(collection_settings.more_folders, true,
-	                                     [](const wchar_t c) { return c == '\n' || c == '\r'; });
+	                                     [](const char c) { return c == '\n' || c == '\r'; });
 	auto more_folders_text = str::combine(more_folders_parts, "\r\n", false);
 
 	custom_index->add(
@@ -3219,7 +3247,7 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 	{
 		// apply changes
 		more_folders_parts = str::split(more_folders_text, false,
-		                                [](const wchar_t c) { return c == '\n' || c == '\r'; });
+		                                [](const char c) { return c == '\n' || c == '\r'; });
 		collection_settings.more_folders = str::combine(more_folders_parts, "\n", true);
 		setting.collection = collection_settings;
 	}
@@ -3257,8 +3285,6 @@ static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_history, sidebar_settings.show_history));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_world_map,
 	                                                 sidebar_settings.show_world_map));
-	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_indexed_folders,
-	                                                 sidebar_settings.show_indexed_folders));
 	sidebar->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_drives, sidebar_settings.show_drives));
 	sidebar->add(std::make_shared<ui::check_control>(dlg->_frame, tt.customize_show_searches,
@@ -3690,9 +3716,12 @@ void app_frame::initialise_commands()
 	{
 		setting_invoke(_state, setting.highlight_large_items, !setting.highlight_large_items);
 	});
+	// A toggle, not a set: this is the one the menu shows, so clicking it while it is ticked has to
+	// do something. Ascending stays an explicit set because the empty-results surface offers
+	// whichever direction is not current by name.
 	add_command_invoke(commands::sort_dates_descending, [this]
 	{
-		setting_invoke(_state, setting.sort_dates_descending, true);
+		setting_invoke(_state, setting.sort_dates_descending, !setting.sort_dates_descending);
 	});
 	add_command_invoke(commands::sort_dates_ascending, [this]
 	{
@@ -3885,6 +3914,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::group_aspect_ratio, [this] { _state.group_order(group_by::aspect_ratio, {}); });
 	add_command_invoke(commands::group_camera, [this] { _state.group_order(group_by::camera, {}); });
 	add_command_invoke(commands::group_created, [this] { _state.group_order(group_by::date_created, {}); });
+	add_command_invoke(commands::group_original, [this] { _state.group_order(group_by::date_original, {}); });
 	add_command_invoke(commands::group_presence, [this] { _state.group_order(group_by::presence, {}); });
 	add_command_invoke(commands::group_file_type, [this] { _state.group_order(group_by::file_type, {}); });
 	add_command_invoke(commands::group_location, [this] { _state.group_order(group_by::location, {}); });
@@ -3901,6 +3931,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::sort_name, [this] { _state.group_order({}, sort_by::name); });
 	add_command_invoke(commands::sort_size, [this] { _state.group_order({}, sort_by::size); });
 	add_command_invoke(commands::sort_date_created, [this] { _state.group_order({}, sort_by::date_created); });
+	add_command_invoke(commands::sort_date_original, [this] { _state.group_order({}, sort_by::date_original); });
 	add_command_invoke(commands::sort_date_modified, [this] { _state.group_order({}, sort_by::date_modified); });
 
 	add_command_invoke(commands::tool_import, [this] { _state.view_mode(view_type::import); });
@@ -4160,6 +4191,7 @@ void app_frame::initialise_commands()
 			find_command(commands::group_aspect_ratio),
 			find_command(commands::group_camera),
 			find_command(commands::group_created),
+			find_command(commands::group_original),
 			find_command(commands::group_modified),
 			find_command(commands::group_extension),
 			find_command(commands::group_file_type),
@@ -4174,10 +4206,13 @@ void app_frame::initialise_commands()
 			find_command(commands::sort_name),
 			find_command(commands::sort_size),
 			find_command(commands::sort_date_created),
+			find_command(commands::sort_date_original),
 			find_command(commands::sort_date_modified),
-			find_command(commands::sort_dates_descending),
-			find_command(commands::sort_dates_ascending),
 			nullptr,
+			// A direction, not a sort key, so it sits outside the Sort by group. One item rather than the
+			// ascending/descending pair it was: of those two the tick was permanently on one, and clicking
+			// the ticked one set the value it already had.
+			find_command(commands::sort_dates_descending),
 			find_command(commands::group_shuffle),
 			find_command(commands::group_toggle),
 		};

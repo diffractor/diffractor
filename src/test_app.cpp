@@ -22,7 +22,59 @@
 #include "app_commands.h"
 #include "app_search.h"
 #include "ui_dialog.h"
+#include "view_rename.h"
 #include "view_tags.h"
+#include "view_items.h"
+
+// Rolling a release back is ordinary, and the settings store is shared with the build rolled back
+// to. An order it cannot name falls through its switches to a default, so the user silently loses
+// the order they chose - which is exactly the user this release's migration just moved onto one.
+static void should_store_an_order_an_older_build_can_read()
+{
+	const auto plain = [](const group_by o) { return static_cast<uint32_t>(group_order_older_builds_understand(o)); };
+	const auto ex = [](const group_by o) { return static_cast<uint32_t>(o); };
+
+	// Every order an older build already knows is stored unchanged.
+	for (const auto order : {group_by::file_type, group_by::size, group_by::date_created, group_by::date_modified,
+		     group_by::camera, group_by::folder})
+	{
+		assert_equal(static_cast<int>(order), static_cast<int>(group_order_older_builds_understand(order)),
+		             "a known order is stored as itself");
+	}
+
+	// The one it does not is stood in for by the order that meant the same thing to it.
+	assert_equal(static_cast<int>(group_by::date_created),
+	             static_cast<int>(group_order_older_builds_understand(group_by::date_original)),
+	             "Original stands in as date created");
+	assert_equal(static_cast<int>(sort_by::date_created),
+	             static_cast<int>(sort_order_older_builds_understand(sort_by::date_original)),
+	             "and the same for sorting");
+
+	// A round trip through both keys returns the real order, stand-in or not.
+	assert_equal(static_cast<int>(group_by::date_original),
+	             static_cast<int>(resolve_stored_order<group_by>(plain(group_by::date_original),
+	                                                            ex(group_by::date_original), true,
+	                                                            group_order_older_builds_understand)),
+	             "the true order survives its own stand-in");
+	assert_equal(static_cast<int>(group_by::camera),
+	             static_cast<int>(resolve_stored_order<group_by>(plain(group_by::camera), ex(group_by::camera), true,
+	                                                            group_order_older_builds_understand)),
+	             "and so does an order needing none");
+
+	// An older build knows only the plain key. When it has written one, that is the newer choice and
+	// the stale extended value must not overrule it.
+	assert_equal(static_cast<int>(group_by::camera),
+	             static_cast<int>(resolve_stored_order<group_by>(static_cast<uint32_t>(group_by::camera),
+	                                                            ex(group_by::date_original), true,
+	                                                            group_order_older_builds_understand)),
+	             "a choice made in the older build wins");
+
+	// Upgrading for the first time: only the plain key exists.
+	assert_equal(static_cast<int>(group_by::date_created),
+	             static_cast<int>(resolve_stored_order<group_by>(static_cast<uint32_t>(group_by::date_created), 0,
+	                                                            false, group_order_older_builds_understand)),
+	             "a store with no extended key answers with what it has");
+}
 
 static void should_persist_to_ini_file()
 {
@@ -127,13 +179,16 @@ static void should_reject_unusable_rename_targets()
 	const auto empty_template = calc_item_renames(items, "", 1, collision_policy::block_run);
 	assert_equal(false, can_rename_items(empty_template), "an empty template names nothing");
 
-	// Windows drops a trailing space, so the file would not carry the name the preview shows.
+#ifdef _WIN32
+	// Windows drops a trailing space, so the file would not carry the name the preview shows, and a
+	// device name is not a file at all. Neither is true of a filesystem that takes the name as given.
 	const auto trailing_space = calc_item_renames(items, "photo ", 1, collision_policy::block_run);
 	assert_equal("photo ", trailing_space.front().new_name, "the preview shows the template result");
 	assert_equal(false, can_rename_items(trailing_space), "a trailing space is rejected");
 
 	const auto device_name = calc_item_renames(items, "con", 1, collision_policy::block_run);
 	assert_equal(false, can_rename_items(device_name), "a reserved device name is rejected");
+#endif
 
 	const auto usable = calc_item_renames(items, "photo", 1, collision_policy::block_run);
 	assert_equal(true, can_rename_items(usable), "an ordinary name is still accepted");
@@ -150,6 +205,84 @@ static void should_reject_duplicate_rename_targets()
 	assert_equal(false, renames.front().valid, "first duplicate target invalid");
 	assert_equal(false, renames.back().valid, "second duplicate target invalid");
 }
+
+static std::vector<rename_source> make_rename_sources(const df::folder_path root,
+                                                     const std::vector<std::string>& names)
+{
+	const df::blob contents = {1};
+	std::vector<rename_source> sources;
+	for (const auto& name : names)
+	{
+		const auto path = root.combine_file(name + ".jpg");
+		df::blob_save_to_file(contents, path);
+		rename_source source;
+		source.source = path;
+		source.original_name = name;
+		sources.emplace_back(std::move(source));
+	}
+	return sources;
+}
+
+static void should_plan_the_default_rename_template()
+{
+	const auto root = _temps.next_folder("rename-default");
+	const auto sources = make_rename_sources(root, {"alpha", "beta", "gamma"});
+
+	const auto renames = calc_item_renames(sources, "Item ###", 1, collision_policy::block_run);
+	assert_equal(3_z, renames.size(), "one row per item");
+	assert_equal("Item 001", renames.front().new_name, "first row uses the start sequence");
+	assert_equal(false, renames.front().collides, "a free destination does not collide");
+	assert_equal(true, renames.front().valid, "a free destination is valid");
+	assert_equal(true, can_rename_items(renames), "the default template can run");
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	const auto with_sidecar = root.combine_file("with-sidecar.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), with_sidecar, false, false);
+	platform::copy_file(df::file_path(test_files_folder, "IMG_0604.xmp"), with_sidecar.extension(".xmp"), false, false);
+
+	df::item_set items;
+	for (const auto& source : sources) items.add(load_item(index, source.source, false));
+	items.add(load_item(index, with_sidecar, false));
+
+	const auto item_renames = calc_item_renames(items, "Item ###", 1, collision_policy::block_run);
+	assert_equal(4_z, item_renames.size(), "one row per indexed item");
+	for (const auto& rename : item_renames)
+		assert_equal(true, rename.valid, std::format("{} is valid", rename.new_name));
+	assert_equal(true, can_rename_items(item_renames), "indexed items can run the default template");
+}
+
+static void should_rename_a_set_onto_names_it_is_vacating()
+{
+	const auto root = _temps.next_folder("rename-rotate");
+	auto sources = make_rename_sources(root, {"Item 001", "Item 002", "Item 003"});
+	std::ranges::reverse(sources);
+
+	const auto renames = calc_item_renames(sources, "Item ###", 1, collision_policy::block_run);
+	assert_equal(true, can_rename_items(renames), "a set may be renamed onto its own names");
+	assert_equal(0, count_rename_collisions(renames, collision_policy::block_run), "no row collides");
+
+	// A case-only rename frees nothing, so a second row cannot be cleared to take that name.
+	const auto shadowed = make_rename_sources(root, {"only"});
+	const auto case_only = calc_item_renames(shadowed, "ONLY", 1, collision_policy::block_run);
+	assert_equal(true, can_rename_items(case_only), "a case-only rename is not a collision");
+}
+
+static void should_cascade_skipped_rename_rows()
+{
+	const auto root = _temps.next_folder("rename-cascade");
+	// Item 001 is not part of the plan, so the row that wants it can only be skipped - which leaves
+	// Item 002 where it is, so the row that was cleared to take Item 002 has to be skipped too.
+	const auto occupied = make_rename_sources(root, {"Item 001"});
+	const auto sources = make_rename_sources(root, {"Item 002", "beta"});
+
+	const auto renames = calc_item_renames(sources, "Item ###", 1, collision_policy::skip);
+	assert_equal(true, renames.front().skipped, "the blocked row is skipped");
+	assert_equal(true, renames.back().skipped, "the row waiting on it is skipped too");
+	assert_equal(false, can_rename_items(renames), "a plan that would write nothing cannot run");
+}
+
 
 static void should_group_rename_sidecar_collisions()
 {
@@ -199,8 +332,26 @@ static void should_adjust_item_dates_from_snapshot()
 	             "dated item preserves offset");
 	assert_equal(new_start, adjusted_item_date({}, new_start, original_start),
 	             "undated item uses new start");
+
+	// The row says which tag it is about to shift, so a selection whose files are dated by different
+	// things is visible before the run rather than after it.
+	const auto with_shutter = std::make_shared<prop::item_metadata>();
+	with_shutter->dates.add(prop::date_source::exif_original, df::date_t(2025, 8, 16, 18, 11, 56));
+	with_shutter->dates.add(prop::date_source::file_modified, df::date_t(2026, 8, 19, 21, 30, 0));
+	assert_equal("EXIF DateTimeOriginal", adjust_date_source_name(with_shutter), "the shutter answers first");
+
+	const auto scanned = std::make_shared<prop::item_metadata>();
+	scanned->dates.add(prop::date_source::xmp_create, df::date_t(2019, 5, 4, 9, 0, 0));
+	assert_equal("XMP xmp:CreateDate", adjust_date_source_name(scanned), "the rung below it answers next");
+
+	// Mirrors calc_media_created, which falls through to the filesystem when nothing else answers.
+	assert_equal("File created", adjust_date_source_name(nullptr), "an unscanned file shifts its own stamp");
+	assert_equal("File created", adjust_date_source_name(std::make_shared<prop::item_metadata>()),
+	             "so does a file carrying no date at all");
 }
 
+#ifdef _WIN32
+// The numbers are MAPI's own result codes, so there is nothing to classify where MAPI is absent.
 static void should_classify_mapi_results()
 {
 	assert_equal(true, platform::classify_mapi_send_result(0) == platform::mapi_send_result::sent, "MAPI success");
@@ -209,6 +360,7 @@ static void should_classify_mapi_results()
 	assert_equal(true, platform::classify_mapi_send_result(3) == platform::mapi_send_result::failed,
 	             "MAPI login failure");
 }
+#endif
 
 // Records what a run reported for each row so revalidation decisions can be asserted.
 struct recording_status final : df::status_i
@@ -673,14 +825,136 @@ static void should_record_history_beyond_ten_years()
 	assert_equal(true, df::max_history_years > 10, "history capacity beyond 10 years");
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The timeline is a navigation surface: clicking a month runs a search. A chart that buckets an
+// item under one date while the search answers with another is "click to open finds nothing" at the
+// place a user is most likely to click. Both halves resolve through prop::item_metadata::created(),
+// and only the round trip proves they still agree - neither half can be checked alone.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_answer_a_timeline_month_with_its_own_items(shared_test_context& stc)
+{
+	stc.lazy_load_index();
+	stc.test_index.update_summary();
+
+	const auto histograms = stc.test_index.histograms();
+	const auto year = histograms->_year;
+
+	auto months_checked = 0;
+
+	for (auto index = 0u; index < histograms->_dates.dates.size(); ++index)
+	{
+		if (histograms->_dates.dates[index].created == 0) continue;
+
+		// The cell draws this item, so this is the item a user is clicking through to.
+		const auto shown = histograms->_dates.representative_paths[index];
+		if (shown.is_empty()) continue;
+
+		const auto cell_year = year - static_cast<int>(index) / 12;
+		const auto cell_month = static_cast<int>(index) % 12 + 1;
+
+		// Day zero is the whole month, which is what the chart cell stands for. The chart buckets on
+		// the capture-first ladder, so the click has to ask for that key rather than the Created one.
+		const auto search = df::search_t().day(0, cell_month, cell_year, df::date_parts_prop::original);
+
+		auto found = false;
+		auto listed = 0;
+		auto cb = [&](const index_state::query_item_results& items, bool)
+		{
+			listed += static_cast<int>(items.size());
+			for (const auto& i : items) found = found || i.path == shown;
+		};
+		stc.test_index.query_items(search, cb, test_token);
+
+		assert_equal(true, listed > 0, std::format("{}-{:02} lists something", cell_year, cell_month));
+		assert_equal(true, found,
+		             std::format("{}-{:02} lists the item its cell draws - {}", cell_year, cell_month, shown.name()));
+		++months_checked;
+	}
+
+	assert_equal(true, months_checked > 0, "the fixture collection populates at least one month");
+}
+
 static void should_calculate_history_span_from_start_year()
 {
-	assert_equal(10, df::history_year_count(0, 2026), "empty start year defaults to 10 years");
-	assert_equal(17, df::history_year_count(2010, 2026), "start year is inclusive");
-	assert_equal(1, df::history_year_count(2030, 2026), "future start year clamps to current year");
-	assert_equal(df::max_history_years, df::history_year_count(1900, 2026), "old start year clamps to capacity");
-	assert_equal(17, df::history_row_count(17, 1), "one year per row");
-	assert_equal(9, df::history_row_count(17, 2), "two years per row rounds up");
+	constexpr auto this_year = 2026;
+
+	const auto typed = df::history_range_from_start_year(2010, this_year);
+	assert_equal(2010, typed.first_year, "a typed start year is taken as given");
+	assert_equal(this_year, typed.last_year, "and the range still ends today");
+
+	// A start year inside the window would leave the calendar with rows the navigator cannot reach.
+	const auto recent = df::history_range_from_start_year(this_year, this_year);
+	assert_equal(df::history_window_years, recent.year_count(), "a start year too recent still leaves a window");
+
+	const auto ancient = df::history_range_from_start_year(1800, this_year);
+	assert_equal(df::max_history_years, ancient.year_count(), "an old start year clamps to what is stored");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The navigator's range is worked out from what was indexed, and photographs carry wrong dates. A
+// scanner that stamped 1900 on four negatives must not set the scale for twenty thousand photos,
+// and a camera whose clock reset must not add a decade nobody photographed.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_choose_a_history_range_that_survives_wrong_dates()
+{
+	constexpr auto this_year = 2026;
+
+	const auto with = [](const std::vector<std::pair<int, int>>& years_and_counts)
+	{
+		df::date_histogram h;
+
+		for (const auto& [years_ago, count] : years_and_counts)
+		{
+			h.dates[static_cast<size_t>(years_ago) * 12 + 5].created += count;
+		}
+
+		return df::history_auto_range(h, this_year);
+	};
+
+	{
+		const auto empty = df::history_auto_range({}, this_year);
+		assert_equal(this_year, empty.last_year, "an empty collection still ends today");
+		assert_equal(df::history_window_years, empty.year_count(), "and offers exactly one window");
+	}
+
+	{
+		// Fifteen real years, and four negatives a scanner stamped 1900.
+		std::vector<std::pair<int, int>> years;
+		for (auto y = 0; y < 15; ++y) years.emplace_back(y, 800);
+		years.emplace_back(99, 4);
+
+		const auto range = with(years);
+		assert_equal(this_year - 14, range.first_year, "the range stops at the real history");
+		assert_equal(this_year, range.last_year, "and ends today");
+	}
+
+	{
+		// A camera whose clock reset: an island of a few dozen behind a decade of silence.
+		std::vector<std::pair<int, int>> years;
+		for (auto y = 0; y < 10; ++y) years.emplace_back(y, 1000);
+		years.emplace_back(40, 30);
+		years.emplace_back(41, 30);
+
+		const auto range = with(years);
+		assert_equal(this_year - 9, range.first_year, "an island behind a long gap is a date bug");
+	}
+
+	{
+		// Scanned family photographs are a real decade, however long ago: they are too much of the
+		// collection to be a clock that reset, and cutting them would hide them from the navigator.
+		std::vector<std::pair<int, int>> years;
+		for (auto y = 0; y < 10; ++y) years.emplace_back(y, 1000);
+		for (auto y = 40; y < 50; ++y) years.emplace_back(y, 400);
+
+		const auto range = with(years);
+		assert_equal(this_year - 49, range.first_year, "a substantial older decade is kept");
+	}
+
+	{
+		// One busy year is still eight years of navigator, or there is nothing to navigate.
+		const auto range = with({{0, 500}});
+		assert_equal(df::history_window_years, range.year_count(), "the range is never shorter than a window");
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1441,6 +1715,80 @@ static void should_record_crashes()
 	             "the next release line retries");
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The ping store keeps daily aggregate totals, so whatever the ingest decodes on the day is the
+// only reading of that day that will ever exist: a field misread for a month is a month gone. The
+// decoder therefore lives here beside the encoder, and this covers every field at its extremes.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_round_trip_the_environment_mask()
+{
+	const auto round_trip = [](const df::environment_facts& facts, const std::string_view what)
+	{
+		const auto packed = df::pack_environment(facts);
+		const auto read_back = df::unpack_environment(packed);
+
+		assert_equal(true, read_back.has_value(), std::format("{} decodes", what));
+		assert_equal(true, read_back.value() == facts, std::format("{} reads back as itself", what));
+	};
+
+	// Nothing established: every field answers unknown, which is a reading rather than an absence.
+	round_trip({}, "an unidentified machine");
+
+	// Every field at the top of its range at once. This is what a field running out of room looks
+	// like, and it has to survive being written down.
+	round_trip({
+		           df::os_family::other, df::os_release::other, df::machine_arch::other,
+		           df::machine_arch::other, df::package_kind::other
+	           }, "every field at its widest");
+
+	// The cross-tabs the fields exist to answer, each one a real shape.
+	round_trip({
+		           df::os_family::windows, df::os_release::windows_11, df::machine_arch::x86,
+		           df::machine_arch::x64, df::package_kind::installer
+	           }, "a 32-bit process on 64-bit Windows 11");
+	round_trip({
+		           df::os_family::windows, df::os_release::windows_10, df::machine_arch::x64,
+		           df::machine_arch::arm64, df::package_kind::microsoft_store
+	           }, "an x64 build on arm64 hardware under translation");
+	round_trip({
+		           df::os_family::linux_, df::os_release::unknown, df::machine_arch::riscv64,
+		           df::machine_arch::riscv64, df::package_kind::flatpak
+	           }, "a Linux package");
+
+	// Each field on its own, so a shift or a width that is wrong cannot hide behind a neighbour.
+	for (const auto family : {df::os_family::unknown, df::os_family::windows, df::os_family::other})
+		round_trip({.family = family}, "an OS family alone");
+	for (const auto release : {df::os_release::unknown, df::os_release::windows_7, df::os_release::other})
+		round_trip({.release = release}, "an OS version alone");
+	for (const auto arch : {df::machine_arch::unknown, df::machine_arch::x86, df::machine_arch::other})
+	{
+		round_trip({.process = arch}, "a process architecture alone");
+		round_trip({.machine = arch}, "an OS architecture alone");
+	}
+	for (const auto package : {df::package_kind::unknown, df::package_kind::appimage, df::package_kind::other})
+		round_trip({.package = package}, "a package alone");
+
+	// The layout version is read first and anything else fails closed. Guessing at an unrecognised
+	// layout is the one mistake a daily aggregate cannot be talked out of.
+	const auto packed = df::pack_environment({df::os_family::windows, df::os_release::windows_11});
+	assert_equal(df::environment_layout_version, df::environment_layout::version.unpack(packed),
+	             "the version is the first field");
+	assert_equal(false, df::unpack_environment((packed & ~0xfull) | 0xf).has_value(),
+	             "an unrecognised layout is left undecoded");
+
+	// A reserved bit means the writer knew something this reader does not, so the same rule applies.
+	assert_equal(0ull, packed & df::environment_layout::reserved, "nothing is written above the last field");
+	assert_equal(false, df::unpack_environment(packed | (1ull << 27)).has_value(),
+	             "a value using a reserved bit is left undecoded");
+
+	// The value travels as hex, and the identity carries no measurement, so it stays small enough to
+	// read at a glance rather than becoming an opaque 16 digits.
+	assert_equal(true, str::to_hex(df::pack_environment({
+		             df::os_family::windows, df::os_release::windows_11, df::machine_arch::x64,
+		             df::machine_arch::x64, df::package_kind::installer
+	             })).size() <= 8, "an ordinary machine packs into a short value");
+}
+
 // A view_state opened over the fixture collection, with no window. Every test below drives the same
 // entry points the commands do, so what they pin is the behavior a user sees rather than a helper.
 struct browsing_fixture
@@ -1466,6 +1814,103 @@ struct browsing_fixture
 		return state.find_displayed_item_by_name(name);
 	}
 };
+
+// The plan clears a destination held by a file the same run renames away, so the run has to free it
+// rather than fail on it. Every row here wants the next row's current name.
+static void should_run_a_rename_onto_vacated_names()
+{
+	const auto root = _temps.next_folder("rename-run-chain");
+	for (const auto& name : {"Item 001.jpg"s, "Item 002.jpg"s, "Item 003.jpg"s})
+		platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), root.combine_file(name), false, false);
+
+	browsing_fixture f(root);
+	f.state.select_all(f.view);
+	f.state.update_selection();
+	assert_equal(3_z, f.state.selected_items().size(), "the fixture folder is selected");
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "Item ###";
+	setting.rename.start_seq = "2";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a chained rename can run");
+	view->run();
+
+	assert_equal(false, root.combine_file("Item 001.jpg").exists(), "the vacated name is gone");
+	for (const auto& name : {"Item 002.jpg"s, "Item 003.jpg"s, "Item 004.jpg"s})
+		assert_equal(true, root.combine_file(name).exists(), std::format("{} was written", name));
+}
+
+// A case-only rename frees nothing, so the run must not park the file it is renaming within.
+static void should_run_a_case_only_rename()
+{
+	const auto root = _temps.next_folder("rename-run-case");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), root.combine_file("photo.jpg"), false, false);
+
+	browsing_fixture f(root);
+	f.state.select_all(f.view);
+	f.state.update_selection();
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "PHOTO";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a case-only rename can run");
+	view->run();
+
+	const auto contents = platform::iterate_file_items(root, false);
+	assert_equal(1_z, contents.files.size(), "the folder still holds one file");
+	assert_equal("PHOTO.jpg", std::string(contents.files.front().name), "the file carries the new case");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Issue #250 - after a move or a delete the cursor reset to the start of the listing instead of
+// settling on what followed the set that left, which turns sorting a folder into a re-navigation
+// after every action. Delete and move ask the same question, so they must reuse one answer rather
+// than each deriving its own.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_land_on_what_followed_a_removed_set()
+{
+	browsing_fixture f;
+
+	const auto& groups = f.state.groups();
+	assert_equal(true, !groups.empty(), "the fixture folder lists something");
+
+	std::vector<df::item_element_ptr> listed;
+	for (const auto& g : groups)
+		for (const auto& i : g->items())
+			listed.emplace_back(i);
+
+	assert_equal(true, listed.size() > 2, "and it lists enough to have a successor");
+
+	// A set in the middle: the cursor settles on the first item after it, not on the first item.
+	f.state.select(f.view, listed[1], false, false, false);
+	f.state.update_selection();
+	assert_equal(true, f.state.next_unselected_item() == listed[2], "the item after the selection follows it");
+
+	// The last item: nothing follows it, so the cursor settles on what came BEFORE the set rather
+	// than on the first item of the listing. Asserting only "not null and not the item that left"
+	// is satisfied by listed[0], which is the reset this exists to catch.
+	f.state.select(f.view, listed.back(), false, false, false);
+	f.state.update_selection();
+
+	const auto after_last = f.state.next_unselected_item();
+	assert_equal(true, after_last == listed[listed.size() - 2],
+	             "a set running to the end settles on what preceded it");
+
+	// Everything selected: nothing survives it, and the caller has to cope with that rather than
+	// being handed an item that is about to disappear.
+	f.state.select_all(f.view);
+	f.state.update_selection();
+	assert_equal(true, f.state.next_unselected_item() == nullptr, "a whole listing leaving has no successor");
+}
 
 // design.md: "Only photos, video, and audio take part, so a folder, document, or archive is stepped
 // over rather than stalling the sequence". The fixture folder holds all three kinds of passenger.
@@ -1760,6 +2205,85 @@ static void should_label_grouping_and_sorting()
 	const auto same = format_items_summary(group_by::date_created, sort_by::date_created, summary, true);
 	assert_equal(true, says(same, tt.prop_name_created.sv()), "the shared name is present");
 	assert_equal(true, both.length() > same.length(), "a shared name is not repeated");
+}
+
+// Hands out real command objects so the menu built from them can be compared by identity. A menu
+// that invented its own copies would look right and drift the moment either changed.
+class command_state_strategy final : public null_state_strategy
+{
+public:
+	mutable df::hash_map<commands, ui::command_ptr> commands_by_id;
+
+	ui::command_ptr find_command(const commands cmd) const override
+	{
+		auto& found = commands_by_id[cmd];
+		if (!found) found = std::make_shared<ui::command>();
+		return found;
+	}
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Discussion #251 - the filter toolbar scrolls away, so changing a filter over a long listing meant
+// scrolling to the top first. The control in the scroller track is always on screen and now carries
+// those settings. Its click opens the menu in every scroll position: opening a menu when at the top
+// and scrolling when not would be a context-dependent surprise.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+static void should_offer_the_items_menu_at_every_scroll_position()
+{
+	command_state_strategy ss;
+	null_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state state(ss, as, index, make_test_player());
+
+	// The toolbar's grouping button carries the Group by / Sort by list, so the menu must take it
+	// from there rather than list the same commands again.
+	const auto group = ss.find_command(commands::menu_group_toolbar);
+	group->menu = [&ss] { return std::vector{ss.find_command(commands::group_folder)}; };
+
+	auto scrolled = 0;
+	const auto scroll = [&scrolled] { ++scrolled; };
+
+	for (const auto at_top : {true, false})
+	{
+		const auto menu = items_scroll_menu(state, at_top, scroll);
+
+		assert_equal(true, menu.size() > 1, "the menu is offered whatever the scroll position");
+		assert_equal(true, menu.front() != nullptr, "and it opens with an entry of its own");
+		assert_equal(std::string(tt.tooltip_scroll_to_top.sv()), std::string(menu.front()->text),
+		             "scroll to top comes first, because the click no longer performs it");
+		assert_equal(!at_top, menu.front()->enable, "and it says whether it has anything to do");
+
+		const auto offers = [&menu](const ui::command_ptr& c)
+		{
+			return std::ranges::find(menu, c) != menu.end();
+		};
+
+		assert_equal(true, offers(ss.find_command(commands::group_folder)), "the toolbar's grouping list is carried");
+		assert_equal(true, offers(ss.find_command(commands::filter_photos)), "so is the media type filter");
+		assert_equal(true, offers(ss.find_command(commands::filter_videos)), "every part of it");
+		assert_equal(true, offers(ss.find_command(commands::filter_audio)), "every part of it");
+		assert_equal(true, offers(ss.find_command(commands::browse_recursive)),
+		             "and Show items in subfolders, which was on no toolbar at all");
+	}
+
+	// Invoking the first entry is what scrolls. A menu entry performs its command whether or not it
+	// is enabled - dimming is what the user is shown, not a second gate - so the scroll runs here
+	// even though this menu was built at the top.
+	const auto at_top_menu = items_scroll_menu(state, true, scroll);
+	at_top_menu.front()->invoke();
+	assert_equal(1, scrolled, "the entry performs the scroll the click used to");
+
+	// A separator is only ever between two entries: a double rule, or a rule under the last entry,
+	// is what an unresolved command silently turns into.
+	assert_equal(false, at_top_menu.front() == nullptr, "the menu does not open on a separator");
+	assert_equal(false, at_top_menu.back() == nullptr, "and does not end on one");
+
+	for (auto i = 1u; i < at_top_menu.size(); ++i)
+	{
+		assert_equal(false, at_top_menu[i] == nullptr && at_top_menu[i - 1] == nullptr,
+		             "no two separators are adjacent");
+	}
 }
 
 // design.md "Navigation and search" specifies the address box as an editing session with a
@@ -2167,15 +2691,24 @@ static void should_discard_a_superseded_completion()
 void register_app_tests(view_state& state, test_registry& tests)
 {
 	tests.add("INI file settings should persist values"s, should_persist_to_ini_file);
+	tests.add("Should store an order an older build can read"s, should_store_an_order_an_older_build_can_read);
 	tests.add("Should Rename with substitutions"s, should_rename_with_substitutions);
 	tests.add("Should rename name token without extension"s, should_rename_name_token_without_extension);
 	tests.add("Should reject duplicate rename targets"s, should_reject_duplicate_rename_targets);
 	tests.add("Should reject unusable rename targets"s, should_reject_unusable_rename_targets);
 	tests.add("Should group Rename sidecar collisions"s, should_group_rename_sidecar_collisions);
+	tests.add("Should plan the default rename template"s, should_plan_the_default_rename_template);
+	tests.add("Should rename a set onto names it is vacating"s, should_rename_a_set_onto_names_it_is_vacating);
+	tests.add("Should cascade skipped rename rows"s, should_cascade_skipped_rename_rows);
+	tests.add("Should run a rename onto vacated names"s, should_run_a_rename_onto_vacated_names);
+	tests.add("Should run a case only rename"s, should_run_a_case_only_rename);
 	tests.add("Should format rename"s, should_format_rename);
 	tests.add("Should plan unique convert outputs"s, should_plan_unique_convert_outputs);
 	tests.add("Should adjust item dates from snapshot"s, should_adjust_item_dates_from_snapshot);
+	tests.add("Should round trip the environment mask"s, should_round_trip_the_environment_mask);
+#ifdef _WIN32
 	tests.add("Should classify MAPI results"s, should_classify_mapi_results);
+#endif
 	tests.add("Should detect duplicate import destinations"s, should_detect_duplicate_import_destinations);
 	tests.add("Should revalidate import rows"s, should_revalidate_import_rows);
 	tests.add("Should revalidate replaced import destinations"s, should_revalidate_replaced_import_destinations);
@@ -2190,7 +2723,11 @@ void register_app_tests(view_state& state, test_registry& tests)
 
 	// Issue #175 - sidebar history chart span
 	tests.add("Should record history beyond ten years"s, should_record_history_beyond_ten_years);
+	// Issue #175 - the chart and the search it runs must agree about which month an item is in
+	tests.add("Should answer a timeline month with its own items"s, should_answer_a_timeline_month_with_its_own_items);
 	tests.add("Should calculate history span from start year"s, should_calculate_history_span_from_start_year);
+	tests.add("Should choose a history range that survives wrong dates"s,
+	          should_choose_a_history_range_that_survives_wrong_dates);
 
 	tests.add("Should persist media filter"s, should_persist_media_filter);
 
@@ -2222,6 +2759,9 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should keep shuffle exclusive with sorting"s, should_keep_shuffle_exclusive_with_sorting);
 	tests.add("Should not claim one key for two commands"s, should_not_claim_one_key_for_two_commands);
 	tests.add("Should label grouping and sorting"s, should_label_grouping_and_sorting);
+	// Discussion #251 - the filter toolbar scrolls away
+	tests.add("Should offer the items menu at every scroll position"s,
+	          should_offer_the_items_menu_at_every_scroll_position);
 
 	//
 	// Address box editing session
@@ -2239,6 +2779,8 @@ void register_app_tests(view_state& state, test_registry& tests)
 	// Browsing sequence
 	//
 	tests.add("Should step over items that cannot play"s, should_step_over_items_that_cannot_play);
+	// Issue #250 - the cursor reset instead of landing after the set that left
+	tests.add("Should land on what followed a removed set"s, should_land_on_what_followed_a_removed_set);
 	tests.add("Should offer a slideshow only when something can play"s,
 	          should_offer_a_slideshow_only_when_something_can_play);
 	tests.add("Should move between sibling folders"s, should_move_between_sibling_folders);

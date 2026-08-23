@@ -567,8 +567,8 @@ its full frame and is judged on what it will actually allocate. Every other defe
 native size first and is judged on the whole thing. The budgets themselves are owned by
 [rendering.md](rendering.md#image-budgets).
 
-PSD, HEIF, JXL and the platform-decoded types (GIF, BMP, TIFF and the rest of the WIC set) decode
-during `files::load` rather than on demand, so they cannot be caught by the check above — the
+PSD, HEIF, JXL and the ffmpeg-decoded types (GIF, BMP, TIFF, TGA, SGI, the portable pixmaps and DPX)
+decode during `files::load` rather than on demand, so they cannot be caught by the check above — the
 allocation would already have happened. Each refuses at the point it first knows the geometry and
 before it allocates anything:
 
@@ -577,7 +577,7 @@ before it allocates anything:
 | PSD | `load_psd`, after the 26-byte header |
 | JXL | `load_jxl`, on `JXL_DEC_BASIC_INFO` |
 | HEIF | `load_heif`, on the primary image handle |
-| GIF, BMP, TIFF, other WIC types | `files::load`, from the `scan_photo` header geometry, with `platform::image_to_surface` re-checking after `IWICBitmapSource::GetSize` |
+| GIF, BMP, TIFF, TGA, SGI, the portable pixmaps, DPX | `files::load`, from the `scan_photo` header geometry, before `av_decode_still` is asked for the pixels |
 
 `reject_over_budget_source` performs all four checks and fills a `load_diagnostic`, which
 `files::load` turns into `file_load_result::reason` and `source_dimensions`. That is what lets a
@@ -1230,3 +1230,22 @@ cache behaviour is sufficient for that release; these do not block it.
   repeat work when stepping back. It retains by form rather than by recency, so what remains
   budgeted is only the decoded pixels of formats with no compressed representation. Eviction within
   that remainder is still by recency and does not yet rank candidates by viewport distance.
+
+## Where this lives
+
+| I/O subject | Source |
+|---|---|
+| Format detection, dispatch, load and save coordination | [files.h](../src/files.h), [files_core.cpp](../src/files_core.cpp) |
+| Header scanning for dimensions, orientation, embedded thumbnails | [files_scan_photo.cpp](../src/files_scan_photo.cpp), [files_structs.h](../src/files_structs.h) |
+| Per-format decode and encode | [files_jpeg.cpp](../src/files_jpeg.cpp), [files_png.cpp](../src/files_png.cpp), [files_webp.cpp](../src/files_webp.cpp), [files_heif.cpp](../src/files_heif.cpp), [files_jxl.cpp](../src/files_jxl.cpp), [files_psd.cpp](../src/files_psd.cpp), [files_raw.cpp](../src/files_raw.cpp), [files_commodore.cpp](../src/files_commodore.cpp) |
+| The fallback decoder for formats with no specialised path | [platform_win_wic.cpp](../src/platform_win_wic.cpp) |
+| Staging, replacement, originals, collisions, rollback | [app_util.cpp](../src/app_util.cpp) — `import_copy`, `sync_copy` and the rename planning beside them |
+| Buffered reads, whole-file loads, in-place insert and replace | [util_file.h](../src/util_file.h); memory mapping is `platform::map_file` in [platform.h](../src/platform.h) |
+| Path handling and extended-path syntax | [util_path.h](../src/util_path.h) — `file_path`, `folder_path`; [platform_win_files.cpp](../src/platform_win_files.cpp) |
+| Metadata written into the file or a sidecar | [metadata.md](metadata.md), [metadata_xmp.cpp](../src/metadata_xmp.cpp) |
+| Archive reading and writing | [util_zip.h](../src/util_zip.h), [util_zip.cpp](../src/util_zip.cpp) |
+
+Run-time revalidation is the part most easily lost in a refactor: each row of a guided operation is
+revalidated against its own files immediately before that row acts, not once for the whole plan.
+[view_import.cpp](../src/view_import.cpp) and [view_sync.cpp](../src/view_sync.cpp) state why in
+their own `// Purpose:` headers, and `/test:*collision*` and `/test:*sidecar*` are the checks.

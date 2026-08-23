@@ -85,7 +85,7 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in) con
 
 		while (f.read64k())
 		{
-			// Read in an write the item
+			// Read in and write the item
 			// in multiple buffer loads
 
 			// Write

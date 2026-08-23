@@ -9,7 +9,7 @@ Diffractor relies on third-party libraries vendor-copied into `third-party/`.
 
 ## Dependencies
 
-No package manager is used. Source code for each library is copied into `third-party/` (or `Include/` for header-only libs) and built via custom `.vcxproj` files maintained in this repo. To update a dependency: download/clone the new source, replace the files in the corresponding folder, adjust the `.vcxproj` if source files were added/removed, and verify the build.
+No package manager is used. Source code for each library is copied into `third-party/` (or `Include/` for header-only libs) and built by an owned CMake module under `cmake/vendored/`. To update a dependency: download/clone the new source, replace the files in the corresponding folder, adjust the module's source list if files were added or removed, and verify the build on both architectures.
 
 | Library | Version | Folder | Type | Update Source |
 |---------|---------|--------|------|---------------|
@@ -17,27 +17,28 @@ No package manager is used. Source code for each library is copied into `third-p
 | [bzip2](https://github.com/libarchive/bzip2) | 1.0.8 | `third-party/bzip2` | Source copy | Download from [libarchive/bzip2](https://github.com/libarchive/bzip2/releases) |
 | [dav1d](https://code.videolan.org/videolan/dav1d) | 1.5.4 | `third-party/dav1d` | Source copy | Clone from [videolan/dav1d](https://code.videolan.org/videolan/dav1d), copy `include/` + `src/`, then reapply the Diffractor-specific bits (see [dav1d](#dav1d) below) |
 | [dng-sdk](https://github.com/niclaswue/dng_sdk) | 1.7.1 | `third-party/dng` | Source copy | Download from [Adobe DNG SDK](https://helpx.adobe.com/camera-raw/digital-negative.html), mirror at [niclaswue/dng_sdk](https://github.com/niclaswue/dng_sdk) |
-| [expat](https://github.com/libexpat/libexpat) | 2.8.2 | `third-party/expat` | Source copy | Download release from [libexpat/libexpat](https://github.com/libexpat/libexpat/releases), replace `lib/` sources |
+| [expat](https://github.com/libexpat/libexpat) | 2.8.3 | `third-party/expat` | Source copy | Download release from [libexpat/libexpat](https://github.com/libexpat/libexpat/releases), replace `lib/` sources; keep the hand-written root `expat_config.h` and drop the `Makefile.*` / `libexpat.def.cmake` / `libexpat.map.in` build files the tarball carries |
 | [ffmpeg](https://github.com/diffractor/FFmpeg) | main | `third-party/FFmpeg` | **Fork** (submodule) | Rebase [diffractor/FFmpeg](https://github.com/diffractor/FFmpeg) on upstream [FFmpeg/FFmpeg](https://github.com/FFmpeg/FFmpeg). Fork adds custom `ffmpeg.vcxproj` for MSVC |
 | [highway](https://github.com/google/highway) | 1.4.0 | `third-party/highway` | Source copy | Download release from [google/highway](https://github.com/google/highway/releases) |
 | [hunspell](https://github.com/hunspell/hunspell) | 1.7.3 | `third-party/hunspell` | Source copy | Download release from [hunspell/hunspell](https://github.com/hunspell/hunspell/releases), replace `src/hunspell/` sources |
-| [libarchive](https://github.com/libarchive/libarchive) | 3.8.8 | `third-party/libarchive` | Source copy | Download release from [libarchive/libarchive](https://github.com/libarchive/libarchive/releases) |
+| [libarchive](https://github.com/libarchive/libarchive) | 3.8.9 | `third-party/libarchive` | Source copy | Download release from [libarchive/libarchive](https://github.com/libarchive/libarchive/releases); keep the checked-in `libarchive/config.h` and drop the `.3`/`.5` man pages |
 | [libde265](https://github.com/strukturag/libde265) | 1.1.1 | `third-party/libde265` | Source copy | Download release from [strukturag/libde265](https://github.com/strukturag/libde265/releases), update `de265-version.h` |
-| [libebml](https://github.com/Matroska-Org/libebml) | 1.4.6 | `third-party/libebml` | Source copy | Download release from [Matroska-Org/libebml](https://github.com/Matroska-Org/libebml/releases), copy `ebml/` + `src/`; keep the hand-written `ebml_export.h` shim (see [libebml / libmatroska](#libebml--libmatroska) below) |
+| [libebml](https://github.com/Matroska-Org/libebml) | 1.4.7 | `third-party/libebml` | Source copy | Download release from [Matroska-Org/libebml](https://github.com/Matroska-Org/libebml/releases), copy `ebml/` + `src/`; keep the hand-written `ebml_export.h` shim (see [libebml / libmatroska](#libebml--libmatroska) below) |
 | [libexif](https://github.com/libexif/libexif) | 0.6.26 | `third-party/libexif` | Source copy | Download release from [libexif/libexif](https://github.com/libexif/libexif/releases) |
 | [libheif](https://github.com/strukturag/libheif) | 1.23.1 | `third-party/libheif` | Source copy | Download release from [strukturag/libheif](https://github.com/strukturag/libheif/releases), update `heif_version.h` |
 | [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) | 3.2.0 | `third-party/LibJpeg` | Source copy | Download release from [libjpeg-turbo/libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo/releases), place sources under `src/` (upstream layout), regenerate `src/jconfig.h` for MSVC |
 | [libjxl](https://github.com/libjxl/libjxl) | 0.12.0 | `third-party/libjx` | Source copy | Download release from [libjxl/libjxl](https://github.com/libjxl/libjxl/releases), take the source lists from `lib/jxl_lists.cmake`, update `jxl/version.h` |
 | [liblzma](https://github.com/tukaani-project/xz) | 5.8.3 | `third-party/liblzma` | Source copy | Download release from [tukaani-project/xz](https://github.com/tukaani-project/xz/releases), copy `src/liblzma/` sources |
 | [libmatroska](https://github.com/Matroska-Org/libmatroska) | 1.7.2 | `third-party/libmatroska` | Source copy | Download release from [Matroska-Org/libmatroska](https://github.com/Matroska-Org/libmatroska/releases), copy `matroska/` + `src/`; keep the hand-written `matroska_export.h` shim (see [libebml / libmatroska](#libebml--libmatroska) below) |
-| [libopenmpt](https://github.com/OpenMPT/openmpt) | 0.8.7 | `third-party/libopenmpt` | Source copy | Download the `.autotools` source release from [lib.openmpt.org](https://lib.openmpt.org/libopenmpt/download/), mirror at [OpenMPT/openmpt](https://github.com/OpenMPT/openmpt); copy `common/`, `libopenmpt/`, `sounddsp/`, `soundlib/`, `src/` (see [libopenmpt](#libopenmpt) below) |
+| [libopenmpt](https://github.com/OpenMPT/openmpt) | 0.8.9 | `third-party/libopenmpt` | Source copy | Download the `.autotools` source release from [lib.openmpt.org](https://lib.openmpt.org/libopenmpt/download/), mirror at [OpenMPT/openmpt](https://github.com/OpenMPT/openmpt); copy `common/`, `libopenmpt/`, `sounddsp/`, `soundlib/`, `src/` (see [libopenmpt](#libopenmpt) below) |
 | [libpng](https://github.com/pnggroup/libpng) | 1.6.58 | `third-party/libpng` | Source copy | Download release from [pnggroup/libpng](https://github.com/pnggroup/libpng/releases) |
 | [LibRaw](https://github.com/LibRaw/LibRaw) | 0.22.2 | `third-party/LibRaw` | Source copy | Download release from [LibRaw/LibRaw](https://github.com/LibRaw/LibRaw/releases), copy `src/`, `libraw/`, `internal/` |
+| [fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons) | main | `src/Res/FluentSystemIcons-Resizable.ttf` | Asset (MIT) | Download `fonts/FluentSystemIcons-Resizable.ttf` **and** the matching `.json` from [microsoft/fluentui-system-icons](https://github.com/microsoft/fluentui-system-icons). The two go together: code points are assigned sequentially by the font build and move between releases, so after replacing the font re-run `python tools/fluent_icons.py --json <the .json> --write` to regenerate `src/app_icons.h`. Never hand-edit a code point. This replaced `segmdl2.ttf`, a Windows system font that was being embedded in the shipped binary and is not redistributable |
 | [libwebp](https://github.com/webmproject/libwebp) | 1.6.0 | `third-party/webp` | Source copy | Download release from [webmproject/libwebp](https://github.com/webmproject/libwebp/releases) |
 | [minizip-ng](https://github.com/zlib-ng/minizip-ng) | 4.2.2 | `third-party/minizip` | Source copy | Download release from [zlib-ng/minizip-ng](https://github.com/zlib-ng/minizip-ng/releases); the zlib-style compat API moved to `compat/` (zip.c/unzip.c/ioapi.c); regenerate `mz_config.h` for MSVC |
 | [rapidjson](https://github.com/Tencent/rapidjson) | main | `third-party/rapidjson` | Header-only | Copy headers from [Tencent/rapidjson](https://github.com/Tencent/rapidjson) `include/rapidjson/` |
 | [skcms](https://github.com/niclaswue/skcms) | main | `third-party/skcms` | Source copy | Copy from [skia.googlesource.com/skcms](https://skia.googlesource.com/skcms), mirror at [niclaswue/skcms](https://github.com/niclaswue/skcms) |
-| [sqlite](https://github.com/niclaswue/sqlite) | 3.53.3 | `third-party/sqlite` | Source copy | Download amalgamation from [sqlite.org](https://www.sqlite.org/download.html), mirror at [niclaswue/sqlite](https://github.com/niclaswue/sqlite) |
+| [sqlite](https://github.com/niclaswue/sqlite) | 3.53.4 | `third-party/sqlite` | Source copy | Download amalgamation from [sqlite.org](https://www.sqlite.org/download.html), mirror at [niclaswue/sqlite](https://github.com/niclaswue/sqlite) |
 | [utf-cpp](https://github.com/nemtrif/utfcpp) | 4.1.1 | `Include/utf8-cpp` | Header-only | Copy headers from [nemtrif/utfcpp](https://github.com/nemtrif/utfcpp/releases) into `Include/utf8-cpp/` |
 | [xmp-sdk](https://github.com/diffractor/XMP-Toolkit-SDK) | 6.0.0 | `third-party/xmp` | **Fork** (submodule) | Rebase [diffractor/XMP-Toolkit-SDK](https://github.com/diffractor/XMP-Toolkit-SDK) on upstream [adobe/XMP-Toolkit-SDK](https://github.com/adobe/XMP-Toolkit-SDK). Fork adds: POPM/TPE2 reconciliation for MP3, Windows tag support, C++17 fixes, WebP support from Exempi |
 | [zlib-ng](https://github.com/zlib-ng/zlib-ng) | 2.3.3 | `third-party/ZLib` | Source copy | Download release from [zlib-ng/zlib-ng](https://github.com/zlib-ng/zlib-ng/releases), configure for zlib-compat mode |
@@ -52,21 +53,37 @@ When updating or re-vendor copying third-party libraries (e.g. `libjx`, `highway
    - Ensure test files containing static initializers or build system runner dependencies are removed if they are not needed for Diffractor.
    - Example: In `third-party/libjx/lib/jxl/`, `test_utils.cc` and `test_utils.h` instantiate Bazel `Runfiles::Create("")` statically on startup. These test files must be deleted when updating `libjx` to prevent `failed to find bazel workspace` stderr output.
 
-2. **Project File Integration**
-   - Diffractor uses Visual Studio solutions (`df.sln`) and `.vcxproj` project files under `third-party/`.
-   - Ensure newly added or removed source files in `third-party/` are reflected in the corresponding `.vcxproj` project file so MSBuild remains clean.
+2. **Build Description Integration**
+   - Each library is described by `cmake/vendored/<name>.cmake`, with anything that description cannot carry on its own — a generated header, a flag one compiler needs, an architecture-specific source list — in `cmake/vendored/<name>.local.cmake` beside it.
+   - Ensure newly added or removed source files in `third-party/` are reflected in the module's source list. The lists are explicit rather than globbed, so a file cannot join the build by being dropped in a folder.
+   - These modules began as imports from `.vcxproj` files that no longer exist; see [retiring MSBuild](linux.md#retiring-msbuild) and [tools/build-divergence.txt](../tools/build-divergence.txt) before changing anything in them that looks arbitrary. Two libraries build unoptimised in Release on purpose.
 
 3. **Verification**
-   - Always run MSBuild (`df.sln`) and run full test suites (`.\dd.ps1 test`) after vendor library updates.
-   - **Build Win32 as well as x64.** An incremental x64 build can reuse stale `.obj`s and silently
+   - Always run `.\dd.ps1 test` after a vendor library update.
+   - **Build Win32 as well as x64.** An incremental x64 build can reuse stale objects and silently
      skip recompiling replaced third-party sources, so a green x64 build (and passing tests) can hide
-     compile errors and clobbered integration patches. If in doubt, delete the library's
-     `intermediate/<Config>/<Platform>/<lib>` folders to force a fresh compile. Win32 objects rarely
-     exist yet, so a Win32 build is a good full-recompile smoke test of the new sources.
+     compile errors and clobbered integration patches. `.\dd.ps1 clean` or a fresh build directory
+     forces a full compile. A 32-bit build is also the only thing that exercises the i386 assembly
+     paths, which are a separate source list from the x86-64 ones.
+
+     ```powershell
+     python tools/dd.py build --config Release --arch x86
+     ```
+
+## Security advisories the vendored version answers
+
+A version bump taken for a published advisory is recorded here, because the vendored tree carries no
+upstream changelog: only `lib/` sources are copied for expat, and the `.autotools` release strips the
+release notes. Without this table the advisory identifier a release note cites exists nowhere durable.
+
+| Library | Version taken | Advisory |
+|---------|---------------|----------|
+| expat | 2.8.3 | [CVE-2026-72522](https://nvd.nist.gov/vuln/detail/CVE-2026-72522) |
+| libopenmpt | 0.8.9 | 0.8.8 and 0.8.9 are both upstream security releases |
 
 ## Library-specific upgrade notes
 
-These libraries are vendored with hand-maintained `.vcxproj` files and small Diffractor-specific
+These libraries are vendored with owned CMake modules and small Diffractor-specific
 shims. Upstream ships CMake/meson/autotools that generate some of these files; because Diffractor
 does not use those generators, a naive "delete folder and unzip" loses the shims. Copy the upstream
 source folders **over** the existing tree (do not delete first) and re-verify the items below.
@@ -174,13 +191,21 @@ encoders/muxers**, keeps `dxva2` hardware video decode, and disables genuinely r
 
   ```
   ./configure --target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --enable-cross-compile \
-    --enable-gpl --enable-runtime-cpudetect --enable-static --disable-shared --enable-small \
+    --enable-runtime-cpudetect --enable-static --disable-shared --enable-small \
     --enable-x86asm --disable-inline-asm --enable-w32threads --disable-pthreads \
     --enable-zlib --disable-programs --disable-doc --disable-avfilter --disable-network \
     --disable-encoders --disable-muxers --enable-muxer=avif --disable-devices --disable-filters \
     --disable-protocols --enable-protocol=file
   ```
   - x86: `--arch=x86 --cross-prefix=i686-w64-mingw32-`.
+  - **No `--enable-gpl`.** Diffractor is LGPL 2.1-or-later, so FFmpeg is configured LGPL to match;
+    the Linux build has never passed it either. It costs exactly eleven components, all gated on the
+    fork's `lgpl_gpl` marker — eight game-console ADPCM decoders (N64, PSXC, Circus, IMA
+    Escape/HVQM2/HVQM4/Magix/PDA) and the CRI AHX decoder, parser and `ahx_to_mp2` bsf. Note the
+    fork's own comment on that gate: these files *are* marked LGPL, and are withheld by preference
+    rather than by licence. No video codec, image decoder, demuxer or hwaccel is affected.
+    If a regenerated config brings `CONFIG_GPL 1` back, the eleven return with it and must be
+    zeroed in `config_components.h` and dropped from `{codec,parser,bsf}_list.c`.
   - **`--disable-inline-asm` is the key unblocker.** It matches MSVC (no GCC inline asm): it zeroes
     the inline-asm `HAVE_*` flags AND drops inline-asm-only `.c` (e.g. `hscale_fast_bilinear_simd.c`)
     from the source list so the `.vcxproj` stays correct. Without it you get `mathops.h` C2143 errors.
@@ -301,3 +326,21 @@ reports unresolved x86 kernels, the fix is rule 2, not a new stub file.
 > **ARM64:** `config-arm64.{h,asm}` are **not** currently generated (no aarch64-mingw toolchain was
 > used). The dispatcher still references them, so an ARM64 build would fail until they are produced;
 > x64/x86 are unaffected.
+
+## Where this lives
+
+Vendored source is under `third-party/` and is **never edited**. Everything Diffractor owns about a
+dependency lives in one of these:
+
+| Concern | Location |
+|---|---|
+| Build configuration and integration patches | `cmake/vendored`, [DiffractorDependency.cmake](../cmake/DiffractorDependency.cmake) |
+| Compiler policy applied to vendored targets | [DiffractorCompilerPolicy.cmake](../cmake/DiffractorCompilerPolicy.cmake) |
+| The owned wrapper over each library | the `files_*` decoder, [av_format.cpp](../src/av_format.cpp), [metadata_xmp.cpp](../src/metadata_xmp.cpp), [util_spell.cpp](../src/util_spell.cpp), [util_zip.cpp](../src/util_zip.cpp) |
+| FFmpeg configuration comparison | `tools/compare_ffmpeg_config.py` |
+| The stubs used when a dependency is absent | `src/platform_linux_*_stubs.cpp` — alternatives to the real implementation, never built alongside it |
+
+An upgrade is proven by the wrapper's tests, not by the library's: `/test:*metadata*`,
+`/test:*video*`, `/test:*audio*` and the format tests in [test_files.cpp](../src/test_files.cpp) are
+what catch a rebase that drops an integration patch. Several patches above exist precisely because
+they are invisible until a specific test fails.

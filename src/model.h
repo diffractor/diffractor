@@ -12,6 +12,7 @@
 #pragma once
 
 #include "model_zoom.h"
+#include "ui_panorama.h"
 
 #include "model_property.h"
 #include "model_items.h"
@@ -564,6 +565,9 @@ private:
 
 	df::date_t _photo_timestamp;
 	sizei _loading_scale_hint;
+	// Whether the decode in flight was asked for packed pixels, which only a projection needs. Part
+	// of the request, so a change to it re-decodes even at the same size.
+	bool _loading_packed = false;
 	uint64_t _decode_generation = 0;
 	uint64_t _load_generation = 0;
 	int _load_retry_count = 0;
@@ -584,6 +588,29 @@ private:
 	ui::texture_ptr _zoom_texture;
 	ui::const_surface_ptr _zoom_staged_surface;
 	df::date_t _zoom_timestamp;
+
+	// The projection this frame is drawing, set by the media control before each draw and read by
+	// the decode ladder as well as by the presentation: a projected view needs the source at the
+	// resolution its field of view asks for, not at the resolution the viewport asks for.
+	panorama_request _panorama;
+	panorama_renderer _panorama_renderer;
+	ui::const_surface_ptr _panorama_source;
+	ui::surface_ptr _panorama_surface;
+	ui::texture_ptr _panorama_tex;
+	// The same pixels uploaded with a mip chain, for a backend that projects them itself. Kept apart
+	// from _panorama_tex, which is where the software rasteriser puts its finished frame.
+	ui::const_surface_ptr _panorama_gpu_source;
+	ui::texture_ptr _panorama_gpu_tex;
+	panorama_view _panorama_rendered_view;
+	// The rendered pixels depend on the coverage as strongly as on the camera, and the declaration
+	// read lands after the first frames are already on screen.
+	prop::panorama_geometry _panorama_rendered_geometry;
+	bool _panorama_rendered = false;
+
+	void update_decode(ui::draw_context& rc);
+	// Everything only a projection needs: the mipped upload, the reduced copies and the frame the
+	// software rasteriser draws into. Between them they are the largest thing the item holds.
+	void release_panorama_resources();
 
 public:
 	bool _is_video_tex = false;
@@ -620,6 +647,10 @@ public:
 	// file's own, so the stamp stays in the same clock domain as the item's timestamps.
 	void publish_written_image(df::file_path path, file_load_result loaded, df::date_t modified);
 	void draw(ui::draw_context& rc, pointi offset, int compare_pos, bool first_texture, bool interactive = false);
+	// zoom.md: the same image drawn as the sphere it declares itself to be. Shares the decode ladder
+	// with draw; only the presentation differs.
+	void draw_panorama(ui::draw_context& rc, pointi offset, const prop::panorama_geometry& geometry,
+	                   const panorama_view& view);
 	void layout(ui::measure_context& mc, recti bounds, const df::item_element_ptr& i);
 	sizei calc_display_dimensions() const;
 	void clear();
@@ -703,9 +734,11 @@ public:
 		return required_width > texture_dims.cx || required_height > texture_dims.cy;
 	}
 
-	// Everything decoded from _loaded, deduplicated by buffer because these members routinely alias
-	// one surface. _loaded.s counts: a format that decodes straight to a surface has no encoded form,
-	// so its pixels are the only representation it has.
+	// Everything decoded from _loaded that survives past a draw, deduplicated by buffer because these
+	// members routinely alias one surface. _loaded.s counts: a format that decodes straight to a
+	// surface has no encoded form, so its pixels are the only representation it has. The panorama's
+	// own surfaces are absent deliberately - release_undisplayed drops them before it measures, and a
+	// displayed texture is never measured at all.
 	size_t retained_decoded_bytes() const noexcept
 	{
 		std::array<const ui::surface*, 4> seen{};
@@ -731,11 +764,28 @@ public:
 
 using texture_state_ptr = std::shared_ptr<texture_state>;
 
+// zoom.md: looking around inside a projected panorama. Held beside the zoom state and for the same
+// reason - it is the view rather than the picture - and keyed on the path, so moving to another
+// panorama opens at that file's own centre instead of wherever the last one was left. UI-thread
+// owned; the geometry read is published back through queue_ui against this path.
+struct panorama_session
+{
+	df::file_path path;
+	prop::panorama_geometry geometry;
+	panorama_view view;
+	// The declaration has been looked up for this path, whether or not it produced a crop.
+	bool resolved = false;
+	// The user asked for the flat pixels of this file. Per item, because it is a judgement about
+	// one picture - reading its stitching seams - not a preference about panoramas.
+	bool flat = false;
+};
+
 struct common_display_state_t
 {
 	// True only while the slideshow mode is running. Media transport state lives on the av_session.
 	bool _is_slideshow = false;
 	df::zoom_view_state _zoom;
+	panorama_session _panorama;
 	std::vector<std::pair<df::file_path, texture_state_ptr>> _recent_textures;
 
 	static constexpr size_t max_recent_textures = 5;
@@ -872,6 +922,10 @@ public:
 	};
 
 	std::array<zoom_layout_state, 2> _zoom_layouts;
+	// Whether this display has already asked the file for its panorama declaration. Held here rather
+	// than on the session because the session outlives every display: a read released with its
+	// display publishes nothing, and the next display is the thing that should ask again.
+	bool _panorama_read_queued = false;
 	mutable bool _preview_changed = false;
 
 	std::vector<ui::const_image_ptr> _images;
@@ -1036,6 +1090,13 @@ public:
 		if (state_changes)
 		{
 			stop_slideshow();
+
+			if (zoom && panorama_projects())
+			{
+				enter_panorama_projection();
+				return;
+			}
+
 			mutate_zoom([zoom](df::zoom_view_state& state)
 			{
 				if (zoom) state.set_explicit(1.0);
@@ -1055,6 +1116,25 @@ public:
 	void adjust_zoom_scale(const int direction, const pointd anchor)
 	{
 		if (direction == 0) return;
+
+		if (is_panorama_projected())
+		{
+			panorama_step_fov(direction);
+			return;
+		}
+
+		if (direction > 0 && panorama_projects() && current_zoom_state().is_fit())
+		{
+			enter_panorama_projection();
+			return;
+		}
+
+		if (direction > 0 && panorama_enters_at_100())
+		{
+			zoom_100(anchor);
+			return;
+		}
+
 		auto& layout = current_zoom_layout();
 		const auto source_anchor = current_zoom_state().source_point_at(
 			layout.source_extent, layout.viewport_extent, zoom_fit_scale(), anchor);
@@ -1078,6 +1158,25 @@ public:
 		if (direction == 0) return;
 		const auto& layout = current_zoom_layout();
 		const pointd anchor{layout.viewport_extent.Width / 2.0, layout.viewport_extent.Height / 2.0};
+
+		if (is_panorama_projected())
+		{
+			panorama_step_fov(direction);
+			return;
+		}
+
+		if (direction > 0 && panorama_projects() && current_zoom_state().is_fit())
+		{
+			enter_panorama_projection();
+			return;
+		}
+
+		if (direction > 0 && panorama_enters_at_100())
+		{
+			zoom_100(anchor);
+			return;
+		}
+
 		mutate_zoom([&](df::zoom_view_state& state)
 		{
 			state.step(direction, zoom_fit_scale(), layout.source_extent, layout.viewport_extent, anchor);
@@ -1095,6 +1194,11 @@ public:
 
 	void zoom_100(const pointd anchor)
 	{
+		// zoom.md: 100% means one source pixel per device pixel, and a sphere has no such pixel. Asking
+		// for actual size is asking for what the file stores, so it leaves the projection - visibly,
+		// because the zoom chrome's control says which of the two is in force.
+		if (declares_equirectangular()) _common._panorama.flat = true;
+
 		auto& layout = current_zoom_layout();
 		const auto source_anchor = current_zoom_state().source_point_at(
 			layout.source_extent, layout.viewport_extent, zoom_fit_scale(), anchor);
@@ -1193,6 +1297,15 @@ public:
 
 	void inspect_at_100(const pointd anchor)
 	{
+		// zoom.md: one mechanism, two durations. A declared sphere is a sphere under a held button too,
+		// and the pointer aims it from the moment of the press.
+		if (panorama_projects())
+		{
+			enter_panorama_projection(true);
+			panorama_look_at(anchor);
+			return;
+		}
+
 		auto& layout = current_zoom_layout();
 		const auto source_anchor = current_zoom_state().source_point_at(
 			layout.source_extent, layout.viewport_extent, zoom_fit_scale(), anchor);
@@ -1231,6 +1344,222 @@ public:
 		mutate_zoom([&](df::zoom_view_state& state) { state.set_explicit(scale, center); });
 		mark_zoom_activity();
 		_async.invalidate_view(view_invalid::view_layout | view_invalid::view_redraw);
+	}
+
+	// Moving the centre only. No button was pressed, so the sweep must not decide the scale for the
+	// user and lose the fit variant they chose. This runs on plain pointer movement, so it asks for a
+	// redraw and not a layout: nothing set_center touches changes a measured extent, and re-measuring
+	// the media column on every sample of a sweep is a cost paid for nothing.
+	void look_around_center(const pointd center)
+	{
+		mutate_zoom([&](df::zoom_view_state& state) { state.set_center(center); });
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::view_redraw);
+	}
+
+	// zoom.md: the display's own question, wider than what the file declares. The shape fallback
+	// lives on the metadata record beside the declaration.
+	bool displays_as_panorama() const
+	{
+		if (!_is_one || !_item1) return false;
+		const auto md = _item1->metadata();
+		return md && md->displays_as_panorama();
+	}
+
+	// zoom.md: the file declares a sphere, so the viewer can put the user inside it. Only
+	// equirectangular: cylindrical names no vertical mapping the file agrees on, and `unspecified`
+	// names no projection at all, so both keep the flat treatment.
+	bool declares_equirectangular() const
+	{
+		if (!_is_one || !_item1) return false;
+		const auto md = _item1->metadata();
+		// Dimensions are what the coverage is derived from, so an item the scan has not measured yet
+		// cannot be stood inside - the sidecar merge sets the declaration without ever seeing a pixel.
+		return md && md->panorama == prop::panorama_projection::equirectangular && !md->dimensions().is_empty();
+	}
+
+	// Whether the next magnified draw is a projection. The flat override is per item and visible in
+	// the zoom chrome, so this is never a hidden mode.
+	bool panorama_projects() const
+	{
+		if (!declares_equirectangular() || _common._panorama.flat) return false;
+
+		// The sphere is described in the file's stored pixel grid, so a file that also asks to be
+		// rotated for display would be sampled in a space its own metadata does not describe. Shown
+		// flat rather than shown wrong; vanishingly rare, because a stitcher writes the panorama the
+		// way up it means it.
+		return !setting.show_rotated || !_selected_texture1 ||
+			_selected_texture1->display_orientation() == ui::orientation::top_left;
+	}
+
+	// Whether the next magnified draw is a projection. Inspect zoom is included: zoom.md makes it and
+	// zoom mode two durations of one mechanism sharing one renderer, so press-and-hold on a declared
+	// sphere shows the sphere. The flat override is per item and visible in the zoom chrome, so this
+	// is never a hidden mode.
+	bool is_panorama_projected() const
+	{
+		return is_zoom_mode() && panorama_projects();
+	}
+
+	const panorama_session& panorama() const noexcept
+	{
+		return _common._panorama;
+	}
+
+	panorama_request panorama_draw_request() const
+	{
+		if (!is_panorama_projected()) return {};
+		return {true, _common._panorama.geometry, _common._panorama.view};
+	}
+
+	// Keyed on the path so a second panorama opens at its own centre. The path alone gates it: a
+	// repopulate - a sidecar arriving, index progress - must not throw away where the user is looking
+	// or the flat/projected choice they made. Whether the declaration still needs reading is a
+	// separate question, and `resolved` answers that one.
+	void panorama_item(const df::file_path path, const sizei source)
+	{
+		auto& session = _common._panorama;
+
+		if (session.path == path) return;
+
+		session.path = path;
+		session.geometry = prop::panorama_geometry::assumed(source);
+		session.resolved = false;
+		session.flat = false;
+		session.view.reset(session.geometry);
+	}
+
+	// The declared coverage, once the file has answered. Applied only while the item it was read for
+	// is still the one on screen, and the camera is re-centred because the patch it centred on has
+	// just changed shape. A declaration that resolves to nothing is not recorded as an answer, so a
+	// later attempt is still free to ask.
+	void panorama_geometry(const df::file_path path, const prop::panorama_geometry& declared, const sizei source)
+	{
+		auto& session = _common._panorama;
+
+		if (session.path != path || session.resolved) return;
+
+		const auto resolved = prop::panorama_geometry::resolve(declared, source);
+
+		if (!resolved.is_valid()) return;
+
+		session.geometry = resolved;
+		session.resolved = true;
+		session.view.reset(session.geometry);
+		_async.invalidate_view(view_invalid::view_redraw);
+	}
+
+	// zoom.md L6: the projection is a state the user can change, so it has a control that shows
+	// which one is on. Leaving the projection lands on the flat picture at 100%, which is the
+	// answer someone asking for the pixels wanted.
+	void toggle_panorama_projection()
+	{
+		if (!declares_equirectangular()) return;
+
+		_common._panorama.flat = !_common._panorama.flat;
+
+		if (_common._panorama.flat) zoom_100();
+		else _common._panorama.view.reset(_common._panorama.geometry);
+
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
+			view_invalid::controller);
+	}
+
+	// A drag turns the world under the pointer. The whole gesture is recomputed from its origin
+	// against the view it started from, for the same reason panning is: coalesced or dropped move
+	// messages must not change where the drag ends up.
+	void panorama_drag(const pointd client_delta, const panorama_view& start)
+	{
+		const auto& layout = current_zoom_layout();
+		_common._panorama.view.drag(client_delta, layout.viewport_extent, start);
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::view_redraw);
+	}
+
+	// An interrupted look puts the camera back where the gesture found it, the same undo a cancelled
+	// pan gets.
+	void restore_panorama_view(const panorama_view& view)
+	{
+		_common._panorama.view = view;
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::view_redraw);
+	}
+
+	// The field-of-view ladder replaces the zoom ladder while projected. Stepping out from the widest
+	// stop leaves magnification entirely, which is the same shape as zoom.md L2 stepping out to Fit.
+	void panorama_step_fov(const int direction)
+	{
+		if (direction == 0) return;
+
+		if (!_common._panorama.view.step_fov(direction))
+		{
+			zoom(false);
+			return;
+		}
+
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	// Entering a projection is entering zoom mode: the scale it carries is what makes the mode
+	// active and what the flat picture returns to, and it is never what the projected draw uses.
+	void enter_panorama_projection(const bool temporary = false)
+	{
+		const auto fit = zoom_fit_scale();
+		const auto scale = fit < 1.0 ? 1.0 : fit * 1.5;
+		mutate_zoom([scale](df::zoom_view_state& state) { state.set_explicit(scale); });
+		_common._panorama.view.reset(_common._panorama.geometry);
+		_temporary_zoom = temporary;
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::app_layout | view_invalid::view_layout | view_invalid::view_redraw |
+			view_invalid::controller);
+	}
+
+	// Where a held pointer is aiming. Positional, like the flat inspect traversal it replaces: the
+	// viewport maps the whole file, so crossing it looks all the way round.
+	void panorama_look_at(const pointd local)
+	{
+		const auto& layout = current_zoom_layout();
+		_common._panorama.view.aim(local, layout.viewport_extent, _common._panorama.geometry);
+		mark_zoom_activity();
+		_async.invalidate_view(view_invalid::view_redraw);
+	}
+
+	// zoom.md: look around a flat wide picture. No button is held, so press-and-hold inspect zoom is
+	// untouched. A projected panorama is excluded: it is looked around by dragging, and following a
+	// resting pointer as well would give one picture two answers to the same movement.
+	bool is_looking_around() const
+	{
+		return is_zoom_mode() && !_temporary_zoom && displays_as_panorama() && !panorama_projects();
+	}
+
+	// zoom.md: a 12000x1000 stitch fitted to a browsing window is a bright line, so the ladder's first
+	// stop above fit is still nothing to read. Entering zoom on a panorama goes straight to 100%,
+	// where the strip is legible and the pointer can sweep it. Only when 100% is a step up: a small
+	// declared panorama scaled up to fill the window is already past it, and the shortcut would answer
+	// a zoom in by zooming out.
+	bool panorama_enters_at_100() const
+	{
+		return current_zoom_state().is_fit() && displays_as_panorama() && zoom_fit_scale() < 1.0;
+	}
+
+	// The pointer maps onto the source-space centre, so crossing the viewport sweeps the whole
+	// width. The vertical axis is pinned unless the picture is taller than the viewport at this
+	// scale: without something to see up there, following the pointer is only jitter.
+	void look_around_at(const pointd local)
+	{
+		const auto& layout = current_zoom_layout();
+		const auto viewport = layout.viewport_extent;
+		const auto source = layout.source_extent;
+		if (viewport.Width <= 0.0 || viewport.Height <= 0.0 || source.Width <= 0.0 || source.Height <= 0.0) return;
+
+		const auto scale = current_zoom_state().effective_scale(zoom_fit_scale());
+		const auto center = df::zoom_view_state::look_around_center(local, source, viewport, scale);
+
+		if (current_zoom_state().center() == center) return;
+
+		look_around_center(center);
 	}
 
 	void pan_zoom(const pointd client_delta, const df::zoom_view_state& start)
@@ -1547,7 +1876,7 @@ inline filter_t media_filter_from_string(const std::string_view text)
 {
 	filter_t result;
 
-	for (const auto part : str::split(text, false, [](const wchar_t c) { return c == ','; }))
+	for (const auto part : str::split(text, false, [](const char c) { return c == ','; }))
 	{
 		if (const auto* const group = parse_file_group(std::string(part)))
 		{
@@ -1704,6 +2033,90 @@ public:
 	df::item_element_ptr _edit_item;
 	df::item_element_ptr _pin_item;
 	display_state_ptr _display;
+
+	// design.md: a region drawn on the displayed picture can open Edit with itself as the crop, so
+	// the selection a user made on the picture is not one they have to make a second time. Held as
+	// fractions of the displayed picture, because what was on screen when it was drawn may have been
+	// a stand-in rather than the full decode, and consumed once. It carries the item it was drawn on:
+	// the command that would open Edit can refuse, and a rectangle drawn on one picture must not be
+	// applied to another.
+	struct pending_edit_crop_t
+	{
+		df::file_path path;
+		rectd normalised;
+	};
+
+	std::optional<pending_edit_crop_t> _pending_edit_crop;
+
+	std::optional<rectd> take_pending_edit_crop(const df::file_path path)
+	{
+		// Consumed only by the item it was drawn for. Resetting first threw the rectangle away on any
+		// intervening display change, so the user's crop vanished and Edit opened full frame with
+		// nothing said about why.
+		if (!_pending_edit_crop || !(_pending_edit_crop->path == path)) return {};
+
+		const auto result = _pending_edit_crop->normalised;
+		_pending_edit_crop.reset();
+		return result;
+	}
+
+	// design.md: the region a user drew on the displayed picture, in that picture's own space. It
+	// lives here rather than on the control that draws it because that control is rebuilt for
+	// anything raising view_invalid::media_elements, and a background sidecar or index update must
+	// not erase what the user just drew. Keyed on the item, so it still does not outlive the picture.
+	// The drag state travels with it: the Items and Media views build a control each over the same
+	// display, and one of them holding a stale "not dragging" would draw buttons over a rectangle the
+	// other is still dragging.
+	struct drawn_region_t
+	{
+		df::file_path path;
+		rectd region;
+		rectd restore;
+		bool dragging = false;
+	};
+
+	drawn_region_t _drawn_region;
+
+	rectd drawn_region(const df::file_path path) const
+	{
+		// An empty key means there is no one picture to own a region, not a picture every control
+		// shares. Without this, two photo_controls that both resolve to no item would answer with -
+		// and write over - each other's rectangle.
+		if (path.is_empty()) return {};
+		return _drawn_region.path == path ? _drawn_region.region : rectd{};
+	}
+
+	void drawn_region(const df::file_path path, const rectd region)
+	{
+		if (path.is_empty()) return;
+		if (_drawn_region.path != path) _drawn_region = {path, {}, {}, false};
+		_drawn_region.region = region;
+	}
+
+	bool drawing_region() const noexcept
+	{
+		return _drawn_region.dragging;
+	}
+
+	// A drag hides the region's buttons, which would otherwise sit under the pointer moving the
+	// rectangle they belong to. A draw replaces what was there and keeps it as what a cancel puts
+	// back; a move keeps it.
+	void begin_region_drag(const df::file_path path, const bool replaces)
+	{
+		if (path.is_empty()) return;
+		const auto previous = drawn_region(path);
+		_drawn_region = {path, replaces ? rectd{} : previous, previous, true};
+	}
+
+	void end_region_drag() noexcept
+	{
+		_drawn_region.dragging = false;
+	}
+
+	rectd region_drag_restore() const noexcept
+	{
+		return _drawn_region.restore;
+	}
 
 	view_state(state_strategy& ev, async_strategy& ac, index_state& item_index, std::shared_ptr<av_player> player);
 	~view_state();
@@ -2025,6 +2438,13 @@ public:
 		}
 
 		if (!_selected.items()[0]->file_type()->has_trait(file_traits::hide_overlays))
+		{
+			return true;
+		}
+
+		// A playing video hides its chrome so the picture is alone. A paused one keeps it: the transport
+		// is both how the user resumes and the only thing saying where in the file they stopped.
+		if (_display && _display->can_play_media() && !_display->is_playing_media())
 		{
 			return true;
 		}
@@ -2357,6 +2777,52 @@ public:
 	static quadd initial_crop(const sizei dimensions, const ui::orientation orientation)
 	{
 		return quadd(dimensions).transform(to_simple_transform_inv(orientation));
+	}
+
+	// A crop quad's positions are stored pixels and its corner order carries the orientation, which is
+	// what initial_crop builds. A region the user drew arrives as fractions of the displayed picture,
+	// because what was on screen when they drew it may have been a thumbnail rather than the full
+	// decode. Those fractions are scaled onto the displayed extent and then mapped back onto the stored
+	// grid: with `show_rotated` on the two are different spaces, and permuting corners only reorders
+	// points - it cannot move them, so a rotated capture would crop pixels nobody selected.
+	static quadd crop_from_displayed_rect(const rectd normalised, const sizei dimensions,
+	                                      const ui::orientation orientation, const bool was_rotated)
+	{
+		const auto flips = was_rotated && ui::flips_xy(orientation);
+		const auto width = static_cast<double>(flips ? dimensions.cy : dimensions.cx);
+		const auto height = static_cast<double>(flips ? dimensions.cx : dimensions.cy);
+
+		const rectd displayed{
+			normalised.X * width, normalised.Y * height, normalised.Width * width, normalised.Height * height
+		};
+
+		auto stored = displayed;
+
+		if (was_rotated && orientation != ui::orientation::top_left)
+		{
+			const auto to_stored = [orientation, width, height](const pointd p) -> pointd
+			{
+				switch (orientation)
+				{
+				case ui::orientation::top_right: return {width - p.X, p.Y};
+				case ui::orientation::bottom_right: return {width - p.X, height - p.Y};
+				case ui::orientation::bottom_left: return {p.X, height - p.Y};
+				case ui::orientation::left_top: return {p.Y, p.X};
+				case ui::orientation::right_top: return {p.Y, width - p.X};
+				case ui::orientation::right_bottom: return {height - p.Y, width - p.X};
+				case ui::orientation::left_bottom: return {height - p.Y, p.X};
+				default: return p;
+				}
+			};
+
+			const auto a = to_stored({displayed.left(), displayed.top()});
+			const auto b = to_stored({displayed.right(), displayed.bottom()});
+			stored = {
+				std::min(a.X, b.X), std::min(a.Y, b.Y), std::abs(b.X - a.X), std::abs(b.Y - a.Y)
+			};
+		}
+
+		return quadd(stored).transform(to_simple_transform_inv(orientation));
 	}
 
 	static double calc_straighten(const double a)

@@ -158,23 +158,23 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 			if (str::icmp(metadata_type, "XMP") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
-				df::blob raw_metatdata(metadataSize, 0);
+				df::blob raw_metadata(metadataSize, 0);
 
-				const auto error = heif_image_handle_get_metadata(handle, id, raw_metatdata.data());
+				const auto error = heif_image_handle_get_metadata(handle, id, raw_metadata.data());
 				if (error.code == heif_error_Ok)
 				{
-					result.xmp = std::move(raw_metatdata);
+					result.xmp = std::move(raw_metadata);
 				}
 			}
 			else if (str::icmp(metadata_type, "iptc") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
-				df::blob raw_metatdata(metadataSize, 0);
+				df::blob raw_metadata(metadataSize, 0);
 
-				const auto error = heif_image_handle_get_metadata(handle, id, raw_metatdata.data());
+				const auto error = heif_image_handle_get_metadata(handle, id, raw_metadata.data());
 				if (error.code == heif_error_Ok)
 				{
-					result.iptc = std::move(raw_metatdata);
+					result.iptc = std::move(raw_metadata);
 				}
 			}
 		}
@@ -450,7 +450,16 @@ file_scan_result scan_heif(read_stream& s, const scan_intent intent, const bool 
 				const df::releaser<heif_image_handle> thumbnail_handle_releaser(
 					thumbnail_handle, [](auto* c) { heif_image_handle_release(c); });
 
-				if (thumbnail_result.code == heif_error_Ok)
+				// The thumbnail is a separate item declaring its own extent, so the primary's budget
+				// check says nothing about it. Refusing it costs the stand-in, not the scan.
+				const auto thumbnail_affordable = thumbnail_result.code == heif_error_Ok &&
+					!reject_over_budget_source(nullptr,
+					                           {
+						                           heif_image_handle_get_width(thumbnail_handle),
+						                           heif_image_handle_get_height(thumbnail_handle)
+					                           }, "HEIF thumbnail");
+
+				if (thumbnail_affordable)
 				{
 					heif_image* img = nullptr;
 					const auto decode_image_result = heif_decode_image(thumbnail_handle, &img, heif_colorspace_RGB,

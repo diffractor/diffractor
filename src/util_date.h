@@ -213,7 +213,7 @@ namespace df
 		}
 	};
 
-	__declspec(selectany) date_t date_t::null;
+	inline date_t date_t::null;
 };
 
 template <>

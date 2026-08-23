@@ -593,11 +593,11 @@ msgstr "Classificar por data de modificação"
 msgid "Sort by Date created"
 msgstr "Classificar por data de criação"
 
-msgid "Sort dates ascending"
-msgstr "Classificar datas em ordem crescente"
+msgid "Show oldest items first"
+msgstr "Mostrar primeiro os itens mais antigos"
 
-msgid "Sort dates descending"
-msgstr "Classificar datas em ordem decrescente"
+msgid "Show newest items first"
+msgstr "Mostrar primeiro os itens mais recentes"
 
 msgid "Sort by Group order (Default)"
 msgstr "Classificar pela ordem do grupo (padrão)"
@@ -731,11 +731,11 @@ msgstr "Mostrar unidades"
 msgid "Show history chart"
 msgstr "Mostrar gráfico histórico"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Ano inicial do gráfico de histórico. Vazio assume 10 anos por padrão."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Ano mais antigo oferecido pelo navegador de histórico. Vazio é calculado a partir das suas fotos."
 
-msgid "Show collection folders"
-msgstr "Mostrar pastas da coleção"
+msgid "Shows the eight years ending here."
+msgstr "Mostra os oito anos que terminam aqui."
 
 msgid "Show favorite searches"
 msgstr "Mostrar pesquisas favoritas"
@@ -1019,17 +1019,8 @@ msgstr "Sua coleção são as pastas que você escolhe, incluindo as subpastas. 
 msgid "folder"
 msgstr "pasta"
 
-msgid "music"
-msgstr "Música"
-
 msgid "folders"
 msgstr "pastas"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "foto"
 
 msgid "Folder"
 msgstr "Pasta"
@@ -2577,6 +2568,9 @@ msgstr "Modificado"
 msgid "or"
 msgstr "ou"
 
+msgid "original"
+msgstr "Original"
+
 msgid "related"
 msgstr "relacionado"
 
@@ -3636,3 +3630,12 @@ msgstr "Recuperado de um problema de inicialização"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "O Diffractor fechou inesperadamente antes de concluir a inicialização, por isso esta execução usa o layout padrão com a aceleração de hardware desativada. Seus arquivos, sua coleção e os itens recentes não foram alterados. Você pode restaurar as configurações em Opções."
+
+msgid "Original//date"
+msgstr "Original"
+
+msgid "Group by Date Original"
+msgstr "Agrupar por data original"
+
+msgid "Sort by Date original"
+msgstr "Classificar por data original"

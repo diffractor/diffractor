@@ -16,7 +16,9 @@ scaling, indexing) off it, and using GPU resources deliberately.
 ## Backends
 
 Diffractor has two interchangeable draw backends behind a common
-`draw_context_device` interface:
+`ui::draw_context_device` interface ([../src/ui.h](../src/ui.h)), which names no graphics API and
+no window type - `render()` answers a `ui::present_result` carrying the backend's own code, and
+only the window layer knows how to read it:
 
 - **Direct3D 11 (GPU)** — the primary backend, in [../src/platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp).
   Used for the main window when a hardware D3D11 device is available.
@@ -218,10 +220,27 @@ because the main window is software rendered (only `view_frame` sets
 Tiling is sound only because **every primitive derives its colour, coverage and source
 mapping from its own bounds and treats the clip purely as a write mask** - so a tiled
 frame is pixel-identical to an untiled one. Any new primitive must keep that property:
-`clamp_to_clip` gives the iteration range, never the geometry. `probe_software_tiling`
-guards it by drawing one representative scene whole and again tile by tile and
-comparing, and it is the only content-independent proof of no seams (a screenshot diff
-of a live window is dominated by loading content).
+`clamp_to_clip` gives the iteration range, never the geometry. `probe_software_rasterizer`
+([../src/render_software.cpp](../src/render_software.cpp)) guards it by drawing one
+representative scene whole and again tile by tile and comparing, and it is the only
+content-independent proof of no seams (a screenshot diff of a live window is dominated by
+loading content).
+
+That probe is also the **cross-machine** parity artifact, because it takes no window and no
+font: it returns an even spread of pixels from the reference rendering, and
+`Should rasterise one scene to one answer on every platform` compares them against a recorded
+set. Two things about how that comparison is made are load-bearing:
+
+- **Within a tolerance, not hashed.** A hash of this scene is identical between MSVC and GCC
+  but *not* between MSVC Debug and Release: the rasterizer is float arithmetic an optimiser
+  may reassociate. An exact artifact therefore fails for a reason this code does not own. A
+  structural break - a transposed, mirrored or channel-swapped blit, a blend against the wrong
+  background - moves a sample much further than a rounding step, which is what the tolerance is
+  sized against and what mirroring one blit was used to confirm. The recorded samples hold
+  unchanged across all four builds: MSVC and GCC, Debug and Release.
+- **The scene contains no transcendental.** The rotated blit is a parallelogram written out
+  rather than produced by `quadd::rotate`, because `sin` and `cos` are the C library's answer
+  and would put its rounding inside a check about this rasterizer.
 
 Two consequences are easy to trip over:
 
@@ -238,6 +257,21 @@ Two consequences are easy to trip over:
 
 Layered windows cannot be tiled - `UpdateLayeredWindow` presents the whole surface -
 so they keep a full-client buffer and run as a single tile.
+
+**Where the buffer comes from and where a tile goes is not the rasterizer's business.**
+Those two answers sit behind `ui::software_present_target`
+([../src/render_software.h](../src/render_software.h)): acquire a BGRA buffer, begin a
+present, present each tile, end it. `gdi_present_target` is the Windows answer and is the
+only part of the CPU backend that names a `HWND`, a `HDC` or a DIB section - a DIB being
+simply a BGRA buffer GDI will also blit from, which is why presenting costs no copy. The
+seam exists because the rasterizer is the half worth carrying to another platform and the
+present is the half that is never portable; `create_memory_present_target` presents
+nothing at all, which is what a render with no window targets.
+
+`software_canvas` itself lives in that same portable header and names nothing of any
+platform, including of a font: `blend_glyph` takes an 8-bit coverage bitmap, because what
+produced the coverage belongs to the text layer, which is still per-platform. What remains
+Windows-shaped in the CPU backend is the present target and the DirectWrite text renderer.
 
 ### Native controls during resize
 
@@ -467,6 +501,79 @@ decode — display, index thumbnails, the edit view — is covered, and in each 
 decode during `files::load`. The media view checks it up front as well, so it can say
 [`Too large to display`](file-io.md#411-when-an-image-cannot-be-shown) rather than reporting a
 generic failure after the fact.
+
+### A stand-in is fitted, never stretched
+
+A pane is laid out for the shape the item **is** — `texture_state::_display_bounds` comes from
+`calc_display_dimensions()`, which reads the indexed dimensions long before any pixels arrive. What
+gets drawn into it is whatever the [display phase ladder](file-io.md#4-reading-the-display-phase-ladder)
+has reached, and the earlier rungs are not always that shape.
+
+`seed_placeholder` stages the item's thumbnail surface, and an **embedded thumbnail is stored
+verbatim**: cameras and phones routinely write a padded 160x120 for a 3:2 or 16:9 frame. A thumbnail
+Diffractor generated is a downscale and matches to within rounding; an embedded one can be 12 to 33
+per cent out. `draw` therefore fits the sampled extent inside the destination through
+`df::fit_preserving_aspect` rather than stretching the whole texture into the whole rectangle.
+
+Two properties make this safe to rely on:
+
+- **An aspect that already agrees is returned untouched**, within one device pixel, so every
+  correctly shaped image draws exactly where it did before and nothing acquires bars from rounding.
+- **The destination is not moved.** Publishing the stand-in's shape as the item's would have been the
+  other way to reconcile the two, and it would jump the layout the moment the decode landed.
+
+The compare split divides by the fitted width rather than the pane width, so the two panes stay in
+register. None of this is compare-specific: compare was only where it was noticed, because the pane
+carried over from the previous display is the one holding a picture to distort while the other is
+still empty.
+
+### The sidebar globe
+
+The [sidebar globe](locations.md#50-the-sidebar-globe) is rasterised entirely in software, into a
+surface the element uploads as a texture. That is what makes it backend-independent for free: the
+pixels are produced before either backend sees them, so there is nothing to keep at parity.
+
+The view has two degrees of freedom, so a per-pixel lookup table is not available — a vertical drag
+would invalidate every entry on every frame. Instead each destination row is walked in segments of
+sixteen pixels, the exact sphere inverse is evaluated only at segment endpoints, and the source
+coordinates are interpolated between them. That is a sixteenth of the transcendentals a per-pixel
+inverse would cost, which is what makes resampling on every frame of a drag affordable. Two
+consequences are load-bearing rather than incidental:
+
+- A segment that straddles the date line has its endpoint longitudes unwrapped before interpolation.
+  Without that the row sweeps the whole map backwards and shreds. `Should render the globe` covers
+  this by reading the sampled position back out of the pixels: a shading-invariant channel ratio
+  encodes where each pixel came from, and the largest step along a row is 1.4 with the unwrap and 32
+  without it.
+- A segment whose endpoints come within ten degrees of a pole is evaluated per pixel instead.
+  Longitude swings arbitrarily fast there and a straight line between two endpoints is simply wrong.
+  **This one has no test**: near a pole the correct rendering is itself heavily compressed, so no
+  cheap assertion separates the two, and it is verified by eye at a polar view.
+
+Reduced copies of the source, halved until they are small, cover the compression toward the limb,
+where one screen pixel can span dozens of source texels; the level is chosen per segment from how far
+the source coordinates moved across it. The source is the map with the heat overlay already composited
+into it, so the reduced copies are rebuilt whenever that is, and the resample runs only when the view
+or the element's size actually changed — a repaint that moved neither redraws the texture it has.
+
+### A projected panorama
+
+An equirectangular panorama that the user is [standing inside](zoom.md#64-standing-inside-an-equirectangular-panorama) has two implementations, one per tier, and the tier is the only thing that chooses between them. `draw_context::draw_panorama` is the fork: the D3D11 backend answers it with a shader, and the CPU backend does not implement it at all, so the caller rasterises in software instead. Nothing above that line knows which happened.
+
+**GPU tier.** `pano_ps.hlsl` inverts each destination pixel back onto the sphere, so the source uploads once and panning becomes a constant-buffer write rather than per-frame work — which is what [zoom.md §4](zoom.md#4-rendering-tiers) means by the GPU tier. Two things it needs that nothing else in the app does:
+
+- **A mip chain.** Every other texture is drawn at or near its own size and is created with `MipLevels = 1`; a projection minifies thousands of pixels of sphere into one viewport and aliases badly without one. `update_mipped` is a separate upload for that reason, and it is why the projection requires packed pixels: NV12 and P010 are neither render targets nor mipmappable, so `GenerateMips` would have nothing to work with. A 10-bit source is flattened to 8-bit as a consequence.
+- **Unwrapped derivatives.** Across the file's seam the texture coordinate jumps most of the way round, and a derivative that large selects the coarsest level — a blurred stripe down the join. The shader unwraps `ddx`/`ddy` before `SampleGrad`, which is the same correction the software rasteriser applies to its segment endpoints.
+
+**CPU tier.** [render_panorama.cpp](../src/render_panorama.cpp) resamples the whole viewport per frame, in segments of eight pixels with the exact inverse at the endpoints, reduced copies of the source for minification, and per-pixel coverage. Three things differ from the globe, and each is a consequence of the camera being inside the sphere rather than outside it:
+
+- **The destination is the whole media viewport**, not a small disc, so segments are eight pixels rather than sixteen and the mip pyramid earns its keep at a wide field of view, where one destination pixel can span dozens of source texels.
+- **The source is the decoded picture at whatever size the budget allowed**, not a fixed map, so the file's declared geometry and the decode resolution are reconciled by one scale factor rather than assumed equal. The decode is asked for the resolution the *field of view* needs — a narrow view of a large panorama reads a small arc at close to one texel per pixel, which the viewport extent alone would never ask for.
+- **The source does not cover the sphere.** What is outside the file is left transparent rather than clamped to the nearest row, and coverage is decided per pixel: a screen row is a curve in latitude, so both endpoints of a segment can sit inside a partial panorama's band while the middle leaves it, and both can sit outside while the middle is inside.
+
+**What differs between the tiers, and what does not.** The camera, the coverage rule, the field-of-view ladder and every gesture are identical — `panorama_shader_params` derives the camera once so neither tier can hold a different one. The filtering is not: the GPU samples anisotropically through hardware mips, the CPU bilinearly through its own isotropic pyramid, so a glancing angle is sharper on the GPU. That affects sharpness only. **No pixel samples a different place because of the tier**, which is the property worth defending, and it is what the CPU-tier test constrains.
+
+`Should render a projected panorama` covers the software rasteriser against a source whose colour says which quadrant it came from, with an asymmetric probe per case: a symmetric one would pass for every mirrored or flipped member of the same family, which is exactly the defect worth catching. It was verified discriminating by negating each camera axis in turn. The suite has no draw device, so the shader is a manual gate — the same file at the same camera with and without `-no-gpu`.
 
 ## Text
 
@@ -724,3 +831,33 @@ simpler code), but the only thing that justifies changing the default is measure
 latency/stall data showing it does not hurt UI smoothness on weak/hybrid GPUs. If
 the numbers hold across that hardware matrix, flip the default and delete the
 bridge.
+
+## Where this lives
+
+| Rendering subject | Source |
+|---|---|
+| The portable drawing abstraction: colours, surfaces, textures, contexts | [ui.h](../src/ui.h), [ui.cpp](../src/ui.cpp) |
+| The hardware backend, shaders, shared-texture handoff, device loss | [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) |
+| The CPU backend and its fixed 512-square tile walk | [platform_win_software.cpp](../src/platform_win_software.cpp) |
+| The rasterizer itself, the present seam, and the parity probe | [render_software.h](../src/render_software.h), [render_software.cpp](../src/render_software.cpp) |
+| Text layout, glyph rasterisation, measurement | [platform_win_font.cpp](../src/platform_win_font.cpp) |
+| Surface allocation, scaling, cropping, format conversion, the mark | [render_surface.cpp](../src/render_surface.cpp) |
+| Tone curves, saturation, vibrance, contrast, brightness | [render_color.cpp](../src/render_color.cpp) |
+| Pixel-level transforms and differences | [render_image.cpp](../src/render_image.cpp) |
+| The sidebar globe's software resample | [render_globe.cpp](../src/render_globe.cpp), [ui_globe.h](../src/ui_globe.h) |
+| A projected panorama's software resample | [render_panorama.cpp](../src/render_panorama.cpp), [ui_panorama.h](../src/ui_panorama.h) |
+| A projected panorama's shader | [pano_ps.hlsl](../src/shaders/pano_ps.hlsl), [pano_project.hlsli](../src/shaders/pano_project.hlsli) |
+| The sidebar pie and calendar: extruded solids and their identity buffers | [render_charts.cpp](../src/render_charts.cpp), [ui_charts.h](../src/ui_charts.h) |
+| SSE/AVX/NEON paths behind the above | [util_simd.h](../src/util_simd.h) |
+| Demux, decode, scaling, resampling, hardware acceleration | [av_format.h](../src/av_format.h), [av_format.cpp](../src/av_format.cpp) |
+| Playback session, A/V sync, transport | [av_player.h](../src/av_player.h) |
+| Audio output and buffering | [av_sound.h](../src/av_sound.h), [platform_win_sound.cpp](../src/platform_win_sound.cpp) |
+| The spectrum visualizer | [av_visualizer.h](../src/av_visualizer.h) |
+| Visual styles, DWM composition, theming | [platform_win_visual.h](../src/platform_win_visual.h) |
+| Session GPU counters | [util.h](../src/util.h) — `df::gpu_perf`; see [implementation](implementation.md#session-diagnostics) |
+
+The two backends must agree. `/test:*surface*` and `/test:*colour*` cover the software paths
+directly — `Should area downscale packed surfaces` compares the AVX2 and SSE2 results byte for byte,
+which is what proves the AVX2 path is live at all — but nothing in the suite drives a real device,
+so a change to [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp) is verified by running both
+`.\dd.ps1 run` and `.\dd.ps1 cpu` and comparing.

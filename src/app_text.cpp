@@ -12,7 +12,75 @@
 #include "pch.h"
 #include "app_text.h"
 #include "av_format.h"
+#include "model_items.h"
 #include "model_property.h"
+
+// Declared in app_text.h and model_items.h respectively. Both formatters select wording from the
+// active language, so they belong with the rest of the text layer rather than in the application
+// frame and the edit view, where they used to be defined.
+
+std::string format_plural_text(const plural_text& fmt, const std::string_view first_name, const int64_t count,
+                               const df::file_size size, const int64_t of_total)
+{
+	// Select the plural form for the active language. Form 0 is the singular
+	// (fmt.one), form 1 the general plural (fmt.plural), forms >= 2 the extra
+	// Slavic forms. Missing extra forms fall back to the general plural.
+	const int form = tt.plural_form(count);
+	std::string_view template_text;
+
+	if (form <= 0)
+	{
+		template_text = fmt.one;
+	}
+	else if (form == 1)
+	{
+		template_text = fmt.plural;
+	}
+	else
+	{
+		const size_t extra = static_cast<size_t>(form) - 2;
+		template_text = (extra < fmt.extra_forms.size() && !fmt.extra_forms[extra].empty())
+			                ? std::string_view(fmt.extra_forms[extra])
+			                : std::string_view(fmt.plural);
+	}
+
+	const auto number = [](const int64_t n) { return platform::format_number(str::to_string(n)); };
+
+	auto substitute = [&](std::ostringstream& result, const std::string_view token)
+	{
+		if (token == "first-name") result << first_name;
+		else if (token == "count" || token.empty()) result << number(count);
+		else if (token == "other") result << number(count - 1);
+		else if (token == "total") result << number(of_total);
+		else if (token == "size") result << prop::format_size(size);
+	};
+
+	return str::replace_tokens(template_text, substitute);
+}
+
+std::string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
+{
+	return format_plural_text(fmt, {}, count, {}, of_total);
+}
+
+std::string format_plural_text(const plural_text& fmt, const df::item_set& items)
+{
+	const auto summary = items.summary();
+	const auto total_items = summary.total_items() + summary.total_folders();
+	return format_plural_text(fmt, items.first_name(), total_items.count, total_items.size, 0);
+}
+
+std::string format_plural_text(const plural_text& fmt, const std::vector<std::string>& result)
+{
+	const std::string_view first_name = result.empty() ? std::string_view{} : std::string_view(result.front());
+	return format_plural_text(fmt, first_name, static_cast<int64_t>(result.size()), {}, 0);
+}
+
+std::string format_invalid_name_message(const std::string_view name)
+{
+	const auto name_error = str_format(tt.error_invalid_path_fmt.sv(), name);
+	return std::format("{}\n{} \\ / : * ? \" < > |", name_error, tt.error_invalid_path);
+}
 
 std::string language_name(const std::string_view code)
 {
@@ -162,7 +230,7 @@ std::string_view tt_prep(std::string_view result)
 std::vector<po_entry> load_po(const df::file_path lang_file)
 {
 	std::vector<po_entry> result;
-	std::ifstream fs(platform::to_file_system_path(lang_file));
+	std::ifstream fs(platform::to_stream_path(lang_file));
 
 	enum class parse_po_state
 	{
@@ -567,6 +635,7 @@ void app_text_t::calc_text_mapping()
 		command_group_aspect_ratio,
 		command_group_camera,
 		command_group_created,
+		command_group_original,
 		command_group_extension,
 		command_group_file_type,
 		command_group_location,
@@ -649,6 +718,7 @@ void app_text_t::calc_text_mapping()
 		command_show_in_file_browser,
 		command_show_in_folder,
 		command_sort_date_created,
+		command_sort_date_original,
 		command_sort_date_modified,
 		command_sort_dates_ascending,
 		command_sort_dates_descending,
@@ -707,7 +777,6 @@ void app_text_t::calc_text_mapping()
 		customize_ratings,
 		customize_show_drives,
 		customize_show_history,
-		customize_show_indexed_folders,
 		customize_show_searches,
 		customize_show_tags,
 		customize_show_total,
@@ -805,13 +874,9 @@ void app_text_t::calc_text_mapping()
 		collection_not_in,
 		collection_info,
 		folder,
-		folder_music,
 		folder_noun,
 		folder_noun_plural,
-		folder_onedrive,
-		folder_picture,
 		folder_title,
-		folder_video,
 		folders,
 		genre_a_capella,
 		genre_abstract,
@@ -847,7 +912,7 @@ void app_text_t::calc_text_mapping()
 		genre_childrens,
 		genre_chorus,
 		genre_christian_gospel,
-		genre_christianran_reap,
+		genre_christian_rap,
 		genre_classic,
 		genre_classic_rock,
 		genre_classical,
@@ -904,7 +969,7 @@ void app_text_t::calc_text_mapping()
 		genre_grunge,
 		genre_hardrock,
 		genre_high_speed,
-		genre_highke,
+		genre_high_key,
 		genre_hip_hop,
 		genre_hip_hop_rap,
 		genre_holiday,
@@ -939,7 +1004,7 @@ void app_text_t::calc_text_mapping()
 		genre_musical,
 		genre_musicals,
 		genre_narrative,
-		genre_nationa_folk,
+		genre_national_folk,
 		genre_native_american,
 		genre_new_age,
 		genre_new_wave,
@@ -1056,6 +1121,7 @@ void app_text_t::calc_text_mapping()
 		help_tag1,
 		help_tag2,
 		hide_verbose_metadata,
+		history_navigator_action,
 		image_display_failed,
 		image_too_large,
 		import_dest_folder,
@@ -1310,6 +1376,7 @@ void app_text_t::calc_text_mapping()
 		prop_name_country,
 		prop_name_created,
 		prop_name_createdexif,
+		prop_name_original,
 		prop_name_description,
 		prop_name_digitized,
 		prop_name_dimensions,
@@ -1389,6 +1456,7 @@ void app_text_t::calc_text_mapping()
 		query_duplicates_alt2,
 		query_modified,
 		query_or,
+		query_original,
 		query_related,
 		query_with,
 		query_without,
@@ -1745,7 +1813,7 @@ std::vector<std::string> app_text_t::known_genres(const genre_kind kinds) const
 		{genre_bebob, ga}, {genre_bigband, ga}, {genre_bluegrass, ga}, {genre_blues, ga},
 		{genre_booty_bass, ga}, {genre_brazilian, ga}, {genre_cabaret, ga}, {genre_candid, gp},
 		{genre_celtic, ga}, {genre_chambermusic, ga}, {genre_chanson, ga}, {genre_childrens, ga | gv},
-		{genre_chorus, ga}, {genre_christian_gospel, ga}, {genre_christianran_reap, ga},
+		{genre_chorus, ga}, {genre_christian_gospel, ga}, {genre_christian_rap, ga},
 		{genre_classic_rock, ga}, {genre_classic, ga}, {genre_classical, ga}, {genre_close_up, gp},
 		{genre_cloudscape, gp}, {genre_club, ga}, {genre_comedy, ga | gv}, {genre_conceptual, gp},
 		{genre_concert_films, gv}, {genre_concert, gv | gp}, {genre_conservation, gp},
@@ -1760,7 +1828,7 @@ std::vector<std::string> app_text_t::known_genres(const genre_kind kinds) const
 		{genre_freestyle, ga}, {genre_funk, ga}, {genre_fusion, ga}, {genre_game, ga | gv},
 		{genre_gangsta, ga}, {genre_geophotography, gp}, {genre_glamour, gp}, {genre_gospel, ga},
 		{genre_gothic_rock, ga}, {genre_gothic, ga}, {genre_grunge, ga}, {genre_hardrock, ga},
-		{genre_highke, gp}, {genre_high_speed, gp}, {genre_hip_hop, ga}, {genre_hip_hop_rap, ga},
+		{genre_high_key, gp}, {genre_high_speed, gp}, {genre_hip_hop, ga}, {genre_hip_hop_rap, ga},
 		{genre_holiday, genre_kind::any}, {genre_horror, gv}, {genre_house, ga},
 		{genre_humour, genre_kind::any}, {genre_independent, gv}, {genre_industrial, ga},
 		{genre_instrumental_pop, ga}, {genre_instrumental_rock, ga}, {genre_instrumental, ga},
@@ -1770,7 +1838,7 @@ std::vector<std::string> app_text_t::known_genres(const genre_kind kinds) const
 		{genre_low_key, gp}, {genre_macro, gp}, {genre_medical, gp}, {genre_meditative, ga},
 		{genre_metal, ga}, {genre_monochrome, gp}, {genre_music_documentaries, gv},
 		{genre_music_feature_films, gv}, {genre_musical, ga | gv}, {genre_musicals, gv},
-		{genre_narrative, gv | gp}, {genre_nationa_folk, ga}, {genre_native_american, ga},
+		{genre_narrative, gv | gp}, {genre_national_folk, ga}, {genre_native_american, ga},
 		{genre_new_age, ga}, {genre_new_wave, ga}, {genre_night, gp}, {genre_noise, ga},
 		{genre_nonfiction, gv}, {genre_oldies, ga}, {genre_opera, ga}, {genre_other, genre_kind::any},
 		{genre_panorama, gp}, {genre_panoramic, gp}, {genre_film_noir, gv}, {genre_photo_op, gp},

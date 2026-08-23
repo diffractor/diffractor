@@ -115,7 +115,7 @@ IDB_SHADOW              PNG                     "Res\\shadow.png"
 IDB_INVERSE_SHADOW      PNG                     "Res\\inverse_shadow.png"
 IDB_MAP                 PNG                      "Res\\map-hires.png"
 
-IDF_ICONS               BINARY                 "Res\\segmdl2.ttf"
+IDF_ICONS               BINARY                 "Res\\FluentSystemIcons-Resizable.ttf"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -131,6 +131,7 @@ IDR_SHADER_YUV          SHADER                  "yuv_ps.cso"
 IDR_SHADER_YUV_BICUBIC  SHADER          "yuv_bicubic_ps.cso"
 IDR_SHADER_FONT         SHADER                  "font_ps.cso"
 IDR_SHADER_CIRCLE       SHADER                "circle_ps.cso"
+IDR_SHADER_PANO         SHADER                  "pano_ps.cso"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -146,8 +147,8 @@ IDR_MANIFEST            RT_MANIFEST             "platform_win.manifest"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1, 27, 1, 1273
- PRODUCTVERSION 1, 27, 1, 1273
+ FILEVERSION 1, 27, 2, 1304
+ PRODUCTVERSION 1, 27, 2, 1304
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -164,12 +165,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Diffractor"
             VALUE "FileDescription", "Diffractor"
-            VALUE "FileVersion", "1.27.1.1273"
+            VALUE "FileVersion", "1.27.2.1304"
             VALUE "InternalName", "Diffractor.exe"
             VALUE "LegalCopyright", "Copyright (C) 2024 Diffractor - Zac Walker"
             VALUE "OriginalFilename", "Diffractor.exe"
             VALUE "ProductName", "Diffractor"
-            VALUE "ProductVersion", "1.27.1.1273"
+            VALUE "ProductVersion", "1.27.2.1304"
         END
     END
     BLOCK "VarFileInfo"

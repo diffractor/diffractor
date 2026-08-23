@@ -837,10 +837,47 @@ static void walk_iptc_datasets(const df::cspan cs, Handler handler)
 	}
 }
 
+// IPTC dates are `CCYYMMDD` and times are `HHMMSS±HHMM`, both fixed width and neither carrying the
+// separators parse_exif_date expects, so the pair is punctuated into one reading here. A date with
+// no time is midnight, which is what the standard means by a date alone; a time with no date says
+// nothing at all and is dropped.
+static void add_iptc_date(prop::item_metadata& pd, const std::string_view date, const std::string_view time,
+                          const prop::date_source source)
+{
+	if (date.size() != 8 || !str::is_num(date)) return;
+
+	auto text = std::format("{}:{}:{}", date.substr(0, 4), date.substr(4, 2), date.substr(6, 2));
+	auto offset = prop::date_pack::no_offset;
+
+	if (time.size() >= 6 && str::is_num(time.substr(0, 6)))
+	{
+		std::format_to(std::back_inserter(text), " {}:{}:{}",
+		               time.substr(0, 2), time.substr(2, 2), time.substr(4, 2));
+
+		// `+0200` rather than the `+02:00` the shared parser takes.
+		if (time.size() == 11 && (time[6] == '+' || time[6] == '-') && str::is_num(time.substr(7, 4)))
+		{
+			offset = prop::parse_utc_offset(
+				std::format("{}{}:{}", time[6], time.substr(7, 2), time.substr(9, 2)));
+		}
+	}
+	else
+	{
+		text += " 00:00:00";
+	}
+
+	df::date_t d;
+	if (d.parse_exif_date(text) && d.is_valid()) pd.dates.add(source, d, offset);
+}
+
 void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
 {
 	tag_set tags;
 	tag_set artists;
+
+	// IPTC splits each instant across two datasets - CCYYMMDD and HHMMSS±HHMM - which may arrive in
+	// either order, so they are held and combined after the walk.
+	std::string created_date, created_time, digital_date, digital_time;
 
 	walk_iptc_datasets(cs, [&](const iptc_record record, const iptc_tag dataset, const uint8_t* bytes,
 	                           const uint32_t block_len)
@@ -871,10 +908,21 @@ void metadata_iptc::parse(prop::item_metadata& pd, const df::cspan cs)
 			break;
 		case IPTC_TAG_COPYRIGHT_NOTICE: assign_if_set(pd.copyright_notice, iptc_string(sv));
 			break;
+		case IPTC_TAG_DATE_CREATED: created_date = std::string(str::trim(sv));
+			break;
+		case IPTC_TAG_TIME_CREATED: created_time = std::string(str::trim(sv));
+			break;
+		case IPTC_TAG_DIGITAL_CREATION_DATE: digital_date = std::string(str::trim(sv));
+			break;
+		case IPTC_TAG_DIGITAL_CREATION_TIME: digital_time = std::string(str::trim(sv));
+			break;
 		default:
 			break;
 		}
 	});
+
+	add_iptc_date(pd, created_date, created_time, prop::date_source::iptc_created);
+	add_iptc_date(pd, digital_date, digital_time, prop::date_source::iptc_digital_created);
 
 	if (!tags.is_empty())
 	{

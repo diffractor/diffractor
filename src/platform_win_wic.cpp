@@ -12,6 +12,7 @@
 #include "pch.h"
 
 #include "platform_win.h"
+#include "platform_win_visual.h"
 #include <wincodec.h>
 #include <dwrite.h>
 
@@ -463,9 +464,9 @@ namespace
 	};
 }
 
-ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
+ui::const_surface_ptr platform::create_icon_surface(const char32_t ch)
 {
-	static std::unordered_map<wchar_t, ui::const_surface_ptr> cache;
+	static std::unordered_map<char32_t, ui::const_surface_ptr> cache;
 	const auto found = cache.find(ch);
 
 	if (found != cache.end())
@@ -485,6 +486,7 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 	surface_result->make_blank(); // transparent background
 
 	ComPtr<IDWriteFactory> dwrite_factory;
+	ComPtr<IDWriteFontCollection> icon_collection;
 	ComPtr<IDWriteTextFormat> text_format;
 	ComPtr<IDWriteTextLayout> text_layout;
 
@@ -493,8 +495,14 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 
 	if (SUCCEEDED(hr))
 	{
-		hr = dwrite_factory->CreateTextFormat(L"Segoe MDL2 Assets", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-		                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 148, L"",
+		hr = create_icon_font_collection(dwrite_factory.Get(), &icon_collection);
+	}
+
+	if (SUCCEEDED(hr))
+	{
+		hr = dwrite_factory->CreateTextFormat(icon_font_family(), icon_collection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
+		                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+		                                      df::mul_div(148, icon_font_scale_num, icon_font_scale_den), L"",
 		                                      &text_format);
 	}
 
@@ -503,8 +511,12 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 		text_format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 		text_format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 
-		const wchar_t icon_text[2] = {ch, 0};
-		hr = dwrite_factory->CreateTextLayout(icon_text, 1, text_format.Get(), static_cast<float>(cxy),
+		// DirectWrite takes UTF-16, so the code point is encoded here rather than at the call site.
+		std::string utf8;
+		str::char32_to_utf8(std::back_inserter(utf8), static_cast<uint32_t>(ch));
+		const auto icon_text = str::utf8_to_utf16(utf8);
+		hr = dwrite_factory->CreateTextLayout(icon_text.c_str(), static_cast<uint32_t>(icon_text.size()),
+		                                      text_format.Get(), static_cast<float>(cxy),
 		                                      static_cast<float>(cxy), &text_layout);
 	}
 
@@ -518,186 +530,6 @@ ui::const_surface_ptr platform::create_segoe_md2_icon(const wchar_t ch)
 	{
 		cache[ch] = surface_result;
 	}
-
-	return surface_result;
-}
-
-
-ui::surface_ptr platform::image_to_surface(const df::cspan image_buffer_in, const sizei target_extent)
-{
-	if (!image_buffer_in.data || image_buffer_in.size == 0)
-	{
-		return nullptr; // Invalid input
-	}
-
-	if (image_buffer_in.size > UINT32_MAX)
-	{
-		return nullptr; // Size too large for WIC API
-	}
-
-	ui::surface_ptr surface_result;
-	ComPtr<IWICImagingFactory> wic;
-
-	auto hr = CoCreateInstance(
-		CLSID_WICImagingFactory,
-		nullptr,
-		CLSCTX_INPROC_SERVER,
-		IID_PPV_ARGS(&wic));
-
-	ComPtr<IWICBitmapDecoder> wic_decoder;
-	ComPtr<IWICBitmapFrameDecode> wic_source;
-	ComPtr<IWICStream> stream;
-
-	if (SUCCEEDED(hr))
-	{
-		hr = wic->CreateStream(&stream);
-	}
-
-	if (SUCCEEDED(hr))
-	{
-		hr = stream->InitializeFromMemory(
-			const_cast<BYTE*>(image_buffer_in.data),
-			static_cast<uint32_t>(std::min(image_buffer_in.size, static_cast<size_t>(UINT32_MAX)))
-		);
-	}
-
-	if (SUCCEEDED(hr))
-	{
-		hr = wic->CreateDecoderFromStream(
-			stream.Get(),
-			nullptr,
-			WICDecodeMetadataCacheOnDemand,
-			&wic_decoder
-		);
-	}
-
-	ComPtr<IWICBitmapFrameDecode> pBitmapFrameDecode;
-	ComPtr<IWICBitmapSource> pConverter;
-
-	UINT uiFrameCount = 0;
-	UINT uiWidth = 0, uiHeight = 0;
-	WICPixelFormatGUID pixel_format = {};
-	GUID container_format = {};
-
-	if (SUCCEEDED(hr))
-	{
-		hr = wic_decoder->GetFrameCount(&uiFrameCount);
-	}
-
-	if (SUCCEEDED(hr))
-	{
-		hr = wic_decoder->GetContainerFormat(&container_format);
-	}
-
-	if (SUCCEEDED(hr) && uiFrameCount > 0)
-	{
-		ComPtr<IWICBitmapSource> pSource;
-
-		hr = wic_decoder->GetFrame(0, &pBitmapFrameDecode);
-
-		if (SUCCEEDED(hr))
-		{
-			pSource = pBitmapFrameDecode;
-
-			hr = pSource->GetSize(&uiWidth, &uiHeight);
-
-			// Validate image dimensions
-			if (SUCCEEDED(hr) && (uiWidth == 0 || uiHeight == 0 ||
-				uiWidth > 65536 || uiHeight > 65536))
-			{
-				hr = E_INVALIDARG;
-			}
-
-			// WIC decodes the whole frame at native size, so this is the last point before the
-			// allocation at which an oversized source can be refused.
-			if (SUCCEEDED(hr) && files::exceeds_decode_budget({static_cast<int>(uiWidth), static_cast<int>(uiHeight)}))
-			{
-				df::log(__FUNCTION__, std::format("decode of {} x {} is over the {} budget", uiWidth, uiHeight,
-				                                  df::file_size(df::max_decode_bytes).str()));
-				hr = E_OUTOFMEMORY;
-			}
-		}
-
-		if (SUCCEEDED(hr))
-		{
-			hr = pSource->GetPixelFormat(&pixel_format);
-		}
-
-		if (SUCCEEDED(hr))
-		{
-			ComPtr<IWICComponentInfo> componentInfo;
-			ComPtr<IWICPixelFormatInfo2> pixelFormatInfo;
-
-			hr = wic->CreateComponentInfo(pixel_format, &componentInfo);
-
-			if (SUCCEEDED(hr))
-			{
-				hr = componentInfo->QueryInterface(__uuidof(IWICPixelFormatInfo2), &pixelFormatInfo);
-			}
-
-			BOOL supportsTransparency = FALSE;
-
-			if (SUCCEEDED(hr))
-			{
-				hr = pixelFormatInfo->SupportsTransparency(&supportsTransparency);
-			}
-
-			const auto use_transparency = supportsTransparency != 0 || container_format == GUID_ContainerFormatGif;
-
-			if (SUCCEEDED(hr))
-			{
-				if (!IsEqualGUID(pixel_format, GUID_WICPixelFormat32bppBGRA) &&
-					!IsEqualGUID(pixel_format, GUID_WICPixelFormat32bppBGR))
-				{
-					hr = WICConvertBitmapSource(
-						use_transparency ? GUID_WICPixelFormat32bppBGRA : GUID_WICPixelFormat32bppBGR, pSource.Get(),
-						&pConverter);
-
-					if (SUCCEEDED(hr))
-					{
-						pSource = pConverter;
-					}
-				}
-			}
-
-			if (SUCCEEDED(hr))
-			{
-				const auto fmt = use_transparency ? ui::texture_format::ARGB : ui::texture_format::RGB;
-				surface_result = std::make_shared<ui::surface>();
-
-				if (surface_result->alloc(uiWidth, uiHeight, fmt, ui::orientation::top_left))
-				{
-					WICRect rc;
-					rc.X = 0;
-					rc.Y = 0;
-					rc.Width = uiWidth;
-					rc.Height = uiHeight;
-
-					// Validate buffer size before copy
-					const auto stride = surface_result->stride();
-					const auto buffer_size = surface_result->size();
-					const auto required_size = static_cast<size_t>(uiWidth) * uiHeight * 4;
-					if (surface_result->size() < required_size || stride > MAXUINT || buffer_size > MAXUINT)
-					{
-						hr = E_OUTOFMEMORY;
-					}
-					else
-					{
-						hr = pSource->CopyPixels(&rc,
-						                         static_cast<UINT>(stride),
-						                         static_cast<UINT>(buffer_size),
-						                         surface_result->pixels());
-					}
-				}
-				else
-				{
-					hr = E_OUTOFMEMORY;
-				}
-			}
-		}
-	}
-
-	if (FAILED(hr)) surface_result.reset();
 
 	return surface_result;
 }

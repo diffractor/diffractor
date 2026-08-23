@@ -19,6 +19,17 @@
 #include <nmmintrin.h>  // For CRC32 intrinsics
 #endif
 
+// crc32 is SSE4.2, which is above the x86-64 baseline, and the caller reaches it only after a
+// runtime check. MSVC emits any intrinsic on request; GCC and Clang want the function that uses
+// one to say so.
+#if defined(COMPILE_SIMD_INTRINSIC) && !defined(_MSC_VER)
+#define DF_TARGET_SSE42 __attribute__((target("sse4.2")))
+#define DF_TARGET_SSSE3 __attribute__((target("ssse3")))
+#else
+#define DF_TARGET_SSE42
+#define DF_TARGET_SSSE3
+#endif
+
 #if defined(COMPILE_ARM_INTRINSIC)
 #include <arm_acle.h>   // For ARM CRC intrinsics
 #endif
@@ -94,7 +105,7 @@ inline uint32_t calc_crc32c_c(uint32_t crc, const void* data, const size_t len)
 	return crc;
 }
 
-inline uint32_t calc_crc32c_x86(uint32_t crc, const void* data, const size_t len)
+DF_TARGET_SSE42 inline uint32_t calc_crc32c_x86(uint32_t crc, const void* data, const size_t len)
 {
 #if defined(COMPILE_SIMD_INTRINSIC)
 	const auto* p = static_cast<const uint8_t*>(data);
@@ -106,7 +117,7 @@ inline uint32_t calc_crc32c_x86(uint32_t crc, const void* data, const size_t len
 		crc = _mm_crc32_u8(crc, *p++);
 	}
 
-#if defined(_M_X64)
+#if defined(_M_X64) || defined(__x86_64__)
 	// _mm_crc32_u64 consumes 8 bytes per instruction (64-bit targets only),
 	// roughly doubling throughput versus the 32-bit path on large buffers.
 	uint64_t crc64 = crc;

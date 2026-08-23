@@ -822,14 +822,14 @@ public:
 		const auto rating = is_hover ? last_hover_rating : displayed_rating();
 		const auto clr = ui::color(dc.colors.foreground, _can_edit ? dc.colors.alpha : dc.colors.alpha / 4.0f);
 
-		wchar_t text[6] = {};
+		std::string text;
 
 		for (auto i = 0; i < 5; i++)
 		{
-			text[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
+			text += icon_to_utf8(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
-		dc.draw_text(str::utf16_to_utf8(text), logical_bounds, ui::style::font_face::icons,
+		dc.draw_text(text, logical_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center, clr, bg);
 	}
 
@@ -916,25 +916,25 @@ public:
 		auto reject_bounds = logical_bounds;
 		reject_bounds.right = reject_bounds.left + cxy;
 
-		constexpr wchar_t reject_text[2] = {static_cast<wchar_t>(rate_label_reject.icon), 0};
+		const auto reject_text = icon_to_utf8(rate_label_reject.icon);
 		const auto reject_clr = rating < 0
 			                        ? ui::color(rate_label_reject.clr, dc.colors.alpha)
 			                        : ui::color(dc.colors.foreground, dc.colors.alpha / 3.0f);
 
-		dc.draw_text(str::utf16_to_utf8(reject_text), reject_bounds, ui::style::font_face::icons,
+		dc.draw_text(reject_text, reject_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center, reject_clr, bg);
 
-		wchar_t stars[6] = {};
+		std::string stars;
 
 		for (auto i = 0; i < 5; i++)
 		{
-			stars[i] = static_cast<wchar_t>(i < rating ? icon_index::star_solid : icon_index::star);
+			stars += icon_to_utf8(i < rating ? icon_index::star_solid : icon_index::star);
 		}
 
 		auto star_bounds = logical_bounds;
 		star_bounds.left = logical_bounds.left + cxy;
 
-		dc.draw_text(str::utf16_to_utf8(stars), star_bounds, ui::style::font_face::icons,
+		dc.draw_text(stars, star_bounds, ui::style::font_face::icons,
 		             ui::style::text_style::single_line_center,
 		             ui::color(dc.colors.foreground, dc.colors.alpha), bg);
 	}
@@ -1063,6 +1063,8 @@ class items_dates_control final : public std::enable_shared_from_this<items_date
 	view_state& _state;
 	const df::item_element_ptr _item;
 	std::string _text;
+	df::date_t _shown_date;
+	df::date_parts_prop _shown_target = df::date_parts_prop::original;
 	bool _invalid = false;
 	ui::style::font_face _font = ui::style::font_face::dialog;
 	ui::style::text_style _text_style = ui::style::text_style::multiline;
@@ -1076,21 +1078,32 @@ public:
 	{
 		const auto& search = s.search();
 
-		if (search.is_match(prop::created_utc, _item->file_created()))
+		// Each candidate is matched against the key that names it. The tile can show the
+		// capture-first ladder, the Created concept or the file stamp, and a match on one of those
+		// is not a match on another. The stamps are UTC instants in the index, so they are converted
+		// before being compared or shown, the way the index matcher converts them.
+		const auto created_concept = _item->file_or_metadata_created();
+		const auto modified_date = _item->file_modified().system_to_local();
+
+		if (search.is_match(prop::created_utc, created_concept))
 		{
 			style |= view_element_style::important;
-			_text = platform::format_date(_item->file_created());
+			_text = platform::format_date(created_concept);
+			_shown_date = created_concept;
+			_shown_target = df::date_parts_prop::created;
 		}
-		else if (search.is_match(prop::modified, _item->file_modified()))
+		else if (search.is_match(prop::modified, modified_date))
 		{
 			style |= view_element_style::important;
-			_text = platform::format_date(_item->file_modified());
+			_text = platform::format_date(modified_date);
+			_shown_date = modified_date;
+			_shown_target = df::date_parts_prop::modified;
 		}
 		else
 		{
 			const auto created_date = _item->media_created();
 
-			if (search.is_match(prop::created_utc, created_date))
+			if (search.is_match(prop::created_exif, created_date))
 			{
 				style |= view_element_style::important;
 			}
@@ -1098,6 +1111,8 @@ public:
 			if (created_date.is_valid())
 			{
 				_text = platform::format_date(created_date);
+				_shown_date = created_date;
+				_shown_target = df::date_parts_prop::original;
 			}
 		}
 
@@ -1128,12 +1143,12 @@ public:
 	{
 		if (event.type == view_element_event_type::invoke)
 		{
-			const auto created_date = _item->media_created();
-
-			if (created_date.is_valid())
+			// The bubble names one of the three dates, so it opens that one. Asking for the union
+			// would return a day the bubble did not show.
+			if (_shown_date.is_valid())
 			{
-				const auto st = created_date.date();
-				const auto search = df::search_t().day(st.day, st.month, st.year);
+				const auto st = _shown_date.date();
+				const auto search = df::search_t().day(st.day, st.month, st.year, _shown_target);
 				_state.open(event.host, search, {});
 			}
 		}
@@ -1928,7 +1943,7 @@ public:
 };
 
 
-class comodore_disk_control final : public std::enable_shared_from_this<comodore_disk_control>, public view_element
+class commodore_disk_control final : public std::enable_shared_from_this<commodore_disk_control>, public view_element
 {
 	display_state_ptr _display;
 
@@ -1956,7 +1971,7 @@ class comodore_disk_control final : public std::enable_shared_from_this<comodore
 	}
 
 public:
-	comodore_disk_control(display_state_ptr display, const view_element_options& style_in) noexcept :
+	commodore_disk_control(display_state_ptr display, const view_element_options& style_in) noexcept :
 		view_element(style_in),
 		_display(std::move(display))
 	{
@@ -1964,6 +1979,18 @@ public:
 
 		for (const auto& line : _lines) _cols = std::max(_cols, static_cast<int>(line.screen_codes.size()));
 		_rows = static_cast<int>(_lines.size());
+	}
+
+	// texture::is_valid() only answers "not null" - it knows nothing about the device that made it -
+	// so an element caching one has to answer this broadcast or it draws a texture the device no
+	// longer owns.
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_texture.reset();
+			_tex_extent = {};
+		}
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -2372,8 +2399,118 @@ public:
 	mutable recti _zoom_100_bounds;
 	mutable recti _zoom_in_bounds;
 	mutable recti _zoom_options_bounds;
+	// zoom.md L6: the visible control for the flat/projected state of a declared panorama.
+	mutable recti _zoom_projection_bounds;
 	mutable uint64_t _zoom_quality_generation = 0;
 	view_elements_ptr _zoom_grading_element;
+
+	// design.md: a region drawn on the displayed picture. Held in source space so it survives a
+	// resize, a layout change and a zoom, and held on the view state keyed to the item rather than on
+	// this control, which is rebuilt for anything that raises view_invalid::media_elements - a sidecar
+	// arriving or index progress would otherwise erase what the user just drew. The key is what keeps
+	// "a crop region is about one picture" true.
+	mutable recti _region_close_bounds;
+	mutable recti _region_zoom_bounds;
+	mutable recti _region_crop_bounds;
+
+	df::file_path region_item() const
+	{
+		// _display is non-null for this control's whole lifetime - the constructor reads it - so the
+		// question here is only whether it resolves to one picture.
+		return _display->is_one() && _display->_item1 ? _display->_item1->path() : df::file_path{};
+	}
+
+	rectd region() const
+	{
+		return _state.drawn_region(region_item());
+	}
+
+	bool has_region() const
+	{
+		// zoom.md: a region lives in source space and is drawn where the picture is. A projected view
+		// is not the picture laid out in source space, so the rectangle is hidden rather than drawn
+		// somewhere it does not mean anything. It is kept, and returns with the flat pixels.
+		return !region().is_empty() && !_display->is_panorama_projected();
+	}
+
+	void region(const rectd source_rect)
+	{
+		_state.drawn_region(region_item(), source_rect);
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	void clear_region()
+	{
+		if (!has_region()) return;
+		_state.drawn_region(region_item(), {});
+		_state.end_region_drag();
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	// Where the whole picture lands on screen at the current scale, which is what the region maps
+	// through in both directions.
+	rectd image_bounds(const pointi element_offset) const
+	{
+		if (!_display->_selected_texture1) return {};
+		return rectd(_display->_selected_texture1->display_bounds().offset(element_offset));
+	}
+
+	sized source_extent() const
+	{
+		if (!_display->_selected_texture1) return {};
+		return sized(_display->_selected_texture1->calc_display_dimensions());
+	}
+
+	recti region_bounds(const pointi element_offset) const
+	{
+		if (!has_region()) return {};
+		return df::source_rect_to_client(region(), image_bounds(element_offset), source_extent()).round();
+	}
+
+	// A drag replaces whatever was there: two rectangles at once would be two answers to a question
+	// that has one.
+	void begin_region_drag()
+	{
+		_state.begin_region_drag(region_item(), true);
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	// Moving keeps the rectangle; only the buttons go, because the pointer is over them. They are
+	// painted, so their leaving is a redraw the drag itself has to ask for.
+	void begin_region_move()
+	{
+		_state.begin_region_drag(region_item(), false);
+		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	void release_region_drag()
+	{
+		_state.end_region_drag();
+	}
+
+	void drag_region(const pointi from, const pointi to, const pointi element_offset)
+	{
+		region(df::client_rect_to_source(rectd(recti(from, to)), image_bounds(element_offset), source_extent()));
+	}
+
+	void end_region_drag(const pointi from, const pointi to, const pointi element_offset)
+	{
+		drag_region(from, to, element_offset);
+		_state.end_region_drag();
+
+		// A rectangle too small to see is a click that happened to move, not a region. The draw
+		// replaced what was there, so too small puts it back rather than destroying it.
+		const auto drawn = region_bounds(element_offset);
+		if (drawn.width() < 8 || drawn.height() < 8) region(_state.region_drag_restore());
+		else _host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
+	void cancel_region_drag()
+	{
+		const auto restore = _state.region_drag_restore();
+		_state.end_region_drag();
+		region(restore);
+	}
 
 	photo_control(view_state& state, display_state_ptr display, view_host_ptr host) :
 		view_element(view_element_style::can_invoke | flex_item::media), _state(state),
@@ -2418,20 +2555,86 @@ public:
 				};
 				_host->invalidate_view(view_invalid::animations);
 			}
-			st->draw(dc, element_offset, 0, true, _display->zoom_interactive(dc.time_now));
+			if (const auto request = _display->panorama_draw_request(); request.active)
+			{
+				st->draw_panorama(dc, element_offset, request.geometry, request.view);
+			}
+			else
+			{
+				st->draw(dc, element_offset, 0, true, _display->zoom_interactive(dc.time_now));
+			}
 
+			// The zoom chrome is drawn after the region for the same reason it is hit-tested before it:
+			// a rectangle drawn across the navigator must not hide it and must not claim its clicks.
+			render_region(dc, element_offset);
 			if (_display->zoom()) render_zoom_thumb(dc, element_offset);
 			if (_display->is_zoom_mode() && !_display->is_temporary_zoom() && _zoom_grading_element &&
 				!_zoom_grading_element->bounds.is_empty())
 			{
+				// dc is shared by the whole frame, so the alpha is put back on every exit rather than
+				// on the normal one: an element that threw would otherwise dim everything painted after it.
 				const auto original_alpha = dc.colors.alpha;
+				const df::scope_exit restore_alpha([&dc, original_alpha] { dc.colors.alpha = original_alpha; });
 				dc.colors.alpha *= std::min(dc.colors.overlay_alpha, _display->_zoom_overlay_alpha);
 				const auto grading_bounds = _zoom_grading_element->bounds.offset(element_offset);
 				dc.draw_rect(grading_bounds.inflate(dc.padding1), ui::color(0, dc.colors.alpha * 0.5f));
 				_zoom_grading_element->render(dc, element_offset);
-				dc.colors.alpha = original_alpha;
 			}
 		}
+		else
+		{
+			// Nothing was painted, so the region's three buttons are not on screen. Their rectangles are
+			// read by the hit test, and leaving the last frame's behind would route a click to a control
+			// that is not there.
+			_region_close_bounds.clear();
+			_region_zoom_bounds.clear();
+			_region_crop_bounds.clear();
+		}
+	}
+
+	void render_region(ui::draw_context& dc, const pointi element_offset) const
+	{
+		_region_close_bounds.clear();
+		_region_zoom_bounds.clear();
+		_region_crop_bounds.clear();
+
+		const auto region = region_bounds(element_offset);
+		if (region.is_empty()) return;
+
+		const auto border_clr = ui::color(ui::style::color::dialog_selected_background, dc.colors.alpha);
+		dc.draw_border(region, region.inflate(df::round(2 * dc.scale_factor)), border_clr, border_clr);
+
+		// Hidden during a drag: the buttons would sit under the pointer that is still drawing the
+		// rectangle they belong to.
+		if (_state.drawing_region()) return;
+
+		const auto cxy = dc.icon_cxy;
+		const auto gap = dc.padding1;
+		const auto strip_width = cxy * 3 + gap * 2;
+
+		// Outside the rectangle when it is too small to hold them, so a small selection is still
+		// something a user can act on rather than something they have to redraw larger first. Either
+		// way the strip is clamped into the element: placed below a region at the bottom edge it
+		// would be drawn outside the clip and hit-tested where nothing routes, which is a region the
+		// pointer can neither act on nor dismiss.
+		const auto inside = region.width() >= strip_width + gap * 2 && region.height() >= cxy + gap * 2;
+		const auto limit = bounds.offset(element_offset);
+		const auto left = std::clamp(inside ? region.right - strip_width - gap : region.left,
+		                             limit.left, std::max(limit.left, limit.right - strip_width));
+		const auto top = std::clamp(inside ? region.top + gap : region.bottom + gap,
+		                            limit.top, std::max(limit.top, limit.bottom - cxy));
+
+		_region_close_bounds = recti(left, top, left + cxy, top + cxy);
+		_region_zoom_bounds = _region_close_bounds.offset(cxy + gap, 0);
+		_region_crop_bounds = _region_zoom_bounds.offset(cxy + gap, 0);
+
+		const auto strip = recti(_region_close_bounds.left, top, _region_crop_bounds.right, top + cxy);
+		dc.draw_rounded_rect(strip.inflate(gap), ui::color(0, dc.colors.alpha * 0.66f), dc.padding1);
+
+		const auto clr = ui::color(dc.colors.foreground, dc.colors.alpha);
+		xdraw_icon(dc, icon_index::close, _region_close_bounds, clr, {});
+		xdraw_icon(dc, icon_index::zoom_in, _region_zoom_bounds, clr, {});
+		xdraw_icon(dc, icon_index::crop, _region_crop_bounds, clr, {});
 	}
 
 	sizei calc_tex_extent(const int width_limit, const int height_limit) const
@@ -2469,13 +2672,19 @@ public:
 			const auto viewport = sized(bounds.extent());
 			_display->zoom_layout(source, viewport, pointd(bounds.top_left()));
 			const auto geometry = _display->zoom_state().geometry(source, viewport, _display->zoom_fit_scale());
-			const auto image_bounds = geometry.destination.offset(pointd(bounds.top_left())).round();
+
+			// A projection has no image rectangle: the sphere is drawn across the whole viewport, and
+			// what is off screen is behind the camera rather than outside a destination rect.
+			const auto projected = _display->is_panorama_projected();
+			const auto image_bounds = projected
+				                          ? bounds
+				                          : geometry.destination.offset(pointd(bounds.top_left())).round();
 
 			st->layout(mc, image_bounds, i);
 
 			const auto pan_extent = image_bounds.extent();
 			_can_pan = i && i->file_type()->has_trait(file_traits::zoom) &&
-				(bounds.width() < pan_extent.cx || bounds.height() < pan_extent.cy);
+				(projected || bounds.width() < pan_extent.cx || bounds.height() < pan_extent.cy);
 
 			if (_display->is_zoom_mode() && _zoom_grading_element)
 			{
@@ -2546,7 +2755,10 @@ public:
 		}
 		catch (std::exception& e)
 		{
-			df::trace(e.what());
+			// A frame that cannot be drawn is dropped rather than propagated out of paint. df::trace
+			// is compiled out of a shipping build, so the reason has to reach the log or a blank
+			// video is a defect with no evidence; log_once bounds a failure that repeats per frame.
+			df::log_once(__FUNCTION__, e.what());
 		}
 	}
 
@@ -2612,16 +2824,35 @@ public:
 	view_state& _state;
 	view_host_ptr _host;
 	display_state_ptr _display;
+	// Fullscreen gives the visualizer the whole view; in the items column it is one pane above the
+	// information, and an audio file is the case where the information is what the user came for.
+	const bool _fills_view;
 
-	audio_control(view_state& s, display_state_ptr display, view_host_ptr host) noexcept :
+	audio_control(view_state& s, display_state_ptr display, view_host_ptr host,
+	              const bool fills_view = false) noexcept :
 		view_element(view_element_style::can_invoke | flex_item::media), _state(s), _host(std::move(host)),
-		_display(std::move(display))
+		_display(std::move(display)), _fills_view(fills_view)
 	{
 	}
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
-		return {width_limit, std::max(width_limit, 500)};
+		if (_fills_view) return {width_limit, std::max(width_limit, df::round(500 * mc.scale_factor))};
+
+		// Cover art is the only picture an audio file has, and layout gives it the top three fifths of
+		// the pane, so the pane is that art scaled to the width and grown back. Without art there is no
+		// picture to make room for: the visualizer takes a band and the metadata below keeps the rest.
+		const auto art = _display->_selected_texture1
+			                 ? _display->_selected_texture1->calc_display_dimensions()
+			                 : sizei{};
+
+		if (art.cx <= 0 || art.cy <= 0)
+		{
+			return {width_limit, df::round(128 * mc.scale_factor)};
+		}
+
+		const auto art_cy = std::min(df::mul_div(art.cy, width_limit, art.cx), width_limit);
+		return {width_limit, std::max(df::round(128 * mc.scale_factor), df::mul_div(art_cy, 5, 3))};
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
@@ -2709,6 +2940,9 @@ public:
 	mutable recti _zoom_100_bounds;
 	mutable recti _zoom_in_bounds;
 	mutable recti _zoom_options_bounds;
+	// Never populated here: a projection is a judgement about one picture, so it never appears
+	// while two are being compared. Carried so both controls share one overlay renderer.
+	mutable recti _zoom_projection_bounds;
 	std::array<view_elements_ptr, 2> _zoom_grading_elements;
 	// Height reserved above the images for the A and B pane markers; zero while magnified or split.
 	mutable int _pane_marker_height = 0;
@@ -2755,7 +2989,12 @@ public:
 				_display->_selected_texture1->draw(dc, element_offset, compare_pos, true, interactive);
 				_display->_selected_texture2->draw(dc, element_offset, compare_pos, false, interactive);
 			}
+			// Both alphas are restored on every exit path, not just the normal one: dc is shared by the
+			// whole frame, so an element that threw would leave everything painted afterwards dimmed.
 			const auto original_overlay_alpha = dc.colors.overlay_alpha;
+			const df::scope_exit restore_overlay_alpha(
+				[&dc, original_overlay_alpha] { dc.colors.overlay_alpha = original_overlay_alpha; });
+
 			if (_display->is_zoom_mode())
 			{
 				dc.colors.overlay_alpha = std::min(dc.colors.overlay_alpha, _display->_zoom_overlay_alpha);
@@ -2769,11 +3008,11 @@ public:
 				if (grading && !grading->bounds.is_empty())
 				{
 					const auto original_alpha = dc.colors.alpha;
+					const df::scope_exit restore_alpha([&dc, original_alpha] { dc.colors.alpha = original_alpha; });
 					dc.colors.alpha *= dc.colors.overlay_alpha;
 					const auto grading_bounds = grading->bounds.offset(element_offset);
 					dc.draw_rect(grading_bounds.inflate(dc.padding1), ui::color(0, dc.colors.alpha * 0.5f));
 					grading->render(dc, element_offset);
-					dc.colors.alpha = original_alpha;
 				}
 			}
 
@@ -2914,7 +3153,6 @@ public:
 				rr.right = rr.left + 1;
 				dc.draw_rect(rr, ui::color(ui::average(dc.colors.background, 0), dc.colors.alpha));
 			}
-			dc.colors.overlay_alpha = original_overlay_alpha;
 		}
 	}
 
@@ -3192,7 +3430,10 @@ public:
 		const auto visible_without_overflow = std::min(_display->_surfaces.size(), cell_capacity);
 		const auto has_overflow = _display->_selection_item_count > visible_without_overflow;
 		_display->_collage_image_count = std::min(_display->_surfaces.size(), cell_capacity - (has_overflow ? 1 : 0));
-		_display->_selection_overflow_count = _display->_selection_item_count - _display->_collage_image_count;
+		// Unsigned: a selection smaller than the cells built for it would otherwise read as billions.
+		_display->_selection_overflow_count = _display->_selection_item_count > _display->_collage_image_count
+			                                      ? _display->_selection_item_count - _display->_collage_image_count
+			                                      : 0;
 		_display->_surface_bounds = ui::layout_collage(
 			collage_bounds, surface_dims(_display->_collage_image_count, has_overflow));
 
@@ -3213,8 +3454,13 @@ public:
 		dc.draw_rounded_rect(_panel_bounds.offset(element_offset),
 		                     ui::color(ui::style::color::group_background, dc.colors.alpha), dc.padding1);
 
-		if (_display->_textures.empty())
+		// Keyed on the surface count rather than on being non-empty, so a set published after the first
+		// paint is uploaded rather than half-drawn against a cache built for a shorter one.
+		if (_display->_textures.size() != _display->_surfaces.size())
 		{
+			_display->_textures.clear();
+			_display->_textures.reserve(_display->_surfaces.size());
+
 			for (const auto& s : _display->_surfaces)
 			{
 				auto t = dc.create_texture();
@@ -3257,7 +3503,15 @@ public:
 		{
 			const auto overflow_bounds = _display->_surface_bounds[_display->_collage_image_count].offset(
 				element_offset);
-			const auto text = std::format("+{}", _display->_selection_overflow_count);
+
+			// With no cells beside it there is nothing for a "+N" to be additional to, so while the
+			// thumbnails are still decoding the cell names the whole selection and becomes a remainder
+			// once they arrive.
+			const auto text = _display->_collage_image_count == 0
+				                  ? format_plural_text(tt.title_item_count_fmt,
+				                                       static_cast<int64_t>(_display->_selection_item_count))
+				                  : std::format("+{}", _display->_selection_overflow_count);
+
 			dc.draw_rect(overflow_bounds, ui::color(ui::style::color::group_background, dc.colors.alpha));
 			dc.draw_text(text, overflow_bounds, ui::style::font_face::dialog,
 			             ui::style::text_style::single_line_center, ui::color(dc.colors.foreground, dc.colors.alpha),
@@ -3282,6 +3536,18 @@ public:
 		const auto cell = _display->_surface_bounds.front();
 		const auto cxy = std::min({icon_cxy * 3 / 2, cell.width(), cell.height()});
 		return {cell.left, cell.top, cell.left + cxy, cell.top + cxy};
+	}
+
+	// The collage fills its texture cache only while the cache is empty, and the cache lives on the
+	// display state rather than on this element, so nothing else releases it. After a device loss
+	// or a fall back to the CPU renderer it held textures belonging to the device that went away
+	// and the collage drew nothing for the rest of the session.
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_display->_textures.clear();
+		}
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
@@ -3340,7 +3606,6 @@ public:
 			_child->render(dc, element_offset);
 		}
 	}
-
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
 	{

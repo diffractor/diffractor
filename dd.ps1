@@ -15,7 +15,7 @@
     - run32      : Run the recently built diffractor32.exe (32-bit)
     - cpu        : Run diffractor64.exe using CPU software rendering
     - build      : Bump the build number and build Release x64 (diffractor64.exe)
-    - test       : Run unit tests and validate translation (.po) files
+    - test       : Lint the repository, run unit tests and validate translation (.po) files
     - bean       : Run unit tests with the temp folder on the bean NAS (\\bean.local\home\tmp)
     - bump-build : Increment the build number (e.g., 1187 -> 1188)
     - bump-ver   : Increment the minor version (e.g., 1.26.2 -> 1.26.3)
@@ -46,7 +46,7 @@
 
 .EXAMPLE
     .\dd.ps1 test
-    Run unit tests and validate translation (.po) files
+    Lint the repository, run unit tests and validate translation (.po) files
 
 .EXAMPLE
     .\dd.ps1 bump-build
@@ -59,11 +59,17 @@
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("desktop", "store", "run", "run32", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "help", "")]
-    [string]$Command = ""
+    [ValidateSet("desktop", "store", "run", "run32", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "setup", "configure", "clean", "info", "help", "")]
+    [string]$Command = "",
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Rest = @()
 )
 
 $ErrorActionPreference = "Stop"
+
+# Windows PowerShell 5.1 has no $IsLinux, so the absence of the variable means Windows.
+$IsLinuxHost = [bool](Get-Variable -Name IsLinux -ErrorAction SilentlyContinue) -and $IsLinux
 
 # Configuration
 $ScriptDir = $PSScriptRoot
@@ -72,13 +78,17 @@ $SourceFilesDir = Join-Path $ScriptDir "exe"
 $PackageRoot = Join-Path $ScriptDir "dist"
 $InstallerDir = Join-Path $ScriptDir "installer"
 
-# Newest installed SDK that actually has the packaging tools.
+# Newest installed SDK that actually has the packaging tools. Windows-only, and the probe is
+# skipped on Linux so the gateway can still reach the cross-platform commands.
 $SdkRoot = "C:\Program Files (x86)\Windows Kits\10\bin"
-$SdkBinDir = Get-ChildItem $SdkRoot -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^10(\.\d+){3}$' -and (Test-Path (Join-Path $_.FullName "x64\MakeAppx.exe")) } |
-    Sort-Object { [version]$_.Name } |
-    Select-Object -Last 1 -ExpandProperty FullName
-if ($SdkBinDir) { $SdkBinDir = Join-Path $SdkBinDir "x64" } else { $SdkBinDir = Join-Path $SdkRoot "10.0.26100.0\x64" }
+$SdkBinDir = $null
+if (-not $IsLinuxHost) {
+    $SdkBinDir = Get-ChildItem $SdkRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^10(\.\d+){3}$' -and (Test-Path (Join-Path $_.FullName "x64\MakeAppx.exe")) } |
+        Sort-Object { [version]$_.Name } |
+        Select-Object -Last 1 -ExpandProperty FullName
+    if ($SdkBinDir) { $SdkBinDir = Join-Path $SdkBinDir "x64" } else { $SdkBinDir = Join-Path $SdkRoot "10.0.26100.0\x64" }
+}
 
 # The Store rejects a MaxVersionTested above the newest publicly released Windows, so an
 # Insider dev machine must not raise it. Bump this when a new release ships.
@@ -88,12 +98,12 @@ $MaxVersionTestedCap = "10.0.26200.0"
 $DesktopSignThumbprint = "B3B4EA219B9BCB79749D5E84066DDCAC61E5C4C3"
 $StoreSignThumbprint = "0BC1CD0A4F37CE2A5A2CE72DAA9B08B1EC1CB522"
 
-# Version file paths
+# Version file paths. Forward slashes so the same literals resolve on both hosts.
 $NsiFile = Join-Path $InstallerDir "diff.nsi"
 $AppxManifestFile = Join-Path $SourceFilesDir "AppxManifest.xml"
-$ResourceFile = Join-Path $ScriptDir "src\platform_win_res.rc"
-$AppManifestFile = Join-Path $ScriptDir "src\platform_win.manifest"
-$AppCppFile = Join-Path $ScriptDir "src\app.cpp"
+$ResourceFile = Join-Path $ScriptDir "src/platform_win_res.rc"
+$AppManifestFile = Join-Path $ScriptDir "src/platform_win.manifest"
+$AppCppFile = Join-Path $ScriptDir "src/app.cpp"
 
 # ============================================================================
 # Version Management Functions
@@ -270,13 +280,21 @@ function Show-Usage {
     Write-Host "  run32        Run the recently built diffractor32.exe (32-bit)"
     Write-Host "  cpu          Run diffractor64.exe using CPU software rendering"
     Write-Host "  build        Bump the build number and build Release x64 (diffractor64.exe)"
-    Write-Host "  test         Run unit tests and validate translation (.po) files"
+    Write-Host "  test         Lint, run unit tests and validate translation (.po) files"
     Write-Host "  bean         Run unit tests with the temp folder on the bean NAS (\\bean.local\home\tmp)"
     Write-Host "  code         Open VS Code with Developer Command Prompt environment"
     Write-Host "  loc          Regenerate location database files from geonames"
     Write-Host "  bump-build   Manually increment build number (e.g., $($version.Build) -> $($version.Build + 1))"
     Write-Host "  bump-ver     Increment version (e.g., $($version.VersionString) -> $($version.Major).$($version.Minor).$($version.Patch + 1))"
     Write-Host "  clear-cache  Clear Windows icon and thumbnail cache (requires restart)"
+    Write-Host ""
+    Write-Host "Cross-platform (tools/dd.py):"
+    Write-Host "  setup        Install the build toolchain and system packages (Linux)"
+    Write-Host "  configure    Configure the CMake/Ninja build"
+    Write-Host "  clean        Remove the CMake build directory"
+    Write-Host "  info         Report host, build directory and detected tooling"
+    Write-Host ""
+    Write-Host "  build / test / run use CMake and Ninja on both hosts."
     Write-Host ""
     Write-Host "Examples:"
     Write-Host "  .\dd.ps1 desktop      Build desktop release (auto-increments build)"
@@ -287,7 +305,7 @@ function Show-Usage {
     Write-Host "  .\dd.ps1 run          Run diffractor64.exe"
     Write-Host "  .\dd.ps1 run32        Run diffractor32.exe"
     Write-Host "  .\dd.ps1 cpu          Run diffractor64.exe using CPU software rendering"
-    Write-Host "  .\dd.ps1 test         Run unit tests and validate .po files"
+    Write-Host "  .\dd.ps1 test         Lint, run unit tests and validate .po files"
     Write-Host ""
 }
 
@@ -311,7 +329,7 @@ function Get-VisualStudioPath {
 }
 
 function Test-VisualStudioEnvironment {
-    # MSBuild configures the toolchain from the solution, so locating the install is enough - vcvars is not required.
+    # Only the install location is needed. tools/dd.py runs vcvarsall itself for the compiler.
     $vsPath = Get-VisualStudioPath
 
     if (-not $vsPath) {
@@ -323,33 +341,47 @@ function Test-VisualStudioEnvironment {
     return $vsPath
 }
 
-function Get-MSBuildPath {
-    $vsDir = Test-VisualStudioEnvironment
-    $msbuildPath = Join-Path $vsDir "Msbuild\Current\Bin\msbuild.exe"
-    if (-not (Test-Path $msbuildPath)) {
-        Write-Host "Error: MSBuild not found at $msbuildPath" -ForegroundColor Red
-        exit 1
-    }
-    return $msbuildPath
+# The build. tools/dd.py owns CMake on both hosts, so this states what to build and nothing about
+# how. See docs/linux.md#retiring-msbuild.
+function Invoke-CMakeBuild {
+    param(
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Release",
+        [ValidateSet("x64", "x86", "arm64")]
+        [string]$Arch = "x64",
+        [switch]$WinStore
+    )
+
+    Write-Host ""
+    Write-Host "Building $Configuration | $Arch$(if ($WinStore) { ' | Store' })..." -ForegroundColor Yellow
+
+    $arguments = @("--config", $Configuration, "--arch", $Arch)
+    if ($WinStore) { $arguments += "--winstore" }
+
+    Invoke-DdPython -Action "build" -Arguments $arguments
 }
 
-function Invoke-MSBuild {
+# Where that build puts the binary. Every consumer below names the file rather than asking the
+# build, because the installer, the package and the symbol store all name it too.
+function Get-DiffractorExe {
     param(
-        [string]$Project,
-        [string]$Configuration,
-        [string]$Platform
+        [ValidateSet("Debug", "Release")]
+        [string]$Configuration = "Release",
+        [ValidateSet("x64", "x86", "arm64")]
+        [string]$Arch = "x64",
+        [switch]$WinStore
     )
-    
-    $msbuild = Get-MSBuildPath
-    Write-Host ""
-    Write-Host "Building $Configuration | $Platform..." -ForegroundColor Yellow
-    
-    & $msbuild $Project /p:Configuration=$Configuration /p:Platform=$Platform /m | Out-Host
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error: Build failed for $Configuration | $Platform" -ForegroundColor Red
-        exit $LASTEXITCODE
+
+    $stem = switch ($Arch) {
+        "x64" { "diffractor64" }
+        "x86" { "diffractor32" }
+        default { "diffractor-arm64" }
     }
+
+    if ($WinStore -and $Arch -ne "arm64") { $stem = "diffractor" }
+    elseif ($Configuration -eq "Debug") { $stem = "$stem-d" }
+
+    return Join-Path $SourceFilesDir "$stem.exe"
 }
 
 function Invoke-SignTool {
@@ -398,23 +430,14 @@ function Add-ToSymbolStore {
 
 function Clear-IncrementalLink {
     # Release builds must ship a full link, so drop the incremental LTCG state (.iobj/.ipdb)
-    # and the previous binaries that let the linker patch instead of relink.
+    # and the previous binaries that let the linker patch instead of relink. /LTCG:incremental
+    # writes that state beside the output, which is exe/.
     param(
-        [string]$Configuration,
-        [string[]]$Platforms,
         [string[]]$Targets
     )
 
     Write-Host ""
     Write-Host "Removing incremental link artifacts for a full link..." -ForegroundColor Yellow
-
-    foreach ($platform in $Platforms) {
-        $intDir = Join-Path $ScriptDir "intermediate\$Configuration\$platform"
-        if (Test-Path $intDir) {
-            Get-ChildItem $intDir -Recurse -File -Include *.iobj, *.ipdb, *.ilk -ErrorAction SilentlyContinue |
-                Remove-Item -Force -ErrorAction SilentlyContinue
-        }
-    }
 
     foreach ($target in $Targets) {
         # The .pdb is left alone: the compiler and linker share it, so deleting it would
@@ -453,16 +476,16 @@ function Build-Desktop {
         }
     }
 
-    Clear-IncrementalLink -Configuration "Release" -Platforms @("Win32", "x64") -Targets @("diffractor32", "diffractor64")
+    Clear-IncrementalLink -Targets @("diffractor32", "diffractor64")
     
     # Build Win32 and x64
-    Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "Win32"
-    Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform "x64"
+    Invoke-CMakeBuild -Configuration "Release" -Arch "x86"
+    Invoke-CMakeBuild -Configuration "Release" -Arch "x64"
     
     # Sign executables
     Write-Host ""
-    $exe32 = Join-Path $SourceFilesDir "diffractor32.exe"
-    $exe64 = Join-Path $SourceFilesDir "diffractor64.exe"
+    $exe32 = Get-DiffractorExe -Configuration "Release" -Arch "x86"
+    $exe64 = Get-DiffractorExe -Configuration "Release" -Arch "x64"
 
     # Gate on the exact binary being shipped, before it is signed and packaged
     Invoke-Tests -Exe $exe64
@@ -552,9 +575,33 @@ function Build-Desktop {
 
 function Get-PythonExe {
     # The repo venv carries the tooling dependencies (Pillow, polib); a bare `python` often does not.
+    if ($IsLinuxHost) {
+        $venvPython = Join-Path $ScriptDir ".venv/bin/python3"
+        if (Test-Path $venvPython) { return $venvPython }
+        return "python3"
+    }
+
     $venvPython = Join-Path $ScriptDir ".venv\Scripts\python.exe"
     if (Test-Path $venvPython) { return $venvPython }
     return "python"
+}
+
+# The CMake/Ninja build lives in tools/dd.py so one implementation serves both hosts. This stays
+# the gateway; it does not duplicate what the backend knows.
+function Invoke-DdPython {
+    param(
+        [Parameter(Mandatory = $true)][string]$Action,
+        [string[]]$Arguments = @()
+    )
+
+    $python = Get-PythonExe
+    $script = Join-Path $ToolsDir "dd.py"
+
+    # Out-Host, not the pipeline: a function returns everything it does not consume, so without
+    # this the backend's output becomes part of Build-App's return value and the caller gets an
+    # array of log lines with the path at the end.
+    & $python $script $Action @Arguments | Out-Host
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 function Assert-StoreVersionUnused {
@@ -612,14 +659,13 @@ function Build-Store {
         Remove-Item $PackageRoot -Recurse -Force
     }
 
-    Clear-IncrementalLink -Configuration "WinStore" -Platforms @("x64") -Targets @("diffractor")
+    Clear-IncrementalLink -Targets @("diffractor")
     
-    # Build WinStore configuration
-    # Invoke-MSBuild -Project "src\app.vcxproj" -Configuration "WinStore" -Platform "x64"
-    Invoke-MSBuild -Project "df.sln" -Configuration "WinStore" -Platform "x64"
+    # Build the Store variant: Release plus the WINSTORE define
+    Invoke-CMakeBuild -Configuration "Release" -Arch "x64" -WinStore
     
     # Gate on the exact binary being shipped, before it is signed and packaged
-    $storeExe = Join-Path $SourceFilesDir "diffractor.exe"
+    $storeExe = Get-DiffractorExe -Arch "x64" -WinStore
     Invoke-Tests -Exe $storeExe
 
     # Sign executable
@@ -813,8 +859,9 @@ function Build-App {
 
     # Build the Release executable if it is missing or out of date relative to the
     # source files. Returns the path to the executable for $Platform.
-    $exeName = if ($Platform -eq "Win32") { "diffractor32.exe" } else { "diffractor64.exe" }
-    $exe = Join-Path $SourceFilesDir $exeName
+    $arch = if ($Platform -eq "Win32") { "x86" } else { "x64" }
+    $exe = Get-DiffractorExe -Configuration "Release" -Arch $arch
+    $exeName = Split-Path $exe -Leaf
 
     $needBuild = $false
     if (-not (Test-Path $exe)) {
@@ -833,7 +880,7 @@ function Build-App {
     }
 
     if ($needBuild) {
-        Invoke-MSBuild -Project "df.sln" -Configuration "Release" -Platform $Platform
+        Invoke-CMakeBuild -Configuration "Release" -Arch $arch
     }
     else {
         Write-Host "$exeName is up to date." -ForegroundColor Green
@@ -853,13 +900,23 @@ function Invoke-Tests {
         [string]$Exe
     )
 
-    # Release builds gate on the exe they are about to ship; plain `dd test` builds one.
-    $testExe = if ($Exe) { $Exe } else { Build-App }
-
     Write-Host ""
     Write-Host "============================================================================" -ForegroundColor Cyan
-    Write-Host "Running Tests and Validating Translation Files" -ForegroundColor Cyan
+    Write-Host "Running Lint, Tests and Validating Translation Files" -ForegroundColor Cyan
     Write-Host "============================================================================" -ForegroundColor Cyan
+
+    # Lint before the build: it is the cheapest gate in the repository, and it catches
+    # boundary violations (platform code outside platform*, raw threads, SQLite outside its
+    # owner, stale doc anchors) that a passing unit test cannot see. Running it first means a
+    # boundary failure costs seconds rather than a full Release build.
+    Write-Host ""
+    Write-Host "Linting repository (AGENTS.md boundaries and doc integrity)..." -ForegroundColor Yellow
+    Write-Host ""
+    & pwsh -NoProfile -File (Join-Path $ToolsDir "lint_repo.ps1") | Out-Host
+    $lintResult = $LASTEXITCODE
+
+    # Release builds gate on the exe they are about to ship; plain `dd test` builds one.
+    $testExe = if ($Exe) { $Exe } else { Build-App }
 
     # Build the test arguments. When a temp path is supplied, the file-I/O tests do their
     # scratch work there (e.g. \\bean.local\home\tmp to exercise the SMB read-after-write paths).
@@ -895,14 +952,17 @@ function Invoke-Tests {
     $transResult = $LASTEXITCODE
 
     Write-Host ""
-    if ($testResult -eq 0 -and $poResult -eq 0 -and $transResult -eq 0) {
+    if ($lintResult -eq 0 -and $testResult -eq 0 -and $poResult -eq 0 -and $transResult -eq 0) {
         Write-Host "============================================================================" -ForegroundColor Green
-        Write-Host "All tests passed and .po files are valid!" -ForegroundColor Green
+        Write-Host "Lint is clean, all tests passed and .po files are valid!" -ForegroundColor Green
         Write-Host "============================================================================" -ForegroundColor Green
         Write-Host ""
     }
     else {
         Write-Host "============================================================================" -ForegroundColor Red
+        if ($lintResult -ne 0) {
+            Write-Host "Repository lint FAILED (exit code $lintResult)." -ForegroundColor Red
+        }
         if ($testResult -ne 0) {
             Write-Host "Unit tests FAILED (exit code $testResult)." -ForegroundColor Red
         }
@@ -1267,17 +1327,34 @@ switch ($Command) {
     "store" { Build-Store }
     "deploy" { Deploy-Desktop }
     "release" { New-GitHubRelease }
-    "run" { Start-Diffractor }
     "run32" { Start-Diffractor -Platform "Win32" }
     "cpu" { Start-Diffractor -SoftwareRendering }
-    "build" { Invoke-BumpBuild; Build-App | Out-Null }
-    "test" { Invoke-Tests }
     "bean" { Invoke-Tests -TempPath "\\bean.local\home\tmp" }
     "code" { Open-VSCode }
     "loc" { Update-Locations }
     "bump-build" { Invoke-BumpBuild }
     "bump-ver" { Invoke-BumpVersion }
     "clear-cache" { Clear-IconCache }
+
+    # Cross-platform, delegated to tools/dd.py.
+    "setup" { Invoke-DdPython -Action "setup" -Arguments $Rest }
+    "configure" { Invoke-DdPython -Action "configure" -Arguments $Rest }
+    "clean" { Invoke-DdPython -Action "clean" -Arguments $Rest }
+    "info" { Invoke-DdPython -Action "info" -Arguments $Rest }
+
+    "build" {
+        if ($IsLinuxHost) { Invoke-DdPython -Action "build" -Arguments $Rest }
+        else { Invoke-BumpBuild; Build-App | Out-Null }
+    }
+    "test" {
+        if ($IsLinuxHost) { Invoke-DdPython -Action "test" -Arguments $Rest }
+        else { Invoke-Tests }
+    }
+    "run" {
+        if ($IsLinuxHost) { Invoke-DdPython -Action "run" -Arguments $Rest }
+        else { Start-Diffractor }
+    }
+
     "help" { Show-Usage }
     "" { Show-Usage }
     default { Show-Usage }

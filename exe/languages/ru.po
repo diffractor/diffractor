@@ -594,11 +594,11 @@ msgstr "Сортировать по дате изменения"
 msgid "Sort by Date created"
 msgstr "Сортировать по дате создания"
 
-msgid "Sort dates ascending"
-msgstr "Сортировать даты по возрастанию"
+msgid "Show oldest items first"
+msgstr "Показывать сначала старые элементы"
 
-msgid "Sort dates descending"
-msgstr "Сортировать даты по убыванию"
+msgid "Show newest items first"
+msgstr "Показывать сначала новые элементы"
 
 msgid "Sort by Group order (Default)"
 msgstr "Сортировать по порядку группы (по умолчанию)"
@@ -732,11 +732,11 @@ msgstr "Показать диски"
 msgid "Show history chart"
 msgstr "Показать диаграмму истории"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Начальный год графика истории. Пусто — по умолчанию 10 лет."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Самый ранний год в навигаторе истории. Пустое значение определяется по вашим фотографиям."
 
-msgid "Show collection folders"
-msgstr "Показывать папки коллекции"
+msgid "Shows the eight years ending here."
+msgstr "Показывает восемь лет, заканчивающихся здесь."
 
 msgid "Show favorite searches"
 msgstr "Показать избранные поисковые запросы"
@@ -1020,17 +1020,8 @@ msgstr "Ваша коллекция — это выбранные вами па�
 msgid "folder"
 msgstr "папка"
 
-msgid "music"
-msgstr "музыка"
-
 msgid "folders"
 msgstr "папки"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "изображения"
 
 msgid "Folder"
 msgstr "Папка"
@@ -2579,6 +2570,9 @@ msgstr "модифицированный"
 msgid "or"
 msgstr "или"
 
+msgid "original"
+msgstr "оригинал"
+
 msgid "related"
 msgstr "связанный"
 
@@ -3672,3 +3666,12 @@ msgstr "Восстановлено после проблемы при запус
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor неожиданно закрылся, не завершив запуск, поэтому в этом сеансе используется макет по умолчанию с отключённым аппаратным ускорением. Ваши файлы, коллекция и недавние элементы не изменились. Восстановить настройки можно в разделе «Параметры»."
+
+msgid "Original//date"
+msgstr "Оригинал"
+
+msgid "Group by Date Original"
+msgstr "Группировать по дате оригинала"
+
+msgid "Sort by Date original"
+msgstr "Сортировать по дате оригинала"

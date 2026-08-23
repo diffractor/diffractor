@@ -12,9 +12,13 @@
 #include "test.h"
 #include "util_simd.h"
 #include "av_format.h"
+#include "render_software.h"
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "ui_elements.h"
+#include "ui_charts.h"
+#include "ui_globe.h"
+#include "ui_panorama.h"
 
 static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const float alpha)
 {
@@ -829,9 +833,694 @@ static void should_desaturate_to_grey()
 	}
 }
 
+static void should_rasterise_tiles_identically_to_the_whole_surface()
+{
+	const auto probe = ui::probe_software_rasterizer();
+
+	assert_equal(true, probe.tiles > 1, "the scene was split across tiles");
+	assert_equal(true, probe.painted_pixels > 1000, "the scene painted something to compare");
+	assert_equal(0, probe.mismatched_pixels, "tiled rasterisation matches the whole surface");
+}
+
+// The backend parity contract says the same scene is the same picture everywhere, and nothing
+// checked that across a machine: probe_software_rasterizer compares two renderings inside one
+// process, which cannot see one platform disagreeing with another. These samples are that artifact.
+//
+// Compared within a tolerance, not hashed. An exact digest of this scene is stable across MSVC and
+// GCC but *not* across MSVC Debug and Release, because the rasterizer is float arithmetic an
+// optimiser may reassociate - so an exact comparison fails for a reason this code does not own. A
+// structural break, which is what the gate is for, moves a sample far further than a rounding step:
+// a transposed, mirrored or channel-swapped blit, or a blend against the wrong background, changes
+// whole channels.
+static void should_rasterise_one_scene_to_one_answer_on_every_platform()
+{
+	// Recorded 2026-08-16 from MSVC x64 Debug, and holding unchanged under MSVC x64 Release and
+	// GCC 13 x86-64 in both configurations. Re-record from a run on both platforms when the scene
+	// or a primitive changes.
+	// The first and last samples are the untouched fill, which is how the scene is pinned to
+	// painting only inside itself.
+	static constexpr std::array<uint32_t, ui::rasterizer_sample_count> recorded{
+		0x40404040, 0xff543e8b, 0xff3366e6, 0xff8344a1, 0xff8344a1, 0xffe6d972,
+		0xff4e4b8e, 0xff2d3d7c, 0xff6ba8a5, 0xff719d69, 0xff6c7561, 0xff869a5a,
+		0xff5e954b, 0xff56a764, 0xff406e73, 0xff26377e, 0xff838387, 0xff5b8773,
+		0xff3bbe71, 0xff84a37b, 0xff9b888c, 0xff40703f, 0xff5c7440, 0x40404040,
+	};
+
+	constexpr int tolerance = 3;
+
+	const auto probe = ui::probe_software_rasterizer();
+
+	const auto format = [](const std::array<uint32_t, ui::rasterizer_sample_count>& s)
+	{
+		std::string result;
+		for (const auto v : s) result += std::format("0x{:08x}, ", v);
+		return result;
+	};
+
+	auto within = true;
+
+	for (auto i = 0; i < ui::rasterizer_sample_count; ++i)
+	{
+		for (auto shift = 0; shift < 32; shift += 8)
+		{
+			const auto expected = static_cast<int>((recorded[i] >> shift) & 0xff);
+			const auto actual = static_cast<int>((probe.samples[i] >> shift) & 0xff);
+			if (std::abs(expected - actual) > tolerance) within = false;
+		}
+	}
+
+	// Compared as text only once a sample is out of tolerance, so the failure carries the whole
+	// vector and can be pasted back as the new record rather than reassembled a channel at a time.
+	assert_equal(format(recorded), within ? format(recorded) : format(probe.samples),
+	             "the reference scene rasterises to the recorded pixels");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The globe rasteriser
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	// An equirectangular world stand-in whose colour says where a pixel came from: everything above
+	// 45 north is green, the western hemisphere red, the eastern blue.
+	ui::const_surface_ptr make_globe_test_source()
+	{
+		auto source = std::make_shared<ui::surface>();
+		source->alloc(256, 128, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 128; ++y)
+		{
+			auto* const line = std::bit_cast<ui::color32*>(source->pixels_line(y));
+
+			for (auto x = 0; x < 256; ++x)
+			{
+				line[x] = y < 32
+					          ? ui::rgba(0, 255, 0)
+					          : x < 128
+					          ? ui::rgba(255, 0, 0)
+					          : ui::rgba(0, 0, 255);
+			}
+		}
+
+		return source;
+	}
+
+	// Red at full brightness with a triangular ramp in blue. Shading scales both channels by the
+	// same factor, so blue/red recovers where a rendered pixel sampled from, whatever the light did
+	// to it. The ramp is a triangle rather than a saw so that it is continuous across the date line
+	// too - a saw would jump 255 to 0 there and every reading near the seam would be a blend of the
+	// two ends rather than a position.
+	ui::const_surface_ptr make_globe_ramp_source()
+	{
+		auto source = std::make_shared<ui::surface>();
+		source->alloc(256, 128, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 128; ++y)
+		{
+			auto* const line = std::bit_cast<ui::color32*>(source->pixels_line(y));
+
+			for (auto x = 0; x < 256; ++x)
+			{
+				const auto ramp = static_cast<uint32_t>(x < 128 ? x * 2 : (255 - x) * 2);
+				line[x] = ui::rgba(255, 0, ramp);
+			}
+		}
+
+		return source;
+	}
+
+	// Which of the source's three colours a rendered pixel came from, whatever the shading did to
+	// its brightness. '-' when nothing is drawn there.
+	char globe_hue(const ui::color32 c)
+	{
+		if (ui::get_a(c) < 128) return '-';
+
+		const auto r = ui::get_r(c);
+		const auto g = ui::get_g(c);
+		const auto b = ui::get_b(c);
+
+		if (r > g && r > b) return 'r';
+		if (g > r && g > b) return 'g';
+		if (b > r && b > g) return 'b';
+		return '?';
+	}
+}
+
+static void should_render_the_globe()
+{
+	globe_renderer renderer;
+	renderer.set_source(make_globe_test_source());
+	assert_equal(true, renderer.is_ready(), "the renderer keeps the world it was given", "globe render");
+
+	constexpr int radius = 100;
+	constexpr pointi center(104, 104);
+
+	ui::surface destination;
+	destination.alloc(208, 208, ui::texture_format::ARGB);
+
+	const auto render_view = [&](const gps_coordinate view)
+	{
+		return renderer.render(destination, globe_projection(view, center, radius));
+	};
+
+	assert_equal(true, render_view({0.0, -90.0}), "a view renders", "globe render");
+	assert_equal('r', globe_hue(destination.get_pixel(center.x, center.y)),
+	             "the western hemisphere holds the centre", "globe render");
+
+	assert_equal(true, render_view({0.0, 90.0}), "the opposite view renders", "globe render");
+	assert_equal('b', globe_hue(destination.get_pixel(center.x, center.y)), "and so does the eastern",
+	             "globe render");
+
+	assert_equal(true, render_view({60.0, 0.0}), "a northern view renders", "globe render");
+	assert_equal('g', globe_hue(destination.get_pixel(center.x, center.y)), "the north faces the viewer",
+	             "globe render");
+
+	// Off the sphere is nothing at all, and the limb is neither hard nor missing.
+	assert_equal(0u, ui::get_a(destination.get_pixel(center.x + radius + 4, center.y)),
+	             "beyond the sphere is transparent", "globe render");
+	assert_equal(255u, ui::get_a(destination.get_pixel(center.x, center.y)), "the centre is opaque",
+	             "globe render");
+
+	auto feathered = false;
+
+	for (auto x = center.x + radius - 3; x <= center.x + radius + 1; ++x)
+	{
+		const auto alpha = ui::get_a(destination.get_pixel(x, center.y));
+		if (alpha > 0 && alpha < 255) feathered = true;
+	}
+
+	assert_equal(true, feathered, "the limb is antialiased rather than a staircase", "globe render");
+
+	// Where the hemispheres meet says the projection reached the rasteriser: at a view 45 degrees
+	// west of the meridian the seam is drawn at sin(45) of the radius, east of centre.
+	const auto seam_at = [&](const gps_coordinate view)
+	{
+		render_view(view);
+		auto previous = globe_hue(destination.get_pixel(center.x - radius + 2, center.y));
+		auto seam = -1000;
+		auto seams = 0;
+
+		for (auto x = center.x - radius + 3; x <= center.x + radius - 2; ++x)
+		{
+			const auto hue = globe_hue(destination.get_pixel(x, center.y));
+			if (hue == '-' || hue == '?') continue;
+			if (hue != previous)
+			{
+				++seams;
+				seam = x - center.x;
+			}
+			previous = hue;
+		}
+
+		return std::pair{seam, seams};
+	};
+
+	const auto [meridian, meridian_seams] = seam_at({0.0, 0.0});
+	assert_equal(1, meridian_seams, "the meridian is crossed once", "globe render");
+	assert_near(0.0, meridian, 2.0, "and sits at the centre", "globe render");
+
+	const auto [offset, offset_seams] = seam_at({0.0, -45.0});
+	assert_equal(1, offset_seams, "an offset view still crosses once", "globe render");
+	assert_near(radius * 0.7071, offset, 3.0, "at the sine of the turn", "globe render");
+
+	// The date line is where interpolating longitude across a segment goes wrong: a segment that
+	// straddles it and is not unwrapped sweeps the whole map backwards. Note the view is 179.9 and
+	// not 180: gps_coordinate spends exactly 180 as its "no coordinate" sentinel, and a projection
+	// handed one falls back to the meridian - which would test nothing at all here.
+	const gps_coordinate date_line_view(0.0, 179.9);
+
+	const auto [date_line, date_line_seams] = seam_at(date_line_view);
+	assert_equal(1, date_line_seams, "the date line is crossed once, not many times", "globe render");
+	assert_near(0.0, date_line, 2.0, "and it too sits where the view says", "globe render");
+
+	globe_renderer ramp;
+	ramp.set_source(make_globe_ramp_source());
+	assert_equal(true, ramp.render(destination, globe_projection(date_line_view, center, radius)),
+	             "a world that says where each pixel came from renders", "globe render");
+
+	// Away from the limb the view turns about half a degree per pixel, so the ramp read off the
+	// pixels moves by about one step at a time. A segment interpolated without unwrapping sweeps
+	// the whole map inside sixteen pixels, so its readings jump by tens - which is a defect of the
+	// sampling itself, and neither a hue nor a run length can see it.
+	// Away from the limb the view turns about half a degree per pixel, so the ramp read off the
+	// pixels moves about a step at a time; measured, the largest step is 1.4. A segment interpolated
+	// without unwrapping sweeps the whole map inside sixteen pixels and that becomes 32, which is a
+	// defect of the sampling itself that neither a hue nor a run length can see.
+	auto jumps = 0;
+	auto previous = -1.0;
+
+	for (auto x = center.x - radius / 2; x <= center.x + radius / 2; ++x)
+	{
+		const auto c = destination.get_pixel(x, center.y);
+		const auto red = static_cast<double>(ui::get_r(c));
+		if (ui::get_a(c) != 255 || red < 16.0) continue;
+
+		const auto position = 255.0 * ui::get_b(c) / red;
+		if (previous >= 0.0 && std::abs(position - previous) > 8.0) ++jumps;
+		previous = position;
+	}
+
+	assert_equal(0, jumps, "the row samples the map continuously across the date line", "globe render");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The panorama rasteriser
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+	// An equirectangular source whose colour says which quadrant of itself a pixel came from, so a
+	// rendered pixel can be traced back to a longitude and a latitude rather than only to "some
+	// pixel". Green is the northern half; red and blue split the southern half west and east.
+	ui::const_surface_ptr make_panorama_test_source()
+	{
+		auto source = std::make_shared<ui::surface>();
+		source->alloc(512, 256, ui::texture_format::ARGB);
+
+		for (auto y = 0; y < 256; ++y)
+		{
+			auto* const line = std::bit_cast<ui::color32*>(source->pixels_line(y));
+
+			for (auto x = 0; x < 512; ++x)
+			{
+				line[x] = y < 128
+					          ? ui::rgba(0, 255, 0)
+					          : x < 256
+					          ? ui::rgba(255, 0, 0)
+					          : ui::rgba(0, 0, 255);
+			}
+		}
+
+		return source;
+	}
+
+	char panorama_hue(const ui::color32 c)
+	{
+		if (ui::get_a(c) < 128) return '-';
+
+		const auto r = ui::get_r(c);
+		const auto g = ui::get_g(c);
+		const auto b = ui::get_b(c);
+
+		if (r > g && r > b) return 'r';
+		if (g > r && g > b) return 'g';
+		if (b > r && b > g) return 'b';
+		return '?';
+	}
+}
+
+static void should_render_a_projected_panorama()
+{
+	panorama_renderer renderer;
+	renderer.set_source(make_panorama_test_source());
+	assert_equal(true, renderer.is_ready(), "the renderer keeps the source it was given", "panorama render");
+
+	const prop::panorama_geometry sphere{512, 256, 0, 0, 512, 256};
+
+	ui::surface destination;
+	destination.alloc(240, 160, ui::texture_format::ARGB);
+
+	constexpr auto middle_x = 120;
+	constexpr auto middle_y = 80;
+
+	panorama_view view;
+	view.reset(sphere);
+	assert_equal(true, renderer.render(destination, sphere, view), "a view renders", "panorama render");
+
+	// Facing the middle of the sphere is facing the boundary of the two southern quadrants, so the
+	// pixel just left of centre is western and the one just right of it is eastern. An asymmetric
+	// probe: "both halves appear" would pass for a mirrored projection too.
+	assert_equal('r', panorama_hue(destination.get_pixel(middle_x - 8, middle_y + 40)),
+	             "west of the centre is the western quadrant", "panorama render");
+	assert_equal('b', panorama_hue(destination.get_pixel(middle_x + 8, middle_y + 40)),
+	             "and east of it is the eastern", "panorama render");
+	assert_equal('g', panorama_hue(destination.get_pixel(middle_x, middle_y - 40)),
+	             "above the horizon is the northern half", "panorama render");
+
+	// Turning east brings the eastern quadrant under the centre. A quarter turn is unambiguous:
+	// nothing else in the source is blue on both sides of the middle.
+	view.look_at(M_PI / 2.0, 0.0);
+	assert_equal(true, renderer.render(destination, sphere, view), "a turned view renders", "panorama render");
+	assert_equal('b', panorama_hue(destination.get_pixel(middle_x - 8, middle_y + 40)),
+	             "a quarter turn east puts the eastern quadrant under the whole centre", "panorama render");
+	assert_equal('b', panorama_hue(destination.get_pixel(middle_x + 8, middle_y + 40)),
+	             "on both sides of it", "panorama render");
+
+	// Looking up fills the frame with the northern half, including below the middle, which the
+	// level view never does.
+	view.look_at(0.0, M_PI / 2.0);
+	assert_equal(true, renderer.render(destination, sphere, view), "an upward view renders", "panorama render");
+	assert_equal('g', panorama_hue(destination.get_pixel(middle_x, middle_y + 40)),
+	             "looking up is the northern half all the way down the frame", "panorama render");
+
+	// A partial panorama ends. Its sky is not stretched to the top of the frame and it is not the
+	// nearest row repeated - it is nothing, which is the honest answer and the one the flat draw
+	// could not give.
+	const auto strip = prop::panorama_geometry::assumed({512, 64});
+	auto strip_source = std::make_shared<ui::surface>();
+	strip_source->alloc(512, 64, ui::texture_format::ARGB);
+	for (auto y = 0; y < 64; ++y)
+	{
+		auto* const line = std::bit_cast<ui::color32*>(strip_source->pixels_line(y));
+		for (auto x = 0; x < 512; ++x) line[x] = ui::rgba(255, 0, 0);
+	}
+
+	panorama_renderer partial;
+	partial.set_source(strip_source);
+
+	panorama_view strip_view;
+	strip_view.reset(strip);
+	assert_equal(true, partial.render(destination, strip, strip_view), "a partial panorama renders",
+	             "panorama render");
+	assert_equal('r', panorama_hue(destination.get_pixel(middle_x, middle_y)),
+	             "the strip itself is drawn on the horizon", "panorama render");
+	assert_equal('-', panorama_hue(destination.get_pixel(middle_x, 2)),
+	             "and above it is sphere the file does not hold", "panorama render");
+	assert_equal('-', panorama_hue(destination.get_pixel(middle_x, 157)),
+	             "as is below it", "panorama render");
+
+	// The drawn area must be the covered area, column by column. A screen row is a curve in
+	// latitude, so a renderer that decides coverage once per segment paints across the edge where
+	// the curve bulges out and bites lumps out of it where it bulges in - both quantised to the
+	// segment width, which is what makes the edge read as ragged instead of as an edge. One pixel
+	// of tolerance for the boundary itself; anything beyond that is a segment-sized error.
+	const auto check_edges = [&](const panorama_view& probe, const std::string_view what)
+	{
+		const auto dims = destination.dimensions();
+		auto over = 0;
+		auto under = 0;
+
+		for (auto x = 0; x < dims.cx; ++x)
+		{
+			auto first = -1;
+			auto last = -2;
+
+			for (auto y = 0; y < dims.cy; ++y)
+			{
+				double u, v;
+				if (!probe.texel_at(x + 0.5, y + 0.5, sized(dims), strip, u, v)) continue;
+				if (first < 0) first = y;
+				last = y;
+			}
+
+			for (auto y = 0; y < dims.cy; ++y)
+			{
+				const auto drawn = ui::get_a(destination.get_pixel(x, y)) >= 128;
+				if (drawn && (y < first - 1 || y > last + 1)) ++over;
+				if (!drawn && y > first && y < last) ++under;
+			}
+		}
+
+		assert_equal(0, over, std::format("{}: nothing is drawn outside the file's own band", what),
+		             "panorama render");
+		assert_equal(0, under, std::format("{}: nothing inside it is left out", what), "panorama render");
+	};
+
+	check_edges(strip_view, "level");
+
+	// Pitched, where the row curve is at its most bowed and a per-segment decision is most wrong.
+	strip_view.look_at(0.0, 12.0 * M_PI / 180.0);
+	assert_equal(true, partial.render(destination, strip, strip_view), "a pitched partial renders",
+	             "panorama render");
+	check_edges(strip_view, "pitched");
+
+	// The decode hands out planar YUV unless something says it will read the pixels itself. Walked
+	// as colour values a luma plane is grey and tiles, and it fails looking like a broken projection
+	// rather than like a surface that cannot be read - so the renderer refuses it outright.
+	auto planar = std::make_shared<ui::surface>();
+	planar->alloc(512, 256, ui::texture_format::NV12);
+
+	panorama_renderer yuv;
+	yuv.set_source(planar);
+	assert_equal(false, yuv.is_ready(), "a planar source is refused rather than misread", "panorama render");
+	assert_equal(false, yuv.render(destination, sphere, view), "and renders nothing", "panorama render");
+}
+
+static void should_scale_month_blocks_logarithmically()
+{
+	assert_equal(0.0, chart_log_height(0, 1000), "an empty month has no block", "chart height");
+	assert_equal(1.0, chart_log_height(1000, 1000), "the fullest month fills the row", "chart height");
+
+	// The point of the log: a month holding a hundredth of the busiest month still earns a third of
+	// the height. Scaled linearly it would be a line the user cannot see, let alone judge.
+	const auto hundredth = chart_log_height(10, 1000);
+	assert_equal(true, hundredth > 0.3, "a quiet month stays visible beside a holiday month", "chart height");
+	assert_equal(true, hundredth < 1.0, "and still reads as the smaller of the two", "chart height");
+
+	auto monotonic = true;
+	auto previous = -1.0;
+
+	for (uint64_t count = 0; count <= 1000; count += 7)
+	{
+		const auto height = chart_log_height(count, 1000);
+		if (height < previous) monotonic = false;
+		previous = height;
+	}
+
+	assert_equal(true, monotonic, "more items are never shorter", "chart height");
+}
+
+static void should_point_at_the_pie_wedge_that_was_drawn()
+{
+	const auto build = [](const bool raise_back, chart_surface& chart)
+	{
+		assert_equal(true, chart.prepare({160, 160}), "prepare the pie surface", "pie chart");
+
+		pie_chart_scene scene;
+
+		// Two halves, two colours, two identities. Segment zero is the back of the tilted disc,
+		// which is where the largest media type is placed, so a pixel that reports the wrong half
+		// would put the wrong search behind a click.
+		for (auto i = 0; i < pie_chart_segment_count; ++i)
+		{
+			const auto back = i < pie_chart_segment_count / 2;
+			scene.wedges[i] = {
+				back ? ui::rgba(255, 0, 0, 255) : ui::rgba(0, 0, 255, 255),
+				static_cast<uint16_t>(back ? pie_chart_wedge_id_base : pie_chart_wedge_id_base + 1),
+				back && raise_back
+			};
+		}
+
+		scene.hole_color = ui::rgba(0, 255, 0, 255);
+		render_pie_chart(chart, scene);
+	};
+
+	chart_surface chart;
+	build(false, chart);
+
+	const auto extent = chart.extent();
+
+	assert_equal(static_cast<int>(pie_chart_hole_id),
+	             static_cast<int>(chart.id_at({extent.cx / 2, extent.cy / 2})),
+	             "the well floor is what the centre of the chart points at", "pie chart");
+
+	auto back_pixels = 0;
+	auto front_pixels = 0;
+	auto mismatches = 0;
+	auto back_top = extent.cy;
+
+	for (auto y = 1; y < extent.cy - 1; ++y)
+	{
+		for (auto x = 1; x < extent.cx - 1; ++x)
+		{
+			const auto id = chart.id_at({x, y});
+			if (id < pie_chart_wedge_id_base) continue;
+
+			const auto back = id == pie_chart_wedge_id_base;
+			if (back) back_top = std::min(back_top, y);
+
+			// Only pixels the reduction did not mix, so this measures the identity buffer rather
+			// than the antialiasing along the seam between the halves.
+			if (chart.id_at({x - 1, y}) != id || chart.id_at({x + 1, y}) != id ||
+				chart.id_at({x, y - 1}) != id || chart.id_at({x, y + 1}) != id)
+			{
+				continue;
+			}
+
+			const auto c = chart.pixels()->get_pixel(x, y);
+
+			if (back)
+			{
+				++back_pixels;
+				if (ui::get_r(c) <= ui::get_b(c)) ++mismatches;
+			}
+			else
+			{
+				++front_pixels;
+				if (ui::get_b(c) <= ui::get_r(c)) ++mismatches;
+			}
+		}
+	}
+
+	assert_equal(true, back_pixels > 200, "the back half is drawn", "pie chart");
+	assert_equal(true, front_pixels > 200, "the front half is drawn", "pie chart");
+	assert_equal(0, mismatches, "every identity names the wedge whose colour that pixel is", "pie chart");
+
+	chart_surface raised;
+	build(true, raised);
+
+	auto raised_back_top = extent.cy;
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			if (raised.id_at({x, y}) == pie_chart_wedge_id_base) raised_back_top = std::min(raised_back_top, y);
+		}
+	}
+
+	assert_equal(true, raised_back_top < back_top, "a hovered media type lifts out of the disc", "pie chart");
+}
+
+static void should_reach_every_month_block_in_the_calendar()
+{
+	const sizei extent(240, 20);
+	const calendar_chart_style style{3, 2, 4, 2};
+
+	const auto build = [extent, style](const bool raise, chart_surface& chart)
+	{
+		assert_equal(true, chart.prepare(extent), "prepare the calendar surface", "calendar chart");
+
+		std::vector<calendar_chart_cell> cells;
+
+		for (auto m = 0; m < 12; ++m)
+		{
+			// The last month stands for one the collection has not reached: a socket with no
+			// identity, so it is drawn but cannot be aimed at.
+			const auto future = m == 11;
+			cells.emplace_back(recti(df::mul_div(m, extent.cx, 12), 0, df::mul_div(m + 1, extent.cx, 12), extent.cy),
+			                   future ? 0 : m,
+			                   ui::rgba(200, 200, 200, 255),
+			                   future ? chart_surface::no_id : static_cast<uint16_t>(m + 1),
+			                   raise && m == 5);
+		}
+
+		render_calendar_chart(chart, cells, style);
+		return cells;
+	};
+
+	chart_surface chart;
+	const auto cells = build(false, chart);
+
+	std::array<int, 13> found{};
+	std::array<int, 13> top{};
+	std::ranges::fill(top, extent.cy);
+	auto strays = 0;
+	auto future_pixels = 0;
+
+	const auto& future_cell = cells[11].cell;
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			const auto id = chart.id_at({x, y});
+			if (id == chart_surface::no_id) continue;
+
+			found[id] += 1;
+			top[id] = std::min(top[id], y);
+
+			// design.md targeting: a block may lean into the column to its right by its own depth
+			// and no further, or the pointer selects a month it is not over.
+			const auto& cell = cells[id - 1].cell;
+			if (x < cell.left || x > cell.right + style.depth_x) ++strays;
+			if (x >= future_cell.left + style.depth_x) ++future_pixels;
+		}
+	}
+
+	for (auto m = 0; m < 11; ++m)
+	{
+		assert_equal(true, found[m + 1] > 0, "every month the collection covers can be pointed at", "calendar chart");
+	}
+
+	assert_equal(0, strays, "no block claims a pixel outside its own column", "calendar chart");
+	assert_equal(0, future_pixels, "a month the collection has not reached cannot be aimed at", "calendar chart");
+
+	// Height is what carries the count, so the busiest month has to stand taller than a quiet one.
+	assert_equal(true, top[11] < top[2], "a busier month rises further", "calendar chart");
+
+	chart_surface raised;
+	build(true, raised);
+
+	auto raised_top = extent.cy;
+
+	for (auto y = 0; y < extent.cy; ++y)
+	{
+		for (auto x = 0; x < extent.cx; ++x)
+		{
+			if (raised.id_at({x, y}) == 6) raised_top = std::min(raised_top, y);
+		}
+	}
+
+	assert_equal(true, raised_top < top[6], "a hovered month floats above the row", "calendar chart");
+}
+
+static void should_keep_an_overlapped_month_selectable()
+{
+	// A block tall enough to clear its own row leans over the row above. That is only allowed
+	// because the sidebar cuts it short of the block above, so the month it leans over keeps a band
+	// of its own to be pointed at. This is the contract that clamp has to honour, and the second
+	// pass here is the negative control: without the clamp the month above is simply gone.
+	const sizei extent(60, 32);
+	const calendar_chart_style style{2, 2, 3, 2};
+	constexpr auto row_height = 16;
+	constexpr auto depth_y = 2;
+	constexpr auto min_exposed = 4;
+
+	// The upper block tops out here, so the lower one may rise no further than min_exposed below
+	// it: (31 - depth_y) - 9 - min_exposed.
+	constexpr auto upper_height = 4;
+	constexpr auto upper_top = row_height - 1 - upper_height - depth_y;
+	constexpr auto clamped = row_height * 2 - 1 - depth_y - upper_top - min_exposed;
+
+	const auto reachable = [&](const int lower_height)
+	{
+		chart_surface chart;
+		assert_equal(true, chart.prepare(extent), "prepare the calendar surface", "calendar overlap");
+
+		// Cells are given in drawing order: the upper row first, so the block below occludes it.
+		const std::vector<calendar_chart_cell> cells{
+			{recti(0, 0, 30, row_height), upper_height, ui::rgba(200, 200, 200, 255), 1, false},
+			{recti(30, 0, 60, row_height), 0, ui::rgba(200, 200, 200, 255), 2, false},
+			{recti(0, row_height, 30, row_height * 2), lower_height, ui::rgba(120, 120, 120, 255), 3, false},
+			{recti(30, row_height, 60, row_height * 2), 10, ui::rgba(120, 120, 120, 255), 4, false},
+		};
+
+		render_calendar_chart(chart, cells, style);
+
+		std::array<int, 5> found{};
+
+		for (auto y = 0; y < extent.cy; ++y)
+		{
+			for (auto x = 0; x < extent.cx; ++x)
+			{
+				const auto id = chart.id_at({x, y});
+				if (id != chart_surface::no_id) found[id] += 1;
+			}
+		}
+
+		return found;
+	};
+
+	const auto clamped_found = reachable(clamped);
+
+	assert_equal(true, clamped_found[3] > 0, "the overlapping block is drawn", "calendar overlap");
+	assert_equal(true, clamped_found[1] > 0, "the month it leans over can still be pointed at", "calendar overlap");
+	assert_equal(true, clamped_found[2] > 0, "and so can an empty month beside it", "calendar overlap");
+	assert_equal(true, clamped_found[4] > 0, "as can the month that did not overlap", "calendar overlap");
+
+	const auto unclamped_found = reachable(row_height * 2 - depth_y);
+
+	assert_equal(0, unclamped_found[1], "an unbounded block would bury the month above", "calendar overlap");
+}
+
 void register_render_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
+	tests.add("Should rasterise tiles identically to the whole surface"s,
+	          should_rasterise_tiles_identically_to_the_whole_surface);
+	tests.add("Should rasterise one scene to one answer on every platform"s,
+	          should_rasterise_one_scene_to_one_answer_on_every_platform);
 	tests.add("Should convert YUV surfaces for software rendering"s,
 	          should_convert_yuv_surfaces_for_software_rendering);
 	tests.add("Should area downscale packed surfaces"s, should_area_downscale_packed_surfaces);
@@ -840,6 +1529,15 @@ void register_render_tests(view_state& state, test_registry& tests)
 	tests.add("Should animate alpha between values"s, should_animate_alpha_between_values);
 	tests.add("Should fade at the same rate on any refresh rate"s, should_fade_at_the_same_rate_on_any_refresh_rate);
 	tests.add("Should skip alpha animation when disabled"s, should_skip_alpha_animation_when_disabled);
+
+	//
+	// Sidebar charts
+	//
+	tests.add("Should scale month blocks logarithmically"s, should_scale_month_blocks_logarithmically);
+	tests.add("Should point at the pie chart wedge that was drawn"s, should_point_at_the_pie_wedge_that_was_drawn);
+	tests.add("Should reach every month block in the calendar chart"s,
+	          should_reach_every_month_block_in_the_calendar);
+	tests.add("Should keep an overlapped calendar month selectable"s, should_keep_an_overlapped_month_selectable);
 
 	//
 	// Colour adjustment
@@ -856,4 +1554,6 @@ void register_render_tests(view_state& state, test_registry& tests)
 	tests.add("Should rotate"s, should_rotate);
 	tests.add("Should rotate 133"s, should_rotate133);
 	tests.add("Should draw the logo"s, should_draw_the_logo);
+	tests.add("Should render the globe"s, should_render_the_globe);
+	tests.add("Should render a projected panorama"s, should_render_a_projected_panorama);
 }

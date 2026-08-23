@@ -39,8 +39,20 @@ enum class group_by
 	folder,
 	aspect_ratio,
 	// Not a user choice: a related search always groups by how each item is related.
-	related
+	related,
+	// Appended rather than placed beside date_created: the order is persisted as an integer, so
+	// inserting here would silently change what an existing setting means.
+	date_original
 };
+
+// The three orders whose headers are days. Anything offered for one of them - the date direction,
+// the reversal, the timeline - has to be offered for all three, or the order the upgrade migrates
+// users onto is the one order missing the affordance.
+constexpr bool is_date_group_order(const group_by order)
+{
+	return order == group_by::date_created || order == group_by::date_modified || order ==
+		group_by::date_original;
+}
 
 enum class sort_by
 {
@@ -49,7 +61,36 @@ enum class sort_by
 	size,
 	date_modified,
 	date_created,
+	date_original,
 };
+
+// Rolling a release back is ordinary, and the settings store is shared with whatever build the user
+// goes back to. An order added after that build is a number it cannot name - its group and sort
+// switches fall through to a default - so the long-standing key keeps a value every build
+// understands and the true order is stored beside it. Original is the capture time, which is what an
+// older build's "date created" resolved to, so it is the honest stand-in rather than a placeholder.
+constexpr group_by group_order_older_builds_understand(const group_by order)
+{
+	return order == group_by::date_original ? group_by::date_created : order;
+}
+
+constexpr sort_by sort_order_older_builds_understand(const sort_by order)
+{
+	return order == sort_by::date_original ? sort_by::date_created : order;
+}
+
+// Which of the two stored values to believe. The plain key is the only one an older build writes, so
+// when it no longer matches what our own stored order projects to, that build changed it while we
+// were not running and it is the one to believe.
+template <typename T, typename projection_t>
+constexpr T resolve_stored_order(const uint32_t plain, const uint32_t extended, const bool has_extended,
+                                 projection_t projection)
+{
+	if (!has_extended) return static_cast<T>(plain);
+
+	const auto stored = static_cast<T>(extended);
+	return static_cast<uint32_t>(projection(stored)) == plain ? stored : static_cast<T>(plain);
+}
 
 enum class aspect_ratio_bucket
 {
@@ -270,12 +311,25 @@ namespace df
 
 		file_size size = {};
 		date_t created = {};
+		// The file-creation concept, which is what Group by Created keys on. Kept beside `created`
+		// rather than replacing it: a tile that showed one date under a header made from the other
+		// is the same mismatch #184 reported.
+		date_t file_created = {};
 		date_t modified = {};
 
 		item_online_status online_status = item_online_status::disk;
 		ui::style::font_face title_font = ui::style::font_face::dialog;
 		item_presence presence = item_presence::unknown;
 	};
+
+	// Issue #137 - the badge counts the copies the collection holds of this file, this one included,
+	// so below two it reports "no other copy" - which the absence of a badge already says, and says
+	// more clearly. Presence is still the gate: a count drawn while the check is running would read
+	// as an answer it has not reached.
+	constexpr bool can_show_duplicates(const item_display_info& info)
+	{
+		return info.presence != item_presence::unknown && info.duplicates > 1;
+	}
 
 	// How a copy claim was reached, strongest first. Two bits, because it is packed into
 	// duplicate_info to keep that atomic lock-free (docs/collections.md section 7.1).
@@ -506,7 +560,11 @@ namespace df
 				d = md->created();
 			}
 
-			return d.is_valid() ? d : file_created;
+			if (d.is_valid()) return d;
+
+			// A metadata date is a wall clock and the index stamp is an instant. This is compared
+			// against item_element::media_created(), which converts the same stamp.
+			return file_created.is_valid() ? file_created.system_to_local() : date_t{};
 		}
 
 		item_online_status calc_online_status() const
@@ -702,24 +760,50 @@ namespace df
 			(candidate_rank == current_rank && (current.is_empty() || candidate.icmp(current) < 0)));
 	}
 
-	// Maximum number of years the sidebar history chart can hold/display. The
-	// visible span is user-configurable by start year (default 10 years); the
-	// storage is always sized to this upper bound so changing the
-	// setting does not require re-indexing. Covers collections back to ~1900s.
+	// Maximum number of years the sidebar history chart can hold. The chart itself shows one window
+	// of history_window_years at a time and a navigator to move that window; the storage is always
+	// sized to this upper bound so changing what is shown never requires re-indexing. Covers
+	// collections back to ~1900s.
 	constexpr int max_history_years = 100;
-	constexpr int default_history_years = 10;
 
-	constexpr int history_year_count(const int start_year, const int current_year)
+	// Rows in the calendar, and the span a navigator selection covers. More than this and the grid
+	// stops being something the eye can take in at once.
+	constexpr int history_window_years = 8;
+
+	// The span of years the navigator offers, which is not the span the collection literally covers.
+	struct history_range
 	{
-		return start_year > 0
-			       ? std::clamp(current_year - start_year + 1, 1, max_history_years)
-			       : default_history_years;
+		int first_year = 0;
+		int last_year = 0;
+
+		int year_count() const { return last_year - first_year + 1; }
+		bool contains(const int year) const { return year >= first_year && year <= last_year; }
+	};
+
+	constexpr history_range history_range_from_start_year(const int start_year, const int current_year)
+	{
+		return {
+			std::clamp(start_year, current_year - max_history_years + 1,
+			           current_year - history_window_years + 1),
+			current_year
+		};
 	}
 
-	constexpr int history_row_count(const int year_count, const int years_per_row)
-	{
-		return (year_count + years_per_row - 1) / years_per_row;
-	}
+	// Share of the collection the range must still hold once its oldest years are trimmed.
+	constexpr int history_coverage_percent = 99;
+
+	// An empty stretch at least this long, with no more than history_island_percent of the
+	// collection beyond it, is treated as the edge of the real history.
+	constexpr int history_gap_years = 6;
+	constexpr int history_island_percent = 5;
+
+	struct date_histogram;
+
+	// The years worth offering, given what has been indexed. Photographs carry wrong dates - a
+	// scanner that stamped 1900, a camera whose battery died and reset the clock - and a range
+	// drawn to the oldest item would squeeze the decades the collection actually lives in into a
+	// few pixels to make room for a handful of items that are not really there.
+	history_range history_auto_range(const date_histogram& dates, int current_year);
 
 	struct date_histogram
 	{
@@ -1092,6 +1176,15 @@ namespace df
 			return _cover_art;
 		}
 
+		// Decoded by the render worker and published through queue_ui, so a caller that wants pixels
+		// reads this rather than decoding the encoded blob again. Empty until it has been staged, and
+		// empty again after resource cleanup until the visible-items pass restages it.
+		ui::const_surface_ptr cover_art_surface() const
+		{
+			assert_true(ui::is_ui_thread());
+			return _cover_art_surface;
+		}
+
 		bool is_selected() const
 		{
 			return is_style_bit_set(view_element_style::selected);
@@ -1347,6 +1440,16 @@ namespace df
 			}
 
 			return d;
+		}
+
+		// When this file came to be, as distinct from when its content was made. Metadata answers
+		// it when the file carries a creation tag; the filesystem is the fallback, not the source.
+		date_t file_or_metadata_created() const
+		{
+			assert_true(ui::is_ui_thread());
+			const auto& md = _metadata;
+			const auto d = md ? md->dates.created() : date_t::null;
+			return d.is_valid() ? d : _created.system_to_local();
 		}
 
 		str::cached sidecars() const

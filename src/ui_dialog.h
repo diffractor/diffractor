@@ -940,7 +940,7 @@ namespace ui
 			if (_multiline)
 			{
 				const auto lines = str::split(existing_last_path, true,
-				                              [](const wchar_t c) { return c == '\n' || c == '\r'; });
+				                              [](const char c) { return c == '\n' || c == '\r'; });
 
 				if (!lines.empty())
 				{
@@ -1907,7 +1907,7 @@ namespace ui
 					dc.draw_rect(progress_rect, cc);
 
 					auto r = progress_rect.inflate(-2);
-					r.right = r.left + static_cast<int>(df::mul_div(std::min(pos, 1000ll),
+					r.right = r.left + static_cast<int>(df::mul_div(std::min<int64_t>(pos, 1000),
 					                                                static_cast<int64_t>(r.width()), 1000ll));
 					dc.draw_rect(r, color(0xFFFFFF, dc.colors.alpha * 0.22f));
 				}
@@ -3674,7 +3674,7 @@ public:
 
 		for (const auto& c : _controls)
 		{
-			// dont destroy controls that are in the new set
+			// don't destroy controls that are in the new set
 			if (!controls_set.contains(c))
 			{
 				c->visit_controls(destroyer);

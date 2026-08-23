@@ -316,6 +316,7 @@ struct app_text_t
 	text_t command_group_location = "Group by Location";
 	text_t command_group_rating = "Group by Rating/Label";
 	text_t command_group_created = "Group by Date Created";
+	text_t command_group_original = "Group by Date Original";
 	text_t command_group_modified = "Group by Date Modified";
 	text_t command_group_resolution = "Group by Resolution";
 	text_t command_group_camera = "Group by Camera";
@@ -323,12 +324,13 @@ struct app_text_t
 	text_t command_group_aspect_ratio = "Group by Aspect ratio";
 	text_t command_group_presence = "Group by Collection presence";
 	text_t command_group_folder = "Group by Folder";
-	text_t command_sort_dates_descending = "Sort dates descending";
-	text_t command_sort_dates_ascending = "Sort dates ascending";
+	text_t command_sort_dates_descending = "Show newest items first";
+	text_t command_sort_dates_ascending = "Show oldest items first";
 	text_t command_sort_name = "Sort by Name";
 	text_t command_sort_size = "Sort by Size";
 	text_t command_sort_def = "Sort by Group order (Default)";
 	text_t command_sort_date_created = "Sort by Date created";
+	text_t command_sort_date_original = "Sort by Date original";
 	text_t command_sort_date_modified = "Sort by Date modified";
 	text_t command_highlight_large_items = "Highlight large items in yellow";
 	text_t command_open_google_map = "Open in google maps";
@@ -353,10 +355,6 @@ struct app_text_t
 	text_t command_new_version = "New version available";
 	text_t command_check_for_updates = "Check for updates";
 	text_t searching_text = "Searching...";
-	text_t folder_onedrive = "onedrive";
-	text_t folder_picture = "picture";
-	text_t folder_video = "videos";
-	text_t folder_music = "music";
 	text_t disk_label = "Label";
 	text_t disk_capacity = "Capacity";
 	text_t disk_free = "Free//disk";
@@ -448,6 +446,7 @@ struct app_text_t
 	text_t prop_name_copyrighturl = "Copyright URL";
 	text_t prop_name_country = "Country//property";
 	text_t prop_name_createdexif = "Created exif";
+	text_t prop_name_original = "Original//date";
 	text_t prop_name_digitized = "Digitized";
 	text_t prop_name_created = "Created";
 	text_t prop_name_disk = "Disk";
@@ -641,6 +640,7 @@ struct app_text_t
 	text_t query_with = "with";
 	text_t query_without = "without";
 	text_t query_created = "created";
+	text_t query_original = "original";
 	text_t query_modified = "modified";
 	text_t query_age = "age";
 	text_t query_related = "related";
@@ -907,9 +907,8 @@ struct app_text_t
 	text_t customise_sidebar_desc = "Define what items are shown in the sidebar.";
 	text_t customize_show_total = "Show total items pie chart";
 	text_t customize_show_history = "Show history chart";
-	text_t customize_history_start_year = "History chart start year. Empty defaults to 10 years.";
+	text_t customize_history_start_year = "Earliest year the history navigator offers. Empty works it out from your photos.";
 	text_t customize_show_world_map = "Show world map";
-	text_t customize_show_indexed_folders = "Show collection folders";
 	text_t customize_show_drives = "Show drives";
 	text_t customize_show_searches = "Show favorite searches";
 	text_t customize_show_tags = "Show tags";
@@ -966,6 +965,7 @@ struct app_text_t
 	text_t items_created_fmt = "Items created {} {}";
 	text_t items_modified_fmt = "Items modified {} {}";
 	text_t open_created_modified = "Opens created items.\nCtrl+click opens modified items.";
+	text_t history_navigator_action = "Shows the eight years ending here.";
 	text_t click_items_from_fmt = "{} items close to {} in the collection.";
 	text_t map_items_close_to_fmt = "{} items close to {}";
 	text_t filter = "filter";
@@ -1004,7 +1004,7 @@ struct app_text_t
 	text_t genre_childrens = "Children's";
 	text_t genre_chorus = "Chorus";
 	text_t genre_christian_gospel = "Christian & Gospel";
-	text_t genre_christianran_reap = "Christian Rap";
+	text_t genre_christian_rap = "Christian Rap";
 	text_t genre_classic_rock = "Classic Rock";
 	text_t genre_classic = "Classic";
 	text_t genre_classical = "Classical";
@@ -1060,7 +1060,7 @@ struct app_text_t
 	text_t genre_gothic = "Gothic";
 	text_t genre_grunge = "Grunge";
 	text_t genre_hardrock = "Hard Rock";
-	text_t genre_highke = "High key";
+	text_t genre_high_key = "High key";
 	text_t genre_high_speed = "High-speed";
 	text_t genre_hip_hop = "Hip-Hop";
 	text_t genre_hip_hop_rap = "Hip-Hop/Rap";
@@ -1096,7 +1096,7 @@ struct app_text_t
 	text_t genre_musical = "Musical";
 	text_t genre_musicals = "Musicals";
 	text_t genre_narrative = "Narrative";
-	text_t genre_nationa_folk = "National Folk";
+	text_t genre_national_folk = "National Folk";
 	text_t genre_native_american = "Native American";
 	text_t genre_new_age = "New Age";
 	text_t genre_new_wave = "New Wave";

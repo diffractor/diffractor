@@ -46,12 +46,9 @@
 #include "util_spell.h"
 
 
-command_line_t command_line;
-
-auto s_app_name_l = L"Diffractor";
 const std::string_view s_app_name = "Diffractor";
-const std::string_view s_app_version = "127.1";
-const std::string_view g_app_build = "1273";
+const std::string_view s_app_version = "127.2";
+const std::string_view g_app_build = "1304";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -140,6 +137,14 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 					{"ft"s, str::to_hex(reported_features)},
 					{"i"s, str::to_hex(setting.instantiations)},
 					{"os"s, platform::OS()},
+					// The packed platform identity. It ships alongside `os` for one release rather
+					// than replacing it on the same commit, so the ingest can change without a gap
+					// in the daily series. It is its own parameter and never merged into `ft`: a
+					// feature bit means "at least once since the last report" and is cleared once
+					// sent, a system value means "right now" and is recomputed every time, and
+					// OR-accumulating an architecture would make anyone who once ran the 32-bit
+					// build look like a permanent 32-bit user.
+					{"s"s, str::to_hex(df::pack_environment(platform::environment()))},
 				};
 
 				const auto con = platform::connect_to_host("diffractor.com");
@@ -167,23 +172,6 @@ static void check_for_updates_and_location(const app_frame_ptr& app, view_state&
 #endif
 		spell().lazy_download(s._async);
 	}
-}
-
-crash_files_db& crash_files()
-{
-	static crash_files_db instance(df::probe_data_file("diffractor-files-that-crash.txt"),
-	                               crash_files_db::release_tag(s_app_version));
-	return instance;
-}
-
-void flush_open_files_to_crash_files_list()
-{
-	crash_files().flush_open_files();
-}
-
-void log_open_files_to_crash_files_list()
-{
-	crash_files().log_open_files();
 }
 
 std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index,
@@ -354,7 +342,7 @@ void media_view::update_media_elements()
 			}
 			else if (file_type->has_trait(file_traits::visualize_audio) && !media_unavailable)
 			{
-				media_element = std::make_shared<audio_control>(_state, display, _host);
+				media_element = std::make_shared<audio_control>(_state, display, _host, true);
 			}
 			else if (file_type->has_trait(file_traits::av) && !media_unavailable)
 			{
@@ -422,7 +410,11 @@ void command_line_t::parse(const std::string_view command_line_text)
 			continue;
 		}
 
-		if ((part[0] == '-' || part[0] == '/') && part.size() > 1)
+		// A leading '/' introduces a switch only where it cannot begin an absolute path. Everywhere
+		// else '/home/zac' would be read as a switch and never reach the path branch below.
+		const auto starts_switch = part[0] == '-' || (df::windows_path_semantics && part[0] == '/');
+
+		if (starts_switch && part.size() > 1)
 		{
 			const auto op = part.substr(part[1] == '-' ? 2 : 1);
 			std::string_view value;
@@ -487,74 +479,6 @@ std::string command_line_t::format_restart_cmd_line() const
 	if (no_gpu) result += " -no-gpu";
 	if (no_indexing) result += " -no-indexing";
 	return result;
-}
-
-std::string format_plural_text(const plural_text& fmt, const std::string_view first_name, const int64_t count,
-                               const df::file_size size, const int64_t of_total)
-{
-	// Select the plural form for the active language. Form 0 is the singular
-	// (fmt.one), form 1 the general plural (fmt.plural), forms >= 2 the extra
-	// Slavic forms. Missing extra forms fall back to the general plural.
-	const int form = tt.plural_form(count);
-	std::string_view template_text;
-
-	if (form <= 0)
-	{
-		template_text = fmt.one;
-	}
-	else if (form == 1)
-	{
-		template_text = fmt.plural;
-	}
-	else
-	{
-		const size_t extra = static_cast<size_t>(form) - 2;
-		template_text = (extra < fmt.extra_forms.size() && !fmt.extra_forms[extra].empty())
-			                ? std::string_view(fmt.extra_forms[extra])
-			                : std::string_view(fmt.plural);
-	}
-
-	const auto number = [](const int64_t n) { return platform::format_number(str::to_string(n)); };
-
-	auto substitute = [&](std::ostringstream& result, const std::string_view token)
-	{
-		if (token == "first-name") result << first_name;
-		else if (token == "count" || token.empty()) result << number(count);
-		else if (token == "other") result << number(count - 1);
-		else if (token == "total") result << number(of_total);
-		else if (token == "size") result << prop::format_size(size);
-	};
-
-	return str::replace_tokens(template_text, substitute);
-}
-
-std::string format_plural_text(const plural_text& fmt, const int64_t count, const int64_t of_total)
-{
-	return format_plural_text(fmt, {}, count, {}, of_total);
-}
-
-std::string format_plural_text(const plural_text& fmt, const df::item_set& items)
-{
-	const auto summary = items.summary();
-	const auto total_items = summary.total_items() + summary.total_folders();
-	return format_plural_text(fmt, items.first_name(), total_items.count, total_items.size, 0);
-}
-
-std::string format_plural_text(const plural_text& fmt, const std::vector<std::string>& result)
-{
-	const std::string_view first_name = result.empty() ? std::string_view{} : std::string_view(result.front());
-	return format_plural_text(fmt, first_name, static_cast<int64_t>(result.size()), {}, 0);
-}
-
-void rating_control::dispatch_event(const view_element_event& event)
-{
-	if (event.type == view_element_event_type::invoke)
-	{
-		auto dlg = make_dlg(event.host->owner());
-		const auto results = std::make_shared<command_status>(_state._async, dlg, icon_index::star,
-		                                                      tt.prop_name_rating, 1);
-		_state.toggle_rating(results, {_item}, _hover_rating, event.host);
-	}
 }
 
 
@@ -1057,6 +981,19 @@ static constexpr auto s_group_order = "group_order";
 static constexpr auto s_sort_order = "sort_order";
 static constexpr auto s_media_filter = "media_filter";
 static constexpr auto s_unsettled_starts = "unsettled_starts";
+static constexpr auto s_options_version = "options_version";
+
+// Bump when a release changes what a stored option means, so a value written by an older build can
+// be translated once. 1: "date created" used to resolve the capture time, which is now its own
+// order. Migrating on every start instead would make the order it migrates away from unreachable.
+static constexpr uint32_t options_version = 1;
+
+// Rolling a release back is ordinary, and both settings and the cache are shared with whatever
+// version the user goes back to. The long-standing keys therefore keep a value every build
+// understands, and the true order lives beside them under its own key. The rules are
+// `group_order_older_builds_understand` and `resolve_stored_order` in model_items.h.
+static constexpr auto s_group_order_ex = "group_order_ex";
+static constexpr auto s_sort_order_ex = "sort_order_ex";
 
 void app_frame::load_options(const platform::setting_file_ptr& store)
 {
@@ -1091,8 +1028,27 @@ void app_frame::load_options(const platform::setting_file_ptr& store)
 		auto sort_order = static_cast<uint32_t>(sort_by::name);
 		store->read({}, s_group_order, group_order);
 		store->read({}, s_sort_order, sort_order);
-		_starting_group_order = static_cast<group_by>(group_order);
-		_starting_sort_order = static_cast<sort_by>(sort_order);
+
+		auto group_order_ex = group_order;
+		auto sort_order_ex = sort_order;
+		const auto has_group_ex = store->read({}, s_group_order_ex, group_order_ex);
+		const auto has_sort_ex = store->read({}, s_sort_order_ex, sort_order_ex);
+
+		_starting_group_order = resolve_stored_order<group_by>(group_order, group_order_ex, has_group_ex,
+		                                                       group_order_older_builds_understand);
+		_starting_sort_order = resolve_stored_order<sort_by>(sort_order, sort_order_ex, has_sort_ex,
+		                                                     sort_order_older_builds_understand);
+
+		uint32_t stored_options_version = 0;
+		store->read({}, s_options_version, stored_options_version);
+
+		// Someone who chose "date created" wanted when the picture was taken, so keep giving them that
+		// (#184). Once only: after this the two orders are separate choices and both must stick.
+		if (stored_options_version < 1)
+		{
+			if (_starting_group_order == group_by::date_created) _starting_group_order = group_by::date_original;
+			if (_starting_sort_order == sort_by::date_created) _starting_sort_order = sort_by::date_original;
+		}
 
 		std::string media_filter;
 		store->read({}, s_media_filter, media_filter);
@@ -1108,8 +1064,13 @@ void app_frame::save_options(const bool search_only)
 {
 	auto& store = _settings;
 	store->write({}, s_search, _state.search().text());
-	store->write({}, s_group_order, static_cast<uint32_t>(_state.group_order()));
-	store->write({}, s_sort_order, static_cast<uint32_t>(_state.sort_order()));
+	store->write({}, s_group_order,
+	             static_cast<uint32_t>(group_order_older_builds_understand(_state.group_order())));
+	store->write({}, s_sort_order,
+	             static_cast<uint32_t>(sort_order_older_builds_understand(_state.sort_order())));
+	store->write({}, s_group_order_ex, static_cast<uint32_t>(_state.group_order()));
+	store->write({}, s_sort_order_ex, static_cast<uint32_t>(_state.sort_order()));
+	store->write({}, s_options_version, options_version);
 
 	store->write({}, s_media_filter, media_filter_to_string(_state.filter()));
 
@@ -1824,6 +1785,10 @@ void app_frame::report_safe_start()
 
 bool app_frame::key_down(const char32_t key, const ui::key_state keys)
 {
+	// Ctrl is itself a key press, so this is where the modifier that arms drawing a region first
+	// becomes known - and the pointer may not move again before the user acts on it.
+	_view_frame->sync_modifier_cursor();
+
 	if (df::command_active == 0)
 	{
 		// Step the prediction list without committing. The address bar is drawn by the items view,
@@ -3494,8 +3459,18 @@ void app_frame::free_graphics_resources(const bool items_only, const bool offscr
 	const auto logical_bounds = _view_items->calc_logical_items_bounds();
 	const auto expanded_logical_bounds = logical_bounds.inflate(0, logical_bounds.height());
 
+	// The selection panel draws cover art from the displayed item's staged surface, and nothing
+	// restages an item the listing has scrolled past, so the two items a panel can be showing keep
+	// theirs. A full release still takes them: the texture belongs to the device that is going, and
+	// the restage below puts the surfaces back.
+	const auto displayed = _state._display;
+	const auto displayed1 = displayed ? displayed->_item1 : nullptr;
+	const auto displayed2 = displayed ? displayed->_item2 : nullptr;
+
 	for (const auto& i : _state.search_items().items())
 	{
+		if (offscreen_only && (i == displayed1 || i == displayed2)) continue;
+
 		if (!offscreen_only || !i->bounds.intersects(expanded_logical_bounds))
 		{
 			i->clear_cached_surface();

@@ -627,6 +627,9 @@ static texture_binding make_texture_binding(ID3D11Device* device, ID3D11Texture2
 
 	D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
 	srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+	// Only the planar branch below uses this desc. A packed texture takes the null-desc branch and
+	// gets a view over every level, which is what a mipped panorama needs - routing one through here
+	// would give it a level-zero view and a GenerateMips that silently does nothing.
 	srv.Texture2D.MipLevels = 1;
 	srv.Texture2D.MostDetailedMip = 0;
 
@@ -684,7 +687,6 @@ class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 
 	ui::color _clr;
 	std::vector<ui::text_highlight_t> _highlights;
-	bool _horizontal_mirror = false;
 
 	coords find_glyph(uint16_t c, const DWRITE_GLYPH_RUN* glyph_run);
 	void create_a8_texture(int xy);
@@ -720,8 +722,7 @@ public:
 		return _font;
 	}
 
-	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg,
-	               bool horizontal_mirror = false);
+	void draw_text(std::string_view text, recti bounds, ui::style::text_style style, ui::color c, ui::color bg);
 
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::text_style style, ui::color clr, ui::color bg);
@@ -869,6 +870,7 @@ public:
 
 	ui::texture_update_result update(const av_frame_ptr& frame) override;
 	ui::texture_update_result update(const ui::const_surface_ptr& surface) override;
+	ui::texture_update_result update_mipped(const ui::const_surface_ptr& surface) override;
 	ui::texture_update_result update(sizei dims, ui::texture_format format, ui::orientation orientation,
 	                                 const uint8_t* pixels, size_t stride, size_t buffer_size) override;
 
@@ -900,6 +902,10 @@ struct scene_atom
 
 	ui::color_space cs = ui::color_space::rec601_limited;
 	std::shared_ptr<const ui::texture_transform> transform;
+	// Set only by the panorama draw, which binds its own shader, constant buffer and sampler. A fresh
+	// one per draw, so the constants are re-uploaded each frame - thirty-two bytes, against a frame
+	// that has just resampled or reprojected the whole viewport.
+	std::shared_ptr<const ui::panorama_params> pano;
 	recti clip_bounds;
 	bool has_clip = false;
 };
@@ -926,7 +932,7 @@ public:
 };
 
 
-class d3d11_draw_context_impl final : public draw_context_device,
+class d3d11_draw_context_impl final : public ui::draw_context_device,
                                       public std::enable_shared_from_this<d3d11_draw_context_impl>
 {
 public:
@@ -947,8 +953,10 @@ public:
 	ComPtr<ID3D11PixelShader> _pixel_shader_circle;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv_bicubic;
+	ComPtr<ID3D11PixelShader> _pixel_shader_pano;
 	ComPtr<ID3D11Buffer> _yuv_cbuffer;
 	ComPtr<ID3D11Buffer> _texture_transform_cbuffer;
+	ComPtr<ID3D11Buffer> _pano_cbuffer;
 	ComPtr<ID3D11Buffer> _vertex_buffer;
 	ComPtr<ID3D11Buffer> _index_buffer;
 	// Bytes currently allocated in the dynamic buffers above; they are reused across frames and only
@@ -959,6 +967,8 @@ public:
 	ComPtr<ID3D11RasterizerState> _rasterizer_state;
 	ComPtr<ID3D11SamplerState> _sampler_point;
 	ComPtr<ID3D11SamplerState> _sampler_bilinear;
+	ComPtr<ID3D11SamplerState> _sampler_pano_clamp;
+	ComPtr<ID3D11SamplerState> _sampler_pano_wrap;
 	// Built once per back buffer, not once per frame. Dropped by release_back_buffer_references
 	// before ResizeBuffers, which is the only thing that replaces the underlying surface.
 	ComPtr<ID3D11RenderTargetView> _back_buffer_rtv;
@@ -1026,7 +1036,8 @@ public:
 	                    ui::texture_format tex_fmt, ui::texture_sampler sampler, const vertex_2d* vertices,
 	                    size_t vertex_count, const WORD* indexes, size_t index_count,
 	                    ui::color_space cs = ui::color_space::rec601_limited,
-	                    std::shared_ptr<const ui::texture_transform> transform = nullptr);
+	                    std::shared_ptr<const ui::texture_transform> transform = nullptr,
+	                    std::shared_ptr<const ui::panorama_params> pano = nullptr);
 	void draw_texture(const texture_d3d11_ptr& t, const quadd& dst, recti src, ui::color c,
 	                  ui::texture_sampler sampler);
 	void draw_texture(const texture_d3d11_ptr& t, recti dst, recti src, ui::color c, ui::texture_sampler sampler,
@@ -1034,7 +1045,7 @@ public:
 
 	void destroy() override;
 	void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) override;
-	HRESULT render() override;
+	ui::present_result render() override;
 	void release_back_buffer_references() override;
 
 	void clear(ui::color c) override;
@@ -1043,8 +1054,6 @@ public:
 	void draw_rect_gradient(recti bounds, ui::color c_centre, ui::color c_corner) override;
 	void draw_text(std::string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
-	void draw_text_mirrored(std::string_view text, recti bounds, ui::style::font_face font,
-	                        ui::style::text_style style, ui::color c, ui::color bg) override;
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
@@ -1057,6 +1066,7 @@ public:
 	                  ui::texture_sampler sampler) override;
 	void draw_texture(const ui::texture_ptr& t, const quadd& dst, recti src, float alpha,
 	                  ui::texture_sampler sampler, const ui::texture_transform& transform) override;
+	bool draw_panorama(const ui::texture_ptr& t, recti dst, const ui::panorama_params& params, float alpha) override;
 	void draw_vertices(const ui::vertices_ptr& v) override;
 
 	ui::texture_ptr create_texture() override;
@@ -1122,8 +1132,10 @@ void d3d11_draw_context_impl::destroy()
 	_pixel_shader_circle.Reset();
 	_pixel_shader_yuv.Reset();
 	_pixel_shader_yuv_bicubic.Reset();
+	_pixel_shader_pano.Reset();
 	_yuv_cbuffer.Reset();
 	_texture_transform_cbuffer.Reset();
+	_pano_cbuffer.Reset();
 	_vertex_buffer.Reset();
 	_index_buffer.Reset();
 	_vertex_buffer_capacity = 0;
@@ -1132,6 +1144,8 @@ void d3d11_draw_context_impl::destroy()
 	_rasterizer_state.Reset();
 	_sampler_point.Reset();
 	_sampler_bilinear.Reset();
+	_sampler_pano_clamp.Reset();
+	_sampler_pano_wrap.Reset();
 }
 
 void d3d11_draw_context_impl::update_font_size(const int base_font_size)
@@ -1281,6 +1295,12 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 		if (SUCCEEDED(hr))
 		{
+			const auto shader = load_resource(IDR_SHADER_PANO, L"SHADER");
+			hr = _f->d3d_device->CreatePixelShader(shader.data(), shader.size(), nullptr, &_pixel_shader_pano);
+		}
+
+		if (SUCCEEDED(hr))
+		{
 			D3D11_BLEND_DESC desc = {};
 			desc.AlphaToCoverageEnable = FALSE;
 			desc.IndependentBlendEnable = FALSE;
@@ -1353,6 +1373,38 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 
 		if (SUCCEEDED(hr))
 		{
+			// The projection is the one place in the app that minifies a long way and samples at a
+			// glancing angle at the same time, which is what anisotropy is for. Latitude always clamps -
+			// there is no sphere past a pole - while longitude wraps for a file that closes the circle,
+			// so the blend at the join reads the far edge instead of doubling the near one.
+			D3D11_SAMPLER_DESC sampler_desc = {};
+			sampler_desc.Filter = D3D11_FILTER_ANISOTROPIC;
+			sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+			sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+			sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+			sampler_desc.MipLODBias = 0.0f;
+			sampler_desc.MaxAnisotropy = 8;
+			sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+			sampler_desc.MinLOD = -FLT_MAX;
+			sampler_desc.MaxLOD = FLT_MAX;
+
+			hr = _f->d3d_device->CreateSamplerState(&sampler_desc, &_sampler_pano_clamp);
+
+			if (SUCCEEDED(hr))
+			{
+				sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+				hr = _f->d3d_device->CreateSamplerState(&sampler_desc, &_sampler_pano_wrap);
+			}
+
+			if (FAILED(hr))
+			{
+				df::log(__FUNCTION__,
+				        std::format("CreateSamplerState panorama failed {:x}", static_cast<uint32_t>(hr)));
+			}
+		}
+
+		if (SUCCEEDED(hr))
+		{
 			// Constant buffer holding the YUV->RGB affine matrix (row_major float3x4 = 48 bytes).
 			D3D11_BUFFER_DESC bd = {};
 			bd.ByteWidth = sizeof(float) * 12;
@@ -1366,6 +1418,25 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 			{
 				df::log(__FUNCTION__,
 				        std::format("CreateBuffer for yuv params failed {:x}", static_cast<uint32_t>(hr)));
+			}
+		}
+
+		if (SUCCEEDED(hr))
+		{
+			// The panorama camera and coverage: two float4 registers, matching panorama_params in
+			// pano_project.hlsli.
+			D3D11_BUFFER_DESC bd = {};
+			bd.ByteWidth = sizeof(float) * 8;
+			bd.Usage = D3D11_USAGE_DYNAMIC;
+			bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+			bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+			hr = _f->d3d_device->CreateBuffer(&bd, nullptr, &_pano_cbuffer);
+
+			if (FAILED(hr))
+			{
+				df::log(__FUNCTION__,
+				        std::format("CreateBuffer for panorama params failed {:x}", static_cast<uint32_t>(hr)));
 			}
 		}
 
@@ -1548,10 +1619,12 @@ struct context_state final
 
 	ID3D11Buffer* yuv_cbuffer = nullptr;
 	ID3D11Buffer* texture_transform_cbuffer = nullptr;
+	ID3D11Buffer* pano_cbuffer = nullptr;
 	ui::color_space uploaded_cs = ui::color_space::rec601_limited;
 	ui::texture_format uploaded_yuv_format = ui::texture_format::None;
 	bool cs_uploaded = false;
 	const ui::texture_transform* uploaded_transform = nullptr;
+	const ui::panorama_params* uploaded_pano = nullptr;
 	bool identity_transform_uploaded = false;
 
 	ID3D11DeviceContext* context;
@@ -1586,7 +1659,9 @@ struct context_state final
 		auto* const s = a.shader;
 		auto* const view = a.tex.id();
 		const auto tx_fmt = a.tex_format;
-		auto* const required_cbuffer = tx_fmt == ui::texture_format::NV12 || tx_fmt == ui::texture_format::P010
+		auto* const required_cbuffer = a.pano
+			                               ? pano_cbuffer
+			                               : tx_fmt == ui::texture_format::NV12 || tx_fmt == ui::texture_format::P010
 			                               ? yuv_cbuffer
 			                               : tx_fmt != ui::texture_format::None
 			                               ? texture_transform_cbuffer
@@ -1626,8 +1701,34 @@ struct context_state final
 			}
 		}
 
+		if (a.pano && pano_cbuffer && a.pano.get() != uploaded_pano)
+		{
+			struct alignas(16) shader_panorama_params
+			{
+				float camera[4];
+				float coverage[4];
+			};
+
+			static_assert(sizeof(shader_panorama_params) == 32);
+			const shader_panorama_params params{
+				{a.pano->yaw, a.pano->pitch, a.pano->tan_half_fov, a.pano->aspect},
+				{a.pano->longitude_left, a.pano->u_scale, a.pano->latitude_top, a.pano->v_scale}
+			};
+
+			D3D11_MAPPED_SUBRESOURCE mapped;
+
+			if (SUCCEEDED(context->Map(pano_cbuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+			{
+				memcpy(mapped.pData, &params, sizeof(params));
+				context->Unmap(pano_cbuffer, 0);
+				df::bump(df::gpu_perf.cbuffer_uploads);
+			}
+
+			uploaded_pano = a.pano.get();
+		}
+
 		if (tx_fmt != ui::texture_format::None && tx_fmt != ui::texture_format::NV12 &&
-			tx_fmt != ui::texture_format::P010 && texture_transform_cbuffer &&
+			tx_fmt != ui::texture_format::P010 && !a.pano && texture_transform_cbuffer &&
 			(a.transform.get() != uploaded_transform || (!a.transform && !identity_transform_uploaded)))
 		{
 			struct alignas(16) shader_transform_params
@@ -1815,6 +1916,7 @@ HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& c
 		context_state state(context.Get(), _client_extent);
 		state.yuv_cbuffer = _yuv_cbuffer.Get();
 		state.texture_transform_cbuffer = _texture_transform_cbuffer.Get();
+		state.pano_cbuffer = _pano_cbuffer.Get();
 
 		for (const auto& a : _scene_atoms)
 		{
@@ -1833,7 +1935,11 @@ HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& c
 			}
 			else if (_vertex_buffer && _index_buffer)
 			{
-				const auto ss = a.sampler == ui::texture_sampler::point ? _sampler_point : _sampler_bilinear;
+				const auto ss = a.pano
+					                ? (a.pano->wraps ? _sampler_pano_wrap : _sampler_pano_clamp)
+					                : a.sampler == ui::texture_sampler::point
+					                ? _sampler_point
+					                : _sampler_bilinear;
 				state.draw_atom(a, _vertex_buffer.Get(), _index_buffer.Get(), ss.Get());
 			}
 		}
@@ -1866,21 +1972,22 @@ void d3d11_draw_context_impl::release_back_buffer_references()
 	_back_buffer_rtv.Reset();
 }
 
-HRESULT d3d11_draw_context_impl::render()
+ui::present_result d3d11_draw_context_impl::render()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
 
 	if (!is_valid() || !_swap_chain)
 	{
-		return S_OK;
+		return {};
 	}
 
 	// Uploads anything staged since the last render. A redraw that only updated a texture
 	// stages nothing and re-draws the scene from the buffers built by the last paint.
 	build_index_and_vertex_buffers();
 
-	return draw_scene(_f->d3d_context);
+	const auto hr = draw_scene(_f->d3d_context);
+	return {FAILED(hr), hr};
 }
 
 
@@ -1893,7 +2000,8 @@ void d3d11_draw_context_impl::add_scene_atom(const texture_binding& tex,
                                              const ui::texture_sampler sampler, const vertex_2d* vertices,
                                              const size_t vertex_count, const WORD* indexes, const size_t index_count,
                                              const ui::color_space cs,
-                                             std::shared_ptr<const ui::texture_transform> transform)
+                                             std::shared_ptr<const ui::texture_transform> transform,
+                                             std::shared_ptr<const ui::panorama_params> pano)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	auto combine_with_last_atom = false;
@@ -1908,7 +2016,7 @@ void d3d11_draw_context_impl::add_scene_atom(const texture_binding& tex,
 		auto&& back = _scene_atoms.back();
 		combine_with_last_atom = back.tex.id() == tex.id() && back.shader == shader.Get() &&
 			back.tex_format == tex_fmt && back.sampler == sampler && back.cs == cs &&
-			!back.transform && !transform && back.has_clip == !_clip_stack.empty() &&
+			!back.transform && !transform && !back.pano && !pano && back.has_clip == !_clip_stack.empty() &&
 			(!back.has_clip || back.clip_bounds == _clip_bounds) &&
 			(static_cast<size_t>(back.vertex_count) + vertex_count) <= std::numeric_limits<WORD>::max();
 	}
@@ -1944,6 +2052,7 @@ void d3d11_draw_context_impl::add_scene_atom(const texture_binding& tex,
 
 		sa.cs = cs;
 		sa.transform = std::move(transform);
+		sa.pano = std::move(pano);
 		sa.clip_bounds = _clip_bounds;
 		sa.has_clip = !_clip_stack.empty();
 		_scene_atoms.emplace_back(std::move(sa));
@@ -1959,6 +2068,48 @@ ID3D11PixelShader* d3d11_draw_context_impl::calc_shader(const bool is_bicubic, c
 			         ? _pixel_shader_yuv_bicubic.Get()
 			         : _pixel_shader_yuv.Get();
 	return shader;
+}
+
+// The quad carries 0..1 texture coordinates across the destination rather than a source rectangle:
+// the shader is inverting each of them onto the sphere, so there is no source rectangle to name.
+bool d3d11_draw_context_impl::draw_panorama(const ui::texture_ptr& t, const recti dst,
+                                            const ui::panorama_params& params, const float alpha)
+{
+	df::scope_rendering_func rf(__FUNCTION__);
+	df::assert_true(ui::is_ui_thread());
+
+	const auto tt = std::dynamic_pointer_cast<d3d11_texture>(t);
+
+	if (!tt || !_pixel_shader_pano || !_pano_cbuffer || !_sampler_pano_clamp || !_sampler_pano_wrap) return false;
+	if (tt->_f->d3d_device != _f->d3d_device) return false;
+
+	const auto binding = tt->binding();
+	if (!binding) return false;
+
+	const auto ex = static_cast<float>(_client_extent.cx);
+	const auto ey = static_cast<float>(_client_extent.cy);
+	const auto dl = dst.left / ex;
+	const auto dt = dst.top / ey;
+	const auto dr = dst.right / ex;
+	const auto db = dst.bottom / ey;
+
+	const ui::color c(1.0f, 1.0f, 1.0f, alpha);
+
+	const vertex_2d vertices[] =
+	{
+		vertex_2d(dl, dt, 0.0f, 0.0f, c, tt->dimensions()),
+		vertex_2d(dr, dt, 1.0f, 0.0f, c, tt->dimensions()),
+		vertex_2d(dr, db, 1.0f, 1.0f, c, tt->dimensions()),
+		vertex_2d(dl, db, 0.0f, 1.0f, c, tt->dimensions()),
+	};
+
+	const WORD indexes[] = {0, 1, 2, 3, 0, 2};
+
+	add_scene_atom(binding, _pixel_shader_pano, tt->_format, ui::texture_sampler::bilinear, vertices,
+	               std::size(vertices), indexes, std::size(indexes), tt->_cs, nullptr,
+	               std::make_shared<const ui::panorama_params>(params));
+
+	return true;
 }
 
 void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const recti dst, const recti src,
@@ -2324,6 +2475,14 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	_scene_atoms.emplace_back(std::move(bar_atom));
 }
 
+
+// The one hardware decoder this renderer can present from. Frames must arrive as D3D11 array
+// textures for update() to share them with the render device, so any other hwaccel the codec
+// advertises - dxva2 among them - is deliberately not selected.
+av_hw_decode_target av_platform_hw_decode_target()
+{
+	return {AV_HWDEVICE_TYPE_D3D11VA, AV_PIX_FMT_D3D11};
+}
 
 // Scoped hold of the FFmpeg D3D11VA device lock. The producer-side copy must run under it,
 // but it is released as early as possible (and on every error path) so decoding on the worker
@@ -2865,6 +3024,75 @@ ui::texture_update_result d3d11_texture::update(const ui::const_surface_ptr& s)
 	return ui::texture_update_result::failed;
 }
 
+// A mip chain is what lets the panorama shader minify thousands of pixels of sphere into a viewport
+// without aliasing, and it is the reason the projection needs packed pixels: the planar video
+// formats are neither render targets nor mipmappable, so GenerateMips has nothing to work with.
+ui::texture_update_result d3d11_texture::update_mipped(const ui::const_surface_ptr& s)
+{
+	df::scope_rendering_func rf(__FUNCTION__);
+	df::assert_true(ui::is_ui_thread());
+
+	if (!ui::is_valid(s) || !ui::is_packed(s->format())) return ui::texture_update_result::failed;
+
+	auto* const device = _f ? _f->d3d_device.Get() : nullptr;
+	auto* const context = _f ? _f->d3d_context.Get() : nullptr;
+
+	if (!device || !context) return ui::texture_update_result::failed;
+
+	const auto dims = s->dimensions();
+
+	if (dims.cx < 1 || dims.cy < 1) return ui::texture_update_result::failed;
+
+	D3D11_TEXTURE2D_DESC desc = {};
+	desc.Width = dims.cx;
+	desc.Height = dims.cy;
+	// Zero asks for the full chain down to 1x1, which the runtime allocates and GenerateMips fills.
+	desc.MipLevels = 0;
+	desc.ArraySize = 1;
+	// Always the alpha format: the chain is built by rendering, and the alpha-less variant is not
+	// guaranteed to be a render target. The shader ignores the sampled alpha for the same reason a
+	// packed decode of an opaque photograph cannot be trusted to carry one.
+	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+	desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+
+	ComPtr<ID3D11Texture2D> t;
+
+	// No initial data: a request for the full chain would need every level supplied, so level 0 is
+	// written afterwards and the rest generated from it.
+	if (FAILED(try_create_tex(device, desc, nullptr, &t)) || !t)
+	{
+		return ui::texture_update_result::failed;
+	}
+
+	context->UpdateSubresource(t.Get(), 0, nullptr, s->pixels(), static_cast<UINT>(s->stride()), 0);
+
+	_texture = std::move(t);
+	_format = ui::texture_format::ARGB;
+	_dimensions = dims;
+	_orientation = s->orientation();
+	_cs = s->color_space();
+	_src_extent = {};
+
+	const auto& b = binding();
+
+	if (!b)
+	{
+		// A published texture with no view is one nothing can generate mips for, and the next caller
+		// would sample level zero through an anisotropic sampler and alias without saying why.
+		_texture.Reset();
+		_format = ui::texture_format::None;
+		_dimensions = {};
+		return ui::texture_update_result::failed;
+	}
+
+	context->GenerateMips(b.y.Get());
+
+	return ui::texture_update_result::tex_created;
+}
+
 void d3d11_text_renderer::create_a8_texture(const int xy)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
@@ -3056,18 +3284,15 @@ void d3d11_text_renderer::reset()
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const recti bounds,
-                                    const ui::style::text_style style, const ui::color c, const ui::color bg,
-                                    const bool horizontal_mirror)
+                                    const ui::style::text_style style, const ui::color c, const ui::color bg)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = c;
-	_horizontal_mirror = horizontal_mirror;
 
 	if (_font)
 	{
 		_font->draw(_canvas.get(), this, text, bounds, style, c, bg);
 	}
-	_horizontal_mirror = false;
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const std::vector<ui::text_highlight_t>& highlights,
@@ -3237,12 +3462,10 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 				const auto right_color = i == limit_char ? ui::color{} : clr;
 				const auto pos = vertex_count;
 
-				const auto texture_left = _horizontal_mirror ? tx2 : tx1;
-				const auto texture_right = _horizontal_mirror ? tx1 : tx2;
-				vertices[vertex_count++].set(bl / screen_scale, pointd(texture_left, ty2) / tex_scale, left_color);
-				vertices[vertex_count++].set(tl / screen_scale, pointd(texture_left, ty1) / tex_scale, left_color);
-				vertices[vertex_count++].set(br / screen_scale, pointd(texture_right, ty2) / tex_scale, right_color);
-				vertices[vertex_count++].set(tr / screen_scale, pointd(texture_right, ty1) / tex_scale, right_color);
+				vertices[vertex_count++].set(bl / screen_scale, pointd(tx1, ty2) / tex_scale, left_color);
+				vertices[vertex_count++].set(tl / screen_scale, pointd(tx1, ty1) / tex_scale, left_color);
+				vertices[vertex_count++].set(br / screen_scale, pointd(tx2, ty2) / tex_scale, right_color);
+				vertices[vertex_count++].set(tr / screen_scale, pointd(tx2, ty1) / tex_scale, right_color);
 
 				indexes[index_count++] = pos + 0;
 				indexes[index_count++] = pos + 1;
@@ -3315,20 +3538,6 @@ void d3d11_draw_context_impl::draw_text(const std::string_view textA, const rect
 	if (clr.a >= 0.01f && _clip_bounds.intersects(bounds))
 	{
 		_font[font].draw_text(textA, bounds, style, clr, bg);
-	}
-}
-
-void d3d11_draw_context_impl::draw_text_mirrored(const std::string_view text, const recti bounds,
-                                                 const ui::style::font_face font,
-                                                 const ui::style::text_style style, const ui::color clr,
-                                                 const ui::color bg)
-{
-	df::scope_rendering_func rf(__FUNCTION__);
-	df::assert_true(ui::is_ui_thread());
-
-	if (clr.a >= 0.01f && _clip_bounds.intersects(bounds))
-	{
-		_font[font].draw_text(text, bounds, style, clr, bg, true);
 	}
 }
 

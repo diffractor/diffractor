@@ -71,8 +71,7 @@ public:
 	void display_changed() override;
 	void layout(ui::measure_context& mc, sizei extent) override;
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
-	void mouse_wheel(pointi loc, int z_delta, ui::key_state keys) override;
-	void mouse_hwheel(pointi loc, int z_delta, ui::key_state keys) override;
+	bool mouse_wheel(pointi loc, ui::wheel_notch notch) override;
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
 	void broadcast_event(const view_element_event& event) const override;
 

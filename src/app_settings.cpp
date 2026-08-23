@@ -105,6 +105,7 @@ static constexpr auto s_set_synopsis = "set_synopsis";
 static constexpr auto s_set_rating = "set_rating";
 static constexpr auto s_set_year = "set_year";
 static constexpr auto s_set_created = "set_created";
+static constexpr auto s_set_date_created = "set_date_created";
 static constexpr auto s_set_episode = "set_episode";
 static constexpr auto s_set_season = "set_season";
 static constexpr auto s_set_track = "set_track";
@@ -123,7 +124,6 @@ static constexpr auto s_sidebar = "sidebar";
 static constexpr auto s_show_total_items = "show_total_items";
 static constexpr auto s_show_history = "show_history";
 static constexpr auto s_show_world_map = "show_world_map";
-static constexpr auto s_show_indexed_folders = "show_indexed_folders";
 static constexpr auto s_show_drives = "show_drives";
 static constexpr auto s_show_favorite_searches = "show_favorite_searches";
 static constexpr auto s_show_tags = "show_tags";
@@ -422,7 +422,6 @@ settings_t::settings_t()
 	sidebar.show_total_items = true;
 	sidebar.show_history = true;
 	sidebar.show_world_map = true;
-	sidebar.show_indexed_folders = true;
 	sidebar.show_drives = true;
 	sidebar.show_favorite_searches = true;
 	sidebar.show_tags = true;
@@ -470,6 +469,7 @@ settings_t::settings_t()
 	set_synopsis = false;
 	set_rating = false;
 	set_year = false;
+	set_original = false;
 	set_created = false;
 	set_episode = false;
 	set_season = false;
@@ -549,10 +549,12 @@ public:
 		return false;
 	}
 
+#if !DF_LONG_IS_INT64
 	bool write(const std::string_view section, const std::string_view name, const long v) const
 	{
 		return _file->write(section, name, std::bit_cast<uint32_t>(v));
 	}
+#endif
 
 	bool read(const std::string_view section, const std::string_view name, int64_t& v) const
 	{
@@ -626,6 +628,7 @@ public:
 		return _file->write(section, name, str::to_string(v, 5));
 	}
 
+#if !DF_LONG_IS_INT64
 	bool read(const std::string_view section, const std::string_view name, long& v) const
 	{
 		uint32_t vv{};
@@ -636,6 +639,7 @@ public:
 		}
 		return false;
 	}
+#endif
 
 	bool write(const std::string_view section, const std::string_view name, const bool v) const
 	{
@@ -849,7 +853,8 @@ void settings_t::read()
 	store.read({}, s_set_synopsis, set_synopsis);
 	store.read({}, s_set_rating, set_rating);
 	store.read({}, s_set_year, set_year);
-	store.read({}, s_set_created, set_created);
+	store.read({}, s_set_created, set_original);
+	store.read({}, s_set_date_created, set_created);
 	store.read({}, s_set_episode, set_episode);
 	store.read({}, s_set_season, set_season);
 	store.read({}, s_set_track, set_track);
@@ -923,7 +928,6 @@ void settings_t::read()
 	store.read(s_sidebar, s_show_total_items, sidebar.show_total_items);
 	store.read(s_sidebar, s_show_history, sidebar.show_history);
 	store.read(s_sidebar, s_show_world_map, sidebar.show_world_map);
-	store.read(s_sidebar, s_show_indexed_folders, sidebar.show_indexed_folders);
 	store.read(s_sidebar, s_show_drives, sidebar.show_drives);
 	store.read(s_sidebar, s_show_favorite_searches, sidebar.show_favorite_searches);
 	store.read(s_sidebar, s_show_tags, sidebar.show_tags);
@@ -1029,7 +1033,8 @@ void settings_t::write() const
 	store.write({}, s_set_synopsis, set_synopsis);
 	store.write({}, s_set_rating, set_rating);
 	store.write({}, s_set_year, set_year);
-	store.write({}, s_set_created, set_created);
+	store.write({}, s_set_created, set_original);
+	store.write({}, s_set_date_created, set_created);
 	store.write({}, s_set_episode, set_episode);
 	store.write({}, s_set_season, set_season);
 	store.write({}, s_set_track, set_track);
@@ -1096,7 +1101,6 @@ void settings_t::write() const
 	store.write(s_sidebar, s_show_total_items, sidebar.show_total_items);
 	store.write(s_sidebar, s_show_history, sidebar.show_history);
 	store.write(s_sidebar, s_show_world_map, sidebar.show_world_map);
-	store.write(s_sidebar, s_show_indexed_folders, sidebar.show_indexed_folders);
 	store.write(s_sidebar, s_show_drives, sidebar.show_drives);
 	store.write(s_sidebar, s_show_favorite_searches, sidebar.show_favorite_searches);
 	store.write(s_sidebar, s_show_tags, sidebar.show_tags);
@@ -1109,5 +1113,5 @@ void settings_t::write() const
 
 std::vector<std::string_view> split_collection_folders(const std::string_view text)
 {
-	return str::split(text, true, [](const wchar_t c) { return c == '\n' || c == '\r'; });
+	return str::split(text, true, [](const char c) { return c == '\n' || c == '\r'; });
 }

@@ -84,9 +84,12 @@ public:
 		_engine.render(dc, _extent);
 	}
 
-	void mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys) override
+	// The map's primary axis and its scale are the same thing, so the modifier changes nothing here.
+	bool mouse_wheel(const pointi loc, const ui::wheel_notch notch) override
 	{
-		if (_engine.zoom(zDelta, recti(_extent))) on_map_zoomed(_engine.zoom_level());
+		if (!notch.is_vertical()) return false;
+		if (_engine.zoom(notch.delta, recti(_extent))) on_map_zoomed(_engine.zoom_level());
+		return true;
 	}
 
 	void pan_start(const pointi start_loc) override

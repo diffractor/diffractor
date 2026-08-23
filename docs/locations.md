@@ -287,6 +287,21 @@ A search re-run rebuilds the item list, which is where a naive implementation lo
 
 ## 5. The map
 
+### 5.0 The sidebar globe
+
+The sidebar shows the world as a sphere, drawn under the file-type pie chart and at the same size, so the two read as a pair rather than as a chart and a picture. It is the same equirectangular world map, with the same heat overlay baked into it, wrapped around that sphere and drawn orthographically. The map itself is flat-toned land over transparent water, so it is composited over a deep water colour first: left as it came, the oceans took the colour of whatever was behind them.
+
+- **Dragging turns it, in both axes.** A drag across the full diameter turns the globe half way round; dragging down brings the north toward the centre, which is what pulling a ball downward does. There is no inertia and no idle spin: the globe moves when the user moves it, and stops when they stop. The sidebar scrolls by its scrollbar, so no drag direction has to be given back to the host.
+- **A drag is never a click.** Movement past a few pixels turns the globe and releases without opening anything, exactly as §5.5 requires of the map inside advanced search.
+- **It opens where the photos are.** The default view is the count-weighted mean of the collection's places, taken as unit vectors so that both axes and the antimeridian are handled by one operation: an Australian collection opens on Australia, a US one on the US, and a collection either side of the date line faces the date line rather than the Atlantic. A collection whose places cancel out has no deserved direction and keeps the view it had.
+- **A turn the user made is theirs.** Once dragged, the view stays where they left it; a later index publish re-frames nothing, so the globe never moves under the pointer mid-gesture.
+- **Only the near hemisphere is targetable.** An area on the far side is neither drawn nor hit-testable, and one within a sliver of the limb is rejected too, because it cannot be aimed at. Turning the globe is how the user reaches it. The pointer must still be *on* a marker, as it was on the flat map.
+- **Everything after the click is unchanged.** The hover bubble keeps its icon, name, representative thumbnail and count (§5.4), and the click still opens a place plus a radius and never reassigns grouping (§5.1, §5.3).
+
+Because half the world always faces away, the areas cells are folded into no longer depend on a crop: the visible span is half the world whatever the view is, and the fold is sized from that.
+
+The globe is rasterised in software into a surface that is uploaded as a texture, so the hardware and CPU backends show identical pixels; how that is made affordable is [rendering](rendering.md#the-sidebar-globe).
+
 ### 5.1 Areas become places with a radius
 
 Map areas stop producing `area:` searches. When an area resolves, it resolves to a **place plus radius**:
@@ -497,8 +512,28 @@ Deferred to a future release, with their sections: §2.4, §2.6, §3.4 and the c
 - Distance parsing accepts `m`, `km`, `mi`, and rejects a trailing token that is not a complete distance; canonical formatting round-trips through parse.
 - The coordinate form `loc:-30.515+151.66+5` continues to parse and match unchanged.
 - A map click produces a `loc:` term with a radius, preserves the user's grouping and sorting, and an existing `area:` search still resolves.
+- The globe projects a coordinate to the pixel it is drawn at and back again, hides the far hemisphere and the limb, turns by the drag it was given in both axes without a jump at the date line or past a pole, and frames a collection on its own places including across the antimeridian.
 - The distance slider retains capture across a search refresh, coalesces in-flight searches, and writes exactly one history entry per settled value.
 - Timeline node derivation is deterministic for a fixed result set, suppresses a residence-scale cluster, reveals it when the query names it, caps at ten nodes, and produces for each node a query that reproduces exactly that node's items.
 - No location resolution, gazetteer read, or node computation runs on the UI thread, and none runs inside a paint path.
 
 Regression coverage lives with the subject in `src/test_locations.cpp` (`should_find_location`, the map-area tests, the sidebar map grouping); see [testing](testing.md) for the taxonomy.
+
+## Where this lives
+
+| Location subject | Source |
+|---|---|
+| Coordinates, places, distance, memoized attribution | [model_location.h](../src/model_location.h) — `gps_coordinate`, `location_t`, `attribution_cell` |
+| The gazetteer: loading, indexing, reverse geocoding, autocomplete | [model_locations.h](../src/model_locations.h), [model_locations.cpp](../src/model_locations.cpp) — `location_cache` |
+| Nearest-place and visible-marker queries | [util_kdtree.h](../src/util_kdtree.h) |
+| Visit derivation: cluster, name, segment, score, classify, select | [model_visits.h](../src/model_visits.h), [model_visits.cpp](../src/model_visits.cpp) |
+| Tile fetch, coordinate math, panning, clustering, crosshair | [ui_map_common.h](../src/ui_map_common.h) — `map_engine`; [ui_map.h](../src/ui_map.h), [view_map.h](../src/view_map.h) |
+| The sidebar globe: projection, drag, framing, and its software rasteriser | [ui_globe.h](../src/ui_globe.h) — `globe_projection`, `globe_framer`; [render_globe.cpp](../src/render_globe.cpp); [app_sidebar.h](../src/app_sidebar.h) — `sidebar_map_element` |
+| The downloaded-tile store and its bounded prune | [model_tile_cache.h](../src/model_tile_cache.h), [model_tile_cache.cpp](../src/model_tile_cache.cpp) |
+| Assigning a location to items | [view_locate.cpp](../src/view_locate.cpp) |
+| `loc:` and `area:` terms in a query | [model_search.cpp](../src/model_search.cpp), [model_search.h](../src/model_search.h) |
+| The gazetteer source data | `exe/location-places.txt`, `exe/location-countries.txt`, `exe/location-states.txt`, built by `tools/generate_locations.py` |
+
+The gazetteer is 24 MB and is loaded once per test run and shared, so a location test must not
+assume a private index. The tile store owns the only SQLite connection outside the index database,
+pinned to the tile-database thread — see [implementation](implementation.md#sqlite-connection-ownership).

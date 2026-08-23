@@ -288,18 +288,27 @@ uint64_t crypto::perceptual_hash(const uint8_t* gray, const size_t len)
 	const auto& basis = phash_basis();
 
 	// Rows first, then columns: separating the 2D transform turns 32*32*8*8 products into 2*32*32*8.
-	std::array<double, phash_extent * phash_block> rows{};
+	// Held transposed (u-major) so the column pass reads both operands contiguously.
+	std::array<double, phash_block * phash_extent> rows{};
+	std::array<double, phash_extent> row{};
 
 	for (size_t y = 0; y < phash_extent; ++y)
 	{
+		// Widened once per row, not once per tap: a byte-to-double conversion inside the dot product
+		// is what stops a compiler vectorising it, and each row is read once per output coefficient.
+		for (size_t x = 0; x < phash_extent; ++x)
+		{
+			row[x] = gray[y * phash_extent + x];
+		}
+
 		for (size_t u = 0; u < phash_block; ++u)
 		{
 			double sum = 0.0;
 			for (size_t x = 0; x < phash_extent; ++x)
 			{
-				sum += gray[y * phash_extent + x] * basis[u * phash_extent + x];
+				sum += row[x] * basis[u * phash_extent + x];
 			}
-			rows[y * phash_block + u] = sum;
+			rows[u * phash_extent + y] = sum;
 		}
 	}
 
@@ -312,7 +321,7 @@ uint64_t crypto::perceptual_hash(const uint8_t* gray, const size_t len)
 			double sum = 0.0;
 			for (size_t y = 0; y < phash_extent; ++y)
 			{
-				sum += rows[y * phash_block + v] * basis[u * phash_extent + y];
+				sum += rows[v * phash_extent + y] * basis[u * phash_extent + y];
 			}
 			coefficients[u * phash_block + v] = sum;
 		}

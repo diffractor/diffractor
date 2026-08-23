@@ -15,6 +15,7 @@
 #include "model_location.h"
 #include "model_tile_cache.h"
 #include "model_visits.h"
+#include "ui_globe.h"
 #include "ui_map_common.h"
 
 static void should_group_sidebar_map_by_place()
@@ -303,6 +304,161 @@ static void should_frame_map_on_the_box_that_holds_items()
 	             "map framing");
 
 	assert_equal(map_min_zoom, map_fit_zoom(city, sizei(0, 0)), "an unlaid-out map cannot frame", "map framing");
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// The sidebar globe
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void should_project_globe_coordinates()
+{
+	constexpr pointi center(160, 160);
+	constexpr double radius = 150.0;
+
+	const globe_projection equator({0.0, 0.0}, center, radius);
+	const auto middle = equator.project({0.0, 0.0});
+	assert_equal(true, middle.has_value(), "the view coordinate faces the viewer", "globe");
+	assert_equal(true, middle.value() == center, "and lands dead centre", "globe");
+
+	const auto east = equator.project({0.0, 90.0});
+	assert_equal(false, east.has_value(), "a quarter turn away sits exactly on the limb", "globe");
+	assert_equal(false, equator.project({0.0, 180.0}).has_value(), "the far side is not shown", "globe");
+
+	const auto right = equator.project({0.0, 30.0});
+	assert_equal(true, right.has_value(), "an eastward place stays visible", "globe");
+	assert_equal(true, right->x > center.x, "and is drawn to the east", "globe");
+	assert_equal(center.y, right->y, "with no northward drift", "globe");
+
+	const auto north = equator.project({30.0, 0.0});
+	assert_equal(true, north.has_value(), "a northward place stays visible", "globe");
+	assert_equal(true, north->y < center.y, "and is drawn above the centre", "globe");
+
+	// Full pan: with the view over Australia the antipode is hidden and Australia is centred.
+	const gps_coordinate sydney(-33.8688, 151.2093);
+	const globe_projection tilted(sydney, center, radius);
+	const auto framed = tilted.project(sydney);
+	assert_equal(true, framed.has_value(), "the framed place faces the viewer", "globe");
+	assert_equal(true, framed.value() == center, "and holds the centre under a tilted view", "globe");
+	assert_equal(false, tilted.project({33.8688, -28.7907}).has_value(), "its antipode is hidden", "globe");
+
+	const auto pole = globe_projection({90.0, 0.0}, center, radius).project({90.0, 137.0});
+	assert_equal(true, pole.has_value(), "a polar view can hold the pole itself", "globe");
+	assert_equal(true, pole.value() == center, "wherever the longitude claims to be", "globe");
+}
+
+static void should_round_trip_globe_pixels()
+{
+	constexpr pointi center(160, 160);
+	constexpr double radius = 150.0;
+
+	const gps_coordinate views[] = {{0.0, 0.0}, {-33.8688, 151.2093}, {39.5, -98.35}, {89.0, 0.0}};
+	const gps_coordinate places[] = {{0.0, 0.0}, {51.5, -0.1}, {-33.8688, 151.2093}, {35.7, 139.7}, {-60.0, -170.0}};
+
+	for (const auto& view : views)
+	{
+		const globe_projection projection(view, center, radius);
+
+		for (const auto& place : places)
+		{
+			const auto pixel = projection.project(place);
+			if (!pixel) continue;
+
+			const auto shown = projection.unproject(pixel.value());
+			assert_equal(true, shown.has_value(), "a pixel on the disc shows a coordinate", "globe");
+
+			// Rounding to the pixel costs about a fifth of a degree at this radius, and more as
+			// the limb compresses; a degree of slack keeps the check honest without being noise.
+			assert_near(place.latitude(), shown->latitude(), 1.0, "round trip latitude", "globe");
+			assert_near(0.0, globe_wrap_longitude(place.longitude() - shown->longitude()), 1.0,
+			            "round trip longitude", "globe");
+		}
+	}
+
+	const globe_projection projection({0.0, 0.0}, center, radius);
+	assert_equal(false, projection.unproject({center.x + 200, center.y}).has_value(), "a pixel off the disc shows none",
+	             "globe");
+	assert_equal(true, projection.unproject({center.x + 149, center.y}).has_value(), "a pixel inside the limb does",
+	             "globe");
+}
+
+static void should_rotate_globe_by_drag()
+{
+	constexpr double radius = 150.0;
+	const gps_coordinate start(0.0, 0.0);
+
+	const auto west = globe_view_from_drag(start, {static_cast<int>(radius * 2), 0}, radius);
+	assert_near(-180.0, west.longitude(), 0.0001, "a drag across the diameter turns half way round", "globe");
+	assert_near(0.0, west.latitude(), 0.0001, "and leaves the latitude alone", "globe");
+
+	const auto east = globe_view_from_drag(start, {-static_cast<int>(radius), 0}, radius);
+	assert_near(90.0, east.longitude(), 0.0001, "dragging left turns the globe east", "globe");
+
+	// Dragging down brings the north to the centre - the ball rolls under the finger.
+	const auto north = globe_view_from_drag(start, {0, static_cast<int>(radius / 2)}, radius);
+	assert_near(45.0, north.latitude(), 0.0001, "dragging down looks north", "globe");
+
+	const auto clamped = globe_view_from_drag({80.0, 0.0}, {0, static_cast<int>(radius)}, radius);
+	assert_near(90.0, clamped.latitude(), 0.0001, "the pole is as far as the view tilts", "globe");
+	assert_near(-90.0, globe_view_from_drag({-80.0, 0.0}, {0, -static_cast<int>(radius)}, radius).latitude(), 0.0001,
+	            "in both directions", "globe");
+
+	// Turning past the date line has to stay continuous: a jump here reads as the globe flipping.
+	const auto crossed = globe_view_from_drag({0.0, -170.0}, {static_cast<int>(radius / 3), 0}, radius);
+	assert_near(160.0, crossed.longitude(), 0.0001, "the view wraps through the date line", "globe");
+	assert_near(-179.0, globe_wrap_longitude(181.0), 0.0001, "wrapping is symmetric", "globe");
+
+	// gps_coordinate spends exactly +-180 as its "no coordinate" sentinel, so a view that turns onto
+	// the date line must still be a view rather than a hole.
+	assert_near(-180.0, globe_wrap_longitude(-180.0), 0.001, "the date line stays the date line", "globe");
+	assert_equal(true, gps_coordinate(0.0, globe_wrap_longitude(-180.0)).is_valid(),
+	             "and is a coordinate, not the invalid sentinel", "globe");
+	assert_equal(true, gps_coordinate(0.0, globe_wrap_longitude(540.0)).is_valid(), "from either direction", "globe");
+
+	assert_equal(true, globe_view_from_drag(start, {50, 50}, 0.0).longitude() == start.longitude(),
+	             "an unlaid-out globe cannot turn", "globe");
+}
+
+static void should_frame_globe_on_the_collection()
+{
+	// An Australian collection opens on Australia, a US one on the US: the default view is where
+	// the photos are, not a fixed prime meridian.
+	globe_framer australian;
+	australian.add(gps_coordinate(-33.8688, 151.2093), 400);
+	australian.add(gps_coordinate(-37.8136, 144.9631), 100);
+	const auto australia = australian.view();
+	assert_equal(true, australia.is_valid(), "a collection has a view", "globe framing");
+	assert_near(-34.7, australia.latitude(), 1.5, "framed on the southern hemisphere", "globe framing");
+	assert_near(149.9, australia.longitude(), 1.5, "and weighted toward the larger place", "globe framing");
+
+	globe_framer american;
+	american.add(gps_coordinate(37.7749, -122.4194), 300);
+	american.add(gps_coordinate(40.7128, -74.0060), 300);
+	const auto usa = american.view();
+	assert_near(-98.0, usa.longitude(), 3.0, "a coast-to-coast collection frames on the middle", "globe framing");
+	assert_equal(true, usa.latitude() > 30.0, "in the northern hemisphere", "globe framing");
+
+	// The antimeridian trap: averaging the numbers would face the Atlantic instead.
+	globe_framer date_line;
+	date_line.add(gps_coordinate(0.0, 170.0), 1);
+	date_line.add(gps_coordinate(0.0, -170.0), 1);
+	const auto crossing = date_line.view();
+	assert_near(180.0, std::abs(crossing.longitude()), 0.001, "places either side face the date line", "globe framing");
+	assert_equal(true, crossing.is_valid(), "and the view is usable there", "globe framing");
+
+	globe_framer empty;
+	assert_equal(false, empty.view().is_valid(), "an empty collection frames nothing", "globe framing");
+
+	globe_framer cancelling;
+	cancelling.add(gps_coordinate(90.0, 0.0), 1);
+	cancelling.add(gps_coordinate(-90.0, 0.0), 1);
+	assert_equal(false, cancelling.view().is_valid(), "and neither does one with no deserved direction",
+	             "globe framing");
+
+	globe_framer ignored;
+	ignored.add(gps_coordinate(), 10);
+	ignored.add(gps_coordinate(10.0, 20.0), 0);
+	assert_equal(false, ignored.view().is_valid(), "places without a coordinate or a count are not framed on",
+	             "globe framing");
 }
 
 static void should_build_aggregate_location_matrix()
@@ -1547,7 +1703,7 @@ static void should_run_the_search_a_timeline_node_promises()
 		df::index_file_item file;
 		file.ft = files::file_type_from_name("test.jpg");
 		const auto md = file.safe_ps();
-		md->created_utc = df::date_t(y, m, d, 12, 0, 0);
+		md->dates.add(prop::date_source::exif_original, df::date_t(y, m, d, 12, 0, 0));
 		file.calc_search_presence();
 
 		const df::search_matcher matcher(range, platform::now().to_days());
@@ -1598,6 +1754,14 @@ void register_location_tests(view_state& state, test_registry& tests)
 	tests.add("Should build aggregate location matrix"s, should_build_aggregate_location_matrix);
 	tests.add("Should select thumbnail representatives while counting"s,
 	          should_select_thumbnail_representatives_while_counting);
+
+	//
+	// The sidebar globe
+	//
+	tests.add("Should project globe coordinates"s, should_project_globe_coordinates);
+	tests.add("Should round trip globe pixels"s, should_round_trip_globe_pixels);
+	tests.add("Should rotate globe by drag"s, should_rotate_globe_by_drag);
+	tests.add("Should frame globe on the collection"s, should_frame_globe_on_the_collection);
 
 	//
 	// Gazetteer lookup

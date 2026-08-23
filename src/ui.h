@@ -203,6 +203,33 @@ namespace ui
 		P010
 	};
 
+	// True when one pixel is four contiguous bytes, so a software reader may walk the surface as
+	// colour values. NV12 and P010 are planar: their luma plane read as packed pixels is grey and
+	// tiles, which is a defect that looks like a bad projection rather than like a wrong format.
+	constexpr bool is_packed(const texture_format format) noexcept
+	{
+		return format == texture_format::RGB || format == texture_format::ARGB;
+	}
+
+	// What a backend needs to invert a destination pixel back onto the sphere. Packed to the layout
+	// pano_project.hlsli declares, and built by panorama_shader_params in ui_panorama.h so the
+	// software rasteriser and the shader are handed the same camera.
+	struct panorama_params
+	{
+		float yaw = 0.0f;
+		float pitch = 0.0f;
+		float tan_half_fov = 0.0f;
+		float aspect = 1.0f;
+
+		float longitude_left = 0.0f;
+		float u_scale = 1.0f;
+		float latitude_top = 0.0f;
+		float v_scale = 1.0f;
+
+		// Decides the addressing mode, not the arithmetic: only the blend at the join reads across it.
+		bool wraps = false;
+	};
+
 	// Selects the YUV->RGB conversion applied to NV12/P010 textures. A single value
 	// encodes both the colour matrix (BT.601/709/2020) and the signal range: the
 	// *_limited variants are the usual video ranges (Y 16-235), rec601_full is
@@ -803,7 +830,6 @@ namespace ui
 		void clear(color32 clr) const;
 		surface_ptr transform(simple_transform t) const;
 
-		void fill_pie(pointi center, int radius, const color32 color[64], color32 color_center, color32 color_bg) const;
 		void fill_logo() const;
 
 		const_surface_ptr transform(const image_edits& photo_edits) const;
@@ -1089,10 +1115,10 @@ namespace ui
 
 		float abs_sum() const
 		{
-			return abs(r) +
-				abs(g) +
-				abs(b) +
-				abs(a);
+			return std::abs(r) +
+				std::abs(g) +
+				std::abs(b) +
+				std::abs(a);
 		}
 
 		color& operator+=(const color other)
@@ -1314,6 +1340,15 @@ namespace ui
 		virtual texture_update_result update(sizei dims, texture_format format, orientation orientation,
 		                                     const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
 
+		// Uploads with a full mip chain, for a source that will be minified a long way - a projected
+		// panorama samples thousands of pixels of sphere into one viewport. Separate from update()
+		// because every other texture in the app is drawn at or near its own size and would pay for a
+		// chain it never reads. A backend with no answer refuses, and the caller rasterises instead.
+		virtual texture_update_result update_mipped(const const_surface_ptr& surface)
+		{
+			return texture_update_result::failed;
+		}
+
 		virtual bool is_valid() const = 0;
 	};
 
@@ -1378,8 +1413,6 @@ namespace ui
 		virtual void draw_rect_gradient(recti bounds, color c_centre, color c_corner) = 0;
 		virtual void draw_text(std::string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
-		virtual void draw_text_mirrored(std::string_view text, recti bounds, style::font_face font,
-		                                style::text_style style, color c, color bg) = 0;
 		virtual void draw_text(std::string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
 		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
@@ -1393,6 +1426,15 @@ namespace ui
 		                          texture_sampler sampler) = 0;
 		virtual void draw_texture(const texture_ptr& t, const quadd& dst, recti src, float alpha,
 		                          texture_sampler sampler, const texture_transform& transform) = 0;
+
+		// Draws an equirectangular panorama as the sphere it describes, through the camera in params.
+		// False when the backend has no projection of its own, which is the CPU renderer's answer: the
+		// caller then rasterises it in software. Optional rather than pure so a backend gains the
+		// projection by implementing it, never by being obliged to.
+		virtual bool draw_panorama(const texture_ptr& t, recti dst, const panorama_params& params, float alpha)
+		{
+			return false;
+		}
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 
@@ -1408,6 +1450,60 @@ namespace ui
 		virtual void clip_bounds(recti) = 0;
 		virtual void restore_clip() = 0;
 	};
+
+	// The outcome of flushing a scene. `backend_code` is the graphics API's own result, carried so
+	// the window layer can log it and decide whether the device was lost; portable code reads only
+	// `failed`. A CPU backend has no device to lose and always succeeds.
+	struct present_result
+	{
+		bool failed = false;
+		int32_t backend_code = 0;
+	};
+
+	// A draw context backed by a graphics device and a window, rather than the drawing interface
+	// alone. Every backend implements this - the Direct3D one, the CPU rasterizer, and whatever a
+	// port adds - so it names no graphics API and no window type.
+	class draw_context_device : public draw_context
+	{
+	public:
+		virtual void destroy() = 0;
+		virtual void update_font_size(int base_font_size) = 0;
+
+		// damage is the region the window layer knows needs repainting; empty means the whole
+		// client. It is an optimisation hint only - a backend may redraw more, but the resulting
+		// pixels inside damage must not depend on how much was redrawn.
+		virtual void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) = 0;
+
+		virtual present_result render() = 0;
+
+		// Discards any damage limit, so the next render covers the whole client. Needed by callers
+		// that re-present an existing scene whose textures changed underneath it.
+		virtual void reset_damage()
+		{
+		}
+
+		virtual void resize(sizei size) = 0;
+		virtual bool is_valid() const = 0;
+
+		// Releases every reference this context holds on the swap-chain back buffer. Must be
+		// called before the buffers are resized - a still-bound render target view makes that fail.
+		// No-op on a CPU backend.
+		virtual void release_back_buffer_references()
+		{
+		}
+
+		// Software-rendering extensions (only implemented by the CPU backend used for layered
+		// bubble popups; no-ops on a hardware backend).
+		virtual void set_layer_alpha(int alpha)
+		{
+		}
+
+		virtual void draw_bubble_background(recti bounds, pointi focus_location, int padding, float radius)
+		{
+		}
+	};
+
+	using draw_context_device_ptr = std::shared_ptr<draw_context_device>;
 
 	class scoped_clip final : public df::no_copy
 	{
@@ -1450,6 +1546,39 @@ namespace ui
 		bool control = false;
 		bool shift = false;
 		bool alt = false;
+	};
+
+	enum class wheel_axis
+	{
+		vertical,
+		horizontal
+	};
+
+	// Whole detents from a possibly-fractional delta. A precision wheel or a touchpad emits many
+	// small deltas that a consumer dividing by the detent would round away entirely, so the
+	// remainder is carried rather than discarded.
+	inline int accumulate_wheel_steps(double& pending, const double delta, const double detent = 120.0) noexcept
+	{
+		if (detent <= 0.0) return 0;
+		pending += delta;
+		const auto steps = static_cast<int>(pending / detent);
+		pending -= steps * detent;
+		return steps;
+	}
+
+	// One wheel event, accumulated once at the frame boundary. `steps` is whole detents, for the
+	// surfaces that move by detent; `delta` is the same movement in logical units, for the ones that
+	// scroll smoothly. Accumulating in one place is what stops each consumer inventing its own
+	// rounding, and what keeps a touchpad from being divided down to nothing on the way through.
+	struct wheel_notch
+	{
+		wheel_axis axis = wheel_axis::vertical;
+		int steps = 0;
+		int delta = 0;
+		key_state keys;
+
+		bool is_vertical() const noexcept { return axis == wheel_axis::vertical; }
+		bool is_horizontal() const noexcept { return axis == wheel_axis::horizontal; }
 	};
 
 	class toolbar : public control_base
@@ -1495,10 +1624,6 @@ namespace ui
 	public:
 		virtual void navigation_complete(std::string_view url) = 0;
 		virtual bool before_navigate(std::string_view url) = 0;
-
-		virtual void select_place(const double lat, const double lng)
-		{
-		}
 	};
 
 	class web_window : public control_base
@@ -1699,6 +1824,14 @@ namespace ui
 		}
 
 		virtual void on_mouse_hwheel(const pointi loc, const int delta, const key_state keys, bool& was_handled)
+		{
+		}
+
+		// A pinch is unambiguous, so it arrives as itself rather than as a wheel wearing a modifier:
+		// the modifier then had to be disambiguated by what the pointer was over, and over a grid it
+		// meant something else entirely. `begins` opens a gesture, so the accumulator carrying its
+		// sub-detent remainder belongs to that gesture rather than to the window.
+		virtual void on_pinch(const pointi loc, const int delta, const bool begins, bool& was_handled)
 		{
 		}
 
@@ -2002,7 +2135,7 @@ namespace ui
 		{
 			const auto dd = _target - _val;
 
-			if (!animations_enabled || abs(dd) < 0.001f)
+			if (!animations_enabled || std::abs(dd) < 0.001f)
 			{
 				const auto changed = _val != _target;
 				_val = _target;

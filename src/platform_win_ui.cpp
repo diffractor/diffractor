@@ -725,12 +725,12 @@ static HFONT create_font(const ui::style::font_face type, const int base_font_si
 		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Consolas");
 		break;
 	case ui::style::font_face::icons:
-		lf.lfHeight = -base_font_size;
-		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Segoe MDL2 Assets");
+		lf.lfHeight = -df::mul_div(base_font_size, icon_font_scale_num, icon_font_scale_den);
+		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"FluentSystemIcons-Resizable");
 		break;
 	case ui::style::font_face::small_icons:
-		lf.lfHeight = -df::mul_div(base_font_size, 10, 16);
-		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"Segoe MDL2 Assets");
+		lf.lfHeight = -df::mul_div(base_font_size, icon_font_scale_num * 10, icon_font_scale_den * 16);
+		wcscpy_s(lf.lfFaceName, LF_FACESIZE, L"FluentSystemIcons-Resizable");
 		break;
 	case ui::style::font_face::title:
 		lf.lfHeight = -df::mul_div(base_font_size, 3, 2);
@@ -1218,7 +1218,7 @@ uint32_t toolbar_CommandToIndex(const HWND hwnd, const uint32_t nID)
 	return static_cast<uint32_t>(::SendMessage(hwnd, TB_COMMANDTOINDEX, nID, 0L));
 }
 
-static void erase_toolbar_seperators(const HWND tb, const HDC dc, const COLORREF bg_clr)
+static void erase_toolbar_separators(const HWND tb, const HDC dc, const COLORREF bg_clr)
 {
 	const int count = toolbar_GetButtonCount(tb);
 
@@ -3865,13 +3865,13 @@ void frame_base::handle_render(const recti damage)
 			on_render(ctx);
 		}
 
-		const auto hr = ctx->render();
+		const auto presented = ctx->render();
 
-		if (FAILED(hr))
+		if (presented.failed)
 		{
 			// A failed render means the back buffer holds nothing worth showing, so skip the
 			// present. handle_device_loss ignores non device-loss results.
-			handle_device_loss(hr, "render");
+			handle_device_loss(presented.backend_code, "render");
 			return;
 		}
 	}
@@ -4380,11 +4380,11 @@ public:
 			// textures this re-present exists to show changed outside it.
 			_draw_ctx->reset_damage();
 
-			const auto hr = _draw_ctx->render();
+			const auto presented = _draw_ctx->render();
 
-			if (FAILED(hr))
+			if (presented.failed)
 			{
-				handle_device_loss(hr, "redraw");
+				handle_device_loss(presented.backend_code, "redraw");
 				return;
 			}
 
@@ -4603,19 +4603,23 @@ public:
 			case GID_ZOOM:
 				{
 					const auto distance = gi.ullArguments;
+					POINT loc{gi.ptsLocation.x, gi.ptsLocation.y};
+					ScreenToClient(m_hWnd, &loc);
+					bool handled = false;
+					const auto h = _host.lock();
+
 					if (gi.dwFlags & GF_BEGIN)
 					{
 						_zoom_gesture_distance = distance;
+						// Opens the gesture, so whatever a previous pinch left part-way through a detent
+						// is discarded rather than spent on this one.
+						if (h) h->on_pinch({loc.x, loc.y}, 0, true, handled);
 					}
 					else if (_zoom_gesture_distance > 0 && distance > 0)
 					{
-						POINT loc{gi.ptsLocation.x, gi.ptsLocation.y};
-						ScreenToClient(m_hWnd, &loc);
 						const auto delta = df::round(
 							std::log(distance / static_cast<double>(_zoom_gesture_distance)) * 480.0);
-						bool handled = false;
-						const auto h = _host.lock();
-						if (h && delta != 0) h->on_mouse_wheel({loc.x, loc.y}, delta, {true, false, false}, handled);
+						if (h && delta != 0) h->on_pinch({loc.x, loc.y}, delta, false, handled);
 						_zoom_gesture_distance = distance;
 					}
 					if (gi.dwFlags & GF_END) _zoom_gesture_distance = 0;
@@ -7027,7 +7031,7 @@ bool MonitorHasAutohideTaskbarForEdge(const UINT edge, const HMONITOR monitor)
 	// There is a potential race condition here:
 	// 1. A maximized chrome window is fullscreened.
 	// 2. It is switched back to maximized.
-	// 3. In the process the window gets a WM_NCCACLSIZE message which calls us to
+	// 3. In the process the window gets a WM_NCCALCSIZE message which calls us to
 	//    get the autohide state.
 	// 4. The worker thread is invoked. It calls the API to get the autohide
 	//    state. On Windows versions  earlier than Windows 7, taskbars could
@@ -7613,7 +7617,7 @@ public:
 			}
 			if (pCustomDraw->dwDrawStage == CDDS_PREERASE)
 			{
-				erase_toolbar_seperators(from, pCustomDraw->hdc, colors.background);
+				erase_toolbar_separators(from, pCustomDraw->hdc, colors.background);
 				return CDRF_SKIPDEFAULT;
 			}
 			if (pCustomDraw->dwDrawStage == CDDS_ITEMPREPAINT)
@@ -7979,13 +7983,13 @@ static bool create_dump(EXCEPTION_POINTERS* exception_pointers, const df::file_p
 				exception_information.ExceptionPointers = exception_pointers;
 				exception_information.ClientPointers = TRUE;
 
-				auto dump_flags = MiniDumpWithDataSegs | // Include DS from all loaded mocults
+				auto dump_flags = MiniDumpWithDataSegs | // Include DS from all loaded modules
 					MiniDumpWithHandleData | // Include high level OS handle info
 					MiniDumpScanMemory | // Scan for pointer references in module list
-					MiniDumpWithUnloadedModules | // Recently Unloaded modules
+					MiniDumpWithUnloadedModules | // Recently unloaded modules
 					MiniDumpWithThreadInfo | // Include thread state information
 					MiniDumpIgnoreInaccessibleMemory |
-					// Ignore memory read failures when attempting to read innaccesible regions
+					// Ignore memory read failures when attempting to read inaccessible regions
 					MiniDumpNormal; // Normal stack trace info
 
 				dump_successful = write_dump(GetCurrentProcess(), GetCurrentProcessId(), dump_file,
@@ -8256,7 +8260,7 @@ static void show_fatal_error(const std::string_view message)
 	s += L"\n\n";
 	s += str::utf8_to_utf16(message);
 
-	::MessageBox(nullptr, s.c_str(), s_app_name_l, MB_OK | MB_ICONHAND);
+	::MessageBox(nullptr, s.c_str(), str::utf8_to_utf16(s_app_name).c_str(), MB_OK | MB_ICONHAND);
 }
 
 // The app's own failure dialog needs a window and a running message loop. Startup failures happen
@@ -8667,7 +8671,7 @@ bool win32_app::pre_translate_message(MSG& m)
 						return true;
 					}
 				}
-				// standard edit shortcuts - dont translate
+				// standard edit shortcuts - don't translate
 				if (is_edit_char(focus_wnd, c, ks))
 				{
 					return false;
@@ -9121,7 +9125,7 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 		}
 	}
 
-	SetWindowText(result->m_hWnd, s_app_name_l);
+	SetWindowText(result->m_hWnd, str::utf8_to_utf16(s_app_name).c_str());
 	// The window icon drives Alt+Tab and the title bar. The package AppList assets only cover
 	// Start and the taskbar, so without this the Store build falls back to the 32px window class
 	// icon upscaled. Set it in both builds.

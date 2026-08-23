@@ -25,7 +25,7 @@ static_assert(sizeof(str::cached) == sizeof(uint32_t), "str::cached must stay a 
 
 // Constant-initialized to the empty record so a handle used before anything is interned still
 // resolves; string_index_t replaces it with the pool base the first time a string is cached.
-std::atomic<const str::chached_string_storage_t*> str::detail::intern_pool_base = &str::detail::empty_storage;
+std::atomic<const str::cached_string_storage_t*> str::detail::intern_pool_base = &str::detail::empty_storage;
 
 bool str::is_utf8(const char* sz, const int len)
 {
@@ -206,7 +206,7 @@ struct string_index_t
 	static constexpr uint32_t shard_bits = 4;
 	static_assert(shard_count == (1u << shard_bits), "shard_bits must match shard_count");
 	static constexpr uint32_t initial_capacity = 16; // per shard, power of two
-	static constexpr size_t entry_overhead = offsetof(str::chached_string_storage_t, sz) + 1;
+	static constexpr size_t entry_overhead = offsetof(str::cached_string_storage_t, sz) + 1;
 
 	static_assert(platform::memory_pool::alignment == (1u << str::detail::intern_align_shift),
 	              "handles count pool alignment units");
@@ -222,7 +222,7 @@ struct string_index_t
 
 		// Burn the first slot on an empty record and publish the base, so handle 0 is the empty string
 		// and every later handle resolves to real content.
-		auto* const empty = static_cast<str::chached_string_storage_t*>(_pool.alloc(entry_overhead));
+		auto* const empty = static_cast<str::cached_string_storage_t*>(_pool.alloc(entry_overhead));
 		empty->len = 0;
 		empty->ihash = str::detail::empty_ihash;
 		empty->sz[0] = 0;
@@ -235,11 +235,11 @@ struct string_index_t
 	{
 		const auto len = sv.size();
 		const auto allocation = entry_overhead + len;
-		auto* const copy = static_cast<str::chached_string_storage_t*>(_pool.alloc(allocation));
+		auto* const copy = static_cast<str::cached_string_storage_t*>(_pool.alloc(allocation));
 
 		copy->len = static_cast<uint32_t>(len);
 		copy->ihash = crypto::fnv1a_i(sv);
-		memcpy_s(copy->sz, allocation - offsetof(str::chached_string_storage_t, sz), sv.data(), len * sizeof(char));
+		memcpy_s(copy->sz, allocation - offsetof(str::cached_string_storage_t, sz), sv.data(), len * sizeof(char));
 		copy->sz[len] = 0;
 
 		const auto offset = static_cast<size_t>(std::bit_cast<const uint8_t*>(copy) - _pool.base);
@@ -444,8 +444,8 @@ bool str::starts(const std::string_view text, const std::string_view sub_string)
 
 	while (text_p < text_end && sub_p < sub_end)
 	{
-		const auto text_match_char = normalze_for_compare(pop_utf8_char(text_p, text_end));
-		const auto sub_match_char = normalze_for_compare(pop_utf8_char(sub_p, sub_end));
+		const auto text_match_char = normalize_for_compare(pop_utf8_char(text_p, text_end));
+		const auto sub_match_char = normalize_for_compare(pop_utf8_char(sub_p, sub_end));
 
 		if (text_match_char != sub_match_char)
 			return false;
@@ -462,12 +462,12 @@ std::string_view::size_type str::ifind(const std::string_view text, const std::s
 		auto sub_p = sub_string.begin();
 		const auto text_end = text.end();
 		const auto sub_end = sub_string.end();
-		const auto first_sub_char = normalze_for_compare(pop_utf8_char(sub_p, sub_end));
+		const auto first_sub_char = normalize_for_compare(pop_utf8_char(sub_p, sub_end));
 
 		while (text_p < text_end && sub_p <= sub_end)
 		{
 			const auto text_start = text_p;
-			const auto text_char = normalze_for_compare(pop_utf8_char(text_p, text_end));
+			const auto text_char = normalize_for_compare(pop_utf8_char(text_p, text_end));
 
 			if (text_char == first_sub_char) // Is matching?
 			{
@@ -477,8 +477,8 @@ std::string_view::size_type str::ifind(const std::string_view text, const std::s
 
 				while (matching && sub_match < sub_end && text_match < text_end)
 				{
-					const auto text_match_char = normalze_for_compare(pop_utf8_char(text_match, text_end));
-					const auto sub_match_char = normalze_for_compare(pop_utf8_char(sub_match, sub_end));
+					const auto text_match_char = normalize_for_compare(pop_utf8_char(text_match, text_end));
+					const auto sub_match_char = normalize_for_compare(pop_utf8_char(sub_match, sub_end));
 
 					matching = text_match_char == sub_match_char;
 				}
@@ -504,17 +504,17 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 		auto sub_p = sub_string.begin();
 		const auto text_end = text.end();
 		const auto sub_end = sub_string.end();
-		auto first_sub_char = normalze_for_compare(pop_utf8_char(sub_p, sub_end));
+		auto first_sub_char = normalize_for_compare(pop_utf8_char(sub_p, sub_end));
 
 		while (first_sub_char == 0x20 && sub_p < sub_end)
 		{
-			first_sub_char = normalze_for_compare(pop_utf8_char(sub_p, sub_end));
+			first_sub_char = normalize_for_compare(pop_utf8_char(sub_p, sub_end));
 		}
 
 		while (text_p < text_end && sub_p <= sub_end)
 		{
 			const auto text_start = text_p;
-			const auto text_char = normalze_for_compare(pop_utf8_char(text_p, text_end));
+			const auto text_char = normalize_for_compare(pop_utf8_char(text_p, text_end));
 
 			if (text_char == first_sub_char) // Is matching?
 			{
@@ -529,8 +529,8 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 
 				while (matching && sub_match < sub_end && text_match < text_end)
 				{
-					const auto text_match_char = normalze_for_compare(pop_utf8_char(text_match, text_end));
-					sub_match_char = normalze_for_compare(pop_utf8_char(sub_match, sub_end));
+					const auto text_match_char = normalize_for_compare(pop_utf8_char(text_match, text_end));
+					sub_match_char = normalize_for_compare(pop_utf8_char(sub_match, sub_end));
 
 					matching = text_match_char == sub_match_char && sub_match_char != 0x20;
 					match_len += 1;
@@ -550,7 +550,7 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 				{
 					while (sub_match_char == 0x20 && sub_match < sub_end)
 					{
-						sub_match_char = normalze_for_compare(pop_utf8_char(sub_match, sub_end));
+						sub_match_char = normalize_for_compare(pop_utf8_char(sub_match, sub_end));
 					}
 
 					parts.emplace_back(match_start + parts_offset, match_len);
@@ -566,13 +566,13 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 	return result;
 }
 
-bool str::is_quote(const wchar_t c)
+bool str::is_quote(const char c)
 {
-	return c == L'\"' || c == L'\'';
+	return c == '\"' || c == '\'';
 }
 
 void str::split2(const std::string_view text, const bool detect_quotes,
-                 const std::function<void(std::string_view)>& inserter, const std::function<bool(wchar_t)>& pred)
+                 const std::function<void(std::string_view)>& inserter, const std::function<bool(char)>& pred)
 {
 	if (!text.empty())
 	{
@@ -810,6 +810,7 @@ std::string str::to_string(const uint32_t v)
 	return result;
 }
 
+#if !DF_LONG_IS_INT64
 std::string str::to_string(const long v)
 {
 	static constexpr int size = 64;
@@ -818,6 +819,7 @@ std::string str::to_string(const long v)
 	_ltoa_s(v, std::bit_cast<char*>(static_cast<char*>(result)), size, 10);
 	return result;
 }
+#endif
 
 std::string str::to_string(const int64_t v)
 {
@@ -836,6 +838,13 @@ std::string str::to_string(const uint64_t v)
 	_ui64toa_s(v, std::bit_cast<char*>(static_cast<char*>(result)), size, 10);
 	return result;
 }
+
+#if DF_LONG_IS_INT64
+std::string str::to_string(const unsigned long long v)
+{
+	return to_string(static_cast<uint64_t>(v));
+}
+#endif
 
 std::string str::to_string(const double v, int num_digits)
 {
@@ -1108,9 +1117,12 @@ static const df::hash_set<std::string_view, df::ihash, df::ieq> unwanted_english
 	"and",
 };
 
-static bool is_range_separator(const wchar_t c)
+// Applied to the bytes of a UTF-8 string, so the classification must be the narrow one: passing a
+// negative char to the wide predicates is a WEOF collision off Windows.
+static bool is_range_separator(const char c)
 {
-	return iswpunct(c) || iswspace(c);
+	const auto uc = static_cast<unsigned char>(c);
+	return std::ispunct(uc) || std::isspace(uc);
 }
 
 static bool is_num(const std::string_view text)
@@ -1278,7 +1290,7 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x00d4, 'o'}, // latin capital letter o with circumflex
 		{0x00d5, 'o'}, // latin capital letter o with tilde
 		{0x00d6, 'o'}, // latin capital letter o with diaeresis
-		{0x00d8, 'o'}, // latin capital letter o with stroke -- no decom
+		{0x00d8, 'o'}, // latin capital letter o with stroke -- no decomposition
 		{0x00d9, 'u'}, // latin capital letter u with grave
 		{0x00da, 'u'}, // latin capital letter u with acute
 		{0x00db, 'u'}, // latin capital letter u with circumflex
@@ -1308,7 +1320,7 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x00f4, 'o'}, // latin small letter o with circumflex
 		{0x00f5, 'o'}, // latin small letter o with tilde
 		{0x00f6, 'o'}, // latin small letter o with diaeresis
-		{0x00f8, 'o'}, // latin small letter o with stroke -- no decompo
+		{0x00f8, 'o'}, // latin small letter o with stroke -- no decomposition
 		{0x00f9, 'u'}, // latin small letter u with grave
 		{0x00fa, 'u'}, // latin small letter u with acute
 		{0x00fb, 'u'}, // latin small letter u with circumflex
@@ -2370,7 +2382,7 @@ std::string str::utf8_to_a(const std::string_view utf8)
 	return platform::utf8_to_a(utf8);
 }
 
-int str::normalze_for_compare(const int c)
+int str::normalize_for_compare(const int c)
 {
 	// Unsigned compare: callers can pass a signed char, and a UTF-8 lead or continuation
 	// byte then arrives negative.
@@ -2422,12 +2434,12 @@ bool str::wildcard_icmp(const std::string_view text_in, const std::string_view w
 	while (text < text_end)
 	{
 		auto next_text = text;
-		const auto t = normalze_for_compare(pop_utf8_char(next_text, text_end));
+		const auto t = normalize_for_compare(pop_utf8_char(next_text, text_end));
 
 		if (wildcard < wildcard_end)
 		{
 			auto next_wildcard = wildcard;
-			const auto w = normalze_for_compare(pop_utf8_char(next_wildcard, wildcard_end));
+			const auto w = normalize_for_compare(pop_utf8_char(next_wildcard, wildcard_end));
 
 			if (w == '*')
 			{

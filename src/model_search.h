@@ -84,6 +84,8 @@ namespace df
 		area,
 		duplicate,
 		volume,
+		// The file's own panorama declaration, spelled `@panorama` and taking no argument.
+		panorama,
 	};
 
 	// Specificity a location term is constrained to; `any` matches place, region or country.
@@ -410,11 +412,16 @@ namespace df
 
 	struct search_parent;
 
+	// The three keys a date term can be compared against, one per group order. `original` is the
+	// capture-first ladder the tile shows and Group by Date Original keys on; `created` is the
+	// Created concept alone. Appended rather than placed beside `created` so the numbering a term
+	// carries stays what it was.
 	enum class date_parts_prop
 	{
 		any,
 		created,
-		modified
+		modified,
+		original
 	};
 
 	struct date_parts
@@ -653,7 +660,8 @@ namespace df
 				type == search_term_type::has_location ||
 				type == search_term_type::remote ||
 				type == search_term_type::area ||
-				type == search_term_type::duplicate;
+				type == search_term_type::duplicate ||
+				type == search_term_type::panorama;
 		}
 
 		friend bool operator==(const search_term& lhs, const search_term& rhs)
@@ -750,6 +758,10 @@ namespace df
 
 	std::string format_term(const search_term& term);
 
+	// Issue #139: wraps a path that contains spaces so it reads as one search term. Shared by the
+	// address box and by folder completion, which would otherwise disagree about the same path.
+	std::string quote_path_term(std::string_view path);
+
 	// Returns true when folder_name is on a drive whose volume label matches the
 	// term text (case-insensitive, wildcards supported). drive_labels maps an
 	// upper-case drive letter to its current volume label.
@@ -784,7 +796,11 @@ namespace df
 
 		date_t created() const
 		{
-			return metadata_created.is_valid() ? metadata_created : file_created;
+			if (metadata_created.is_valid()) return metadata_created;
+
+			// file_created is the index's instant. It is compared against
+			// index_file_item::created(), which converts the same stamp.
+			return file_created.is_valid() ? file_created.system_to_local() : date_t{};
 		}
 
 		// Position within an album or a series, used to answer with the neighbouring tracks or
@@ -1218,7 +1234,7 @@ namespace df
 		// comparisons express the range, so the query the node runs returns exactly the items the
 		// node counted rather than a coarser month or year around them.
 		search_t& date_range(const day_t& from, const day_t& to,
-		                     const date_parts_prop target = date_parts_prop::created)
+		                     const date_parts_prop target = date_parts_prop::original)
 		{
 			search_term_modifier not_before;
 			not_before.greater_than = true;

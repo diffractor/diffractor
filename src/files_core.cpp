@@ -41,7 +41,7 @@ std::string file_group::display_name(const bool is_plural) const
 
 ui::const_surface_ptr file_type::default_thumbnail() const
 {
-	return platform::create_segoe_md2_icon(static_cast<wchar_t>(group->icon));
+	return platform::create_icon_surface(static_cast<char32_t>(group->icon));
 }
 
 struct file_type_config
@@ -1539,6 +1539,26 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// header has been read - otherwise the next decode fails with a bad state.
 		const df::scope_exit close_decoder([this] { _jpeg_decoder.close(); });
 
+		// The budget belongs here rather than at the callers: the const_image_ptr overload of
+		// image_to_surface gates at its head but the df::cspan one does not, and this is the single
+		// point both reach. The header has just been read, so these are the file's own dimensions -
+		// but libjpeg reduces while it decodes, so the ceiling is what the decode will allocate rather
+		// than what the file stores. Charging the full size would refuse a large stitch even as a
+		// thumbnail, which is the one request that was always affordable.
+		const auto source_dimensions = _jpeg_decoder.dimensions();
+		const auto scale_hint = ui::calc_scale_down_factor(source_dimensions, target_extent);
+		const auto decode_bytes = (static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4) /
+			(static_cast<int64_t>(scale_hint) * scale_hint);
+
+		if (decode_bytes > df::max_decode_bytes)
+		{
+			df::log(__FUNCTION__, std::format("decode of {} x {} needs {}, over the {} budget",
+			                                  source_dimensions.cx, source_dimensions.cy,
+			                                  df::file_size(decode_bytes).str(),
+			                                  df::file_size(df::max_decode_bytes).str()));
+			return {};
+		}
+
 		// _orientation_out is only valid once the header has been parsed.
 		const auto orientation = orientation_override.value_or(_jpeg_decoder._orientation_out);
 
@@ -1548,7 +1568,6 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
 		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
 		const auto use_yuv = can_use_yuv && setting.use_yuv && _jpeg_decoder.can_render_nv12();
-		const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
 
 		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
 			return {};
@@ -1825,7 +1844,9 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 
 			if (is_empty(surface_result))
 			{
-				surface_result = platform::image_to_surface(image_buffer_in, target_extent);
+				// Everything without a decoder of its own - GIF, BMP, TIFF, TGA, SGI, the portable
+				// pixmaps, DPX - reaches ffmpeg, which carries all of them on every platform.
+				surface_result = av_decode_still(image_buffer_in, target_extent);
 			}
 		}
 	}
@@ -2377,8 +2398,11 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 
 						default:
 							// GIF, BMP and TIFF, plus the bitmap types we recognise by extension but
-							// not by signature (TGA, SGI, PPM, DPX), are decoded by the platform. Its
-							// scanner reads the geometry from the header without decoding.
+							// not by signature (TGA, SGI, PPM, DPX), are decoded by ffmpeg. scan_photo
+							// reads the geometry from the header without decoding - but only for the
+							// formats it has a branch for, so a refusal here is the one that can name the
+							// size in the diagnostic, not the one that makes the budget safe. That gate is
+							// inside av_decode_still, which sees every source this reaches.
 							{
 								const auto scanned = scan_photo(stream);
 								const sizei scanned_dimensions{
@@ -2391,7 +2415,7 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 									break;
 								}
 
-								result.s = image_to_surface(file, {});
+								result.s = av_decode_still(file, {}, path.extension());
 							}
 							break;
 						}
@@ -2878,6 +2902,20 @@ file_update_result files::update(const df::file_path path_src, const df::file_pa
 	return result;
 }
 
+// libarchive wants the native path in the platform's own spelling, and the two entry points differ
+// in more than their character type: the wide one is what carries the \\?\ prefix a long Windows
+// path needs, while a POSIX path is bytes all the way down and has no wide form to convert to.
+// Overloading on platform::native_path lets the call site stay free of a conditional.
+static int archive_read_open_native(archive* a, const std::wstring& path, const size_t block_size)
+{
+	return archive_read_open_filename_w(a, path.c_str(), block_size);
+}
+
+static int archive_read_open_native(archive* a, const std::string& path, const size_t block_size)
+{
+	return archive_read_open_filename(a, path.c_str(), block_size);
+}
+
 std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 {
 	std::vector<archive_item> results;
@@ -2896,9 +2934,9 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 	archive_read_support_filter_all(a);
 	archive_read_support_format_all(a);
 
-	const auto w = platform::to_file_system_path(zip_file_path);
+	const auto native = platform::to_file_system_path(zip_file_path);
 
-	if (archive_read_open_filename_w(a, w.c_str(), 10240) == ARCHIVE_OK)
+	if (archive_read_open_native(a, native, 10240) == ARCHIVE_OK)
 	{
 		const df::scope_exit close_archive([a] { archive_read_close(a); });
 
@@ -2926,7 +2964,7 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 
 // The app UI language is a 2-letter code (app_settings::language). FFmpeg tags id3v2
 // COMM/USLT comments with a lowercase ISO 639-2 3-letter code taken verbatim from the
-// file, so either the bibliographic (e.g. "ger") or terminologic ("deu") variant may
+// file, so either the bibliographic (e.g. "ger") or terminological ("deu") variant may
 // appear. Returns true when `key` is exactly "comment-<code>" for a code matching ui_lang.
 static bool comment_key_matches_ui_language(const std::string_view key, const std::string_view ui_lang)
 {
@@ -3011,12 +3049,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 
 				if (date.is_valid())
 				{
-					if (!result.created_digitized.is_valid())
-					{
-						result.created_digitized = date;
-					}
-
-					result.created_utc = date;
+					result.dates.add_utc(prop::date_source::container_created, date);
 					result.year = date.year();
 				}
 			}
@@ -3026,7 +3059,28 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 			const auto date = df::date_t::from(kv.value);
 			if (date.is_valid())
 			{
-				result.created_digitized = date;
+				// A wall-clock reading like TDOR below, not an instant: a rip tag carries no zone, so
+				// storing it as UTC would shift it by the scanning machine's offset and move a
+				// midnight-valued rip date onto the previous day.
+				result.dates.add(prop::date_source::rip_date, date);
+			}
+		}
+		// TDOR is the recording's own release date, which for a rip is decades before the file. It
+		// is a wall-clock reading rather than an instant: nobody wrote a zone for 1969. TORY is the
+		// same fact in ID3v2.3, and FFmpeg passes both through under their raw four-character name.
+		else if (is_key(kv.key, "TDOR") || is_key(kv.key, "TORY") ||
+			is_key(kv.key, "originalyear") || is_key(kv.key, "original_year"))
+		{
+			const auto date = df::date_t::from(kv.value);
+			if (date.is_valid())
+			{
+				result.dates.add(prop::date_source::id3_original_release, date);
+			}
+			else if (kv.value.size() == 4 && str::is_num(kv.value))
+			{
+				const auto year = str::to_int(kv.value);
+				if (year > 1800 && year < 2100) result.dates.add(prop::date_source::id3_original_release,
+				                                                df::date_t(year, 1, 1, 0, 0, 0));
 			}
 		}
 		else if (is_key(kv.key, "id3v2_priv.Windows Media Player 9 Series"))
@@ -3112,7 +3166,7 @@ void file_scan_result::parse_metadata_ffmpeg_kv(prop::item_metadata& result) con
 			str::split2(kv.value, true, [this](const std::string_view text)
 			            {
 				            windows_categories.emplace_back(str::cache(str::trim(text)));
-			            }, [](const wchar_t c) { return c == L';'; });
+			            }, [](const char c) { return c == ';'; });
 		}
 		else if (is_key(kv.key, "location-eng") || is_key(kv.key, "location") || is_key(
 			kv.key, "com.apple.quicktime.location.ISO6709"))
@@ -3170,14 +3224,15 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		metadata_xmp::parse(*result, metadata.xmp);
 	}
 
-	// These fields are 16 bit in the metadata record. High ISO and 96/192 kHz audio exceed that,
-	// so saturate - wrapping would report 96000 Hz as 30464 Hz.
-	const auto to_u16 = [](const int v)
+	// These fields are 16 bit in the metadata record. High ISO, 96/192 kHz audio and a stitched
+	// panorama past 65535 pixels all exceed that, so saturate - wrapping would report 96000 Hz as
+	// 30464 Hz, and a 70000 pixel stitch as 4464, which is a shape no panorama test can recognise.
+	const auto to_u16 = [](const int64_t v)
 	{
-		return static_cast<uint16_t>(std::clamp(v, 0, static_cast<int>(UINT16_MAX)));
+		return static_cast<uint16_t>(std::clamp<int64_t>(v, 0, UINT16_MAX));
 	};
 
-	if (prop::is_null(result->created_utc)) result->created_utc = created_utc;
+	if (created_utc.is_valid()) result->dates.add_utc(prop::date_source::embedded_created, created_utc);
 	if (prop::is_null(result->iso_speed)) result->iso_speed = to_u16(iso_speed);
 	if (prop::is_null(result->exposure_time)) result->exposure_time = exposure_time;
 	if (prop::is_null(result->f_number)) result->f_number = f_number;
@@ -3225,8 +3280,8 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		result->tags = str::cache(str::combine(tags));
 	}
 
-	if (!prop::is_null(width)) result->width = width;
-	if (!prop::is_null(height)) result->height = height;
+	if (!prop::is_null(width)) result->width = to_u16(width);
+	if (!prop::is_null(height)) result->height = to_u16(height);
 	if (!prop::is_null(pixel_format)) result->pixel_format = pixel_format;
 	if (orientation_applied || orientation != ui::orientation::top_left) result->orientation = orientation;
 
@@ -3288,6 +3343,61 @@ void finish_structure_sections(metadata_kv_list& kv)
 	kv = std::move(kept);
 }
 
+// A row may carry a complete encoded image rather than an opaque payload. Decoding belongs here, on
+// the scan worker, because the pane draws what it is given and never decodes while painting. What
+// will not decode keeps its bytes and stays a hex dump, trimmed back to dump size.
+static void decode_embedded_images(metadata_kv_list& kv)
+{
+	files ff;
+
+	for (auto& row : kv)
+	{
+		auto* const binary = std::get_if<metadata_binary_detail>(&row.detail);
+
+		if (!binary || !binary->is_image || binary->bytes.empty()) continue;
+
+		// The declared size is the file's, not ours, and a header can claim far more than the bytes
+		// that follow it. Header-scan first and refuse the ones that would allocate past the decode
+		// budget: this is a row in a properties pane, not a reason to take a gigabyte. A header this
+		// cannot read is not waved through - every decoder image_to_surface can reach carries the same
+		// budget refusal, including the ffmpeg fallback.
+		const df::cspan bytes{binary->bytes.data(), binary->bytes.size()};
+		mem_read_stream header_stream(bytes);
+		const auto scanned = scan_photo(header_stream);
+		const sizei scanned_dimensions{static_cast<int>(scanned.width), static_cast<int>(scanned.height)};
+
+		if (!scanned_dimensions.is_empty() && files::exceeds_decode_budget(scanned_dimensions)) continue;
+
+		// Decoded at its own size. A target extent would ENLARGE it: image_to_surface finishes with
+		// scale_if_needed, which scales up to fill whatever size it is given.
+		auto surface = ff.image_to_surface(bytes, {}, false, decode_intent::thumbnail);
+
+		if (ui::is_valid(surface))
+		{
+			// Only a payload bigger than the pane will ever draw is reduced, and only downwards.
+			constexpr sizei preview_limit{1024, 1024};
+			const auto dims = surface->dimensions();
+
+			if (dims.cx > preview_limit.cx || dims.cy > preview_limit.cy)
+			{
+				surface = ff.scale_if_needed(std::move(surface), preview_limit);
+			}
+		}
+
+		if (ui::is_valid(surface))
+		{
+			row.detail = metadata_image_detail{std::move(surface)};
+			// An image is the point of the row, so it is shown without being asked for.
+			row.open_by_default = true;
+		}
+		else
+		{
+			binary->is_image = false;
+			if (binary->bytes.size() > str::max_hex_dump_bytes) binary->bytes.resize(str::max_hex_dump_bytes);
+		}
+	}
+}
+
 av_media_info file_scan_result::to_info() const
 {
 	av_media_info result;
@@ -3342,6 +3452,11 @@ av_media_info file_scan_result::to_info() const
 	if (!structure_metadata.empty())
 	{
 		result.metadata.emplace_back(metadata_standard::structure, structure_metadata);
+	}
+
+	for (auto& block : result.metadata)
+	{
+		decode_embedded_images(block.values);
 	}
 
 	return result;

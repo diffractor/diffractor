@@ -16,6 +16,17 @@
 #include "view_edit.h"
 
 
+// Writing metadata updates xmp:ModifyDate, and on a file that carried no XMP the toolkit can add an
+// xmp:CreateDate too, so neither is stable across a write. The capture time is: a write that moves
+// it has destroyed when the photograph was taken (#184, #192). Assert that, then let the rest go.
+static void reconcile_write_mutable_dates(prop::item_metadata& expected, const prop::item_metadata& actual,
+                                          const std::string_view message)
+{
+	assert_equal(expected.dates.original(), actual.dates.original(), "date original survives a write", message);
+	expected.dates = actual.dates;
+}
+
+
 static uint32_t read_be32(const uint8_t* p)
 {
 	return static_cast<uint32_t>(p[0]) << 24 | static_cast<uint32_t>(p[1]) << 16 |
@@ -517,6 +528,55 @@ static void should_update_rating_and_label_for_emoji_filename()
 	             "no temporary files left beside the emoji-named file");
 }
 
+// The Date tool exists to correct a file whose capture time is wrong, and Test.jpg carries an EXIF
+// DateTimeOriginal of its own. Writing only photoshop:DateCreated - the lowest-authority capture
+// source - would leave that EXIF tag winning, and the tool would silently do nothing (#184).
+static void should_write_an_edited_original_date()
+{
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
+	const auto save_path = _temps.next_path(".jpg");
+
+	files ff;
+	const auto before = ff_scan_file(ff, load_path).to_props();
+	assert_equal(df::date_t(2012, 9, 14, 19, 21, 14), before->dates.original(), "the file starts with its own date");
+
+	metadata_edits edits;
+	edits.date_original = df::date_t(1980, 6, 1, 9, 30, 0);
+
+	auto written = ff.update(load_path, save_path, edits, {}, {}, false, {}, {},
+	                         ff_inspect_rescan(save_path));
+	assert_equal(true, written.success(), std::format("date written ({})", written.format_error()));
+
+	const auto after = ff_scan_after_update(ff, written, save_path).to_props();
+	assert_equal(df::date_t(1980, 6, 1, 9, 30, 0), after->dates.original(), "the edited date is what the file reports");
+	assert_equal(df::date_t(1980, 6, 1, 9, 30, 0), after->created(), "and it is the date the item shows");
+}
+
+// The same rule on the Created axis: Test.jpg carries its own EXIF DateTimeDigitized, which outranks
+// xmp:CreateDate, so writing only the XMP property would leave that tag winning and the edit would
+// silently do nothing. Original must survive it - correcting when a file was made says nothing about
+// when the picture was taken.
+static void should_write_an_edited_created_date()
+{
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
+	const auto save_path = _temps.next_path(".jpg");
+
+	files ff;
+	const auto before = ff_scan_file(ff, load_path).to_props();
+	assert_equal(df::date_t(2012, 9, 14, 19, 21, 14), before->dates.created(), "the file starts with its own date");
+
+	metadata_edits edits;
+	edits.date_created = df::date_t(1994, 3, 7, 14, 5, 0);
+
+	auto written = ff.update(load_path, save_path, edits, {}, {}, false, {}, {},
+	                         ff_inspect_rescan(save_path));
+	assert_equal(true, written.success(), std::format("date written ({})", written.format_error()));
+
+	const auto after = ff_scan_after_update(ff, written, save_path).to_props();
+	assert_equal(df::date_t(1994, 3, 7, 14, 5, 0), after->dates.created(), "the edited date is what the file reports");
+	assert_equal(before->dates.original(), after->dates.original(), "an edit to one date leaves the others alone");
+}
+
 static void should_update_exif_rating()
 {
 	const auto load_path = test_files_folder.combine_file("exif-rating.jpg");
@@ -647,6 +707,7 @@ static void should_update_metadata(const std::string_view name)
 		expected->comment = "Description xx"_c;
 	}
 
+	reconcile_write_mutable_dates(*expected, *actual, "metadata");
 	assert_metadata(*expected, *actual);
 }
 
@@ -674,6 +735,7 @@ static void should_add_remove_tags(const std::string_view name)
 
 	expected->tags = make_unique_tags(tag_set(expected->tags), tags_to_add);
 
+	reconcile_write_mutable_dates(*expected, *actual, "tags added");
 	assert_metadata(*expected, *actual, "added");
 
 	metadata_edits edits2;
@@ -687,6 +749,7 @@ static void should_add_remove_tags(const std::string_view name)
 
 	const auto sr_actual2 = ff_scan_after_update(ff, remove_result, save_path, detect_xmp_sidecar(save_path));
 	const auto actual2 = sr_actual2.to_props();
+	reconcile_write_mutable_dates(*expected, *actual2, "tags removed");
 	assert_metadata(*expected, *actual2, "removed");
 }
 
@@ -811,8 +874,13 @@ static void should_read_asf_wm_categories()
 	ff.update(load_path, save_path, {}, {}, {}, false, {});
 
 	const std::vector<std::string> shell_tags = {"AsfTagA", "AsfTagB", "AsfTagC"};
-	if (platform::write_shell_tags(save_path, shell_tags).failed())
-		return; // Windows Media Foundation unavailable; skip on this host
+	const auto tagged = !platform::write_shell_tags(save_path, shell_tags).failed();
+
+	// The runner fails a test that asserts nothing, so the skip has to say what it decided rather
+	// than returning silently - otherwise a host without Media Foundation reads as a regression.
+	assert_equal(true, save_path.exists(), "asf copy written");
+
+	if (!tagged) return; // Windows Media Foundation unavailable; skip the rest on this host
 
 	const auto sr = ff_scan_file(ff, save_path);
 
@@ -950,13 +1018,14 @@ static void should_update_location(const std::string_view name)
 	expected->location_state = "New York"_c;
 	expected->location_country = "USA"_c;
 
+	reconcile_write_mutable_dates(*expected, *actual, "location");
 	assert_metadata(*expected, *actual);
 }
 
 static void should_update_gps_in_exif()
 {
 	const auto save_path = _temps.next_path(".jpg");
-	const auto load_path = test_files_folder.combine_file("IMG_9340.jpg");
+	const auto load_path = test_files_folder.combine_file("IMG_9340.JPG");
 	const auto coordinate = gps_coordinate(40.71417, -74.00611);
 
 	metadata_edits metadata_edits;
@@ -985,7 +1054,7 @@ static void should_update_gps_in_exif()
 static void should_handle_international_characters()
 {
 	const auto save_path = _temps.next_path(".jpg");
-	const auto load_path = test_files_folder.combine_file("test.jpg");
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 	constexpr auto description = "In vollen Zügen genießen";
 
 	tag_set tags;
@@ -1028,7 +1097,7 @@ static void should_handle_international_characters()
 static void should_handle_korean_characters()
 {
 	const auto save_path = _temps.next_path(".jpg");
-	const auto load_path = test_files_folder.combine_file("test.jpg");
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 	// "서울에서 찍은 사진" (a photo taken in Seoul)
 	constexpr auto description = "\uC11C\uC6B8\uC5D0\uC11C \uCC0D\uC740 \uC0AC\uC9C4";
 
@@ -1201,8 +1270,11 @@ static void should_refuse_to_write_an_unreadable_sidecar()
 	metadata_edits edits;
 	edits.rating = 5;
 
+#ifdef _WIN32
 	{
 		// read_write opens with no sharing, which is how a sidecar held by another application reads.
+		// That denial is Windows' mandatory locking; a POSIX descriptor refuses nothing, so there is
+		// no unreadable sidecar to present here.
 		const auto lock = platform::open_file(path_xmp, platform::file_open_mode::read_write);
 		assert_equal(true, static_cast<bool>(lock), "sidecar locked");
 
@@ -1220,6 +1292,7 @@ static void should_refuse_to_write_an_unreadable_sidecar()
 		assert_equal(true, refused, "an unreadable sidecar is refused, not rebuilt from the edits alone");
 		assert_equal(false, staged_path.exists(), "and nothing is staged to swap over it");
 	}
+#endif
 
 	const auto result = metadata_xmp::update(path, path, edits, {}, staged_path);
 	assert_equal(true, result.success, "staged once the sidecar can be read");
@@ -1428,7 +1501,7 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 		"Gherkin.CR2",
 		"gizmo.mp4",
 		"IMG_0096.JPG",
-		"cmyk.JPG",
+		"cmyk.jpg",
 		"ipod.mov",
 		"jello.tif",
 		"StPauls.MOV",
@@ -1474,13 +1547,20 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	tests.add("Should refuse to write an unreadable sidecar"s, should_refuse_to_write_an_unreadable_sidecar);
 	tests.add("Should save as with distinct xmp sidecar"s, should_save_as_with_distinct_xmp_sidecar);
 	tests.add("Should update exif rating"s, should_update_exif_rating);
+	tests.add("Should write an edited original date"s, should_write_an_edited_original_date);
+	tests.add("Should write an edited created date"s, should_write_an_edited_created_date);
 	tests.add("Should update formatted description"s, should_update_formatted_text);
 	tests.add("Should update synopsis"s, should_update_synopsis);
-	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);
 
 	// Windows Explorer / Media Player tag interop (#123)
 	tests.add("Should read mp4 Xtra metadata gizmo.mp4"s, [] { should_read_mp4_xtra_metadata("gizmo.mp4", "xTag1"); });
 	tests.add("Should read mp4 Xtra metadata ipod.mov"s, [] { should_read_mp4_xtra_metadata("ipod.mov", "ipad"); });
+
+#ifdef _WIN32
+	// These write through the Windows property system and then ask it to read the result back, so
+	// they measure Diffractor against the shell itself. There is nothing to hold them to elsewhere:
+	// platform::write_shell_tags has no counterpart, and a test that skips asserts nothing and fails.
+	tests.add("Should remove shell written tags"s, should_remove_shell_written_tags);
 	tests.add("Should read asf WM/Category multi-value"s, should_read_asf_wm_categories);
 	tests.add("Should write windows tags via xmp gizmo.mp4"s, [] { should_write_windows_tags_via_xmp("gizmo.mp4"); });
 	tests.add("Should write windows tags via xmp ipod.mov"s, [] { should_write_windows_tags_via_xmp("ipod.mov"); });
@@ -1492,7 +1572,9 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 		tests.add(std::format("Should round-trip windows shell tags {}", name),
 		          [name] { should_roundtrip_windows_shell_tags(name); });
 	}
+#endif
 
+	// Unlike the above, this one asserts that the write is refused, which is true everywhere.
 	constexpr std::string_view shell_unsupported_files[] = {"Byzantium.avi", "gen.mpg"};
 	for (auto name : shell_unsupported_files)
 	{

@@ -72,9 +72,40 @@ public:
 	int _fps_counter = 0;
 	int _fps_avg = 0;
 	int _fps_second = 0;
+	bool _control_down = false;
+
+	// Wheel accumulation happens once, here, rather than in each consumer. Two remainders per axis
+	// because the two answers are quantised differently: whole detents for the surfaces that move by
+	// detent, whole logical units for the ones that scroll.
+	struct wheel_accumulator
+	{
+		double steps = 0.0;
+		double scroll = 0.0;
+	};
+
+	wheel_accumulator _wheel_vertical;
+	wheel_accumulator _wheel_horizontal;
+	double _wheel_pending_pinch = 0.0;
 
 	view_frame(view_state& s) : _state(s)
 	{
+	}
+
+	// A device reporting whole detents and one reporting fractions of them reach the view as the same
+	// thing: both remainders are carried, so a touchpad accumulates instead of being divided to
+	// nothing, and neither answer can be rounded away twice on the way through.
+	bool dispatch_wheel(const pointi loc, const int delta, const ui::key_state keys, const ui::wheel_axis axis,
+	                    wheel_accumulator& pending)
+	{
+		const ui::wheel_notch notch{
+			axis,
+			ui::accumulate_wheel_steps(pending.steps, delta),
+			ui::accumulate_wheel_steps(pending.scroll, delta / 2.0, 1.0),
+			keys
+		};
+
+		if (notch.steps == 0 && notch.delta == 0) return false;
+		return _view->mouse_wheel(loc, notch);
 	}
 
 	double frame_render_time = 0.0;
@@ -98,6 +129,20 @@ public:
 		{
 			_active_controller->tick();
 		}
+
+		sync_modifier_cursor();
+	}
+
+	// zoom.md: cursor state follows state rather than waiting for the next pointer move. Ctrl is what
+	// arms drawing a region, and a held pointer produces no event that would otherwise re-ask.
+	// key_down calls this on the press so the change is immediate; the tick covers the release, for
+	// which there is no key event at all.
+	void sync_modifier_cursor()
+	{
+		const auto control_down = ui::current_key_state().control;
+		if (_control_down == control_down) return;
+		_control_down = control_down;
+		if (_hover && _active_controller) update_cursor();
 	}
 
 	// Never null after construction: most handlers below dereference _view without testing it, and a
@@ -182,15 +227,21 @@ public:
 
 	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
 	{
-		const int z_delta = delta / 2;
-		_view->mouse_wheel(loc, z_delta, keys);
+		was_handled = dispatch_wheel(loc, delta, keys, ui::wheel_axis::vertical, _wheel_vertical);
 		update_controller(loc);
 	}
 
 	void on_mouse_hwheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
 	{
-		_view->mouse_hwheel(loc, delta / 2, keys);
-		was_handled = true;
+		was_handled = dispatch_wheel(loc, delta, keys, ui::wheel_axis::horizontal, _wheel_horizontal);
+		update_controller(loc);
+	}
+
+	void on_pinch(const pointi loc, const int delta, const bool begins, bool& was_handled) override
+	{
+		if (begins) _wheel_pending_pinch = 0.0;
+		const auto steps = ui::accumulate_wheel_steps(_wheel_pending_pinch, delta);
+		if (steps != 0) was_handled = _view->pinch(loc, steps);
 		update_controller(loc);
 	}
 

@@ -90,16 +90,75 @@ static void render_toolbar_button(ui::draw_context& dc, const ui::command_ptr& c
 	}
 }
 
+// Discussion #251: the menu the always-visible scroll control opens. Scroll to top is the control's
+// own action and comes first, because the click no longer performs it. Everything after that is the
+// toolbar's own command object, so a second copy of the toolbar cannot disagree with the first about
+// what is offered, enabled or ticked.
+std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bool at_top,
+                                               std::function<void()> scroll_to_top)
+{
+	std::vector<ui::command_ptr> result;
+
+	// A null entry is the menu's separator, so an unresolved command must be dropped rather than
+	// emplaced - it would become a divider instead of a visible failure. That is also why a
+	// separator is only emitted where there is already something for it to divide: two adjacent
+	// nulls draw as a double rule, and a trailing one as a rule under the last entry.
+	const auto add_separator = [&result]
+	{
+		if (!result.empty() && result.back() != nullptr) result.emplace_back(nullptr);
+	};
+
+	const auto add_command = [&result, &state](const commands id)
+	{
+		if (auto c = state.find_command(id)) result.emplace_back(std::move(c));
+	};
+
+	auto top = std::make_shared<ui::command>();
+	top->icon = icon_index::up;
+	top->text = tt.tooltip_scroll_to_top;
+	top->enable = !at_top;
+	top->invoke = std::move(scroll_to_top);
+	result.emplace_back(std::move(top));
+	add_separator();
+
+	if (const auto group = state.find_command(commands::menu_group_toolbar); group && group->menu)
+	{
+		for (auto& c : group->menu()) result.emplace_back(std::move(c));
+	}
+
+	add_separator();
+
+	for (const auto id : {commands::filter_photos, commands::filter_videos, commands::filter_audio})
+	{
+		add_command(id);
+	}
+
+	add_separator();
+	add_command(commands::browse_recursive);
+
+	if (!result.empty() && result.back() == nullptr) result.pop_back();
+
+	return result;
+}
+
 // design.md: the base of the item scrollbar is a back-to-top action. It is painted as the foot of
 // the same column as the track above it -- same inset, same band -- so the two read as one control
 // rather than as a button parked under a scrollbar.
+//
+// Discussion #251: it is also the one items-view control that is always on screen. The filter
+// toolbar at the top scrolls away, so changing a filter over a long listing meant scrolling to the
+// top first. Pinning that toolbar would spend vertical space permanently in the view whose whole
+// purpose is showing thumbnails; this control is sticky by construction, so nothing has to be.
 class scroll_to_top_element final : public std::enable_shared_from_this<scroll_to_top_element>, public view_element
 {
 	view_scroller& _scroller;
+	view_state& _state;
+	mutable recti _device_bounds;
 
 public:
-	explicit scroll_to_top_element(view_scroller& scroller) :
-		view_element(view_element_style::can_invoke | view_element_style::has_tooltip), _scroller(scroller)
+	scroll_to_top_element(view_scroller& scroller, view_state& state) :
+		view_element(view_element_style::can_invoke | view_element_style::has_tooltip), _scroller(scroller),
+		_state(state)
 	{
 		padding = {0, 0};
 	}
@@ -122,38 +181,70 @@ public:
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		const auto r = column_bounds(element_offset);
+		_device_bounds = r;
 		const auto bg = calc_background_color(dc);
 		dc.draw_rounded_rect(r, bg.a > 0.0f ? bg : ui::color(0x000000, dc.colors.alpha * dc.colors.bg_alpha),
 		                     dc.padding1);
 
-		// Dimming says the action has nothing left to do; removing it would resize the track under
-		// the pointer every time the list reached the top.
+		// Dimming says the scroll has nothing left to do; removing it would resize the track under
+		// the pointer every time the list reached the top. It is a resting state only: the click
+		// opens the menu in every scroll position (discussion #251), and a listing opens at the top,
+		// so a control that stayed at a quarter alpha under the pointer would read as disabled in
+		// exactly the state the view is usually in.
 		const auto engaged = is_style_bit_set(view_element_style::hover) ||
 			is_style_bit_set(view_element_style::tracking);
-		const auto alpha = dc.colors.alpha * (is_at_top() ? 0.25f : engaged ? 1.0f : 0.66f);
+		const auto alpha = dc.colors.alpha * (engaged ? 1.0f : is_at_top() ? 0.25f : 0.66f);
 		xdraw_icon(dc, icon_index::up, r, ui::color(dc.colors.foreground, alpha), {});
 	}
 
+	// What the listing holds, and - when a filter is hiding anything - how much it is not showing.
+	// That second number is the one a user needs before opening the filter menu, not after.
 	void tooltip(view_hover_element& hover, const pointi loc, const pointi element_offset) const override
 	{
 		hover.elements->add(make_icon_element(icon_index::up, flex_item::no_break));
-		hover.elements->add(std::make_shared<text_element>(tt.tooltip_scroll_to_top));
+		hover.elements->add(std::make_shared<text_element>(
+			format_items_totals(_state.summary_shown(), _state.item_index.is_init_complete()),
+			ui::style::font_face::dialog, ui::style::text_style::single_line, flex_item::line_break));
+		hover.elements->add(std::make_shared<summary_control>(_state.summary_shown(), flex_item::line_break));
+
+		const auto total_count = _state.search_items().size();
+		const auto shown_count = _state.display_items().size();
+
+		// The same guard the footer uses: while a search is running the results run ahead of the items
+		// added to the listing, and reporting that gap as "filtered out" would be a lie that corrects
+		// itself a moment later.
+		const auto is_searching = _state.item_index.searching > 0;
+
+		if (!is_searching && total_count > shown_count)
+		{
+			hover.elements->add(std::make_shared<text_element>(
+				str_format(tt.some_items_filtered_fmt.sv(), total_count - shown_count),
+				ui::style::font_face::dialog, ui::style::text_style::multiline, flex_item::new_line));
+		}
+
 		hover.active_bounds = hover.window_bounds = bounds.offset(element_offset);
 	}
 
 	void dispatch_event(const view_element_event& event) override
 	{
-		if (event.type == view_element_event_type::invoke && !is_at_top())
-		{
-			_scroller.scroll_offset(event.host, 0, 0);
-		}
+		if (event.type != view_element_event_type::invoke) return;
+
+		// By address: the menu command outlives this call, so a reference to a local reference would
+		// dangle the moment the handler returned.
+		const auto scroller = &_scroller;
+		const auto host = event.host;
+		event.host->track_menu(_device_bounds, items_scroll_menu(_state, is_at_top(),
+		                                                         [scroller, host]
+		                                                         {
+			                                                         scroller->scroll_offset(host, 0, 0);
+		                                                         }));
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
 	                                             const std::vector<recti>& excluded_bounds) override
 	{
-		if (is_at_top()) return nullptr;
+		_device_bounds = column_bounds(element_offset);
 		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
 	}
 };
@@ -320,6 +411,16 @@ protected:
 			// to the item region is what keeps the status bar underneath it clickable.
 			_bounds = _scroller.logical_to_device(_hover_item->interactive_bounds())
 			                   .intersection(_parent.calc_items_bounds());
+
+			// The pin badge is drawn inside those same bounds, so a controller spanning them made the
+			// badge unreachable: the pointer never left the item, so the badge was never hit tested
+			// and clicking it re-selected the item instead of releasing the hold. Carving it out means
+			// moving onto the badge leaves the controller and forces the re-test.
+			if (_state._pin_item == _hover_item)
+			{
+				const auto badge = _hover_item->pin_badge_bounds();
+				if (!badge.is_empty()) _bounds.exclude(loc, _scroller.logical_to_device(badge));
+			}
 		}
 	}
 
@@ -394,11 +495,6 @@ public:
 		return _selecting ? ui::style::cursor::select : ui::style::cursor::normal;
 	}
 
-	recti calc_selection_bounds() const
-	{
-		return recti(_start_loc, _last_loc).normalise();
-	}
-
 	recti calc_logical_selection_bounds() const
 	{
 		return _selecting ? recti(_start_logical_loc, _last_logical_loc).normalise() : recti();
@@ -408,8 +504,16 @@ public:
 	{
 		if (_selecting)
 		{
-			const auto selection = calc_selection_bounds();
-			rc.draw_rect(selection, ui::color(ui::style::color::dialog_selected_background, 0.5));
+			// Drawn from the logical rectangle rather than the device one, because auto-scroll moves
+			// the content under a stationary pointer: a device-space marquee then sat still over items
+			// that were not going to be selected. Clipped to the grid so it never paints over the
+			// preview pane or the sidebar.
+			const auto selection = _scroller.logical_to_device(calc_logical_selection_bounds())
+			                                .intersection(_scroller.client_bounds());
+			if (!selection.is_empty())
+			{
+				rc.draw_rect(selection, ui::color(ui::style::color::dialog_selected_background, 0.5));
+			}
 		}
 	}
 
@@ -539,6 +643,15 @@ public:
 			{
 				_scroller.offset(_host, 0, offset);
 			}
+			else
+			{
+				return;
+			}
+
+			// The pointer is stationary while the content moves, so the logical end of the rectangle
+			// only follows if it is recomputed here. Without this the highlight froze during the
+			// scroll and the whole scrolled-past run appeared in the selection at the release.
+			update_state();
 		}
 	}
 };
@@ -569,7 +682,10 @@ public:
 	{
 		_last_loc = loc;
 
-		if (_tracking && !_cancel && !_bounds.contains(loc))
+		// Leaving the tile is not enough on its own: the tiles abut, so a press near an edge turned a
+		// one-pixel twitch into a drag of the whole selection. The same start area the rubber band
+		// uses has to be cleared as well, so one surface does not hold two thresholds.
+		if (_tracking && !_cancel && !_bounds.contains(loc) && !center_rect({8, 8}, _start_loc).contains(loc))
 		{
 			start_drag();
 		}
@@ -678,7 +794,7 @@ items_view::items_view(view_state& s, view_host_ptr host) :
 	};
 	_media_scroller.changed_func = [this] { _state.invalidate_view(view_invalid::view_redraw); };
 
-	_items_scroll_top = std::make_shared<scroll_to_top_element>(_items_scroller);
+	_items_scroll_top = std::make_shared<scroll_to_top_element>(_items_scroller, _state);
 
 	_metadata_tree->invalidate = [this]
 	{
@@ -1223,8 +1339,7 @@ void items_view::items_changed(const bool path_changed)
 		           }));
 	}
 
-	if (has_items && (_state.effective_group_order() == group_by::date_created ||
-		_state.effective_group_order() == group_by::date_modified))
+	if (has_items && is_date_group_order(_state.effective_group_order()))
 	{
 		add_action(setting.sort_dates_descending
 			           ? tt.command_sort_dates_ascending.sv()
@@ -1349,6 +1464,19 @@ public:
 	}
 };
 
+// design.md L5: Escape peels one layer. With a rectangle on the picture it clears it; without one it
+// falls through to the unwind ladder view_state::escape owns, so there is one order rather than two.
+bool items_view::escape()
+{
+	if (const auto photo = std::dynamic_pointer_cast<photo_control>(_media_element); photo && photo->has_region())
+	{
+		photo->clear_region();
+		return true;
+	}
+
+	return false;
+}
+
 void items_view::update_regions()
 {
 	// Single geometry pass. Regions are laid out back to front: the item grid is the background of
@@ -1449,51 +1577,48 @@ view_controller_ptr items_view::items_controller_from_location(const view_host_p
 	return std::make_shared<item_select_controller>(host, *this, _state, _items_scroller, i, loc);
 }
 
+// One ordered walk over the regions calculated by update_regions(). Chrome, scroll bars and
+// splitters are all tested before the item grid. Hit testing, wheel routing and the context menu all
+// consume this rather than each writing the order out again: they had drifted, and the wheel's copy
+// had lost the splitters, both scroll bars and the scroll control entirely.
+items_view::view_region items_view::region_at(const pointi loc) const
+{
+	if (region_hit(_regions.sidebar_splitter, loc)) return view_region::sidebar_splitter;
+	if (region_hit(_regions.sidebar, loc)) return view_region::sidebar;
+	if (region_hit(_regions.splitter, loc)) return view_region::splitter;
+	if (region_hit(_regions.items_scroll, loc)) return view_region::items_scroll;
+	if (region_hit(_regions.items_scroll_top, loc)) return view_region::items_scroll_top;
+	if (region_hit(_regions.media_scroll, loc)) return view_region::media_scroll;
+	if (region_hit(_regions.media, loc)) return view_region::media;
+	if (region_hit(_regions.items, loc)) return view_region::items;
+	return view_region::none;
+}
+
 view_controller_ptr items_view::controller_from_location(const view_host_ptr& host, const pointi loc)
 {
-	// One ordered walk over the regions calculated by update_regions(). Chrome, scroll bars and
-	// splitters are all tested before the item grid, and each controller is confined to the region
-	// that produced it: view_host caches the active controller's bounds and only re-tests once the
-	// pointer leaves them, so a controller that overhangs its region would make the neighbouring
-	// region unclickable.
-	if (region_hit(_regions.sidebar_splitter, loc))
+	// Each controller is confined to the region that produced it: view_host caches the active
+	// controller's bounds and only re-tests once the pointer leaves them, so a controller that
+	// overhangs its region would make the neighbouring region unclickable.
+	switch (region_at(loc))
 	{
+	case view_region::sidebar_splitter:
 		return std::make_shared<sidebar_splitter_controller>(host, *this, _regions.sidebar_splitter);
-	}
-
-	if (region_hit(_regions.sidebar, loc))
-	{
+	case view_region::sidebar:
 		return _sidebar->controller_from_location(loc);
-	}
-
-	if (region_hit(_regions.splitter, loc))
-	{
+	case view_region::splitter:
 		return std::make_shared<splitter_controller>(host, *this, _regions.splitter);
-	}
-
-	if (region_hit(_regions.items_scroll, loc))
-	{
+	case view_region::items_scroll:
 		return std::make_shared<scroll_controller>(host, _items_scroller, _regions.items_scroll);
-	}
-
-	if (region_hit(_regions.items_scroll_top, loc))
-	{
+	case view_region::items_scroll_top:
 		return _items_scroll_top->controller_from_location(host, loc, {}, {});
-	}
-
-	if (region_hit(_regions.media_scroll, loc))
-	{
+	case view_region::media_scroll:
 		return std::make_shared<scroll_controller>(host, _media_scroller, _regions.media_scroll);
-	}
-
-	if (region_hit(_regions.media, loc))
-	{
+	case view_region::media:
 		return media_controller_from_location(host, loc);
-	}
-
-	if (region_hit(_regions.items, loc))
-	{
+	case view_region::items:
 		return items_controller_from_location(host, loc);
+	case view_region::none:
+		break;
 	}
 
 	return nullptr;
@@ -1506,12 +1631,17 @@ menu_type items_view::context_menu(const pointi loc)
 	// and every keyboard command stays dead after the menu closes.
 	mouse_down(loc);
 
-	if (region_hit(_regions.sidebar, loc))
+	const auto region = region_at(loc);
+
+	if (region == view_region::sidebar || region == view_region::sidebar_splitter)
 	{
 		return menu_type::sidebar;
 	}
 
-	if (is_over_items(loc))
+	// The scroll bar and the scroll control are drawn inside the grid's rectangle and belong to the
+	// listing, so a press on either offers the listing's menu -- the same answer the wheel gives them.
+	if (region == view_region::items || region == view_region::items_scroll ||
+		region == view_region::items_scroll_top)
 	{
 		const auto i = _state.item_from_location(_items_scroller.device_to_logical(loc));
 
@@ -1526,39 +1656,144 @@ menu_type items_view::context_menu(const pointi loc)
 	return menu_type::media;
 }
 
-void items_view::mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys)
+// zoom.md 11: the pointer chooses the surface and the modifier chooses which of that surface's axes
+// moves. The modifier never changes meaning with position -- only what it acts on -- which is what
+// the old chain could not say: a bare Ctrl test sat between two region tests, so Ctrl resized
+// thumbnails everywhere except over the preview pane, where it silently did nothing.
+bool items_view::mouse_wheel(const pointi loc, const ui::wheel_notch notch)
 {
-	// Wheel routing follows the same region order as hit testing so the pointer always scrolls
-	// whatever it is visibly over.
-	if (region_hit(_regions.sidebar, loc))
+	const df::scope_exit refresh_controller([this] { _state.invalidate_view(view_invalid::controller); });
+
+	switch (region_at(loc))
 	{
-		_sidebar->_scroller.offset(_sidebar, 0, -(zDelta / 2));
-	}
-	else if (_display && (_display->is_temporary_zoom() || (keys.control && _display->is_zoom_mode())) &&
-		region_hit(_regions.media, loc))
-	{
-		const auto steps = df::zoom_view_state::accumulate_wheel_steps(_zoom_wheel_delta, zDelta);
-		const auto anchor = pointd(loc - _regions.media.top_left());
-		for (auto step = 0; step < std::abs(steps); ++step)
-			_display->adjust_zoom_scale(steps > 0 ? 1 : -1, anchor);
-	}
-	else if (is_over_media(loc))
-	{
-		// The preview pane scrolls rather than navigating: a wheel notch here is a reading gesture
-		// over a scrollable column, so it must not change which item is displayed.
-		if (_media_scroller.can_scroll()) _media_scroller.offset(_host, 0, -zDelta);
-	}
-	else if (keys.control)
-	{
-		setting.step_item_scale(zDelta > 0 ? 1 : -1);
-		_state.invalidate_view(view_invalid::view_layout);
-	}
-	else if (is_over_items(loc))
-	{
-		_items_scroller.offset(_host, 0, -zDelta);
+	case view_region::sidebar:
+		if (!notch.is_vertical()) return false;
+		_sidebar->_scroller.offset(_sidebar, 0, -notch.delta);
+		return true;
+
+	case view_region::media:
+	case view_region::media_scroll:
+		return media_wheel(loc, notch);
+
+	case view_region::items:
+	case view_region::items_scroll:
+	case view_region::items_scroll_top:
+		// Ctrl is scale, and for a grid of thumbnails scale is the size of a thumbnail.
+		if (notch.keys.control)
+		{
+			if (notch.steps == 0) return true;
+			setting.step_item_scale(notch.steps > 0 ? 1 : -1);
+			_state.invalidate_view(view_invalid::view_layout);
+			return true;
+		}
+
+		if (!notch.is_vertical()) return false;
+		_items_scroller.offset(_host, 0, -notch.delta);
+		return true;
+
+	case view_region::splitter:
+	case view_region::sidebar_splitter:
+	case view_region::none:
+		break;
 	}
 
-	_state.invalidate_view(view_invalid::controller);
+	return false;
+}
+
+// The preview pane has two states and they answer the wheel differently, because what the notch can
+// usefully move is different: fitted there is a column of information to read, magnified there is a
+// picture to step through and a ladder to climb.
+bool items_view::media_wheel(const pointi loc, const ui::wheel_notch notch)
+{
+	const auto magnified = _display && (_display->is_temporary_zoom() || _display->is_zoom_mode());
+
+	if (magnified)
+	{
+		// Horizontal is the secondary axis in every magnified state, inspect zoom included: a tilt is
+		// not a magnification gesture, and its steps come from the other accumulator anyway.
+		if (notch.is_horizontal())
+		{
+			_display->pan_zoom_by({-notch.delta / 2.0, 0.0});
+			return true;
+		}
+
+		// Inspect zoom is a gesture the user is already holding, so its wheel adjusts the temporary
+		// magnification whatever the modifier says; in durable zoom mode Ctrl is the ladder.
+		if (_display->is_temporary_zoom() || notch.keys.control)
+		{
+			return step_zoom(loc, notch.steps);
+		}
+
+		if (notch.delta == 0) return true;
+		_state.select_next(_host, notch.delta <= 0, false, notch.keys.shift);
+		return true;
+	}
+
+	// zoom.md 11: Ctrl over a fitted image is not an entry into zoom mode. It is consumed rather than
+	// left to fall through, so the cheapest possible input cannot reach a neighbouring surface's scale.
+	if (notch.keys.control) return true;
+	if (!notch.is_vertical()) return false;
+
+	// The pane scrolls rather than navigating while there is a column of detail to read: a wheel notch
+	// here is a reading gesture over a scrollable column. With nothing to scroll it means what it
+	// means everywhere else over a picture.
+	if (_media_scroller.can_scroll())
+	{
+		_media_scroller.offset(_host, 0, -notch.delta);
+		return true;
+	}
+
+	if (!_display) return false;
+	if (notch.delta == 0) return true;
+	_state.select_next(_host, notch.delta <= 0, false, notch.keys.shift);
+	return true;
+}
+
+// A pinch is a deliberate two-finger gesture rather than the one accidental notch zoom.md refuses to
+// let into zoom mode, so it is allowed to be the scale control for whatever it is over.
+bool items_view::pinch(const pointi loc, const int steps)
+{
+	const df::scope_exit refresh_controller([this] { _state.invalidate_view(view_invalid::controller); });
+
+	switch (region_at(loc))
+	{
+	case view_region::media:
+	case view_region::media_scroll:
+		if (!_display || !_display->can_zoom()) return false;
+		return step_zoom(loc, steps);
+
+	case view_region::items:
+	case view_region::items_scroll:
+	case view_region::items_scroll_top:
+		if (steps == 0) return true;
+		setting.step_item_scale(steps > 0 ? 1 : -1);
+		_state.invalidate_view(view_invalid::view_layout);
+		return true;
+
+	default:
+		break;
+	}
+
+	return false;
+}
+
+// Which pane a comparison magnifies is chosen by the pointer, and the ladder anchors within that
+// pane. Both take the pointer in client coordinates, because `zoom_layout` records each viewport's
+// origin in those: subtracting the media region first counted that origin twice, which was invisible
+// in zoom mode -- where the region is the whole client -- and wrong for every inspect zoom in the
+// preview pane, where it is not.
+bool items_view::step_zoom(const pointi loc, const int steps)
+{
+	if (steps == 0) return true;
+
+	const auto local = pointd(loc);
+	_display->active_zoom_pane_at(local);
+	const auto anchor = _display->zoom_anchor_at(local);
+
+	for (auto step = 0; step < std::abs(steps); ++step)
+		_display->adjust_zoom_scale(steps > 0 ? 1 : -1, anchor);
+
+	return true;
 }
 
 // Hands the visible working set to the surface-staging workers.
@@ -1761,7 +1996,19 @@ void items_view::retry_visible_thumbnails(const double time_now)
 
 void items_view::stage_visible_thumbnails()
 {
-	queue_stage_thumbnails(_state.item_index, visible_items(_visible_items));
+	auto items = visible_items(_visible_items);
+
+	// The panel draws cover art from the displayed item's staged surface, and after a full release
+	// that item may be nowhere near the visible band.
+	if (_display)
+	{
+		for (const auto& i : {_display->_item1, _display->_item2})
+		{
+			if (i && std::ranges::find(items, i) == items.end()) items.emplace_back(i);
+		}
+	}
+
+	queue_stage_thumbnails(_state.item_index, std::move(items));
 }
 
 
@@ -1893,6 +2140,10 @@ void items_view::render(ui::draw_context& dc, const view_controller_ptr controll
 			draw_splitter(dc, _regions.sidebar_splitter, _sidebar_splitter_active != 0, false);
 		}
 	}
+
+	// Last, and over everything: the address bar above shares this view's background, so without an
+	// edge the two read as one surface and it is not obvious which part scrolls.
+	dc.draw_rect(recti(0, 0, _client_extent.cx, 1), ui::color(0.0f, 0.0f, 0.0f, dc.colors.alpha * 0.5f));
 }
 
 void items_view::layout_chrome(ui::measure_context& mc)
@@ -2017,52 +2268,69 @@ int layout_media_column(const media_column_inputs& in, ui::measure_context& mc, 
 	media_column.align_items = flex_align::start;
 	media_column.padding.cx = 8;
 
-	// Detail stacks below at its natural height, so it scrolls off the bottom.
-	const auto layout_detail = [&](const int detail_top)
-	{
-		const auto detail_extent = calc_flex_layout(*in.detail, mc, {in.bounds.width(), -1}, media_column).extent;
-		const recti detail_bounds{
-			in.bounds.left, in.bounds.top + detail_top,
-			in.bounds.right, in.bounds.top + detail_top + detail_extent.cy
-		};
-		layout_flex_elements(*in.detail, mc, positions, detail_bounds, media_column);
-		return detail_top + detail_extent.cy;
-	};
-
 	if (in.priority->empty())
 	{
-		if (calc_flex_layout(*in.all, mc, {in.bounds.width(), -1}, media_column).extent.cy < in.bounds.height())
-		{
-			auto centred = media_column;
-			centred.justify = flex_justify::center;
-			return layout_flex_elements(*in.all, mc, positions, in.bounds, centred).cy;
-		}
+		// Nothing is held above the fold, so the whole stack is one run.
+		const auto extent = calc_flex_layout(*in.all, mc, {in.bounds.width(), -1}, media_column).extent;
+		if (extent.cy <= 0) return 0;
 
-		return layout_detail(0);
+		const auto top = std::max(0, in.bounds.height() - extent.cy) / 2;
+		const recti all_bounds{
+			in.bounds.left, in.bounds.top + top, in.bounds.right, in.bounds.top + top + extent.cy
+		};
+		layout_flex_elements(*in.all, mc, positions, all_bounds, media_column);
+		return top + extent.cy;
 	}
 
-	// Holding the block at the top only earns its place when something can follow it. Verbose metadata
-	// is one global setting, so a selection with no detail form at all - every multiple selection, and
-	// a comparison - would otherwise sit against the top for a reason that does not apply to it. The
-	// test is what the selection can produce, not what has arrived: detail lands late, and keying on
-	// the current list would move the media the moment it did.
-	if (!in.verbose_metadata || !in.detail_possible)
+	// The picture keeps half the pane. Information past that scrolls instead of being paid for by the
+	// media, which is the bound fullscreen puts on its overlay read from the other side. Without it
+	// the media was the only thing that ever gave way, down to the 64-unit floor of flex_item::media.
+	const auto media = in.media && in.media->flex.shrink > 0.0f ? in.media : nullptr;
+	const auto restore_media_min = media ? media->flex.min_size.cy : 0;
+
+	// The element is shared and outlives this call, so the floor has to come back even if measuring
+	// or laying out a child throws - otherwise it keeps a raised minimum height for the session.
+	const df::scope_exit restore_floor([media, restore_media_min]
 	{
-		// The media, the first information group and the verbose toggle own the pane and centre in it.
-		// The media shrinks so all three stay visible; anything else starts past the bottom edge.
-		auto centred = media_column;
-		centred.justify = flex_justify::center;
-		layout_flex_elements(*in.priority, mc, positions, in.bounds, centred);
-		return layout_detail(in.bounds.height());
+		if (media) media->flex.min_size.cy = restore_media_min;
+	});
+
+	if (media)
+	{
+		const auto content_width = std::max(
+			0, in.bounds.width() - df::round(media_column.padding.cx * 2 * mc.scale_factor));
+		const auto natural_media = media->measure(mc, content_width).cy;
+		const auto floor_px = std::min(natural_media, in.bounds.height() / 2);
+		media->flex.min_size.cy = std::max(restore_media_min, df::round(floor_px / mc.scale_factor));
 	}
 
-	// Verbose metadata is open, so the pane scrolls anyway. The media and its first information group
-	// are held at the top with both always visible - the media shrinking to make that true - and the
-	// metadata blocks follow immediately below. Top aligned rather than centred for a second reason:
-	// a centred line reports the container height instead of the content height, so asking where the
-	// group ended left a gap below it the size of the pane's free space.
-	const auto priority_extent = layout_flex_elements(*in.priority, mc, positions, in.bounds, media_column);
-	return layout_detail(priority_extent.cy);
+	// One rule for both arrangements: the column is centred in the pane, and starts at the top once it
+	// is taller than the pane. Verbose metadata used to be held at the top unconditionally, which is
+	// right while there is more of it than the pane can hold and reads as a picture pinned to the
+	// ceiling over an empty pane when there is not. The offset is continuous in the content height, so
+	// growing metadata slides the column to the top rather than snapping there.
+	const auto block = calc_flex_layout(*in.priority, mc, in.bounds.extent(), media_column);
+	const auto detail_extent = calc_flex_layout(*in.detail, mc, {in.bounds.width(), -1}, media_column).extent;
+	const auto block_top = std::max(0, in.bounds.height() - (block.extent.cy + detail_extent.cy)) / 2;
+
+	// Applied here rather than through flex_justify::center, because a centred line reports the
+	// container height instead of the content height, so asking where the block ended returned the
+	// bottom of the pane and left a gap the size of the free space beneath it.
+	const auto origin = pointi{in.bounds.left, in.bounds.top + block_top};
+
+	for (auto i = 0u; i < in.priority->size(); ++i)
+	{
+		(*in.priority)[i]->layout(mc, block.layout_bounds[i].offset(origin), positions);
+	}
+
+	// Detail stacks below the block at its natural height, so it scrolls off the bottom.
+	const auto detail_top = block_top + block.extent.cy;
+	const recti detail_bounds{
+		in.bounds.left, in.bounds.top + detail_top, in.bounds.right, in.bounds.top + detail_top + detail_extent.cy
+	};
+	layout_flex_elements(*in.detail, mc, positions, detail_bounds, media_column);
+
+	return detail_top + detail_extent.cy;
 }
 
 void items_view::layout(ui::measure_context& mc, const sizei extent)
@@ -2133,7 +2401,7 @@ void items_view::layout(ui::measure_context& mc, const sizei extent)
 	{
 		const media_column_inputs media_inputs{
 			&_media_priority_elements, &_media_detail_elements, &_media_elements,
-			avail_media_bounds, setting.verbose_metadata, _display && _display->is_one()
+			avail_media_bounds, _media_element
 		};
 		const auto media_height = layout_media_column(media_inputs, mc, positions);
 
@@ -2225,6 +2493,11 @@ void items_view::broadcast_event(const view_element_event& event) const
 
 	_filter_edit->dispatch_event(event);
 	_items_scroll_top->dispatch_event(event);
+
+	// The sidebar is a host of its own and app_frame::dpi_changed already walks it, so only the
+	// broadcasts nothing else delivers are forwarded here - a second dpi_changed would re-measure
+	// every row for nothing.
+	if (_sidebar && event.type != view_element_event_type::dpi_changed) _sidebar->broadcast_event(event);
 }
 
 class copy_clip_element final : public std::enable_shared_from_this<copy_clip_element>, public view_element
@@ -2348,14 +2621,6 @@ public:
 	}
 };
 
-inline view_element_ptr title_style(view_element_ptr e)
-{
-	e->padding(8);
-	e->margin(4, 8);
-	e->set_style_bit(view_element_style::background, true);
-	return e;
-}
-
 inline view_element_ptr media_control_style(view_element_ptr e)
 {
 	e->padding(4);
@@ -2372,11 +2637,24 @@ inline view_element_ptr media_padding(const int height)
 	return e;
 }
 
-inline view_element_ptr margin16(view_element_ptr e)
+// A section is one panel carrying its own heading, which is what the panel above it already is. Drawn
+// as a titled band over unbacked content, the heading read as a control and the sections needed a rule
+// between them to be told apart; as one panel each, the gap between panels is what separates them and
+// the rule is noise. Nothing inside grows: the column measures the section at its natural height, and
+// a child claiming free space would open a gap between the heading and its own content.
+static view_element_ptr make_section(view_element_ptr title, view_element_ptr content)
 {
-	e->margin.cx = 16;
-	e->margin.cy = 0;
-	return e;
+	auto section = std::make_shared<view_elements>(flex_item::stretch);
+	section->flex_container.direction = flex_direction::column;
+	section->flex_container.wrap = flex_wrap::no_wrap;
+	section->flex_container.align_items = flex_align::stretch;
+	section->flex_container.gap = {0, 4};
+	section->add(std::move(title));
+	if (content) section->add(std::move(content));
+	section->padding = {8, 8};
+	section->margin = {4, 8};
+	section->set_style_bit(view_element_style::background, true);
+	return section;
 }
 
 static std::string_view format_metadata_standard(const metadata_standard ms)
@@ -2400,13 +2678,15 @@ static std::string_view format_metadata_standard(const metadata_standard ms)
 class cover_art_control final : public view_element, public std::enable_shared_from_this<cover_art_control>
 {
 public:
-	ui::const_surface_ptr _surface;
+	df::item_element_ptr _item;
+	mutable ui::const_surface_ptr _tex_source;
 	mutable ui::texture_ptr _tex;
 	mutable int _cx_surface = 0;
 
 	std::shared_ptr<ui::group_control> _controls = std::make_shared<ui::group_control>();
 
-	cover_art_control() : view_element(view_element_style::has_tooltip | view_element_style::can_invoke)
+	cover_art_control(df::item_element_ptr item) :
+		view_element(view_element_style::has_tooltip | view_element_style::can_invoke), _item(std::move(item))
 	{
 	}
 
@@ -2415,9 +2695,11 @@ public:
 		_controls->add(p);
 	}
 
-	void add(const ui::surface_ptr& s)
+	// Read from the item rather than held: the surface is decoded by the render worker and dropped by
+	// resource cleanup, so a copy kept here would outlive the eviction and miss the restage.
+	ui::const_surface_ptr surface() const
 	{
-		_surface = s;
+		return _item ? _item->cover_art_surface() : nullptr;
 	}
 
 	bool is_control_area(const pointi loc, const pointi element_offset) const override
@@ -2427,6 +2709,13 @@ public:
 
 	void dispatch_event(const view_element_event& event) override
 	{
+		// The cached texture belongs to the device being torn down, and nothing else releases it.
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_tex.reset();
+			_tex_source.reset();
+		}
+
 		_controls->dispatch_event(event);
 	}
 
@@ -2442,15 +2731,15 @@ public:
 
 		_cx_surface = 0;
 
-		if (is_valid(_surface))
+		if (const auto s = surface(); is_valid(s))
 		{
-			const auto surf_cx = _surface->width() + mc.padding2;
+			const auto surf_cx = s->width() + mc.padding2;
 			const auto show_surface = static_cast<int>(surf_cx) < cx / 2;
 
 			if (show_surface)
 			{
 				_cx_surface = surf_cx;
-				cy = _surface->height() + mc.padding2 * 2;
+				cy = s->height() + mc.padding2 * 2;
 				avail -= surf_cx;
 			}
 		}
@@ -2464,22 +2753,27 @@ public:
 	{
 		view_element::layout(mc, bounds, positions);
 
-		auto contol_bounds = bounds;
-		contol_bounds.left += _cx_surface;
-		_controls->layout(mc, contol_bounds, positions);
+		auto control_bounds = bounds;
+		control_bounds.left += _cx_surface;
+		_controls->layout(mc, control_bounds, positions);
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
-		if (_cx_surface > 0 && is_valid(_surface))
+		const auto s = surface();
+
+		if (_cx_surface > 0 && is_valid(s))
 		{
-			if (!_tex)
+			// Keyed on the surface, because a restage after eviction produces a different one and a
+			// texture built from the old surface would be the picture that was evicted.
+			if (!_tex || _tex_source != s)
 			{
 				const auto t = dc.create_texture();
 
-				if (t && t->update(_surface) != ui::texture_update_result::failed)
+				if (t && t->update(s) != ui::texture_update_result::failed)
 				{
 					_tex = t;
+					_tex_source = s;
 				}
 			}
 
@@ -2600,6 +2894,7 @@ class metadata_tree_control final : public std::enable_shared_from_this<metadata
 		int top = 0;
 		int height = 0;
 		int detail_height = 0;
+		int detail_width = 0;
 		uint32_t spines = 0; // bit c set while an ancestor's connector column c passes through
 		bool open = false;
 	};
@@ -2632,6 +2927,22 @@ public:
 		build(values, id_prefix, {});
 	}
 
+	// A detail control can hold a texture - the embedded thumbnail is a surface_element - and the
+	// rows are this control's own, so the broadcast has to be carried down to them by hand. Only the
+	// broadcast: click, invoke and the rest are this control's own to interpret, and its controller
+	// already does, so forwarding them would give one gesture two readers.
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type != view_element_event_type::free_graphics_resources &&
+			event.type != view_element_event_type::dpi_changed)
+			return;
+
+		for (const auto& r : _rows)
+		{
+			if (r.detail_control) r.detail_control->dispatch_event(event);
+		}
+	}
+
 private:
 	void build(const metadata_kv_list& values, const std::string_view id_prefix, const std::string_view raw)
 	{
@@ -2646,6 +2957,11 @@ private:
 			if (const auto binary = std::get_if<metadata_binary_detail>(&r.detail))
 			{
 				added.detail_control = std::make_shared<hex_control>(binary->bytes, flex_item::center);
+			}
+			else if (const auto image = std::get_if<metadata_image_detail>(&r.detail); image && image->surface)
+			{
+				// surface_element releases its texture when the graphics device goes away.
+				added.detail_control = std::make_shared<surface_element>(image->surface, 0, flex_item::center);
 			}
 			else if (const auto numeric = std::get_if<metadata_numeric_detail>(&r.detail);
 				numeric && !numeric->values.empty() && numeric->columns > 0)
@@ -2867,8 +3183,13 @@ public:
 				const auto detail_top = top + _line_height;
 				if (r.detail_control)
 				{
-					r.detail_control->bounds = recti(_detail_left, v.top + _line_height,
-					                                 logical_bounds.width(), v.top + v.height);
+					// The child is drawn in the box it measured, centred. Handing it the whole row
+					// instead stretches any element that fills its bounds, such as an image.
+					const auto avail_width = std::max(0, logical_bounds.width() - _detail_left);
+					const auto cx = v.detail_width > 0 ? std::min(v.detail_width, avail_width) : avail_width;
+					const auto left = _detail_left + (avail_width - cx) / 2;
+
+					r.detail_control->bounds = recti(left, v.top + _line_height, left + cx, v.top + v.height);
 					r.detail_control->render(dc, {logical_bounds.left, logical_bounds.top});
 				}
 				else
@@ -2964,14 +3285,22 @@ public:
 
 			if (v.open && (!r.detail.empty() || r.detail_control))
 			{
-				const auto detail_width = std::max(_indent, width_limit - _detail_left);
-				v.detail_height = r.detail_control
-					                  ? r.detail_control->measure(mc, detail_width).cy
-					                  : mc.measure_text(r.detail,
-					                                    r.prose
-						                                    ? ui::style::font_face::dialog
-						                                    : ui::style::font_face::code,
-					                                    ui::style::text_style::multiline, detail_width).cy;
+				const auto avail_width = std::max(_indent, width_limit - _detail_left);
+
+				if (r.detail_control)
+				{
+					const auto extent = r.detail_control->measure(mc, avail_width);
+					v.detail_height = extent.cy;
+					v.detail_width = extent.cx;
+				}
+				else
+				{
+					v.detail_height = mc.measure_text(r.detail,
+					                                  r.prose
+						                                  ? ui::style::font_face::dialog
+						                                  : ui::style::font_face::code,
+					                                  ui::style::text_style::multiline, avail_width).cy;
+				}
 			}
 
 			v.height = _line_height + v.detail_height;
@@ -3086,14 +3415,14 @@ void items_view::add_metadata_elements(std::vector<view_element_ptr>& elements, 
 
 	if (!summary.empty()) title = std::format("{}  ({})", title, summary);
 
-	auto tree = std::make_shared<metadata_tree_control>(block, _metadata_tree, flex_item::grow);
+	auto tree = std::make_shared<metadata_tree_control>(block, _metadata_tree, flex_item::stretch);
 
-	elements.emplace_back(title_style(std::make_shared<group_title_control>(
-		title, std::vector<view_element_ptr>{
-			std::make_shared<copy_clip_element>([tree, title] { return tree->copy_text(title); })
-		})));
-
-	elements.emplace_back(margin16(std::move(tree)));
+	elements.emplace_back(make_section(
+		std::make_shared<group_title_control>(title, std::vector<view_element_ptr>{
+			                                      std::make_shared<copy_clip_element>(
+				                                      [tree, title] { return tree->copy_text(title); })
+		                                      }),
+		std::move(tree)));
 }
 
 // Every prose field the item carries reads as one section. A lone field is just its text; a list
@@ -3175,6 +3504,11 @@ void items_view::add_description_elements(std::vector<view_element_ptr>& element
 
 	view_element_ptr body;
 
+	// selection-controls.md: one field is its text alone, several become the tree. There was a byte
+	// bound here that collapsed a long lone field to one clipped line with nothing to say it could be
+	// opened -- and the eviction it was written for is gone, because the stream summary it used to
+	// displace now sits above this section rather than below it. A byte count was also the wrong
+	// measure: 400 bytes is a paragraph in English and a sentence in Japanese.
 	if (fields.size() == 1)
 	{
 		body = std::make_shared<text_element>(fields.front().text);
@@ -3197,23 +3531,94 @@ void items_view::add_description_elements(std::vector<view_element_ptr>& element
 			row.open_by_default = rows.size() == 1;
 		}
 
-		body = std::make_shared<metadata_tree_control>(rows, "description"sv, _metadata_tree, flex_item::grow);
+		body = std::make_shared<metadata_tree_control>(rows, "description"sv, _metadata_tree, flex_item::stretch);
 	}
 
-	elements.emplace_back(title_style(std::make_shared<group_title_control>(title, buttons)));
+	view_element_ptr content = std::move(body);
 
 	if (item->has_cover_art())
 	{
-		auto cover = std::make_shared<cover_art_control>();
-		files ff;
-		cover->add(ff.image_to_surface(item->cover_art()));
-		cover->add(margin16(std::move(body)));
-		elements.emplace_back(std::move(cover));
+		auto cover = std::make_shared<cover_art_control>(item);
+		cover->add(content);
+		content = std::move(cover);
 	}
-	else
+
+	elements.emplace_back(make_section(std::make_shared<group_title_control>(title, buttons), std::move(content)));
+}
+
+// What is inside the container, which is the question a media file raises before any other. It sits
+// in the primary block rather than behind the verbose toggle, because an answer below the fold is
+// not an answer.
+void items_view::add_stream_elements(std::vector<view_element_ptr>& elements, const display_state_ptr& display,
+                                     const df::item_element_ptr& item)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	const auto table = std::make_shared<ui::table_element>(flex_item::stretch);
+	table->no_shrink_col[0] = true;
+	table->no_shrink_col[1] = true;
+	table->no_shrink_col[2] = false;
+	table->no_shrink_col[3] = true;
+	table->no_shrink_col[4] = true;
+	table->no_shrink_col[5] = true;
+	table->no_shrink_col[6] = true;
+
+	auto audio_track_number = 0;
+
+	for (const auto& st : display->_player_media_info.streams)
 	{
-		elements.emplace_back(margin16(std::move(body)));
+		std::string type;
+
+		switch (st.type)
+		{
+		case av_stream_type::video: type = tt.video;
+			break;
+		case av_stream_type::audio: type = tt.audio;
+			break;
+		case av_stream_type::data: type = tt.data;
+			break;
+		case av_stream_type::subtitle: type = tt.subtitle;
+			break;
+		}
+
+		auto format = st.pixel_format;
+
+		if (st.type == av_stream_type::audio)
+		{
+			++audio_track_number;
+			format = prop::format_audio_sample_rate(st.audio_sample_rate);
+
+			if (st.audio_channels != 0)
+			{
+				format += "  ";
+				format += prop::format_audio_channels(st.audio_channels);
+			}
+
+			if (st.audio_sample_type != prop::audio_sample_t::none)
+			{
+				format += "  ";
+				format += format_audio_sample_type(st.audio_sample_type);
+			}
+		}
+
+		auto stream = std::make_shared<stream_element>(_state, item, st, audio_track_number);
+
+		std::vector<view_element_ptr> row = {
+			std::make_shared<text_element>(str::to_string(st.index)),
+			std::make_shared<text_element>(type),
+			stream,
+			std::make_shared<text_element>(st.codec),
+			std::make_shared<text_element>(st.fourcc),
+			std::make_shared<text_element>(format),
+			std::make_shared<text_element>(st.rotation == 0.0
+				                               ? std::string{}
+				                               : std::format("rotation={}", st.rotation))
+		};
+
+		table->add(row);
 	}
+
+	elements.emplace_back(make_section(std::make_shared<group_title_control>(tt.prop_name_streams), table));
 }
 
 void items_view::update_media_elements()
@@ -3293,7 +3698,7 @@ void items_view::update_media_elements()
 				if (display && !display->_selected_item_data.empty())
 				{
 					elements.emplace_back(media_padding(4));
-					elements.emplace_back(std::make_shared<comodore_disk_control>(display, flex_item::center));
+					elements.emplace_back(std::make_shared<commodore_disk_control>(display, flex_item::center));
 
 					// Single-file program containers also show a hex view of the content.
 					if (file_type->extension == "prg" || file_type->extension == "p00")
@@ -3331,10 +3736,26 @@ void items_view::update_media_elements()
 				}
 			}
 
-			// The toggle only earns its place when there is something behind it to reveal.
+			// The toggle only earns its place when there is something behind it to reveal. The stream
+			// summary is no longer behind it: what is inside the container is the first question a
+			// media file raises, and answering it below the fold is not answering it.
 			const auto& media_info = display->_player_media_info;
-			const auto has_verbose_content = !media_info.streams.empty() ||
-				std::ranges::any_of(media_info.metadata, [](const auto& m) { return !m.values.empty(); });
+			const auto has_streams = !media_info.streams.empty();
+			// The same test add_metadata_elements admits a block by. A packet that could not be parsed
+			// still draws as a block reporting that, so counting values alone withheld the toggle from
+			// the one file whose metadata the reader most needs to see.
+			const auto has_verbose_content = std::ranges::any_of(media_info.metadata,
+			                                                     [](const auto& m)
+			                                                     {
+				                                                     return !m.values.empty() || !m.raw.empty() ||
+					                                                     !m.parsed;
+			                                                     });
+
+			if (has_streams)
+			{
+				add_stream_elements(elements, display, item);
+				priority_end_element = elements.back();
+			}
 
 			const auto has_long_form = md && (!is_empty(md->comment) || !is_empty(md->description) ||
 				!is_empty(md->synopsis));
@@ -3349,8 +3770,8 @@ void items_view::update_media_elements()
 
 			auto append_verbose_toggle = [&elements]
 			{
-				elements.emplace_back(std::make_shared<divider_element>());
-
+				// No rule above it: each section is its own panel now, so the gap between panels is what
+				// separates them and a line as well would be saying it twice.
 				auto verbose_element = std::make_shared<link_element>(
 					setting.verbose_metadata ? tt.hide_verbose_metadata : tt.show_verbose_metadata,
 					commands::verbose_metadata, ui::style::font_face::dialog,
@@ -3369,77 +3790,6 @@ void items_view::update_media_elements()
 
 			if (setting.verbose_metadata)
 			{
-				if (display && !display->_player_media_info.streams.empty())
-				{
-					elements.emplace_back(title_style(std::make_shared<group_title_control>(tt.prop_name_streams)));
-
-					const auto table = std::make_shared<ui::table_element>(flex_item::grow);
-					table->no_shrink_col[0] = true;
-					table->no_shrink_col[1] = true;
-					table->no_shrink_col[2] = false;
-					table->no_shrink_col[3] = true;
-					table->no_shrink_col[4] = true;
-					table->no_shrink_col[5] = true;
-					table->no_shrink_col[6] = true;
-
-					auto audio_track_number = 0;
-					for (const auto& st : display->_player_media_info.streams)
-					{
-						std::string type;
-
-						switch (st.type)
-						{
-						case av_stream_type::video: type = tt.video;
-							break;
-						case av_stream_type::audio: type = tt.audio;
-							break;
-						case av_stream_type::data: type = tt.data;
-							break;
-						case av_stream_type::subtitle: type = tt.subtitle;
-							break;
-						}
-
-						auto format = st.pixel_format;
-
-						if (st.type == av_stream_type::audio)
-						{
-							++audio_track_number;
-							format = prop::format_audio_sample_rate(st.audio_sample_rate);
-
-							if (st.audio_channels != 0)
-							{
-								format += "  ";
-								format += prop::format_audio_channels(st.audio_channels);
-							}
-
-							if (st.audio_sample_type != prop::audio_sample_t::none)
-							{
-								format += "  ";
-								format += format_audio_sample_type(st.audio_sample_type);
-							}
-						}
-
-						auto stream = std::make_shared<stream_element>(_state, item, st, audio_track_number);
-
-						std::vector<view_element_ptr> row = {
-							std::make_shared<text_element>(str::to_string(st.index)),
-							std::make_shared<text_element>(type),
-							stream,
-							std::make_shared<text_element>(st.codec),
-							std::make_shared<text_element>(st.fourcc),
-							//std::make_shared<text_element>(st.language),								
-							std::make_shared<text_element>(format),
-							std::make_shared<text_element>(st.rotation == 0.0
-								                               ? std::string{}
-								                               : std::format("rotation={}", st.rotation))
-						};
-
-						table->add(row);
-					}
-
-					elements.emplace_back(margin16(table));
-				}
-
 				if (display && !display->_player_media_info.metadata.empty())
 				{
 					for (const auto& block : display->_player_media_info.metadata)

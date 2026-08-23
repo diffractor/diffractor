@@ -53,9 +53,9 @@ std::atomic_int df::dragging_items = 0;
 std::atomic_int df::handling_crash = 0;
 std::atomic<const char*> df::rendering_func = "";
 
-auto df::gpu_desc = "unknown"s;
-auto df::gpu_id = "unknown"s;
-auto df::d3d_info = "unknown"s;
+std::string df::gpu_desc = "unknown"s;
+std::string df::gpu_id = "unknown"s;
+std::string df::d3d_info = "unknown"s;
 
 int df::max_texture_dimension = 16384;
 int64_t df::max_texture_bytes = 128ll * 1024ll * 1024ll;
@@ -160,7 +160,7 @@ void df::log(const std::string_view context, const std::string_view message)
 			platform::move_file(log_path, previous_log_path, false);
 		}
 
-		log_file.open(platform::to_file_system_path(log_path), std::ios::out | std::ios::trunc);
+		log_file.open(platform::to_stream_path(log_path), std::ios::out | std::ios::trunc);
 	}
 
 	if (log_file.is_open() && (!log_truncated || is_session_summary(context)))
@@ -509,7 +509,7 @@ std::string df::file_size::str() const
 
 df::version::version(const std::string_view version)
 {
-	const auto parts = str::split(version, true, [](const wchar_t c) { return c == '.'; });
+	const auto parts = str::split(version, true, [](const char c) { return c == '.'; });
 
 	if (!parts.empty())
 	{
@@ -779,7 +779,7 @@ bool df::blob_save_to_file(const cspan data, const file_path path)
 
 df::util::json::json_doc df::util::json::json_from_file(const file_path path)
 {
-	std::ifstream ifs(str::utf8_to_utf16(path.str()));
+	std::ifstream ifs(platform::to_stream_path(path));
 	rapidjson::BasicIStreamWrapper<std::ifstream> isw(ifs);
 	json_doc d;
 	d.ParseStream(isw);

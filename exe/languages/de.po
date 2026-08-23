@@ -596,11 +596,11 @@ msgstr "Sortieren nach Änderungsdatum"
 msgid "Sort by Date created"
 msgstr "Sortieren nach Erstellungsdatum"
 
-msgid "Sort dates ascending"
-msgstr "Datums- und Zeitangaben aufsteigend sortieren"
+msgid "Show oldest items first"
+msgstr "Älteste Items zuerst zeigen"
 
-msgid "Sort dates descending"
-msgstr "Datums- und Zeitangaben absteigend sortieren"
+msgid "Show newest items first"
+msgstr "Neueste Items zuerst zeigen"
 
 msgid "Sort by Group order (Default)"
 msgstr "Sortieren nach Gruppenreihenfolge (Standard)"
@@ -734,11 +734,11 @@ msgstr "Laufwerke zeigen"
 msgid "Show history chart"
 msgstr "Historiendiagramm zeigen"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Startjahr des Historiendiagramms. Leer bedeutet standardmäßig 10 Jahre."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Frühestes Jahr, das die Historien-Navigation anbietet. Leer wird es aus Ihren Fotos ermittelt."
 
-msgid "Show collection folders"
-msgstr "Kollektion-Ordner zeigen"
+msgid "Shows the eight years ending here."
+msgstr "Zeigt die acht Jahre, die hier enden."
 
 msgid "Show favorite searches"
 msgstr "Favorisierte Suchen zeigen"
@@ -1022,17 +1022,8 @@ msgstr "Ihre Kollektion besteht aus den Ordnern, die Sie auswählen, einschließ
 msgid "folder"
 msgstr "Ordner"
 
-msgid "music"
-msgstr "Musik"
-
 msgid "folders"
 msgstr "Ordner"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "Bilder"
 
 msgid "Folder"
 msgstr "Ordner"
@@ -2579,6 +2570,9 @@ msgstr "Modifiziert"
 msgid "or"
 msgstr "oder"
 
+msgid "original"
+msgstr "Original"
+
 msgid "related"
 msgstr "Verwandt"
 
@@ -3641,3 +3635,12 @@ msgstr "Nach einem Startproblem wiederhergestellt"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor wurde unerwartet geschlossen, bevor der Start abgeschlossen war, daher verwendet dieser Durchlauf das Standard-Layout mit ausgeschalteter Hardware-Beschleunigung. Ihre Dateien, Ihre Kollektion und die zuletzt verwendeten Items sind unverändert. Sie können Ihre Einstellungen unter Optionen wiederherstellen."
+
+msgid "Original//date"
+msgstr "Original"
+
+msgid "Group by Date Original"
+msgstr "Gruppieren nach Originaldatum"
+
+msgid "Sort by Date original"
+msgstr "Sortieren nach Originaldatum"

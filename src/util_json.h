@@ -19,9 +19,13 @@
 namespace df::util::json
 {
 	// Values arrive from untrusted network responses: RapidJSON's typed getters assert rather than
-	// check, and those asserts compile out in release, so the type must be verified here.
+	// check, and those asserts compile out in release, so the type must be verified here. That
+	// includes the container: FindMember asserts IsObject(), so a document that failed to parse
+	// aborts before any value check runs.
 	inline std::string safe_string(const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
+		if (!json.IsObject()) return {};
+
 		const auto found = json.FindMember(name);
 		return found != json.MemberEnd() && found->value.IsString()
 			       ? str::safe_string(found->value.GetString())
@@ -33,6 +37,8 @@ namespace df::util::json
 		const rapidjson::GenericValue<rapidjson::UTF8<char>>& json, const char* name)
 	{
 		static const rapidjson::GenericValue<rapidjson::UTF8<char>> empty(rapidjson::kObjectType);
+		if (!json.IsObject()) return empty;
+
 		const auto found = json.FindMember(name);
 		return found != json.MemberEnd() && found->value.IsObject() ? found->value : empty;
 	}

@@ -49,7 +49,7 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 				}
 
 				if (match_pos < text.size() &&
-					str::normalze_for_compare(text[match_pos]) == str::normalze_for_compare(q[0]))
+					str::normalize_for_compare(text[match_pos]) == str::normalize_for_compare(q[0]))
 				{
 					found_subs.emplace_back(match_pos, 1);
 					break;
@@ -147,7 +147,10 @@ public:
 
 	std::string edit_text() const override
 	{
-		return combine2(auto_complete_lead(lead), folder.text());
+		// Issue #139: a completed path containing spaces must read as one term, not two. The whole
+		// input is only auto-quoted when it is nothing but a path, which a completion after a lead
+		// term never is - so the same rule is applied here rather than a second one invented.
+		return str::combine2(auto_complete_lead(lead), df::quote_path_term(folder.text()));
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override

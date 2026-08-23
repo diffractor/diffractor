@@ -47,8 +47,14 @@ struct av_pts_correction;
 struct audio_info_t;
 struct video_info_t;
 struct file_load_result;
-enum AVSampleFormat;
-enum AVPixelFormat;
+
+// These cannot be forward-declared: an opaque enum declaration is an MSVC extension, and giving
+// them a fixed underlying type here would contradict FFmpeg's own definition.
+extern "C"
+{
+#include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
+}
 
 
 using av_packet_ptr = std::shared_ptr<av_packet>;
@@ -100,6 +106,21 @@ struct av_frame_d3d
 };
 
 av_frame_d3d av_get_d3d_info(const av_frame_ptr& frame_in);
+
+// The hardware decoder whose surfaces the renderer can present, answered by the platform layer.
+// A hwaccel is installed only for this exact pair, so a decoder can never hand back a surface
+// format the pipeline has no way to show. device_type is an AVHWDeviceType, kept as an int so
+// this header does not have to pull in libavutil/hwcontext.h; AV_HWDEVICE_TYPE_NONE is zero.
+struct av_hw_decode_target
+{
+	int device_type = 0;
+	AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
+
+	bool is_available() const { return device_type != 0 && pix_fmt != AV_PIX_FMT_NONE; }
+};
+
+av_hw_decode_target av_platform_hw_decode_target();
+
 double av_time_from_frame(const av_frame_ptr& f);
 int av_seek_gen_from_frame(const av_frame_ptr& f);
 bool av_frame_is_eof(const av_frame_ptr& f);
@@ -194,9 +215,19 @@ public:
 	                   bool high_quality = true);
 	bool convert_yuv_surface(const ui::surface& surface_in, const ui::surface_ptr& surface_out);
 	bool scale_surface(const av_frame_ptr& frame, const ui::surface_ptr& surface_out);
+	// container_sar carries the demuxer's stream aspect ratio, which is the only place an MP4 pasp
+	// box surfaces - FFmpeg never copies it onto the codec parameters or the decoded frame.
 	bool scale_frame(const AVFrame& frame, ui::surface_ptr& surface, sizei max_dim, double time,
-	                 ui::orientation orientation);
+	                 ui::orientation orientation, av_rational container_sar = {});
 };
+
+// Decodes one still image from encoded bytes. This is the path for the formats Diffractor reads but
+// has no dedicated decoder for - GIF, BMP, TIFF, TGA, SGI, the portable pixmaps, DPX - all of which
+// ffmpeg carries on every platform. Returns null when the bytes are not an image it knows.
+//
+// TGA, SGI, the portable pixmaps and DPX have no signature worth probing, so a caller that knows the
+// file name passes its extension: that is the only thing that can name the format for those.
+ui::surface_ptr av_decode_still(df::cspan data, sizei max_dim, std::string_view extension_hint = {});
 
 
 template <typename T>

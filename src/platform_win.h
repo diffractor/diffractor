@@ -86,6 +86,30 @@ namespace platform
 {
 	file_ptr make_file_from_handle(HANDLE h);
 
+	// What a shell drag source actually advertises. Windows-only by nature: the formats it names
+	// are clipboard format ids, and the paths come back in the shell's own UTF-16.
+	struct data_object_probe
+	{
+		std::vector<uint32_t> enum_formats; // cfFormat ids, in EnumFormatEtc (source-preference) order
+		int hdrop_enum_index = -1; // position of CF_HDROP within enum_formats (-1 = absent)
+		int shell_id_list_enum_index = -1; // position of CFSTR_SHELLIDLIST within enum_formats (-1 = absent)
+		bool advertises_hdrop = false; // QueryGetData(CF_HDROP)
+		bool advertises_shell_id_list = false; // QueryGetData(CFSTR_SHELLIDLIST)
+		int hdrop_count = -1; // files parsed from CF_HDROP (-1 = no data returned)
+		int shell_id_list_count = -1; // CIDA cidl from CFSTR_SHELLIDLIST (-1 = no data returned)
+		std::vector<std::wstring> hdrop_paths;
+		std::vector<std::wstring> shell_id_list_paths;
+	};
+
+	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
+	                                         const std::vector<df::folder_path>& folders);
+
+	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
+	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
+	// There is no cross-platform notion of a shell path, so this is Windows-private.
+	std::wstring to_shell_path(df::file_path path);
+	std::wstring to_shell_path(df::folder_path path);
+
 	// Brings a saved window rect back onto a display. Size is preserved where it fits and clamped to
 	// the work area where it does not; the position is nudged inside.
 	recti fit_window_to_work_area(recti saved, recti work_area);
@@ -119,49 +143,23 @@ struct text_line
 	int pixel_width = 0;
 };
 
-class draw_context_device : public ui::draw_context
+// The backend interface is ui's, not Windows'. Imported here so the Windows layer can keep
+// spelling it unqualified, which is how it reads in every backend and in the window layer.
+using ui::draw_context_device;
+using ui::draw_context_device_ptr;
+
+// A path arriving from a Win32 API is UTF-16; df::file_path and df::folder_path are UTF-8 and know
+// nothing of wide strings. These name that conversion once, on the side of the boundary that has a
+// reason to know about it.
+inline df::file_path to_file_path(const std::wstring_view w)
 {
-public:
-	virtual void destroy() = 0;
-	virtual void update_font_size(int base_font_size) = 0;
+	return df::file_path(str::utf16_to_utf8(w));
+}
 
-	// damage is the region the window layer knows needs repainting; empty means the whole client.
-	// It is an optimisation hint only - a backend may redraw more, but the resulting pixels inside
-	// damage must not depend on how much was redrawn.
-	virtual void begin_draw(sizei client_extent, int base_font_size, recti damage = {}) = 0;
-
-	// Flushes the accumulated scene. Returns the underlying graphics result so the window
-	// layer can detect device loss and downgrade to the CPU backend; the software backend
-	// always returns S_OK.
-	virtual HRESULT render() = 0;
-
-	// Discards any damage limit, so the next render covers the whole client. Needed by callers
-	// that re-present an existing scene whose textures changed underneath it.
-	virtual void reset_damage()
-	{
-	}
-	virtual void resize(sizei size) = 0;
-	virtual bool is_valid() const = 0;
-
-	// Releases every reference this context holds on the swap-chain back buffer. Must be
-	// called before IDXGISwapChain::ResizeBuffers - a still-bound render target view makes
-	// ResizeBuffers fail with DXGI_ERROR_INVALID_CALL. No-op on the software backend.
-	virtual void release_back_buffer_references()
-	{
-	}
-
-	// Software-rendering extensions (only implemented by the software backend used for
-	// layered bubble popups; no-ops on the hardware backend).
-	virtual void set_layer_alpha(int alpha)
-	{
-	}
-
-	virtual void draw_bubble_background(recti bounds, pointi focus_location, int padding, float radius)
-	{
-	}
-};
-
-using draw_context_device_ptr = std::shared_ptr<draw_context_device>;
+inline df::folder_path to_folder_path(const std::wstring_view w)
+{
+	return df::folder_path(str::utf16_to_utf8(w));
+}
 
 class data_object_client : public platform::clipboard_data
 {

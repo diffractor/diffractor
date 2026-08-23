@@ -26,8 +26,10 @@
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 inline const auto test_files_folder = known_path(platform::known_folder::test_files_folder);
+// Beside the test folder, not in it: expected_cached_item_count below counts what is in there.
+inline const auto test_formats_folder = test_files_folder.parent().combine("test-formats");
 inline constexpr sizei thumbnail_max_dimension = {256, 256};
-inline constexpr int expected_cached_item_count = 47;
+inline constexpr int expected_cached_item_count = 49;
 
 inline constexpr auto long_text =
 	"The Commodore 64, also known as the C64, C-64, C= 64, or occasionally CBM 64 or VIC-64, is an 8-bit home computer introduced in January 1982 by Commodore International. "
@@ -84,7 +86,9 @@ public:
 	}
 };
 
-class null_state_strategy final : public state_strategy
+// Not final: a test that needs one member answered differently derives from it rather than
+// restating every override.
+class null_state_strategy : public state_strategy
 {
 public:
 	int toggle_full_screen_count = 0;
@@ -486,7 +490,7 @@ location_cache& test_locations();
 
 inline void write_test_file(const df::file_path path, const std::string_view text)
 {
-	std::ofstream fs(platform::to_file_system_path(path), std::ios::binary | std::ios::trunc);
+	std::ofstream fs(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
 	fs << text;
 }
 
@@ -519,7 +523,7 @@ public:
 
 	prop_test& date(const int y, const int m, const int d)
 	{
-		_f.safe_ps()->created_utc = df::date_t(y, m, d);
+		_f.safe_ps()->dates.add(prop::date_source::exif_original, df::date_t(y, m, d));
 		return *this;
 	}
 
@@ -568,7 +572,7 @@ public:
 
 	prop_test& digitized(const int y, const int m, const int d)
 	{
-		_f.safe_ps()->created_digitized = df::date_t(y, m, d);
+		_f.safe_ps()->dates.add(prop::date_source::exif_digitized, df::date_t(y, m, d));
 		return *this;
 	}
 

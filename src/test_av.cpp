@@ -46,7 +46,8 @@ static void should_format_audio_stream_names()
 	assert_equal("Audio track 3 - aac", format_audio_stream_name(stream, 3), "codec fallback");
 }
 
-static void should_compact_consumed_audio_only_when_needed()
+// Not static: av_visualizer.h declares this a friend, which names the external-linkage function.
+void should_compact_consumed_audio_only_when_needed()
 {
 	audio_info_t format;
 	format.channel_layout = av_get_def_channel_layout(2);
@@ -141,7 +142,8 @@ static void should_ramp_audio_at_buffer_edges()
 	assert_equal(4000u, buffer.used_bytes(), "ramping does not consume buffered audio");
 }
 
-static void should_time_visualizer_independently_of_refresh_rate()
+// Not static: av_visualizer.h declares this a friend, which names the external-linkage function.
+void should_time_visualizer_independently_of_refresh_rate()
 {
 	auto animate = [](const double frame_seconds)
 	{
@@ -356,6 +358,78 @@ static void should_apply_video_aspect_ratio()
 
 	assert_equal(640, md->width, "anamorphic display width");
 	assert_equal(360, md->height, "anamorphic display height");
+}
+
+// Issue #78 - thumbnails and the scrubber preview ignored the aspect ratio long after playback
+// respected it. An MP4 'pasp' box reaches AVStream::sample_aspect_ratio only: FFmpeg copies it
+// neither onto the codec parameters nor onto a decoded AVFrame. A file whose H.264 VUI declares
+// no aspect (or square pixels) therefore hands the frame scaler a 1:1 frame the container
+// contradicts, and every decoded picture came out at the stored 4:3 shape instead of 16:9.
+// anamorphic-pasp.mp4 is anamorphic.mp4 with its VUI aspect_ratio_idc rewritten to 1 (square),
+// leaving the 4:3 pasp box as the only surviving declaration.
+static void should_apply_container_aspect_ratio_to_decoded_frames()
+{
+	const auto load_path = test_files_folder.combine_file("anamorphic-pasp.mp4");
+
+	files ff;
+	const auto md = ff_scan_file(ff, load_path).to_props();
+	assert_equal(640, md->width, "scanned display width");
+	assert_equal(360, md->height, "scanned display height");
+
+	av_format_decoder decoder;
+	assert_equal(true, decoder.open(load_path, media_intent::thumbnail), "open anamorphic-pasp.mp4");
+	decoder.init_streams(-1, -1, false, false, false);
+	assert_equal(true, decoder.has_video(), "anamorphic-pasp.mp4 has video");
+
+	constexpr sizei max_dim(256, 256);
+
+	// 640x480 stored, 16:9 displayed: bounded by 256 the thumbnail is 256x144, not 256x192.
+	ui::surface_ptr thumbnail;
+	assert_equal(true, decoder.extract_thumbnail(thumbnail, max_dim, 1, 100), "thumbnail decoded");
+	assert_equal(true, is_valid(thumbnail), "thumbnail valid");
+	assert_equal(256, thumbnail->dimensions().cx, "thumbnail width");
+	assert_equal(144, thumbnail->dimensions().cy, "thumbnail height");
+
+	// The hover preview over the timeline decodes through a different entry point.
+	ui::surface_ptr preview;
+	assert_equal(true, decoder.extract_seek_frame(preview, max_dim, 50, 100), "seek frame decoded");
+	assert_equal(true, is_valid(preview), "seek frame valid");
+	assert_equal(256, preview->dimensions().cx, "seek frame width");
+	assert_equal(144, preview->dimensions().cy, "seek frame height");
+}
+
+// Issue #78 - the file the reporter supplied after retesting 1.27.1 still showed square-pixel
+// thumbnails. tvp.mp4 is broadcast-derived: 528x560 stored with a 249:176 pixel aspect, i.e. a
+// 4:3 display. The scan reported 528x396 correctly from 1.27.0 onwards, which is why playback
+// looked right while the thumbnail and the timeline hover preview stayed at the stored shape.
+static void should_apply_aspect_ratio_to_broadcast_video_thumbnails()
+{
+	const auto load_path = test_files_folder.combine_file("tvp.mp4");
+
+	files ff;
+	const auto md = ff_scan_file(ff, load_path).to_props();
+	assert_equal(528, md->width, "scanned display width");
+	assert_equal(396, md->height, "scanned display height");
+
+	av_format_decoder decoder;
+	assert_equal(true, decoder.open(load_path, media_intent::thumbnail), "open tvp.mp4");
+	decoder.init_streams(-1, -1, false, false, false);
+	assert_equal(true, decoder.has_video(), "tvp.mp4 has video");
+
+	constexpr sizei max_dim(256, 256);
+
+	// 4:3 displayed, so bounded by 256 the thumbnail is 256x192, not the stored 241x256.
+	ui::surface_ptr thumbnail;
+	assert_equal(true, decoder.extract_thumbnail(thumbnail, max_dim, 1, 100), "thumbnail decoded");
+	assert_equal(true, is_valid(thumbnail), "thumbnail valid");
+	assert_equal(256, thumbnail->dimensions().cx, "thumbnail width");
+	assert_equal(192, thumbnail->dimensions().cy, "thumbnail height");
+
+	ui::surface_ptr preview;
+	assert_equal(true, decoder.extract_seek_frame(preview, max_dim, 5, 10), "seek frame decoded");
+	assert_equal(true, is_valid(preview), "seek frame valid");
+	assert_equal(256, preview->dimensions().cx, "seek frame width");
+	assert_equal(192, preview->dimensions().cy, "seek frame height");
 }
 
 // A container-level seek does not flush the codec, so extract_thumbnail must flush
@@ -863,6 +937,10 @@ void register_av_tests(view_state& state, test_registry& tests)
 
 	// Issue #78 - video aspect ratio
 	tests.add("Should apply video aspect ratio"s, should_apply_video_aspect_ratio);
+	tests.add("Should apply container aspect ratio to decoded frames"s,
+	          should_apply_container_aspect_ratio_to_decoded_frames);
+	tests.add("Should apply aspect ratio to broadcast video thumbnails"s,
+	          should_apply_aspect_ratio_to_broadcast_video_thumbnails);
 
 	//
 	// Seeking

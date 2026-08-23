@@ -128,10 +128,10 @@ namespace str
 	// String Storage Structure for Interning
 	////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Stores the length and UTF-8 data for an interned string. Uses the C "flexible array member"
-	// pattern - actual allocation size is offsetof(chached_string_storage_t, sz) + len + 1 bytes.
+	// pattern - actual allocation size is offsetof(cached_string_storage_t, sz) + len + 1 bytes.
 	// Once allocated, the storage is immutable and persists for the application lifetime.
 	////////////////////////////////////////////////////////////////////////////////////////////////////
-	struct chached_string_storage_t
+	struct cached_string_storage_t
 	{
 		uint32_t len;
 
@@ -154,17 +154,17 @@ namespace str
 
 		// Resolves handle 0 before the pool exists. The pool reserves its own slot 0 so the table
 		// never hands out a zero handle for real content.
-		inline constexpr chached_string_storage_t empty_storage{0, empty_ihash, {0}};
+		inline constexpr cached_string_storage_t empty_storage{0, empty_ihash, {0}};
 
 		// Base of the single contiguous reservation holding every interned record. Assigned once,
 		// before any non-zero handle can exist, so a reader that holds a handle already
 		// synchronized-with the store; the relaxed load compiles to a plain move.
-		extern std::atomic<const chached_string_storage_t*> intern_pool_base;
+		extern std::atomic<const cached_string_storage_t*> intern_pool_base;
 
-		inline const chached_string_storage_t* resolve(const uint32_t id) noexcept
+		inline const cached_string_storage_t* resolve(const uint32_t id) noexcept
 		{
 			const auto* const base = std::bit_cast<const uint8_t*>(intern_pool_base.load(std::memory_order_relaxed));
-			return std::bit_cast<const chached_string_storage_t*>(base + (static_cast<size_t>(id) <<
+			return std::bit_cast<const cached_string_storage_t*>(base + (static_cast<size_t>(id) <<
 				intern_align_shift));
 		}
 	}
@@ -398,6 +398,43 @@ namespace str
 		return result;
 	}
 
+	// For UTF-16 that arrives as bytes rather than as a platform string: char16_t is two bytes
+	// everywhere, where wchar_t is two on Windows and four elsewhere.
+	inline std::string utf16_to_utf8(const std::u16string_view s)
+	{
+		std::string result;
+		result.reserve(s.size() * 3);
+		auto inserter = std::back_inserter(result);
+
+		auto start = s.begin();
+		const auto end = s.end();
+
+		while (start != end)
+		{
+			uint32_t cp = mask16(*start++);
+
+			if (is_lead_surrogate(cp))
+			{
+				if (start != end && is_trail_surrogate(mask16(*start)))
+				{
+					cp = (cp << 10) + mask16(*start++) + SURROGATE_OFFSET;
+				}
+				else
+				{
+					cp = 0xFFFD;
+				}
+			}
+			else if (is_trail_surrogate(cp))
+			{
+				cp = 0xFFFD;
+			}
+
+			char32_to_utf8(inserter, cp);
+		}
+
+		return result;
+	}
+
 	inline std::wstring utf8_to_utf16(const std::string_view s)
 	{
 		std::wstring result;
@@ -484,7 +521,7 @@ namespace str
 		return result;
 	}
 
-	int normalze_for_compare(int c);
+	int normalize_for_compare(int c);
 
 	constexpr int cmp(const std::string_view ll, const std::string_view rr)
 	{
@@ -684,13 +721,13 @@ namespace str
 	std::string_view trim(std::string_view r);
 	std::wstring_view trim(std::wstring_view r);
 
-	bool is_quote(wchar_t c);
+	bool is_quote(char c);
 	bool is_num(std::string_view sv);
 	bool is_probably_num(std::string_view sv);
 	bool starts(std::string_view text, std::string_view sub_string);
 	bool ends(std::string_view text, std::string_view sub_string);
 
-	constexpr int last_char(const std::string_view sv)
+	constexpr char last_char(const std::string_view sv)
 	{
 		if (sv.empty()) return 0;
 		return sv.back();
@@ -738,34 +775,41 @@ namespace str
 		return cache(trim(utf16_to_utf8(r)));
 	}
 
+	inline cached strip_and_cache(const std::u16string_view r)
+	{
+		return cache(trim(utf16_to_utf8(r)));
+	}
+
 	std::string print(const char* szFormat, ...);
 	std::string print(std::string_view format, ...);
 
-	constexpr bool is_separator(const wchar_t c)
+	// These predicates are applied to the bytes of a UTF-8 string_view, so the unit is char. A
+	// continuation byte is negative and matches nothing here, which is what separating on ASCII wants.
+	constexpr bool is_separator(const char c)
 	{
-		return c == L';' || c == L',' || c == L' ' || c == L'\t' || c == L'\r' || c == L'\n';
+		return c == ';' || c == ',' || c == ' ' || c == '\t' || c == '\r' || c == '\n';
 	}
 
-	constexpr bool is_artist_separator(const wchar_t c)
+	constexpr bool is_artist_separator(const char c)
 	{
-		return c == L';' || c == L',' || c == L'\t' || c == L'\r' || c == L'\n' || c == L'\\' || c == L'/';
+		return c == ';' || c == ',' || c == '\t' || c == '\r' || c == '\n' || c == '\\' || c == '/';
 	}
 
 	// Genre names may contain spaces, '&' and '/' (e.g. "Action & Adventure", "R&B/Soul"),
 	// so only ';' (plus control whitespace) separates multiple genre values.
-	constexpr bool is_genre_separator(const wchar_t c)
+	constexpr bool is_genre_separator(const char c)
 	{
-		return c == L';' || c == L'\t' || c == L'\r' || c == L'\n';
+		return c == ';' || c == '\t' || c == '\r' || c == '\n';
 	}
 
-	constexpr bool is_white_space(const wchar_t c)
+	constexpr bool is_white_space(const char c)
 	{
-		return c == L' ' || c == L'\t';
+		return c == ' ' || c == '\t';
 	}
 
-	constexpr bool is_slash(const wchar_t c)
+	constexpr bool is_slash(const char c)
 	{
-		return c == L'\\' || c == L'/';
+		return c == '\\' || c == '/';
 	}
 
 	constexpr bool is_exclude(const std::string_view r)
@@ -868,10 +912,10 @@ namespace str
 	}
 
 	void split2(std::string_view text, bool detect_quotes, const std::function<void(std::string_view)>& inserter,
-	            const std::function<bool(wchar_t)>& pred = is_separator);
+	            const std::function<bool(char)>& pred = is_separator);
 
 	inline std::vector<std::string_view> split(const std::string_view text, const bool detect_quotes,
-	                                           const std::function<bool(wchar_t)>& pred = is_separator)
+	                                           const std::function<bool(char)>& pred = is_separator)
 	{
 		std::vector<std::string_view> results;
 		split2(text, detect_quotes, [&results](const std::string_view part) { results.emplace_back(part); }, pred);
@@ -888,9 +932,17 @@ namespace str
 	std::string to_string(bool v);
 	std::string to_string(int v);
 	std::string to_string(uint32_t v);
+#if !DF_LONG_IS_INT64
 	std::string to_string(long v);
+#endif
 	std::string to_string(int64_t v);
 	std::string to_string(uint64_t v);
+	// The mirror of the `long` case above. Under LP64 uint64_t is `unsigned long`, so `unsigned long
+	// long` is a distinct type with no overload; under LLP64 the two are the same and this would
+	// redeclare one.
+#if DF_LONG_IS_INT64
+	std::string to_string(unsigned long long v);
+#endif
 	std::string to_string(double v, int num_digits);
 	std::string to_string(sizei v);
 

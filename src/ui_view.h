@@ -426,9 +426,12 @@ public:
 		if (!_tracking || !_active_controller) return false;
 		if (!_active_controller->escape()) return false;
 
-		update_tracking(frame()->cursor_location(), false);
+		// The button is still down -- _tracking is what says so -- and the cancelled controller is
+		// the one that must receive its own release. Replacing it here handed that release to a
+		// fresh controller with no memory of the cancel, which then performed the very gesture
+		// Escape had just refused: a rubber-band selection cancelled mid-drag was replaced on
+		// release by the single item under the pointer. The re-test happens once the button is up.
 		_controller_invalid = true;
-		update_controller(frame()->cursor_location());
 		update_cursor();
 		return true;
 	}
@@ -546,18 +549,25 @@ public:
 	{
 	}
 
-	virtual void mouse_wheel(const pointi loc, const int zDelta, const ui::key_state keys)
+	// One entry point for both wheel axes. The pointer chooses the surface and the modifier chooses
+	// which of that surface's axes moves; a second virtual for the horizontal axis was a half every
+	// view forgot to write. Returns whether the notch meant anything here, so an unconsumed one can
+	// fall through instead of being silently swallowed.
+	virtual bool mouse_wheel(const pointi loc, const ui::wheel_notch notch)
 	{
+		return false;
+	}
+
+	// Whole detents of a pinch, positive to magnify.
+	virtual bool pinch(const pointi loc, const int steps)
+	{
+		return false;
 	}
 
 	// Raised before a left button press is dispatched to a controller, so a view can release text
 	// focus the press did not land in. Keyboard commands are inert while a rendered edit holds
 	// focus, so that focus must not survive a press somewhere else in the view.
 	virtual void mouse_down(const pointi loc)
-	{
-	}
-
-	virtual void mouse_hwheel(const pointi loc, const int zDelta, const ui::key_state keys)
 	{
 	}
 

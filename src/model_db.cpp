@@ -11,7 +11,7 @@
 
 #include "pch.h"
 
-#include <Sqlite3.h>
+#include <sqlite3.h>
 
 #include "files.h"
 #include "model_db.h"
@@ -371,7 +371,34 @@ static std::string load_create_sql()
 // Bump when a release changes what a scan records, so cached metadata written by an older build
 // can no longer be trusted. 1: scanning stopped storing reverse-geocoded place text as though a
 // file had carried it, and older rows cannot be told apart from genuine stored text.
-constexpr int db_metadata_version = 1;
+// 2: dates became the date pack, which records which tag each date came from. A pre-pack row can
+// still answer, at low authority, so this invalidation only asks for a re-scan.
+// 3: the panorama declaration a file carries in GPano is recorded. Version 2 was stamped before
+// that landed, so a branch build already carries rows a re-scan has never filled - and @panorama
+// under-reports silently until each file happens to be touched. The row still answers meanwhile,
+// so this is a re-scan request too.
+constexpr int db_metadata_version = 3;
+
+// Only the metadata is dropped. Thumbnails, hashes, playback positions, and import history
+// stay, so the re-index re-reads files but never re-encodes a thumbnail.
+// Stamping the version over an invalidation that failed would mark metadata this build cannot
+// trust as upgraded, and nothing would ever re-read it. The update is one statement, so a
+// failure leaves the rows untouched and the older version stamp in place to retry.
+bool database::invalidate_cached_metadata() const
+{
+	return db_exec(_db, "UPDATE item_properties SET properties = NULL, last_scanned = NULL;"s) == SQLITE_OK;
+}
+
+// The date pack needs the file re-read, but the row it replaces is still usable in the meantime, so
+// `properties` is kept and only `last_scanned` is cleared. Search, grouping and the timeline answer
+// from the legacy dates until the incremental scan reaches each file.
+// One statement, for the same reason as the invalidation above: a row-by-row pass that skipped the
+// types carrying no metadata would have to materialise the whole table to test each name, could
+// half-succeed without saying so, and would save less than re-reading those types costs.
+bool database::request_date_pack_rescan() const
+{
+	return db_exec(_db, "UPDATE item_properties SET last_scanned = NULL;"s) == SQLITE_OK;
+}
 
 void database::upgrade_cached_metadata()
 {
@@ -384,17 +411,35 @@ void database::upgrade_cached_metadata()
 		if (user_version.read()) stored_version = user_version.int32(0);
 	}
 
-	if (stored_version >= db_metadata_version)
+	// A cache written by a build newer than this one, which is what rolling a release back leaves
+	// behind. The rows stay readable - the record framing and the date pack are both built to be -
+	// so nothing is dropped. What has to change is the stamp: leaving it above our own would mean
+	// that going forward again finds a version it has already satisfied and skips the upgrade it
+	// owed, silently trusting rows this build has since rewritten in an older shape. Stamping it
+	// down costs one background re-scan per direction change and keeps the number meaningful.
+	if (stored_version > db_metadata_version)
+	{
+		db_exec(_db, std::format("PRAGMA user_version = {};", db_metadata_version));
+
+		df::log(__FUNCTION__, std::format("Cached metadata was written by a newer build: version {} -> {}",
+		                                  stored_version, db_metadata_version));
+		return;
+	}
+
+	if (stored_version == db_metadata_version)
 	{
 		return;
 	}
 
-	// Only the metadata is dropped. Thumbnails, hashes, playback positions, and import history
-	// stay, so the re-index re-reads files but never re-encodes a thumbnail.
-	// Stamping the version over an invalidation that failed would mark metadata this build cannot
-	// trust as upgraded, and nothing would ever re-read it. The update is one statement, so a
-	// failure leaves the rows untouched and the older version stamp in place to retry.
-	if (db_exec(_db, "UPDATE item_properties SET properties = NULL, last_scanned = NULL;"s) != SQLITE_OK)
+	// Only version 1 rows can answer while they wait for the re-scan. They predate the pack and carry
+	// the two plain date records this build still reads. Version 2 was stamped mid-branch against an
+	// unversioned pack, which this build refuses and which has no legacy copy beside it, so keeping
+	// those rows would leave every one of them dateless until a scan happened to reach it.
+	const auto upgraded = stored_version == 1
+		                      ? request_date_pack_rescan()
+		                      : invalidate_cached_metadata();
+
+	if (!upgraded)
 	{
 		df::log(__FUNCTION__, std::format("Failed to invalidate cached metadata written by version {}",
 		                                  stored_version));
@@ -793,9 +838,6 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 	if (!prop::is_null(md->exposure_time)) write(prop::exposure_time.id, md->exposure_time);
 	if (!prop::is_null(md->f_number)) write(prop::f_number.id, md->f_number);
 
-	if (!prop::is_null(md->created_exif)) write(prop::created_exif.id, md->created_exif.to_int64());
-	if (!prop::is_null(md->created_digitized)) write(prop::created_digitized.id, md->created_digitized.to_int64());
-	if (!prop::is_null(md->created_utc)) write(prop::created_utc.id, md->created_utc.to_int64());
 	if (!prop::is_null(md->year)) write(prop::year.id, md->year);
 
 	if (md->coordinate.is_valid())
@@ -810,11 +852,35 @@ inline void metadata_packer::pack(const prop::item_metadata_ptr& md)
 		write(prop::orientation.id, val);
 	}
 
+	// The two date properties every build before the pack reads, in the byte form and the position
+	// they held before it. The cache file has one name across all versions and an older build trusts
+	// a row stamped above its own version, so writing only the pack would leave a user who reinstalls
+	// an earlier Diffractor with every date read from the filesystem and nothing that would ever
+	// repair it. These must stay ahead of the post-1.26.4 tail below: that release stops at the first
+	// id it does not know, so anything written after `altitude` never reaches it.
+	if (const auto legacy_original = md->dates.original(); legacy_original.is_valid())
+	{
+		write(prop::created_exif.id, legacy_original.to_int64());
+	}
+
+	if (const auto legacy_created = md->dates.created_as_utc_instant(); legacy_created.is_valid())
+	{
+		write(prop::created_utc.id, legacy_created.to_int64());
+	}
+
 	// Properties added after v1.26.4 are written last. That release stops unpacking at the first
 	// id it does not recognise, so anything written before these would be lost when an older
 	// build reads a database this one has written.
 	if (!prop::is_null(md->altitude)) write(prop::altitude.id, md->altitude);
 	if (!prop::is_null(md->gps_speed)) write(prop::gps_speed.id, md->gps_speed);
+
+	if (!md->dates.is_empty()) write_date_pack(prop::dates_packed.id, md->dates);
+
+	if (md->is_panorama())
+	{
+		const auto val = static_cast<uint8_t>(md->panorama);
+		write(prop::panorama.id, val);
+	}
 }
 
 
@@ -854,6 +920,15 @@ void database::clean(const std::vector<df::file_path>& indexed_items) const
 
 void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 {
+	// A row written by this build carries the legacy date properties as well as the pack, so an older
+	// Diffractor sharing the cache file still finds dates. They are held back rather than added as
+	// they arrive: they precede the pack in the record order, and the pack holds four groups, so
+	// adding them first could evict a real reading the file actually carries.
+	df::date_t legacy_original;
+	df::date_t legacy_created;
+	df::date_t legacy_digitized;
+	auto has_date_pack = false;
+
 	while (!at_end())
 	{
 		const prop::key_ref t = read_type();
@@ -899,9 +974,37 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::disk_num) read_val(md->disk);
 		else if (t == prop::track_num) read_val(md->track);
 		else if (t == prop::duration) read_val(md->duration);
-		else if (t == prop::created_utc) read_val(md->created_utc);
-		else if (t == prop::created_exif) read_val(md->created_exif);
-		else if (t == prop::created_digitized) read_val(md->created_digitized);
+		else if (t == prop::created_utc)
+		{
+			// A row written before the date pack existed, or the copy this build writes beside the pack
+			// so an older one can still read it. Ranked as legacy so the background re-scan replaces it.
+			read_val(legacy_created);
+		}
+		else if (t == prop::created_exif)
+		{
+			read_val(legacy_original);
+		}
+		else if (t == prop::created_digitized)
+		{
+			read_val(legacy_digitized);
+		}
+		else if (t == prop::dates_packed)
+		{
+			// Whether the pack was READ, not whether one was present: a pack this build refuses -
+			// truncated, or written to an older pack version - must fall through to the legacy copies
+			// beside it, or the row answers with no date at all until a rescan reaches the file.
+			has_date_pack = read_date_pack(md->dates);
+		}
+		else if (t == prop::panorama)
+		{
+			// A stored number this build does not know still means the file declared a panorama,
+			// so it is kept as one rather than discarded back to `none`.
+			uint8_t val = 0;
+			read_val(val);
+			md->panorama = val > static_cast<uint8_t>(prop::panorama_projection::unspecified)
+				               ? prop::panorama_projection::unspecified
+				               : static_cast<prop::panorama_projection>(val);
+		}
 		else if (t == prop::exposure_time) read_val(md->exposure_time);
 		else if (t == prop::f_number) read_val(md->f_number);
 		else if (t == prop::focal_length) read_val(md->focal_length);
@@ -929,6 +1032,16 @@ void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
 		else if (t == prop::label) read_val(md->label);
 		else if (t == prop::doc_id) read_val(md->doc_id);
 		else skip_val(); // written by a newer build - step over it rather than truncate the record
+	}
+
+	// Only where no pack was read, which means a row written before the pack existed or one this
+	// build refuses. Where a pack was read these records are the copy written for an older build and
+	// say nothing it does not.
+	if (!has_date_pack)
+	{
+		md->dates.add(prop::date_source::legacy_original, legacy_original);
+		md->dates.add_utc(prop::date_source::legacy_created, legacy_created);
+		md->dates.add(prop::date_source::legacy_created, legacy_digitized);
 	}
 }
 

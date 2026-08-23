@@ -13,7 +13,7 @@
 
 #include "pch.h"
 
-#include <Sqlite3.h>
+#include <sqlite3.h>
 
 #include "test_fixtures.h"
 #include "model_db_pack.h"
@@ -250,6 +250,146 @@ static void should_invalidate_cached_metadata_written_by_an_older_build()
 	             "media position retained");
 }
 
+// Moving to the date pack asks for a re-read, but a pre-pack row still answers in the meantime. So
+// this upgrade clears only the scan stamp and keeps the cached properties, or every search, group
+// and timeline would go blank until the background re-index caught up.
+static void should_keep_answering_while_upgrading_to_the_date_pack()
+{
+	const auto index_path = _temps.next_path();
+	const auto db_path = df::file_path(index_path.folder(), index_path.file_name_without_extension(), ".db");
+	const auto file_path = test_files_folder.combine_file("Test.jpg");
+
+	null_async_strategy as;
+	location_cache locations;
+
+	{
+		index_state index(as, locations);
+		database db(index);
+		db.open(index_path.folder(), index_path.file_name_without_extension());
+
+		auto md = std::make_shared<prop::item_metadata>();
+		md->album = "test"_c;
+		md->dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+
+		std::deque<item_db_write> writes;
+		item_db_write w;
+		w.path = file_path;
+		w.md = md;
+		w.crc32c = 0x1234u;
+		w.metadata_scanned = df::date_t(2020, 1, 1, 0, 0, 0);
+		writes.emplace_back(std::move(w));
+
+		db.perform_writes(std::move(writes));
+		db.close();
+	}
+
+	// A database written by the build before the pack, rather than one from before version 1.
+	{
+		sqlite3* handle = nullptr;
+		const auto open_result = sqlite3_open(db_path.str().c_str(), &handle);
+		const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> raw(handle, sqlite3_close);
+
+		if (open_result != SQLITE_OK ||
+			sqlite3_exec(raw.get(), "PRAGMA user_version = 1;", nullptr, nullptr, nullptr) != SQLITE_OK)
+		{
+			throw test_assert_exception("Failed to set the database metadata version"s);
+		}
+	}
+
+	index_state index(as, locations);
+	database db(index);
+	db.open(index_path.folder(), index_path.file_name_without_extension());
+
+	const auto item = index.find_item(file_path);
+	const auto item_md = item.metadata.load();
+
+	assert_equal(0ll, item.metadata_scanned.load().to_int64(), "a re-scan is requested");
+	assert_equal(true, item_md != nullptr, "the cached properties are kept");
+	assert_equal(df::date_t(2012, 9, 14, 19, 21, 14), item_md->dates.original(),
+	             "and still answer with the date they held");
+	assert_equal("test", item_md->album.sv(), "the rest of the cached metadata is untouched");
+}
+
+// Rolling a release back is ordinary, and the cache file is shared with whatever build the user
+// goes back to. The rows stay readable, but the version stamp must come back down: left above this
+// build's own, going forward again would find a version already satisfied and skip the upgrade it
+// owed, trusting rows written in an older shape in the meantime.
+static void should_reclaim_a_cache_written_by_a_newer_build()
+{
+	const auto index_path = _temps.next_path();
+	const auto db_path = df::file_path(index_path.folder(), index_path.file_name_without_extension(), ".db");
+	const auto file_path = test_files_folder.combine_file("Test.jpg");
+
+	null_async_strategy as;
+	location_cache locations;
+
+	{
+		index_state index(as, locations);
+		database db(index);
+		db.open(index_path.folder(), index_path.file_name_without_extension());
+
+		auto md = std::make_shared<prop::item_metadata>();
+		md->album = "test"_c;
+		md->dates.add(prop::date_source::exif_original, df::date_t(2012, 9, 14, 19, 21, 14));
+
+		std::deque<item_db_write> writes;
+		item_db_write w;
+		w.path = file_path;
+		w.md = md;
+		w.metadata_scanned = df::date_t(2020, 1, 1, 0, 0, 0);
+		writes.emplace_back(std::move(w));
+
+		db.perform_writes(std::move(writes));
+		db.close();
+	}
+
+	// Stamped by a release that does not exist yet.
+	{
+		sqlite3* handle = nullptr;
+		const auto open_result = sqlite3_open(db_path.str().c_str(), &handle);
+		const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> raw(handle, sqlite3_close);
+
+		if (open_result != SQLITE_OK ||
+			sqlite3_exec(raw.get(), "PRAGMA user_version = 99;", nullptr, nullptr, nullptr) != SQLITE_OK)
+		{
+			throw test_assert_exception("Failed to set the database metadata version"s);
+		}
+	}
+
+	{
+		index_state index(as, locations);
+		database db(index);
+		db.open(index_path.folder(), index_path.file_name_without_extension());
+
+		const auto item = index.find_item(file_path);
+		const auto item_md = item.metadata.load();
+
+		assert_equal(true, item_md != nullptr, "the rows a newer build wrote are kept");
+		assert_equal(df::date_t(2012, 9, 14, 19, 21, 14), item_md->dates.original(), "and still answer");
+		assert_equal(df::date_t(2020, 1, 1, 0, 0, 0).to_int64(), item.metadata_scanned.load().to_int64(),
+		             "and are not needlessly re-scanned");
+		db.close();
+	}
+
+	sqlite3* handle = nullptr;
+	const auto open_result = sqlite3_open(db_path.str().c_str(), &handle);
+	const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> raw(handle, sqlite3_close);
+	auto stamped = -1;
+
+	if (open_result == SQLITE_OK)
+	{
+		sqlite3_stmt* stmt = nullptr;
+
+		if (sqlite3_prepare_v2(raw.get(), "PRAGMA user_version", -1, &stmt, nullptr) == SQLITE_OK)
+		{
+			if (sqlite3_step(stmt) == SQLITE_ROW) stamped = sqlite3_column_int(stmt, 0);
+			sqlite3_finalize(stmt);
+		}
+	}
+
+	assert_equal(3, stamped, "the stamp comes back down to what this build writes");
+}
+
 // A cache file this build cannot read must be replaced, not refused. Everything it holds can be
 // rebuilt by re-indexing, while failing to open it closes the app before the user can reach the
 // reset that would repair it.
@@ -260,7 +400,7 @@ static void should_replace_an_unreadable_database()
 	const auto file_path = test_files_folder.combine_file("Test.jpg");
 
 	{
-		std::ofstream corrupt(platform::to_file_system_path(db_path), std::ios::binary | std::ios::trunc);
+		std::ofstream corrupt(platform::to_stream_path(db_path), std::ios::binary | std::ios::trunc);
 		corrupt << "SQLite format 3\0not a database at all";
 	}
 
@@ -385,6 +525,191 @@ static void should_pack_item_properties()
 
 	assert_metadata(*md, *unpacked, "index");
 	assert_equal(md->orientation, unpacked->orientation, "index orientation");
+
+	// The panorama flag is only useful if it survives the re-index that fills it, and it is written
+	// after the properties an older build stops unpacking at, so its round trip is asserted here.
+	md->panorama = prop::panorama_projection::equirectangular;
+
+	metadata_packer pano_packer;
+	pano_packer.pack(md);
+
+	const auto pano_unpacked = std::make_shared<prop::item_metadata>();
+	metadata_unpacker pano_unpacker(pano_packer.cdata());
+	pano_unpacker.unpack(pano_unpacked);
+
+	assert_equal(static_cast<int>(prop::panorama_projection::equirectangular),
+	             static_cast<int>(pano_unpacked->panorama), "index panorama projection");
+	assert_equal(true, pano_unpacked->is_panorama(), "and it reads back as a panorama");
+	assert_equal(false, unpacked->is_panorama(), "while a file that declared none stays none");
+}
+
+// The cache file carries one name across every version, and a build older than the date pack sees a
+// user_version above its own and therefore trusts the rows without re-reading them. So a row this
+// build writes has to carry the two date properties that build knows, or reinstalling an earlier
+// Diffractor dates every file from the filesystem with nothing that would ever repair it.
+static void should_write_dates_an_older_build_can_read()
+{
+	const auto md = std::make_shared<prop::item_metadata>();
+	md->dates.add(prop::date_source::exif_original, df::date_t(2019, 5, 4, 9, 0, 0));
+	md->dates.add_utc(prop::date_source::container_created, df::date_t(2026, 8, 19, 7, 0, 0));
+	// Present so the ordering assertion below is not vacuous: these are the first records v1.26.4
+	// cannot name, and it stops at them.
+	md->altitude = 120;
+	md->gps_speed = 3;
+
+	metadata_packer packer;
+	packer.pack(md);
+
+	auto original_at = -1;
+	auto created_at = -1;
+	auto pack_at = -1;
+	auto oldest_reader_stops_at = -1;
+	auto record = 0;
+
+	// Walked by id and length, which is all an older build does: it names what it knows and steps
+	// over the rest. v1.26.4 is stricter still - it stops dead at the first id it cannot name - so
+	// where the two date records sit matters as much as that they are written.
+	metadata_unpacker reader(packer.cdata());
+
+	while (!reader.at_end())
+	{
+		const prop::key_ref t = reader.read_type();
+
+		if (t == prop::created_exif) original_at = record;
+		else if (t == prop::created_utc) created_at = record;
+		else if (t == prop::dates_packed) pack_at = record;
+
+		if (oldest_reader_stops_at < 0 && (t == prop::altitude || t == prop::gps_speed))
+		{
+			oldest_reader_stops_at = record;
+		}
+
+		reader.skip_val();
+		++record;
+	}
+
+	assert_equal(true, pack_at >= 0, "the pack is written");
+	assert_equal(true, original_at >= 0, "and the Original date an older build reads");
+	assert_equal(true, created_at >= 0, "and the Created instant an older build reads");
+	assert_equal(true, oldest_reader_stops_at >= 0, "the record the oldest reader stops at is present");
+	assert_equal(true, original_at < oldest_reader_stops_at, "the Original date precedes it");
+	assert_equal(true, created_at < oldest_reader_stops_at, "and so does the Created instant");
+
+	// This build must not read its own compatibility copy back as a source, or every re-loaded row
+	// would claim a legacy reading it never had - and the copies precede the pack, so with four
+	// groups they could evict a real one.
+	const auto unpacked = std::make_shared<prop::item_metadata>();
+	metadata_unpacker unpacker(packer.cdata());
+	unpacker.unpack(unpacked);
+
+	assert_equal(df::date_t(2019, 5, 4, 9, 0, 0), unpacked->dates.original(), "the pack answers Original");
+	assert_equal(false, unpacked->dates.has_source(prop::date_source::legacy_original),
+	             "and the copy written for an older build is not read back as a source");
+	assert_equal(false, unpacked->dates.has_source(prop::date_source::legacy_created),
+	             "for either date");
+
+	// A row written before the pack existed has no pack, and those same records are then the only
+	// dates there are.
+	metadata_packer legacy_only;
+	legacy_only.write(prop::created_exif.id, df::date_t(2011, 2, 3));
+
+	const auto from_legacy = std::make_shared<prop::item_metadata>();
+	metadata_unpacker legacy_reader(legacy_only.cdata());
+	legacy_reader.unpack(from_legacy);
+
+	assert_equal(df::date_t(2011, 2, 3), from_legacy->dates.original(), "a pre-pack row still answers");
+	assert_equal(true, from_legacy->dates.has_source(prop::date_source::legacy_original),
+	             "at legacy authority, so the re-scan replaces it");
+}
+
+// A later release may append a field to a group record or to the pack's trailer. The stored body
+// states how long each is, so this build steps over what it does not know and keeps the dates.
+// Without that, a format change would cost every user a full re-index.
+static void should_read_a_date_pack_written_by_a_later_release()
+{
+	constexpr uint8_t extra = 4;
+	constexpr uint8_t stride = 18 + extra;
+	constexpr uint8_t trailer = 8 + extra;
+
+	df::blob body;
+	body.push_back(9); // a pack version this build has never heard of
+	body.push_back(1); // one group
+	body.push_back(stride);
+	body.push_back(trailer);
+
+	const auto push = [&body](const auto v)
+	{
+		const auto* const src = std::bit_cast<const uint8_t*>(&v);
+		body.insert(body.end(), src, src + sizeof(v));
+	};
+
+	push(static_cast<uint64_t>(prop::date_source::exif_original));
+	push(df::date_t(2019, 5, 4, 9, 0, 0).to_int64());
+	push(static_cast<int16_t>(prop::date_pack::no_offset));
+	body.insert(body.end(), extra, 0x5a); // a per-group field this build cannot name
+
+	push(static_cast<uint64_t>(prop::date_source::rip_date));
+	body.insert(body.end(), extra, 0x5a); // a trailer field this build cannot name
+
+	metadata_packer packer;
+	packer.write_prop_id(prop::dates_packed.id);
+	packer.write_len(body.size());
+	packer._data.insert(packer._data.end(), body.begin(), body.end());
+	packer.write(prop::rating.id, static_cast<int16_t>(3));
+
+	const auto unpacked = std::make_shared<prop::item_metadata>();
+	metadata_unpacker unpacker(packer.cdata());
+	unpacker.unpack(unpacked);
+
+	assert_equal(df::date_t(2019, 5, 4, 9, 0, 0), unpacked->dates.original(),
+	             "a longer group record still yields its date");
+	assert_equal(true, unpacked->dates.has_source(prop::date_source::rip_date),
+	             "and a longer trailer still yields the overflow mask");
+	assert_equal(static_cast<int16_t>(3), unpacked->rating,
+	             "and the record after it is not knocked out of alignment");
+}
+
+// A pack can be structurally perfect and still restore nothing: a later release may name a date
+// source this build has no member for, and every group in the body may carry only that. Recording
+// "a pack was read" rather than "a date was restored" would then discard the plain date records
+// written beside the pack for exactly this case, and the row would answer with no date at all -
+// the same defect as a refused pack, one level further down.
+static void should_fall_back_when_a_pack_names_no_source_this_build_knows()
+{
+	constexpr uint64_t unknown_source = 1ull << 40;
+
+	df::blob body;
+	body.push_back(2); // the pack version this build writes
+	body.push_back(1); // one group
+	body.push_back(18); // this build's own group stride
+	body.push_back(8); // and its own trailer
+
+	const auto push = [&body](const auto v)
+	{
+		const auto* const src = std::bit_cast<const uint8_t*>(&v);
+		body.insert(body.end(), src, src + sizeof(v));
+	};
+
+	push(unknown_source);
+	push(df::date_t(2031, 7, 1, 12, 0, 0).to_int64());
+	push(static_cast<int16_t>(prop::date_pack::no_offset));
+	push(static_cast<uint64_t>(0)); // no overflow
+
+	metadata_packer packer;
+	// Production order: the copies an older build reads are written before the pack.
+	packer.write(prop::created_exif.id, df::date_t(2011, 2, 3));
+	packer.write_prop_id(prop::dates_packed.id);
+	packer.write_len(body.size());
+	packer._data.insert(packer._data.end(), body.begin(), body.end());
+
+	const auto unpacked = std::make_shared<prop::item_metadata>();
+	metadata_unpacker unpacker(packer.cdata());
+	unpacker.unpack(unpacked);
+
+	assert_equal(df::date_t(2011, 2, 3), unpacked->dates.original(),
+	             "the row answers from the record written beside the pack");
+	assert_equal(true, unpacked->dates.has_source(prop::date_source::legacy_original),
+	             "at legacy authority, so a re-scan still replaces it");
 }
 
 static void should_store_webservice_results()
@@ -481,10 +806,14 @@ static void should_parse_drive_label_roots(shared_test_context& stc)
 {
 	// A device label (volume name) entered in the collection list should resolve
 	// to the matching drive by its volume label - not by its drive letter.
+	//
+	// What a mounted volume is called differs by platform; that it is found by its label does not.
+	const auto drive_path = df::windows_path_semantics ? "X:\\" : "/mnt/diffractor-test";
+
 	platform::drives drives;
 
 	platform::drive_t d;
-	d.name = "X:\\";
+	d.name = drive_path;
 	d.vol_name = "DiffractorTestLabel";
 	drives.emplace_back(d);
 
@@ -493,7 +822,7 @@ static void should_parse_drive_label_roots(shared_test_context& stc)
 	df::index_roots roots;
 	parse_more_folders(roots, "DiffractorTestLabel", drives);
 	assert_equal(1_z, roots.folders.size(), "matching label count");
-	assert_equal("X:\\", roots.folders.begin()->text(), "device label resolved to drive path");
+	assert_equal(drive_path, roots.folders.begin()->text(), "device label resolved to drive path");
 }
 
 // Verifies the item-level reload predicate independently of the scanner and database. Thumbnail
@@ -502,7 +831,7 @@ static void should_parse_drive_label_roots(shared_test_context& stc)
 // makes that same thumbnail stale.
 static void should_not_reload_thumb_when_valid()
 {
-	const auto load_path = test_files_folder.combine_file("test.jpg");
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
 
 	const df::date_t date(1972, 5, 25);
 	const df::date_t date2(1972, 5, 26);
@@ -532,7 +861,7 @@ static void should_not_reload_thumb_when_valid()
 static void should_reuse_persisted_hover_thumbnail_until_video_changes()
 {
 	const auto index_path = _temps.next_path();
-	const auto image_path = test_files_folder.combine_file("test.jpg");
+	const auto image_path = test_files_folder.combine_file("Test.jpg");
 	const df::file_path video_path(test_files_folder, "hover-preview.mp4");
 	const df::date_t modified(2026, 7, 31);
 
@@ -583,7 +912,7 @@ static void should_reload_thumb_after_scan()
 	build_index(index, db);
 
 	auto path_test = df::file_path(test_files_folder, "Test.jpg");
-	const auto path_sony = df::file_path(test_files_folder, "Sony.jpg");
+	const auto path_sony = df::file_path(test_files_folder, "Sony.JPG");
 
 	const auto test_item = load_item(index, path_test, false);
 	const auto sony_item = load_item(index, path_sony, false);
@@ -829,7 +1158,7 @@ static void should_detect_duplicates(shared_test_context& stc)
 	const auto path3 = df::file_path(test_files_folder, "Test180.jpg");
 	const auto path4 = df::file_path(test_files_folder, "Test270.jpg");
 	const auto path5 = df::file_path(test_files_folder, "Small.jpg");
-	const auto path_sony = df::file_path(test_files_folder, "Sony.jpg");
+	const auto path_sony = df::file_path(test_files_folder, "Sony.JPG");
 
 	const auto test_item1 = std::make_shared<df::item_element>(path1, index.find_item(path1));
 	const auto test_item2 = std::make_shared<df::item_element>(path2, index.find_item(path2));
@@ -991,7 +1320,8 @@ static void should_report_a_rotated_copy_to_presence()
 	             "presence grades a turned copy the same way duplicate search would");
 }
 
-static void should_require_equal_size_for_duplicate_crc(){
+static void should_require_equal_size_for_duplicate_crc()
+{
 	df::index_file_item first;
 	first.ft = files::file_type_from_name("first.jpg");
 	first.name = str::cache("first.jpg");
@@ -1007,6 +1337,29 @@ static void should_require_equal_size_for_duplicate_crc(){
 	assert_equal(false, is_dup_match(&first, &second), "same CRC with different sizes");
 	second.size = first.size;
 	assert_equal(true, is_dup_match(&first, &second), "same CRC and size");
+}
+
+// Issue #137 - the duplicate badge showed "1" on files that have no duplicate at all, because the
+// count includes the file itself. A badge reporting a number that is true of every file tells the
+// reader nothing, and the reader has to learn that before they can ignore it.
+static void should_badge_only_a_duplicated_item()
+{
+	df::item_display_info info;
+	info.presence = item_presence::not_in;
+
+	info.duplicates = 0;
+	assert_equal(false, df::can_show_duplicates(info), "an item no pass has grouped carries no badge");
+
+	info.duplicates = 1;
+	assert_equal(false, df::can_show_duplicates(info), "an item that is its own only copy carries no badge");
+
+	info.duplicates = 2;
+	assert_equal(true, df::can_show_duplicates(info), "two copies is the first count worth reporting");
+
+	// Presence remains the gate: a count drawn while the check is still running would read as an
+	// answer it has not reached.
+	info.presence = item_presence::unknown;
+	assert_equal(false, df::can_show_duplicates(info), "nothing is claimed before presence answers");
 }
 
 static void should_update_collection_presence(shared_test_context& stc)
@@ -1046,7 +1399,7 @@ static void should_update_collection_presence(shared_test_context& stc)
 	const auto folder_info = std::make_shared<df::index_folder_item>();
 	const auto folder = std::make_shared<df::item_element>(external_root.combine("folder"), folder_info);
 	folder->presence(item_presence::similar_in);
-	folder->duplicates({42, 2});
+	folder->duplicates(df::duplicate_info{42, 2});
 
 	stc.test_index.queue_update_presence(df::item_set({
 		in_collection, possible_copy, possible_older_copy, possible_newer_copy, absent, incomplete, folder
@@ -1385,6 +1738,10 @@ static void should_query_trigram_index()
 		"hotdog stand", // 3
 		"mountain lake", // 4
 		"DOGMA", // 5 - different case
+		// 6 - UTF-8 for the code points U+65E5 U+672C U+8A9E. Written as escapes so the bytes do not
+		// depend on the source encoding. Above U+3FFF, so these are the only grams here whose top key
+		// bytes are non-zero - the radix passes that an all-Latin corpus lets freeze() skip.
+		"\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e photo",
 	};
 
 	df::trigram_index index;
@@ -1399,7 +1756,7 @@ static void should_query_trigram_index()
 		return out;
 	};
 
-	for (const auto* const q : {"dog", "sunset", "mountain", "og p", "xyz", "DOG"})
+	for (const auto* const q : {"dog", "sunset", "mountain", "og p", "xyz", "DOG", "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"})
 	{
 		const auto cand = index.candidates(q);
 		assert_equal(true, cand.has_value(), std::format("'{}' produces trigram candidates", q));
@@ -1578,8 +1935,12 @@ static void should_index_offline_placeholder()
 	assert_equal(static_cast<int>(df::item_online_status::offline), static_cast<int>(offline_status),
 	             "item reported offline while a placeholder");
 	assert_equal(true, offline_md != nullptr, "offline item has shell metadata");
+#ifdef _WIN32
+	// A placeholder's bytes are not on disk, so this content can only come from the shell property
+	// store answering on the file's behalf. Elsewhere an offline scan has nothing to read.
 	assert_equal("key1 key2 key3", offline_tags, "shell keywords extracted for offline placeholder");
 	assert_equal(true, offline_gps_ok, "shell GPS coordinate extracted for offline placeholder");
+#endif
 	assert_equal(0u, offline_crc, "offline item has no content hash");
 	assert_equal(false, offline_needs_scan, "scanned placeholder does not need re-scan (no re-index on restart)");
 	assert_equal(false, offline_wants_thumb, "placeholder does not repeatedly request a thumbnail");
@@ -1985,7 +2346,11 @@ static void should_preserve_metadata_when_dehydrated()
 
 	assert_equal(static_cast<int>(df::item_online_status::offline), static_cast<int>(offline_status),
 	             "offline after dehydration");
+#ifdef _WIN32
+	// The re-scan above is a real scan, so the tags survive it by being read again from the shell
+	// property store rather than by being left alone. Elsewhere that scan has nothing to read.
 	assert_equal("key1 key2 key3", offline_tags, "tags preserved after dehydration (no re-scan)");
+#endif
 	assert_equal(true, offline_has_crc, "content hash preserved after dehydration");
 }
 
@@ -2181,11 +2546,20 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should store item properties"s, should_store_item_properties);
 	tests.add("Should invalidate cached metadata from an older build"s,
 	          should_invalidate_cached_metadata_written_by_an_older_build);
+	tests.add("Should keep answering while upgrading to the date pack"s,
+	          should_keep_answering_while_upgrading_to_the_date_pack);
+	tests.add("Should reclaim a cache written by a newer build"s,
+	          should_reclaim_a_cache_written_by_a_newer_build);
 	tests.add("Should replace an unreadable database"s, should_replace_an_unreadable_database);
 	tests.add("Should run without a database"s, should_run_without_a_database);
 	tests.add("Should hand scan results to the database in groups"s,
 	          should_hand_scan_results_to_the_database_in_groups);
 	tests.add("Should store pack properties"s, should_pack_item_properties);
+	tests.add("Should write dates an older build can read"s, should_write_dates_an_older_build_can_read);
+	tests.add("Should read a date pack written by a later release"s,
+	          should_read_a_date_pack_written_by_a_later_release);
+	tests.add("Should fall back when a date pack names no source this build knows"s,
+	          should_fall_back_when_a_pack_names_no_source_this_build_knows);
 	tests.add("Should store webservice results"s, should_store_webservice_results);
 	tests.add("Should bound webservice cache"s, should_bound_webservice_cache);
 	tests.add("Should detect duplicates"s, should_detect_duplicates);
@@ -2194,6 +2568,8 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should request a re-query only when a folder changed"s,
 	          should_request_a_re_query_only_when_a_folder_changed);
 	tests.add("Should require equal size for duplicate CRC"s, should_require_equal_size_for_duplicate_crc);
+	// Issue #137 - the presence badge said "1" on files with no duplicate
+	tests.add("Should badge only a duplicated item"s, should_badge_only_a_duplicated_item);
 	tests.add("Should report a re-encoded copy to presence"s, should_report_a_re_encoded_copy_to_presence);
 	tests.add("Should report a rotated copy to presence"s, should_report_a_rotated_copy_to_presence);
 	tests.add("Should update collection presence"s, should_update_collection_presence);

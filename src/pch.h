@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "platform_compat.h"
+
 #include <cstdint>
 #include <climits>
 #include <cmath>
@@ -20,6 +22,7 @@
 #include <cctype>
 #include <cwctype>
 #include <cinttypes>
+#include <cstring>
 
 #include <bit>
 #include <new>
@@ -51,13 +54,17 @@
 #include <span>
 #include <variant>
 #include <format>
+#include <filesystem>
 
 #include <thread>
 #include <mutex>
 
 using namespace std::literals;
 
+// glibc's <cmath> defines M_PI as a macro; MSVC only does under _USE_MATH_DEFINES.
+#ifndef M_PI
 constexpr double M_PI = 3.141592653589793238463;
+#endif
 constexpr float M_PIF = 3.14159265358979f;
 // std::numbers c++ 20
 
@@ -65,6 +72,7 @@ constexpr float M_PIF = 3.14159265358979f;
 #include "util_geometry.h"
 #include "util_strings.h"
 #include "util_path.h"
+#include "app_environment.h"
 #include "platform.h"
 #include "util_date.h"
 #include "util_selector.h"
@@ -80,4 +88,3 @@ constexpr float M_PIF = 3.14159265358979f;
 extern const std::string_view s_app_name;
 extern const std::string_view s_app_version;
 extern const std::string_view g_app_build;
-extern const wchar_t* s_app_name_l;

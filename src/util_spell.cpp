@@ -155,7 +155,7 @@ void spell_check::lazy_load()
 				                                       str::utf8_to_a(dic_path.str()).c_str());
 
 				// Load custom dictionary with proper RAII
-				std::ifstream f(str::utf8_to_utf16(custom_path.str()));
+				std::ifstream f(platform::to_stream_path(custom_path));
 
 				if (f.is_open())
 				{
@@ -234,7 +234,7 @@ void spell_check::add_word(const std::string_view word) const
 				return;
 			}
 
-			std::ofstream f(platform::to_file_system_path(_custom_dic_path), std::ios::out | std::ios::app);
+			std::ofstream f(platform::to_stream_path(_custom_dic_path), std::ios::out | std::ios::app);
 			if (f.is_open())
 			{
 				f << word << '\n';

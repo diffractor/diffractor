@@ -460,14 +460,11 @@ void selector_view::render(ui::draw_context& dc, const view_controller_ptr contr
 	}
 }
 
-void selector_view::mouse_wheel(const pointi loc, const int z_delta, const ui::key_state keys)
+bool selector_view::mouse_wheel(const pointi loc, const ui::wheel_notch notch)
 {
-	scroll_by(-z_delta);
-}
-
-void selector_view::mouse_hwheel(const pointi loc, const int z_delta, const ui::key_state keys)
-{
-	scroll_by(z_delta);
+	// A strip has one axis, so both wheels drive it.
+	scroll_by(notch.is_vertical() ? -notch.delta : notch.delta);
+	return can_scroll();
 }
 
 view_controller_ptr selector_view::controller_from_location(const view_host_ptr& host, const pointi loc)

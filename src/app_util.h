@@ -90,9 +90,14 @@ struct rename_source
 // a directory, so existence for a rename row has to be tested against the right kind of path.
 bool rename_path_exists(df::file_path path, bool is_folder);
 
+// A folder source and a folder destination only compare as the same place once both are reduced to
+// this form, because a folder path packs with a trailing separator and an empty name.
+std::string rename_path_key(df::file_path path, bool is_folder);
+
 // Applies the named collision policy from docs/design.md. Block Run leaves colliding rows
 // invalid so can_rename_items() refuses; Skip marks them noop; Replace allows the overwrite;
-// Auto-rename picks the next free " (n)" suffix.
+// Auto-rename picks the next free " (n)" suffix. A destination held by a file the same plan renames
+// away is free by the time the run reaches it, so it is not a collision.
 std::vector<rename_item> calc_item_renames(const df::item_set& items, std::string_view template_name, int start,
                                            collision_policy policy);
 std::vector<rename_source> snapshot_rename_sources(const df::item_set& items);
@@ -100,6 +105,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
                                            std::string_view template_name, int start, collision_policy policy);
 bool can_rename_items(const std::vector<rename_item>& renames);
 // Number of rows the policy had to resolve, for the Review statement.
+int count_rename_collisions(const std::vector<rename_item>& renames, collision_policy policy);
 
 std::string format_sequence(std::string_view original_name, std::string_view template_name, int seq);
 
@@ -221,7 +227,7 @@ struct sync_analysis_folder
 	std::string relative;
 };
 
-using sync_analysis_items = std::map<std::string, sync_analysis_item, df::iless>;
+using sync_analysis_items = std::map<std::string, sync_analysis_item, df::path_key_less>;
 
 // Why an analysis could not be produced. Sync inputs are user supplied, so the common failures are
 // ordinary configuration mistakes and must be reported as such rather than as an internal fault.
@@ -234,7 +240,7 @@ enum class sync_invalid_reason
 	ambiguous_local_root,
 };
 
-struct sync_analysis_result : std::map<std::string, sync_analysis_items, df::iless>
+struct sync_analysis_result : std::map<std::string, sync_analysis_items, df::path_key_less>
 {
 	bool valid = true;
 	sync_invalid_reason reason = sync_invalid_reason::none;
@@ -305,5 +311,6 @@ df::file_path next_free_destination(df::file_path destination);
 std::string format_collision_summary(collision_policy policy, int count);
 
 df::date_t adjusted_item_date(df::date_t created, df::date_t new_start, df::date_t original_start);
+std::string_view adjust_date_source_name(const prop::item_metadata_const_ptr& md);
 
 icon_index drive_icon(platform::drive_type d);

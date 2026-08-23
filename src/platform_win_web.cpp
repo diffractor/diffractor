@@ -190,7 +190,8 @@ struct platform::web_host
 platform::web_host_ptr platform::connect_to_host(const std::string_view host, const bool secure_in, const int port_in)
 {
 	// InternetOpen and InternetConnect
-	inet_handle session_handle(::InternetOpen(s_app_name_l, INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0));
+	const auto agent = str::utf8_to_utf16(s_app_name);
+	inet_handle session_handle(::InternetOpen(agent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0));
 
 	if (!session_handle.is_valid())
 	{

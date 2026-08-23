@@ -39,7 +39,8 @@ class batch_tool_view final : public list_view, public std::enable_shared_from_t
 	std::string _metadata_synopsis;
 	int _metadata_rating = 0;
 	int _metadata_year = 0;
-	df::date_t _metadata_created;
+	df::date_t _metadata_date_original;
+	df::date_t _metadata_date_created;
 	df::xy8 _metadata_episode = {0, 0};
 	int _metadata_season = 0;
 	df::xy8 _metadata_track = {0, 0};

@@ -201,3 +201,20 @@ Stated explicitly because each has been a plausible-sounding wrong turn:
 - No redundancy surface chooses a keeper, enlarges a target, persists a verdict, or offers bulk automatic resolution.
 
 Presence wording and confidence values belong to [design.md](design.md#collection-presence), and the relations a related search reports belong to [design.md](design.md#related-items); the copy relation those surfaces share, its evidence grades, and the rules that keep them in parity are owned here in [§7](#7-redundancy-one-relation-three-questions). Place resolution over collection items belongs to [locations.md](locations.md). Index, summary, and scanning architecture belongs to [implementation.md](implementation.md#index-search-and-database). How a metadata write reaches disk belongs to [file-io.md](file-io.md). GitHub issues own design gaps and planned changes.
+
+## Where this lives
+
+| Collection subject | Source |
+|---|---|
+| The declared collection folders, includes and excludes | [app_settings.h](../src/app_settings.h), [app_settings.cpp](../src/app_settings.cpp) |
+| Membership resolution, folder roots, the collection edge | [model_index.cpp](../src/model_index.cpp), [model_index.h](../src/model_index.h) — `index_state` |
+| The indexed record a member earns | [model_index.h](../src/model_index.h) — `df::index_file_item`, `df::index_folder_item` |
+| Duplicate grouping and the perceptual-hash stage | [model_index.cpp](../src/model_index.cpp) — `index_state::update_predictions`; [app_dup_report.cpp](../src/app_dup_report.cpp) measures it over a real library |
+| The bounded nearest-match sets a related search answers with | [model_related.h](../src/model_related.h) |
+| Presence evaluation for a file outside the collection | [model_index.cpp](../src/model_index.cpp), [model_search.cpp](../src/model_search.cpp) |
+| Persistence of the cached index | [model_db.cpp](../src/model_db.cpp), [model_db_pack.h](../src/model_db_pack.h) |
+
+The three redundancy surfaces in [§7](#7-redundancy-one-relation-three-questions) read one relation,
+so a change to the copy rules in `update_predictions` moves duplicate search, presence and related
+items together. `/test:*duplicate*` and `/test:*presence*` are the checks that hold them in parity;
+a change that improves one and not the others has broken the invariant this document exists to state.

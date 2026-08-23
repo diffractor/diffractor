@@ -132,6 +132,8 @@ public:
 	void open();
 	void open(df::folder_path folder, std::string_view file_name);
 	void upgrade_cached_metadata();
+	bool invalidate_cached_metadata() const;
+	bool request_date_pack_rescan() const;
 	void perform_writes();
 	void perform_writes(std::deque<item_db_write> writes) const;
 	void maintenance(bool is_reset);

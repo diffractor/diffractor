@@ -1732,7 +1732,7 @@ void index_state::update_predictions()
 		const auto found_group = component_groups.find(root);
 		const auto group = found_group == component_groups.end() ? 0u : found_group->second;
 		const auto grade = group == 0 ? df::copy_grade::none : grades[i];
-		files[i].file->update_duplicates(files[i].folder, {group, count, grade});
+		files[i].file->update_duplicates(files[i].folder, df::duplicate_info{group, count, grade});
 	}
 
 	stats.indexed_dup_folder_count = static_cast<int>(component_groups.size());
@@ -2523,16 +2523,28 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 			const auto max_extent = setting.thumbnail_max_dimension;
 			const auto cover_art_extent = cover_art->dimensions();
 
-			if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy)
+			// The bytes come straight out of an arbitrary container's attached-picture stream, so the
+			// size is chosen by the file rather than by us: a small image padded to megabytes passes a
+			// test on dimensions alone. assert_true evaluates nothing in Release, so the ceiling has to
+			// be a gate or the index stores whatever it was handed.
+			if (max_extent.cx < cover_art_extent.cx || max_extent.cy < cover_art_extent.cy ||
+				cover_art->data().size() >= df::two_fifty_six_k)
 			{
 				auto surf = ff.image_to_surface(cover_art, max_extent, false, {}, decode_intent::thumbnail);
 				cover_art = ff.surface_to_thumbnail(surf);
 			}
 
-			if (is_valid(cover_art))
+			if (is_valid(cover_art) && cover_art->data().size() < df::two_fifty_six_k)
 			{
-				df::assert_true(cover_art->data().size() < df::two_fifty_six_k);
 				write.cover_art = cover_art;
+			}
+			else
+			{
+				// A re-encode that is still over the ceiling is dropped rather than kept: the local is
+				// what publish_thumbnail charges against the in-memory budget, so gating only the
+				// database write would keep the oversized blob in the item.
+				if (is_valid(cover_art)) df::log(__FUNCTION__, "cover art over the thumbnail ceiling");
+				cover_art.reset();
 			}
 		}
 
@@ -2557,10 +2569,18 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				thumbnail_surface = surf;
 			}
 
-			if (is_valid(thumbnail_image))
+			// Same ceiling as the two above, and a real gate for the same reason: assert_true evaluates
+			// nothing in Release, so an encode that came back over the ceiling would reach both the
+			// database row and the in-memory budget unchallenged.
+			if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
 			{
-				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 				write.thumb = thumbnail_image;
+			}
+			else
+			{
+				if (is_valid(thumbnail_image)) df::log(__FUNCTION__, "thumbnail over the ceiling");
+				thumbnail_image.reset();
+				thumbnail_surface.reset();
 			}
 		}
 		else if (load_thumb && is_valid(sr.thumbnail_image))
@@ -2572,7 +2592,11 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				const auto max_extent = setting.thumbnail_max_dimension;
 				const auto thumb_extent = thumbnail_image->dimensions();
 
-				if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
+				// Same rule as the cover art above: these bytes are an embedded thumbnail stored verbatim
+				// by the camera, so the size is the file's choice and a small image padded to megabytes
+				// passes a test on dimensions alone.
+				if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy ||
+					thumbnail_image->data().size() >= df::two_fifty_six_k)
 				{
 					auto surf = ff.image_to_surface(thumbnail_image, max_extent, false, {},
 					                                decode_intent::thumbnail);
@@ -2580,10 +2604,14 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 					thumbnail_surface = surf;
 				}
 
-				if (is_valid(thumbnail_image))
+				if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
 				{
-					df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 					write.thumb = thumbnail_image;
+				}
+				else
+				{
+					if (is_valid(thumbnail_image)) df::log(__FUNCTION__, "thumbnail over the ceiling");
+					thumbnail_image.reset();
 				}
 			}
 			else
@@ -2861,22 +2889,13 @@ void index_histograms::record(const location_cache&, const df::index_file_item& 
 	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
 
 	const auto md = file.metadata.load();
-	auto created = file.file_created;
+	auto created = file.file_created.system_to_local();
 
 	if (md)
 	{
-		if (md->created_exif.is_valid())
-		{
-			created = md->created_exif;
-		}
-		else if (md->created_utc.is_valid())
-		{
-			created = md->created_utc.system_to_local();
-		}
-		else if (md->created_digitized.is_valid())
-		{
-			created = md->created_digitized;
-		}
+		// One resolver: the timeline must bucket an item under the day it groups under.
+		const auto resolved = md->created();
+		if (resolved.is_valid()) created = resolved;
 
 		const auto coord = md->coordinate;
 
@@ -2933,14 +2952,16 @@ void index_histograms::record(const location_cache&, const df::index_file_item& 
 		_dates.record_representative(date_index, file, path);
 	}
 
-	const auto modified_date_parts = file.file_modified.load().date();
+	const auto modified_date_parts = file.file_modified.load().system_to_local().date();
 	const auto modified_date_parts_year_offset = year - modified_date_parts.year;
 
 	if (modified_date_parts_year_offset >= 0 && modified_date_parts_year_offset < df::max_history_years)
 	{
+		// The cell draws the created count and clicks through on created, and there is one
+		// representative per cell - letting the modified pass claim it hands the hover a picture the
+		// click-through listing does not contain.
 		const auto date_index = modified_date_parts_year_offset * 12 + modified_date_parts.month - 1;
 		_dates.dates[date_index].modified += 1;
-		_dates.record_representative(date_index, file, path);
 	}
 }
 
@@ -3064,44 +3085,6 @@ inline bool index_state::is_collection_search(const df::search_t& search) const
 	}
 
 	return true;
-}
-
-void index_state::calc_folder_summary(const df::folder_path& path, const df::index_folder_info_const_ptr& folder,
-                                      df::file_group_histogram& result, const df::cancel_token& token)
-{
-	const auto child_folders = folder->folders_snapshot();
-	for (const auto& sub_folder : *child_folders)
-	{
-		calc_folder_summary(path.combine(sub_folder->name), sub_folder, result, token);
-	}
-
-	for (const auto& file : folder->files)
-	{
-		result.record(file, df::file_path(path, file.name));
-	}
-}
-
-df::file_group_histogram index_state::calc_folder_summary(const df::folder_path path,
-                                                          const df::cancel_token& token) const
-{
-	df::file_group_histogram result;
-	const auto folder = _items.find(path);
-
-	if (folder)
-	{
-		const auto child_folders = folder->folders_snapshot();
-		for (const auto& sub_folder : *child_folders)
-		{
-			calc_folder_summary(path.combine(sub_folder->name), sub_folder, result, token);
-		}
-
-		for (const auto& file : folder->files)
-		{
-			result.record(file, df::file_path(path, file.name));
-		}
-	}
-
-	return result;
 }
 
 void index_state::save_media_position(const df::file_path id, const double media_position)
@@ -4062,7 +4045,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 					}
 				}
 				match.state = evidence_complete ? item_presence::not_in : item_presence::unknown;
-				match.duplicates = {};
+				match.duplicates = df::duplicate_info{};
 			}
 		}
 
@@ -4235,6 +4218,9 @@ bool index_state::scan_items(const item_scan_requests& requests,
 			{
 				const auto folder_path = request.folder;
 				const auto node = validate_folder(folder_path, refresh_from_file_system, now);
+				// A folder that cannot be enumerated and was never indexed answers null, and
+				// update_folder dereferences whatever record it is handed.
+				if (!node.folder) continue;
 				// Re-summarising a folder is not a metadata refresh. Reporting one unconditionally made
 				// every scan of a listing that contains a folder re-invalidate index_summary (and
 				// group_layout via queue_scan_displayed_items), which never settled.
@@ -5221,7 +5207,7 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
 	// (and queries too short for a trigram) fall back to a full scan.
 	if (query.size() > 2 && result.size() < max_results)
 	{
-		// str::normalze_for_compare folds every whitespace form to a word gap, not just a space,
+		// str::normalize_for_compare folds every whitespace form to a word gap, not just a space,
 		// so any of them means the query has to take the full-scan path.
 		const auto candidates = query.find_first_of(" \t\n\v\f\r") == std::string_view::npos
 			                        ? summary->_word_trigrams.candidates(query)

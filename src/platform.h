@@ -29,7 +29,7 @@ namespace ui
 
 namespace df
 {
-	struct progess_i;
+	struct progress_i;
 	class item_selector;
 	class item_set;
 	class date_t;
@@ -62,6 +62,11 @@ namespace platform
 	extern std::atomic<size_t> static_memory_usage;
 
 	std::string OS();
+
+	// The platform identity the daily ping reports, packed by df::pack_environment. Every value is
+	// read fresh: a system fact means "right now", unlike a feature bit, which means "at least once
+	// since the last report". docs/v-1.27.2.md owns what each value means.
+	df::environment_facts environment();
 
 	extern bool sse2_supported;
 	extern bool ssse3_supported;
@@ -252,13 +257,27 @@ namespace platform
 		read_write,
 	};
 
-	std::wstring to_file_system_path(df::file_path path);
-	std::wstring to_file_system_path(df::folder_path path);
+	// The path form the OS and native third-party libraries take. Windows needs UTF-16, with the
+	// \\?\ prefix once the path is long; elsewhere the file system takes the UTF-8 bytes as they
+	// are. Portable callers pass it straight through and never inspect it.
+#ifdef _WIN32
+	using native_path = std::wstring;
+#else
+	using native_path = std::string;
+#endif
 
-	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
-	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
-	std::wstring to_shell_path(df::file_path path);
-	std::wstring to_shell_path(df::folder_path path);
+	native_path to_file_system_path(df::file_path path);
+	native_path to_file_system_path(df::folder_path path);
+
+	// The same path a native API would be given, as UTF-8, for the third-party libraries that take a
+	// byte path on every platform. On Windows this still carries the \\?\ prefix for a long path, so
+	// it is not interchangeable with df::file_path::str().
+	std::string to_utf8_file_system_path(df::file_path path);
+
+	// std::fstream accepts a std::filesystem::path everywhere, but only MSVC accepts a std::wstring.
+	// Going through this keeps stream call sites free of any assumption about the native encoding.
+	std::filesystem::path to_stream_path(df::file_path path);
+	std::filesystem::path to_stream_path(df::folder_path path);
 
 	enum class known_folder
 	{
@@ -283,7 +302,9 @@ namespace platform
 	file_ptr open_file(df::file_path path, file_open_mode mode);
 	uint32_t file_crc32(df::file_path path);
 	uint32_t file_crc32(df::file_path path, const df::cancel_token& token);
-	ui::const_surface_ptr create_segoe_md2_icon(wchar_t ch);
+	// Rasterises one glyph of the bundled icon font to a surface, for the places that need an image
+	// rather than drawn text. Takes a code point, so it does not depend on the size of wchar_t.
+	ui::const_surface_ptr create_icon_surface(char32_t ch);
 	bool eject(df::folder_path path);
 
 	enum class file_op_result_code
@@ -457,6 +478,9 @@ namespace platform
 	bool browse_for_folder(df::folder_path& path);
 	bool prompt_for_save_path(df::file_path& path);
 
+	// The operating system's own UTF-16 conversion. Nothing in the app calls these: str::utf16_to_utf8
+	// and str::utf8_to_utf16 are the conversions it uses, and these exist so a test can check those
+	// against an implementation we did not write.
 	std::string utf16_to_utf8(std::wstring_view text);
 	std::wstring utf8_to_utf16(std::string_view text);
 
@@ -590,21 +614,6 @@ namespace platform
 	// are advertised (and in what order) and confirm that each file-bearing format
 	// independently resolves to the cached items exactly once. Used to reason about
 	// duplicate-import behaviour in third-party drop targets (e.g. Adobe Premiere).
-	struct data_object_probe
-	{
-		std::vector<uint32_t> enum_formats; // cfFormat ids, in EnumFormatEtc (source-preference) order
-		int hdrop_enum_index = -1; // position of CF_HDROP within enum_formats (-1 = absent)
-		int shell_id_list_enum_index = -1; // position of CFSTR_SHELLIDLIST within enum_formats (-1 = absent)
-		bool advertises_hdrop = false; // QueryGetData(CF_HDROP)
-		bool advertises_shell_id_list = false; // QueryGetData(CFSTR_SHELLIDLIST)
-		int hdrop_count = -1; // files parsed from CF_HDROP (-1 = no data returned)
-		int shell_id_list_count = -1; // CIDA cidl from CFSTR_SHELLIDLIST (-1 = no data returned)
-		std::vector<std::wstring> hdrop_paths;
-		std::vector<std::wstring> shell_id_list_paths;
-	};
-
-	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
-	                                         const std::vector<df::folder_path>& folders);
 
 	// Test-only probe of the double-buffered paint applied to native common controls. The buffering
 	// relies on the control drawing itself on demand into a supplied device context. If a control
@@ -622,20 +631,14 @@ namespace platform
 
 	control_paint_probe probe_buffered_control_paint();
 
-	// Test-only probe of the software renderer's tiled rasterisation. The backend replays the
-	// retained scene once per fixed scratch tile, which is only sound while every primitive derives
-	// its colour, coverage and source mapping from its own bounds and treats the clip purely as a
-	// write mask. A primitive that read the clip instead would seam at tile edges, so the probe
-	// draws one representative scene whole and again tile by tile and compares the two.
+	// Test-only probe of the software backend's scratch buffer. The scratch tile stops being
+	// reallocated once it reaches its final size, so growing the client no longer reallocates
+	// anything. These record how much of a grown client the canvas will actually accept writes for,
+	// summed over the tiles the real loop walks, against the buffer that stayed behind - which must
+	// not have grown with the window. Whether tiling itself is seamless is a question about the
+	// rasterizer rather than the platform, and is ui::probe_software_rasterizer.
 	struct software_tiling_probe
 	{
-		int painted_pixels = 0; // pixels the scene changed from the initial fill
-		int mismatched_pixels = 0; // pixels where the tiled result differs from the untiled one
-		int tiles = 0; // tiles the scene was rasterised in
-		// The scratch tile stops being reallocated once it reaches its final size, so growing the
-		// client no longer reallocates anything. These record how much of a grown client the canvas
-		// will actually accept writes for, summed over the tiles the real loop walks, against the
-		// buffer that stayed behind - which must not have grown with the window.
 		int grown_client_pixels = 0;
 		int grown_writable_pixels = 0;
 		int grown_buffer_pixels = 0;
@@ -1099,6 +1102,4 @@ namespace platform
 
 	web_host_ptr connect_to_host(std::string_view host, bool secure = true, int port = 0);
 	web_response send_request(const web_host_ptr& host, const web_request& req);
-
-	ui::surface_ptr image_to_surface(df::cspan image_buffer_in, sizei target_extent);
 }

@@ -245,7 +245,7 @@ static void scan_gif_blocks(read_stream& s, file_scan_result& result, uint64_t o
 		}
 		else
 		{
-			// Invaild GIF Block
+			// Invalid GIF Block
 			break;
 		}
 	}

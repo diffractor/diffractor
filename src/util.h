@@ -12,7 +12,12 @@
 
 #pragma once
 
+// SSE2 and SSE4.2 are properties of the processor, not of the compiler. GCC and Clang carry the
+// same intrinsics, and x86-64 has SSE2 in its baseline, so the only extra requirement is naming
+// SSE4.2 on the one function that uses it - see DF_TARGET_SSE42 in util_simd.h.
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#define COMPILE_SIMD_INTRINSIC
+#elif (defined(__GNUC__) || defined(__clang__)) && defined(__x86_64__)
 #define COMPILE_SIMD_INTRINSIC
 #endif
 
@@ -49,18 +54,26 @@ constexpr std::size_t operator "" _z(const unsigned long long n)
 	static_assert(!std::is_copy_constructible_v<T>, #T " must not be copy constructible"); \
 	static_assert(!std::is_copy_assignable_v<T>, #T " must not be copy assignable")
 
+// The message is stored rather than passed to a base constructor: std::exception(const char*)
+// is an MSVC extension and does not exist in libstdc++.
 class app_exception final : public std::exception
 {
 public:
-	using my_base = exception;
-
-	explicit app_exception(const std::string& message) : my_base(message.c_str())
+	explicit app_exception(std::string message) : _message(std::move(message))
 	{
 	}
 
-	explicit app_exception(const char* message) : my_base(message)
+	explicit app_exception(const char* message) : _message(message)
 	{
 	}
+
+	const char* what() const noexcept override
+	{
+		return _message.c_str();
+	}
+
+private:
+	std::string _message;
 };
 
 struct text_t
@@ -68,6 +81,12 @@ struct text_t
 	text_t() = default;
 
 	text_t(const std::string_view t) : text(t)
+	{
+	}
+
+	// A string literal needs its own constructor: reaching text_t through std::string_view is a
+	// second user-defined conversion, which MSVC accepts and conforming compilers reject.
+	text_t(const char* t) : text(t)
 	{
 	}
 
@@ -1064,6 +1083,7 @@ namespace df
 		{
 		}
 
+#if !DF_LONG_IS_INT64
 		constexpr explicit file_size(const long i) noexcept : _i(static_cast<uint64_t>(i))
 		{
 		}
@@ -1071,6 +1091,7 @@ namespace df
 		constexpr explicit file_size(const unsigned long i) noexcept : _i(static_cast<uint64_t>(i))
 		{
 		}
+#endif
 
 		constexpr file_size(const file_size&) noexcept = default;
 		constexpr file_size& operator=(const file_size&) noexcept = default;

@@ -534,6 +534,14 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 		return l->media_created() > r->media_created();
 	};
 
+	constexpr auto file_created_sorter = [](const df::item_element_ptr& l, const df::item_element_ptr& r)
+	{
+		const auto ll = l->file_or_metadata_created();
+		const auto rr = r->file_or_metadata_created();
+		if (ll == rr) return icmp(l->name(), r->name()) < 0;
+		return ll > rr;
+	};
+
 	constexpr auto pixel_sorter = [](const df::item_element_ptr& l, const df::item_element_ptr& r) -> bool
 	{
 		const auto lmd = l->metadata();
@@ -567,8 +575,9 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 
 	const auto sorts_by_date = group_mode != group_by::related &&
 		(sort_order == sort_by::date_created || sort_order == sort_by::date_modified ||
+			sort_order == sort_by::date_original ||
 			(sort_order == sort_by::def && (group_mode == group_by::date_created || group_mode ==
-				group_by::date_modified)));
+				group_by::date_modified || group_mode == group_by::date_original)));
 	const auto reverse_after = !setting.sort_dates_descending && sorts_by_date;
 
 	// Regrouping re-sorts every group even when nothing that affects order moved, and these comparators
@@ -615,6 +624,10 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 	}
 	else if (sort_order == sort_by::date_created)
 	{
+		apply(file_created_sorter);
+	}
+	else if (sort_order == sort_by::date_original)
+	{
 		apply(created_sorter);
 	}
 	else if (sort_order == sort_by::name)
@@ -630,6 +643,10 @@ static void sort_items(df::item_elements& items, const group_by group_mode, cons
 		apply(modified_sorter);
 	}
 	else if (group_mode == group_by::date_created)
+	{
+		apply(file_created_sorter);
+	}
+	else if (group_mode == group_by::date_original)
 	{
 		apply(created_sorter);
 	}
@@ -697,6 +714,68 @@ df::file_group_histogram df::item_set::summary() const
 
 	return result;
 }
+
+df::history_range df::history_auto_range(const date_histogram& dates, const int current_year)
+{
+	const auto window = history_range{current_year - history_window_years + 1, current_year};
+
+	std::array<uint64_t, max_history_years> yearly{};
+	uint64_t total = 0;
+
+	for (auto y = 0; y < max_history_years; ++y)
+	{
+		uint64_t sum = 0;
+		for (auto m = 0; m < 12; ++m) sum += dates.dates[static_cast<size_t>(y) * 12 + m].created;
+		yearly[y] = sum;
+		total += sum;
+	}
+
+	if (total == 0) return window;
+
+	// How much of the collection sits at or beyond each year, counting back from today. Both trims
+	// below are questions about a tail, and this answers them without rescanning.
+	std::array<uint64_t, max_history_years + 1> beyond{};
+	for (auto y = max_history_years - 1; y >= 0; --y) beyond[y] = beyond[y + 1] + yearly[y];
+
+	// The shortest run back from today that still holds nearly everything. A scanner that stamped
+	// 1900 on four negatives does not get to set the scale for twenty thousand photographs.
+	const auto keep = total * history_coverage_percent / 100;
+	uint64_t running = 0;
+	auto oldest = 0;
+
+	for (auto y = 0; y < max_history_years; ++y)
+	{
+		if (yearly[y] == 0) continue;
+		running += yearly[y];
+		oldest = y;
+		if (running >= keep) break;
+	}
+
+	// Real history thins out; it does not fall silent for six years and then resume. An island
+	// behind a long gap, holding only a sliver of the collection, is a camera whose clock reset.
+	auto gap = 0;
+
+	for (auto y = 1; y <= oldest; ++y)
+	{
+		if (yearly[y] == 0)
+		{
+			++gap;
+			continue;
+		}
+
+		if (gap >= history_gap_years && beyond[y] * 100 < total * history_island_percent)
+		{
+			oldest = y - gap - 1;
+			break;
+		}
+
+		gap = 0;
+	}
+
+	// Never narrower than one window, or the navigator has nothing to navigate.
+	return {std::min(current_year - oldest, window.first_year), current_year};
+}
+
 
 //////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////
@@ -1015,11 +1094,13 @@ std::shared_ptr<group_title_control> df::build_group_title(view_state& s, const 
 				               search_t(current_search).with(prop::label, key.text1));
 			}
 		}
-		else if (order == group_by::date_created || order == group_by::date_modified)
+		else if (order == group_by::date_created || order == group_by::date_modified ||
+			order == group_by::date_original)
 		{
 			auto target = date_parts_prop::any;
 			if (order == group_by::date_modified) target = date_parts_prop::modified;
 			if (order == group_by::date_created) target = date_parts_prop::created;
+			if (order == group_by::date_original) target = date_parts_prop::original;
 
 			if (key.order1 == 0)
 			{
@@ -1214,7 +1295,8 @@ void df::item_group::update_scroll_info(const group_by order)
 				}
 			}
 		}
-		else if (order == group_by::date_created || order == group_by::date_modified)
+		else if (order == group_by::date_created || order == group_by::date_modified ||
+			order == group_by::date_original)
 		{
 			if (_key.order1 == 0)
 			{
@@ -1322,6 +1404,10 @@ void view_state::update_item_groups()
 					break;
 
 				case group_by::date_created:
+					groups[date_key(i->file_or_metadata_created(), i)].emplace_back(i);
+					break;
+
+				case group_by::date_original:
 					groups[date_key(i->media_created(), i)].emplace_back(i);
 					break;
 
@@ -1363,6 +1449,10 @@ void view_state::update_item_groups()
 					break;
 
 				case group_by::date_created:
+					groups[date_key(i->file_or_metadata_created(), i)].emplace_back(i);
+					break;
+
+				case group_by::date_original:
 					groups[date_key(i->media_created(), i)].emplace_back(i);
 					break;
 
@@ -1472,8 +1562,7 @@ void view_state::update_item_groups()
 
 	groups.clear();
 
-	if (!setting.sort_dates_descending && (group_order == group_by::date_created || group_order ==
-		group_by::date_modified))
+	if (!setting.sort_dates_descending && is_date_group_order(group_order))
 	{
 		std::ranges::reverse(new_item_groups);
 	}
@@ -1571,7 +1660,7 @@ sizei df::item_group::measure(ui::measure_context& mc, const int width_limit) co
 	_layout_bounds.resize(_items.size());
 
 	const auto scale_factor = mc.scale_factor;
-	// maeasure and save calculated layout information
+	// measure and save calculated layout information
 	const double base_line_height = calc_item_line_height() * scale_factor;
 
 	const double cy = base_line_height + mc.padding1;
@@ -1921,9 +2010,9 @@ void df::item_group::update_detail_row_layout(ui::draw_context& dc, const item_e
 		_row_draw_info.flag.extent = std::max(_row_draw_info.flag.extent, dc.icon_cxy);
 	}
 
-	if (!has_related && info.presence != item_presence::unknown)
+	if (!has_related && can_show_duplicates(info))
 	{
-		_row_draw_info.presence.update_extent(dc, str::format_count(info.duplicates, true));
+		_row_draw_info.presence.update_extent(dc, str::format_count(info.duplicates));
 	}
 
 	if (info.sidecars > 0)
@@ -1977,9 +2066,10 @@ void df::item_group::update_detail_row_layout(ui::draw_context& dc, const item_e
 		_row_draw_info.modified.update_extent(dc, platform::format_date_time(info.modified));
 	}
 
-	if (_state.group_order() == group_by::date_created)
+	if (_state.group_order() == group_by::date_created || _state.group_order() == group_by::date_original)
 	{
-		_row_draw_info.created.update_extent(dc, platform::format_date_time(info.created));
+		const auto shown = _state.group_order() == group_by::date_created ? info.file_created : info.created;
+		_row_draw_info.created.update_extent(dc, platform::format_date_time(shown));
 	}
 
 	i->row_layout_valid = true;
@@ -2304,9 +2394,15 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 			if (widths.presence.width > 0)
 			{
-				const auto bb = widths.presence.calc_bounds(text_rect, text_x, text_y, text_padding);
-				widths.presence.draw(dc, str::format_count(info.duplicates, true), bg_dups, bb, text_font,
-				                     text_style_center, text_color);
+				// The column is as wide as the widest row in the group, so a row with no duplicate
+				// still has room reserved. Only the rows the layout measured may draw, or a file that
+				// is its own only copy gets the "1" badge issue #137 exists to remove.
+				if (!has_related && can_show_duplicates(info))
+				{
+					const auto bb = widths.presence.calc_bounds(text_rect, text_x, text_y, text_padding);
+					widths.presence.draw(dc, str::format_count(info.duplicates), bg_dups, bb, text_font,
+					                     text_style_center, text_color);
+				}
 				text_x += widths.presence.width + text_padding;
 			}
 
@@ -2409,10 +2505,12 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 			if (widths.created.width > 0)
 			{
-				if (!prop::is_null(info.created))
+				const auto shown = group_order == group_by::date_created ? info.file_created : info.created;
+
+				if (!prop::is_null(shown))
 				{
 					const auto bb = widths.created.calc_bounds(text_rect, text_x, text_y, text_padding);
-					const auto text = platform::format_date_time(info.created);
+					const auto text = platform::format_date_time(shown);
 					widths.created.draw(dc, text, ui::color{}, bb, text_font, text_style_far, text_color);
 				}
 				text_x += widths.created.width + text_padding;
@@ -2450,7 +2548,12 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 		const auto show_info = (is_folder || is_hover) && !str::is_empty(info.info);
 		const auto show_size = show_text && !is_folder && (group_order == group_by::size || sort_order ==
 			sort_by::size);
-		const auto show_created = show_text && !is_folder && group_order == group_by::date_created;
+		const auto show_created = show_text && !is_folder && (group_order == group_by::date_created ||
+			group_order == group_by::date_original || sort_order == sort_by::date_original ||
+			sort_order == sort_by::date_created);
+		// The group order names the key when it is a date order; otherwise the sort order does.
+		const auto created_shown_is_file = group_order == group_by::date_created ||
+			(group_order != group_by::date_original && sort_order == sort_by::date_created);
 		const auto show_modified = show_text && !is_folder && (group_order == group_by::date_modified || sort_order ==
 			sort_by::date_modified);
 		const auto show_selected = !(is_focus || is_hover) && (is_selected || is_highlight);
@@ -2711,7 +2814,7 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 			}
 			else if (show_created)
 			{
-				text = prop::format_date(info.created);
+				text = prop::format_date(created_shown_is_file ? info.file_created : info.created);
 			}
 			else if (show_modified)
 			{
@@ -2774,9 +2877,9 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 
 		if (show_text)
 		{
-			if (!has_related && info.presence != item_presence::unknown)
+			if (!has_related && can_show_duplicates(info))
 			{
-				const auto text = str::format_count(info.duplicates, true);
+				const auto text = str::format_count(info.duplicates);
 				const auto cx = std::max(cxy_flag, dc.measure_text(text, ui::style::font_face::dialog,
 				                                                   ui::style::text_style::single_line_center, 100).cx);
 				const recti bb(x_flag, y_flag, x_flag + cx, y_flag + cxy_flag);
@@ -2871,6 +2974,14 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 					                  item->_cover_art_surface = std::move(cover_art_surface);
 					                  item->set_thumbnail_state(thumbnail_state::surface_cached,
 					                                            item->_thumbnail_surface || item->_cover_art_surface);
+
+					                  // The selection panel measures the displayed item's cover art, so a
+					                  // result carrying it changes the panel's layout, not only its pixels.
+					                  if (item->_cover_art_surface && item->is_selected())
+					                  {
+						                  async.invalidate_view(
+							                  view_invalid::view_layout | view_invalid::view_redraw);
+					                  }
 				                  }
 				                  else
 				                  {
@@ -3149,6 +3260,7 @@ df::item_display_info df::item_element::populate_info() const
 			result.icon = mt->icon;
 			result.modified = _modified.system_to_local();
 			result.created = media_created();
+			result.file_created = file_or_metadata_created();
 		}
 	}
 

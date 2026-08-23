@@ -593,11 +593,11 @@ msgstr "Sortuj według daty modyfikacji"
 msgid "Sort by Date created"
 msgstr "Sortuj według daty utworzenia"
 
-msgid "Sort dates ascending"
-msgstr "Sortuj daty rosnąco"
+msgid "Show oldest items first"
+msgstr "Pokaż najpierw najstarsze elementy"
 
-msgid "Sort dates descending"
-msgstr "Sortuj daty malejąco"
+msgid "Show newest items first"
+msgstr "Pokaż najpierw najnowsze elementy"
 
 msgid "Sort by Group order (Default)"
 msgstr "Sortuj według kolejności grupy (domyślnie)"
@@ -731,11 +731,11 @@ msgstr "Pokaż dyski"
 msgid "Show history chart"
 msgstr "Pokaż wykres historii"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Rok początkowy wykresu historii. Puste pole domyślnie ustawia 10 lat."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Najwcześniejszy rok oferowany przez nawigator historii. Puste pole jest wyznaczane na podstawie zdjęć."
 
-msgid "Show collection folders"
-msgstr "Pokaż foldery kolekcji"
+msgid "Shows the eight years ending here."
+msgstr "Pokazuje osiem lat kończących się tutaj."
 
 msgid "Show favorite searches"
 msgstr "Pokaż ulubione wyszukiwania"
@@ -1019,17 +1019,8 @@ msgstr "Twoja kolekcja to foldery, które wybierzesz, wraz z ich podfolderami. D
 msgid "folder"
 msgstr "folder"
 
-msgid "music"
-msgstr "muzyka"
-
 msgid "folders"
 msgstr "foldery"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "zdjęcie"
 
 msgid "Folder"
 msgstr "Folder"
@@ -2578,6 +2569,9 @@ msgstr "zmodyfikowany"
 msgid "or"
 msgstr "lub"
 
+msgid "original"
+msgstr "oryginał"
+
 msgid "related"
 msgstr "powiązany"
 
@@ -3671,3 +3665,12 @@ msgstr "Przywrócono po problemie z uruchamianiem"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor został nieoczekiwanie zamknięty przed zakończeniem uruchamiania, dlatego to uruchomienie korzysta z domyślnego układu z wyłączoną akceleracją sprzętową. Twoje pliki, kolekcja i ostatnie elementy pozostają bez zmian. Ustawienia możesz przywrócić w Opcjach."
+
+msgid "Original//date"
+msgstr "Oryginał"
+
+msgid "Group by Date Original"
+msgstr "Grupuj według daty oryginału"
+
+msgid "Sort by Date original"
+msgstr "Sortuj według daty oryginału"

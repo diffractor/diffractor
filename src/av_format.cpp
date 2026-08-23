@@ -15,9 +15,14 @@
 #include "metadata_xmp.h"
 #include "files.h"
 
+// Both of these are MSVC dialect repairs. excpt.h has no equivalent elsewhere, and __restrict__ is
+// a real keyword on GCC and Clang: defining it away there would strip the qualifier FFmpeg's
+// headers rely on rather than supply one MSVC lacks.
+#ifdef _MSC_VER
 #include <excpt.h>
-
 #define __restrict__
+#endif
+
 #define __STDC_CONSTANT_MACROS
 #define FF_API_PIX_FMT 0
 
@@ -41,12 +46,12 @@ df_assert_movable(av_stream_info);
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
 
-static void av_log(void*, const int level, const char* format, const va_list argList)
+static void av_log(void*, const int level, const char* format, va_list argList)
 {
 #ifdef _DEBUG
 	if (level <= AV_LOG_WARNING)
 	{
-		if (strstr(format, "%td") == nullptr && strstr(format, "%ti") == nullptr) // Dont handle '%td'
+		if (strstr(format, "%td") == nullptr && strstr(format, "%ti") == nullptr) // Don't handle '%td'
 		{
 			const auto length = _vscprintf(format, argList);
 			std::string result(length + 1u, 0);
@@ -610,7 +615,7 @@ size_t av_queued_payload_bytes(const av_frame_ptr& f)
 	// A hardware frame's own buffer is a handle, not pixels. What it costs is the pool surface it
 	// keeps checked out, and that pool is allocated in full when the stream opens, so charging the
 	// surface is what makes one read-ahead budget size both the queue and the pool.
-	if (frm.format == AV_PIX_FMT_D3D11 && frm.hw_frames_ctx)
+	if (frm.hw_frames_ctx)
 	{
 		const auto* const ctx = std::bit_cast<const AVHWFramesContext*>(frm.hw_frames_ctx->data);
 		const auto bytes = av_image_get_buffer_size(ctx->sw_format, ctx->width, ctx->height, 1);
@@ -1456,16 +1461,18 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 static AVPixelFormat get_hw_format(AVCodecContext* ctx,
                                    const AVPixelFormat* pix_fmts)
 {
+	const auto wanted = av_platform_hw_decode_target().pix_fmt;
+
 	for (const AVPixelFormat* p = pix_fmts; *p != AV_PIX_FMT_NONE; p++)
 	{
-		if (*p == AV_PIX_FMT_D3D11)
+		if (*p == wanted)
 			return *p;
 	}
 
-	// The decoder offered no D3D11 surface format. Returning NONE aborts this
-	// decode; the caller only installs this callback once a D3D11VA device is
-	// live, so this indicates a driver/codec mismatch rather than a normal path.
-	df::log(__FUNCTION__, "Failed to get D3D11 HW surface format");
+	// The decoder offered no surface format the renderer can present. Returning NONE aborts this
+	// decode; the caller only installs this callback once the platform's device is live, so this
+	// indicates a driver/codec mismatch rather than a normal path.
+	df::log(__FUNCTION__, "Failed to get hardware surface format");
 	return AV_PIX_FMT_NONE;
 }
 
@@ -1538,14 +1545,15 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 				vc->workaround_bugs = FF_BUG_AUTODETECT;
 				vc->thread_type = FF_THREAD_FRAME;
 
-				if (can_use_hw)
+				const auto hw_target = av_platform_hw_decode_target();
+
+				if (can_use_hw && hw_target.is_available())
 				{
-					// Only the D3D11VA path is wired into the renderer: decoded frames must
-					// arrive as AV_PIX_FMT_D3D11 array textures so update() can share them
-					// with the render device. Scan every advertised hw config (they are not
-					// ordered, and a non-matching config must not abort the search) and pick
-					// the D3D11VA one. Other hwaccels (e.g. dxva2) are skipped so we never
-					// install get_hw_format for a surface format the pipeline cannot present.
+					// Only the platform's own hardware path is wired into the renderer: decoded
+					// frames must arrive in a surface format update() can share with the render
+					// device. Scan every advertised hw config (they are not ordered, and a
+					// non-matching config must not abort the search) and pick that one. Others are
+					// skipped so we never install get_hw_format for a format we cannot present.
 					for (int i = 0;; i++)
 					{
 						const auto* hw_config = avcodec_get_hw_config(video_codec, i);
@@ -1556,8 +1564,8 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 						}
 
 						if ((hw_config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) &&
-							hw_config->pix_fmt == AV_PIX_FMT_D3D11 &&
-							hw_config->device_type == AV_HWDEVICE_TYPE_D3D11VA)
+							hw_config->pix_fmt == hw_target.pix_fmt &&
+							static_cast<int>(hw_config->device_type) == hw_target.device_type)
 						{
 							const auto ret = av_hwdevice_ctx_create(&_hw_device_ctx,
 							                                        hw_config->device_type,
@@ -1567,7 +1575,7 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 							{
 								vc->get_format = get_hw_format;
 
-								// The whole pool is one D3D11 texture array created when the stream
+								// The whole pool is one texture array created when the stream
 								// opens, so every surface is paid for whether or not it is used.
 								// FFmpeg already provisions the decoder's own reference frames; these
 								// are the extra surfaces this app checks out - the read-ahead queue,
@@ -1847,7 +1855,8 @@ bool av_format_decoder::decode_frame(ui::surface_ptr& dest_surface, AVCodecConte
 			}
 
 			if (!_scaler) _scaler = std::make_unique<av_scaler>();
-			success = _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation());
+			success = _scaler->scale_frame(frame, dest_surface, max_dim, time, calc_orientation(),
+			                               _video_stream_aspect_ratio);
 		}
 
 		av_frame_unref(&frame);
@@ -1949,7 +1958,8 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 		}
 	}
 
-	return found && _scaler->scale_frame(best.frm, dest_surface, max_dim, best_time, calc_orientation());
+	return found && _scaler->scale_frame(best.frm, dest_surface, max_dim, best_time, calc_orientation(),
+	                                     _video_stream_aspect_ratio);
 }
 
 bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
@@ -2365,6 +2375,162 @@ av_scaler::~av_scaler()
 	}
 }
 
+namespace
+{
+	// A whole encoded image is already in memory here, so the AVIOContext reads from the span rather
+	// than a file. ffmpeg still probes it, which is what settles the format.
+	struct memory_source
+	{
+		const uint8_t* data = nullptr;
+		int64_t size = 0;
+		int64_t pos = 0;
+	};
+
+	int memory_read(void* opaque, uint8_t* buffer, int wanted)
+	{
+		auto* const source = static_cast<memory_source*>(opaque);
+		const auto available = source->size - source->pos;
+
+		if (available <= 0) return AVERROR_EOF;
+
+		const auto count = std::min(static_cast<int64_t>(wanted), available);
+		std::memcpy(buffer, source->data + source->pos, static_cast<size_t>(count));
+		source->pos += count;
+		return static_cast<int>(count);
+	}
+
+	int64_t memory_seek(void* opaque, const int64_t offset, const int whence)
+	{
+		auto* const source = static_cast<memory_source*>(opaque);
+
+		// The probe asks for the size through this same callback.
+		if (whence == AVSEEK_SIZE) return source->size;
+
+		const auto base = whence == SEEK_CUR ? source->pos : whence == SEEK_END ? source->size : 0;
+		const auto target = base + offset;
+
+		if (target < 0 || target > source->size) return AVERROR(EINVAL);
+
+		source->pos = target;
+		return target;
+	}
+}
+
+ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const std::string_view extension_hint)
+{
+	if (data.data == nullptr || data.size == 0) return {};
+
+	memory_source source{data.data, static_cast<int64_t>(data.size), 0};
+
+	static constexpr int io_buffer_size = df::sixty_four_k;
+	auto* const io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
+	if (!io_buffer) return {};
+
+	auto* pb = avio_alloc_context(io_buffer, io_buffer_size, 0, &source, memory_read, nullptr, memory_seek);
+
+	if (!pb)
+	{
+		av_free(io_buffer);
+		return {};
+	}
+
+	auto* fc = avformat_alloc_context();
+
+	if (!fc)
+	{
+		av_freep(&pb->buffer);
+		avio_context_free(&pb);
+		return {};
+	}
+
+	fc->pb = pb;
+
+	// The probe reads the extension off this name. There is no file to open: pb already holds the
+	// bytes, and a format with a signature is found whether or not a name is given.
+	const auto probe_name = extension_hint.empty() ? std::string{} : std::format("image{}", extension_hint);
+
+	if (avformat_open_input(&fc, probe_name.empty() ? nullptr : probe_name.c_str(), nullptr, nullptr) != 0)
+	{
+		// open_input frees fc itself on failure, but not the context it was given.
+		av_freep(&pb->buffer);
+		avio_context_free(&pb);
+		return {};
+	}
+
+	const df::scope_exit close_input([&fc, &pb]
+	{
+		avformat_close_input(&fc);
+		if (pb) av_freep(&pb->buffer);
+		avio_context_free(&pb);
+	});
+
+	if (avformat_find_stream_info(fc, nullptr) < 0) return {};
+
+	const auto stream_index = av_find_best_stream(fc, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+	if (stream_index < 0) return {};
+
+	const auto* const params = fc->streams[stream_index]->codecpar;
+
+	// Every still decoder with a format of its own refuses an over-budget source by returning an
+	// empty surface, and an empty surface is exactly what routes a file here - so without this gate
+	// the fallback re-decodes what the budget just refused. It is also the only gate the formats
+	// ffmpeg alone carries (TGA, SGI, the portable pixmaps, DPX) ever get, because scan_photo reads
+	// no header for them and the caller's check is skipped when the geometry is unknown.
+	if (reject_over_budget_source(nullptr, {params->width, params->height}, "ffmpeg")) return {};
+
+	const auto* const codec = avcodec_find_decoder(params->codec_id);
+	if (!codec) return {};
+
+	auto* cc = avcodec_alloc_context3(codec);
+	if (!cc) return {};
+
+	const df::scope_exit free_codec([&cc] { avcodec_free_context(&cc); });
+
+	if (avcodec_parameters_to_context(cc, params) < 0) return {};
+
+	// codecpar can understate what the bitstream then asks for, so the ceiling is restated where the
+	// decoder itself will enforce it.
+	if (df::max_decode_bytes > 0) cc->max_pixels = df::max_decode_bytes / 4;
+
+	if (avcodec_open2(cc, codec, nullptr) != 0) return {};
+
+	auto* frame = av_frame_alloc();
+	auto* packet = av_packet_alloc();
+
+	const df::scope_exit free_av([&frame, &packet]
+	{
+		if (frame) av_frame_free(&frame);
+		if (packet) av_packet_free(&packet);
+	});
+
+	if (!frame || !packet) return {};
+
+	// One frame is the whole image. An animation stops at its first, which is the frame the browser
+	// and the still viewer both show.
+	while (av_read_frame(fc, packet) >= 0)
+	{
+		const df::scope_exit unref([packet] { av_packet_unref(packet); });
+
+		if (packet->stream_index != stream_index) continue;
+		if (avcodec_send_packet(cc, packet) != 0) continue;
+
+		if (avcodec_receive_frame(cc, frame) == 0)
+		{
+			ui::surface_ptr result;
+			av_scaler scaler;
+
+			if (scaler.scale_frame(*frame, result, max_dim, 0.0, ui::orientation::top_left))
+			{
+				return result;
+			}
+
+			return {};
+		}
+	}
+
+	return {};
+}
+
 // swscale defaults to BT.601 limited range for any YUV source, which is wrong for most HD and for
 // anything full range, so the signalled matrix has to be pushed into the context explicitly.
 static void apply_colorspace_details(SwsContext* scaler, const ui::color_space cs)
@@ -2513,7 +2679,7 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 	// so the software copy has no matrix or range signalling of its own.
 	const auto cs = av_frame_color_space(frame_in->frm);
 
-	if (frame->format == AV_PIX_FMT_D3D11)
+	if (frame->hw_frames_ctx)
 	{
 		sw_frame = av_frame_alloc();
 
@@ -2551,7 +2717,7 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 }
 
 bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, const sizei max_dim, const double time,
-                            const ui::orientation orientation)
+                            const ui::orientation orientation, const av_rational container_sar)
 {
 	bool success = false;
 	const auto fmt = static_cast<AVPixelFormat>(frame.format);
@@ -2560,7 +2726,14 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 	// Correct for the pixel (sample) aspect ratio so anamorphic / non-square-pixel
 	// video is scaled to its display shape rather than the stored frame shape (#78).
 	auto disp_dims = src_dims;
-	const auto sar = frame.sample_aspect_ratio;
+	auto sar = frame.sample_aspect_ratio;
+
+	// A pasp box in an MP4 reaches AVStream::sample_aspect_ratio only, so a file whose bitstream
+	// VUI carries no aspect ratio hands the decoder a square-pixel frame the container contradicts.
+	if (sar.num == 0 || sar.den == 0 || sar.num == sar.den)
+	{
+		sar = {container_sar.num, container_sar.den};
+	}
 
 	if (sar.num > 0 && sar.den > 0 && sar.num != sar.den && frame.width > 0 && frame.height > 0)
 	{

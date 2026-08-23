@@ -190,11 +190,12 @@ platform::get_cached_file_properties_response platform::get_cached_file_properti
 							}
 							else if (PKEY_Photo_DateTaken == propKey)
 							{
-								// PKEY_Photo_DateTaken is delivered as a UTC FILETIME. Store it as
-								// created_utc so item_metadata::created() converts it to local time.
+								// The shell's reading of DateTimeOriginal, delivered as a UTC FILETIME.
+								// It is all a cloud placeholder can offer without downloading the file.
 								if (VT_FILETIME == propVar.vt)
 								{
-									properties_out.created_utc = df::date_t(ft_to_ts(propVar.filetime));
+									properties_out.dates.add_utc(prop::date_source::shell_date_taken,
+									                             df::date_t(ft_to_ts(propVar.filetime)));
 								}
 							}
 							else if (PKEY_Keywords == propKey)
@@ -748,7 +749,7 @@ public:
 
 			if (len > 0 && len < path.size())
 			{
-				return df::file_path(std::wstring_view(path.data(), len));
+				return df::file_path(str::utf16_to_utf8(std::wstring_view(path.data(), len)));
 			}
 		}
 
@@ -1289,7 +1290,7 @@ df::file_path platform::running_app_path()
 		if (len < result.size())
 		{
 			result.resize(len);
-			return df::file_path(result);
+			return df::file_path(str::utf16_to_utf8(result));
 		}
 
 		if (result.size() >= 32768) return {};
@@ -1322,7 +1323,7 @@ static void add_library_paths(REFIID libraryId, df::unique_folders& results)
 
 						if (SUCCEEDED(spPrinter->GetDisplayName(SIGDN_FILESYSPATH, &spszName)))
 						{
-							results.emplace(df::folder_path(spszName));
+							results.emplace(df::folder_path(str::utf16_to_utf8(spszName)));
 							CoTaskMemFree(spszName);
 						}
 					}
@@ -1336,7 +1337,7 @@ static df::folder_path path_from_csidl(const int csidl)
 {
 	wchar_t sz[MAX_PATH] = {0};
 	SHGetFolderPath(app_wnd(), csidl, nullptr, SHGFP_TYPE_CURRENT, sz);
-	return df::folder_path(sz);
+	return df::folder_path(str::utf16_to_utf8(sz));
 }
 
 static df::folder_path app_data()
@@ -1392,7 +1393,7 @@ static df::folder_path app_cache_data()
 							const wchar_t* path_buffer = WindowsGetStringRawBuffer(path_hstring, &path_length);
 							if (path_buffer && path_length > 0)
 							{
-								result = df::folder_path(std::wstring_view(path_buffer, path_length));
+								result = to_folder_path(std::wstring_view(path_buffer, path_length));
 							}
 							WindowsDeleteString(path_hstring);
 						}
@@ -1423,7 +1424,7 @@ static df::folder_path shell_known_folder(REFIID id)
 
 	if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &path)) && path)
 	{
-		result = df::folder_path(path);
+		result = df::folder_path(str::utf16_to_utf8(path));
 		CoTaskMemFree(path);
 	}
 
@@ -1486,7 +1487,7 @@ static df::folder_path onedrive_root_folder()
 		                                     &dwLen)
 			&& dwType == REG_SZ)
 		{
-			result = df::folder_path(path);
+			result = df::folder_path(str::utf16_to_utf8(path));
 		}
 
 		RegCloseKey(hKey);

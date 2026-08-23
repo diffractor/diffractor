@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model_dates.h"
 #include "model_location.h"
 
 enum class icon_index : int;
@@ -54,6 +55,7 @@ struct search_presence_mask
 	static constexpr uint32_t text = 1 << 24u;
 	static constexpr uint32_t year = 1 << 25u;
 	static constexpr uint32_t doc_id = 1 << 26u;
+	static constexpr uint32_t panorama = 1 << 27u;
 
 	uint32_t types = 0;
 
@@ -92,6 +94,78 @@ namespace prop
 {
 	struct item_metadata;
 	class key;
+
+	// The projection a file's own GPano metadata declares. Persisted in the index, so a value's
+	// meaning is fixed once assigned: retire one by leaving its number unused, never by reusing it.
+	// `none` is the answer for a file carrying no panorama projection metadata at all, so anything
+	// else is the flag - the file says it is a panorama, rather than merely being shaped like one.
+	enum class panorama_projection : uint8_t
+	{
+		none = 0,
+		equirectangular = 1,
+		cylindrical = 2,
+		// GPano panorama properties are present but name no projection this build knows. Still a
+		// panorama, and recorded as one, because the declaration is the fact being stored.
+		unspecified = 3,
+	};
+
+	// Which patch of the sphere a file's pixels cover, in GPano's terms: a notional full panorama
+	// of full_width x full_height spanning the whole sphere, and the file's own pixels as a crop
+	// out of it. Read from the file at display time rather than indexed, because only the item
+	// being looked at needs it and the answer is worth no field of its own.
+	struct panorama_geometry
+	{
+		int full_width = 0;
+		int full_height = 0;
+		int cropped_left = 0;
+		int cropped_top = 0;
+		int cropped_width = 0;
+		int cropped_height = 0;
+
+		bool operator==(const panorama_geometry&) const noexcept = default;
+
+		// Every member arrives straight from the file as a 32-bit integer, so the two sums are widened:
+		// adding two declarations near the top of the range is signed overflow, and a wrapped negative
+		// would pass the bound this test exists to enforce.
+		bool is_valid() const noexcept
+		{
+			return full_width > 0 && full_height > 0 && cropped_width > 0 && cropped_height > 0 &&
+				cropped_left >= 0 && cropped_top >= 0 &&
+				static_cast<int64_t>(cropped_left) + cropped_width <= full_width &&
+				static_cast<int64_t>(cropped_top) + cropped_height <= full_height;
+		}
+
+		// A writer that declared equirectangular and no crop. The pixels are taken to span the full
+		// circle and to sit on the horizon, which is the identity for a true 2:1 sphere and the
+		// least wrong guess for anything else - assuming a strip runs pole to pole would bend the
+		// horizon of every panorama ever stitched.
+		static panorama_geometry assumed(const sizei source) noexcept
+		{
+			if (source.cx <= 0 || source.cy <= 0) return {};
+
+			const auto full_height = std::max(source.cy, source.cx / 2);
+
+			return {
+				source.cx, full_height,
+				0, (full_height - source.cy) / 2,
+				source.cx, source.cy
+			};
+		}
+
+		// Fills in whatever the file left out, and rejects a declaration that contradicts the
+		// pixels. A crop wider than the full panorama, or a cropped extent that is not the image,
+		// describes a different file than the one being drawn.
+		static panorama_geometry resolve(const panorama_geometry& declared, const sizei source) noexcept
+		{
+			if (declared.is_valid() &&
+				declared.cropped_width == source.cx && declared.cropped_height == source.cy)
+			{
+				return declared;
+			}
+
+			return assumed(source);
+		}
+	};
 
 	enum class data_type
 	{
@@ -206,6 +280,7 @@ namespace prop
 	extern key created_exif;
 	extern key created_digitized;
 	extern key created_utc;
+	extern key dates_packed;
 	extern key dimensions;
 	extern key duration;
 	extern key encoder;
@@ -250,6 +325,7 @@ namespace prop
 	extern key crc32c;
 	extern key label;
 	extern key doc_id;
+	extern key panorama;
 
 	constexpr bool is_null(const std::string_view s)
 	{
@@ -343,9 +419,7 @@ namespace prop
 
 		gps_coordinate coordinate;
 
-		df::date_t created_digitized;
-		df::date_t created_exif;
-		df::date_t created_utc;
+		date_pack dates;
 
 		float exposure_time = 0.0f;
 		float f_number = 0.0f;
@@ -367,6 +441,7 @@ namespace prop
 		uint16_t width = 0;
 		uint16_t year = 0;
 		uint8_t season = 0;
+		panorama_projection panorama = panorama_projection::none;
 		ui::orientation orientation = ui::orientation::top_left;
 		df::xy8 disk = {0, 0};
 		df::xy8 episode = {0, 0};
@@ -377,23 +452,38 @@ namespace prop
 		str::cached sidecars;
 		str::cached xmp;
 
+		// The one date shown where there is room for one. docs/metadata.md#dates owns the ladder;
+		// this is the only place it is implemented.
 		df::date_t created() const
 		{
-			// Prefer the true capture time (EXIF DateTimeOriginal) over the
-			// container/file creation time so "group by / sort by date created"
-			// and the displayed creation date reflect when the media was
-			// captured rather than when the file was written (#184).
-			auto d = created_exif;
-
-			if (!d.is_valid())
-			{
-				d = created_utc.system_to_local();
-			}
-
-			return d;
+			return dates.best();
 		}
 
 		search_presence_mask calc_search_presence() const;
+
+		// The file's own declaration, not a guess from its shape. An image merely wide enough to
+		// look like a panorama answers false here.
+		bool is_panorama() const
+		{
+			return panorama != panorama_projection::none;
+		}
+
+		// docs/zoom.md: what the *display* treats as a panorama, which is a wider question than what
+		// the file declares. Failing a declaration, an aspect ratio of at least 2:1 with a long edge
+		// of at least 4000 pixels qualifies. Aspect alone would claim every wide screenshot, and the
+		// size floor excludes them. Both halves are stored dimensions, so the shape test costs no
+		// field and can be retuned without a re-index. `@panorama` stays the declaration alone,
+		// because a search is an assertion about the file rather than about how it is drawn.
+		bool displays_as_panorama() const
+		{
+			if (is_panorama()) return true;
+
+			constexpr int min_long_edge = 4000;
+			const auto long_edge = std::max<int>(width, height);
+			const auto short_edge = std::min<int>(width, height);
+
+			return short_edge > 0 && long_edge >= min_long_edge && long_edge >= short_edge * 2;
+		}
 
 		bool has_gps() const
 		{

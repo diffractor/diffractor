@@ -27,6 +27,7 @@ static_assert(sizeof(df::search_result) <= sizeof(void*) * 2 + 8);
 
 constexpr static auto sv_duplicates = "duplicates";
 constexpr static auto sv_remote = "remote";
+constexpr static auto sv_panorama = "panorama";
 
 void df::search_t::clear_date_properties()
 {
@@ -66,26 +67,33 @@ df::search_t df::search_t::parse_path(const std::string_view text)
 	return result;
 }
 
-// Issue #139: a bare, unquoted path that contains spaces is wrapped in double
-// quotes so it reads (and re-parses) as a single search term. Already-quoted or
-// space-free input is returned unchanged.
+// Issue #139: a path that contains spaces is wrapped in double quotes so it reads (and re-parses)
+// as a single search term. Only whitespace forces quotes - str::need_quotes also fires on the colon
+// in every Windows drive path, and quoting those would change what the address box shows for input
+// that never needed it. Already-quoted text is returned unchanged.
+std::string df::quote_path_term(const std::string_view path)
+{
+	if (path.find(' ') == std::string_view::npos) return std::string(path);
+	if (path.front() == '\"' || path.front() == '\'') return std::string(path);
+
+	std::string result;
+	result.reserve(path.size() + 2);
+	result += '\"';
+	result.append(path);
+	result += '\"';
+	return result;
+}
+
 static std::string auto_quote_search_input(const std::string_view text)
 {
 	const auto trimmed = str::trim(text);
 
-	if (df::is_path(trimmed) &&
-		trimmed.find(' ') != std::string_view::npos &&
-		trimmed.front() != '\"' && trimmed.front() != '\'')
-	{
-		std::string result;
-		result.reserve(trimmed.size() + 2);
-		result += '\"';
-		result.append(trimmed);
-		result += '\"';
-		return result;
-	}
+	if (!df::is_path(trimmed)) return std::string(text);
 
-	return std::string(text);
+	auto quoted = df::quote_path_term(trimmed);
+
+	// Nothing was added, so hand back exactly what was typed rather than the trimmed form (#178).
+	return quoted.size() == trimmed.size() ? std::string(text) : quoted;
 }
 
 df::search_t df::search_t::parse_from_input(const std::string_view text) const
@@ -457,6 +465,11 @@ std::string df::format_term(const search_term& term)
 				result << tt.query_created.sv();
 				result << ":";
 			}
+			else if (term.date_val.target == date_parts_prop::original)
+			{
+				result << tt.query_original.sv();
+				result << ":";
+			}
 			else if (term.date_val.target == date_parts_prop::modified)
 			{
 				result << tt.query_modified.sv();
@@ -570,6 +583,11 @@ std::string df::format_term(const search_term& term)
 		{
 			result << "@";
 			result << sv_remote;
+		}
+		else if (term.type == search_term_type::panorama)
+		{
+			result << "@";
+			result << sv_panorama;
 		}
 	}
 
@@ -835,6 +853,9 @@ search_presence_mask df::search_t::calc_required_presence() const
 			// Only a coordinate can be remote, so the prefilter may skip everything else.
 			result.types |= search_presence_mask::location;
 			break;
+		case search_term_type::panorama:
+			result.types |= search_presence_mask::panorama;
+			break;
 		case search_term_type::media_type:
 			result.types |= v.fg_val->search_presence_bit();
 			break;
@@ -857,7 +878,7 @@ df::date_parts month_and_day(const std::string_view s)
 {
 	df::date_parts result;
 	const auto parts = str::split(
-		s, true, [](const wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+		s, true, [](const char c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
 
 	if (parts.size() == 2)
 	{
@@ -882,7 +903,7 @@ df::date_parts year_and_month(const std::string_view s)
 {
 	df::date_parts result;
 	const auto parts = str::split(
-		s, true, [](const wchar_t c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
+		s, true, [](const char c) { return c == '-' || c == '/' || c == '\\' || c == '.'; });
 
 	if (parts.size() == 2)
 	{
@@ -1077,6 +1098,8 @@ void df::search_t::parse_part(const search_part& part)
 			{"duplicate", search_term_type::duplicate},
 			{sv_duplicates, search_term_type::duplicate},
 			{sv_remote, search_term_type::remote},
+			{sv_panorama, search_term_type::panorama},
+			{"pano", search_term_type::panorama},
 		};
 
 		const auto found_flag = pre_title_stop_words.find(part.term);
@@ -1213,13 +1236,12 @@ void df::search_t::parse_part(const search_part& part)
 	{
 		result = search_term(type, part.term, part.modifier);
 	}
-	else if (type == prop::created_utc || type == prop::created_exif || type == prop::created_digitized ||
-		type == prop::modified)
+	else if (type == prop::created_utc || type == prop::created_exif || type == prop::modified)
 	{
 		auto target = date_parts_prop::any;
 		if (type == prop::modified) target = date_parts_prop::modified;
-		if (type == prop::created_utc || type == prop::created_exif || type == prop::created_digitized)
-			target = date_parts_prop::created;
+		if (type == prop::created_utc) target = date_parts_prop::created;
+		if (type == prop::created_exif) target = date_parts_prop::original;
 
 		if (is_num)
 		{
@@ -1253,9 +1275,9 @@ void df::search_t::parse_part(const search_part& part)
 		else if (str::month(part.term) != 0)
 		{
 			date_parts dd;
-			dd.year = str::month(part.term);
+			dd.month = str::month(part.term);
 			dd.target = target;
-			result = search_term(search_term_type::date, dd, true);
+			result = search_term(search_term_type::date, dd, part.modifier);
 		}
 		else if (is_date)
 		{
@@ -1397,7 +1419,9 @@ void df::search_t::parse_part(const search_part& part)
 	}
 	else if (type == prop::file_size)
 	{
-		auto size = 0ull;
+		// Not 0ull: under LP64 unsigned long long is a distinct type from uint64_t, so the
+		// search_term overload set has no exact match and the call is ambiguous.
+		uint64_t size = 0;
 
 		if (str::ends(part.term, "gb"))
 		{
@@ -2000,11 +2024,10 @@ static compare_result compare_val(const df::search_term& term, const df::index_f
 		if (t == prop::disk_num && !prop::is_null(md->disk)) return compare_term(term, md->disk);
 		if (t == prop::track_num && !prop::is_null(md->track)) return compare_term(term, md->track);
 		if (t == prop::duration && !prop::is_null(md->duration)) return compare_term(term, md->duration);
-		if (t == prop::created_utc && !prop::is_null(md->created_utc)) return compare_term(term, md->created_utc);
-		if (t == prop::created_exif && !prop::is_null(md->created_exif)) return compare_term(term, md->created_exif);
-		if (t == prop::created_digitized && !prop::is_null(md->created_digitized))
-			return compare_term(
-				term, md->created_digitized);
+		if (t == prop::created_utc && !prop::is_null(md->dates.created()))
+			return compare_term(term, md->dates.created());
+		if (t == prop::created_exif && !prop::is_null(md->dates.original()))
+			return compare_term(term, md->dates.original());
 		if (t == prop::exposure_time && !prop::is_null(md->exposure_time))
 			return compare_exposure_time(
 				term, md->exposure_time);
@@ -2094,9 +2117,8 @@ bool has_type(const prop::key_ref t, const df::index_file_item& file)
 		if (t == prop::disk_num) return !prop::is_null(md->disk);
 		if (t == prop::track_num) return !prop::is_null(md->track);
 		if (t == prop::duration) return !prop::is_null(md->duration);
-		if (t == prop::created_utc) return !prop::is_null(md->created_utc);
-		if (t == prop::created_exif) return !prop::is_null(md->created_exif);
-		if (t == prop::created_digitized) return !prop::is_null(md->created_digitized);
+		if (t == prop::created_utc) return !prop::is_null(md->dates.created());
+		if (t == prop::created_exif) return !prop::is_null(md->dates.original());
 		if (t == prop::exposure_time) return !prop::is_null(md->exposure_time);
 		if (t == prop::f_number) return !prop::is_null(md->f_number);
 		if (t == prop::focal_length) return !prop::is_null(md->focal_length);
@@ -2194,42 +2216,53 @@ static bool is_date_match(const df::date_parts& term, const df::date_t d, const 
 static bool is_date_match(const df::search_term& term, const df::index_file_item& file, const uint32_t now_days)
 {
 	const bool is_any = term.date_val.target == df::date_parts_prop::any;
+	const auto target = term.date_val.target;
 
-	if (term.date_val.target == df::date_parts_prop::created || is_any)
+	if (target == df::date_parts_prop::original || target == df::date_parts_prop::created || is_any)
 	{
 		const auto md = file.metadata.load();
 
-		if (md)
+		// A header is only clickable if the matcher answers the key it was drawn from, so each key
+		// is reproduced here whole - mirroring one rung of one of them is #184 again on whichever
+		// order the missing rung belongs to. The stamp is converted the way the group key converts
+		// it; a UTC stamp against a local key misses by a day.
+		const auto file_stamp = file.file_created.system_to_local();
+		auto original_key = df::date_t::null;
+
+		if (target == df::date_parts_prop::original || is_any)
 		{
-			if (md->created_exif.is_valid())
-			{
-				return is_date_match(term.date_val, md->created_exif, term.modifiers, now_days);
-			}
-			if (md->created_utc.is_valid())
-			{
-				return is_date_match(term.date_val, md->created_utc.system_to_local(), term.modifiers, now_days);
-			}
-			if (md->created_digitized.is_valid())
-			{
-				return is_date_match(term.date_val, md->created_digitized, term.modifiers, now_days);
-			}
-			if (is_date_match(term.date_val, file.file_created, term.modifiers, now_days))
+			const auto resolved = md ? md->created() : df::date_t::null;
+			original_key = resolved.is_valid() ? resolved : file_stamp;
+
+			if (original_key.is_valid() &&
+				is_date_match(term.date_val, original_key, term.modifiers, now_days))
 			{
 				return true;
 			}
 		}
-		else
+
+		if (target == df::date_parts_prop::created || is_any)
 		{
-			if (is_date_match(term.date_val, file.file_created, term.modifiers, now_days))
+			const auto created = md ? md->dates.created() : df::date_t::null;
+			const auto created_key = created.is_valid() ? created : file_stamp;
+
+			// On the `any` path the two keys usually agree, and the first has already answered.
+			if (created_key.is_valid() && created_key != original_key &&
+				is_date_match(term.date_val, created_key, term.modifiers, now_days))
 			{
 				return true;
 			}
 		}
 	}
 
-	if (term.date_val.target == df::date_parts_prop::modified || is_any)
+	if (target == df::date_parts_prop::modified || is_any)
 	{
-		if (is_date_match(term.date_val, file.file_modified, term.modifiers, now_days)) return true;
+		// Same rule as the created axis: Group by Modified keys on the local stamp, so the term has
+		// to compare against the local stamp or the header it drew answers with nothing.
+		if (is_date_match(term.date_val, file.file_modified.load().system_to_local(), term.modifiers, now_days))
+		{
+			return true;
+		}
 	}
 
 	return false;
@@ -2250,8 +2283,11 @@ bool df::search_t::is_match(const prop::key& key, const date_t date) const
 
 			date_term_count += 1;
 
-			if (term.date_val.target == date_parts_prop::created &&
-				(key == prop::created_utc || key == prop::created_digitized || key == prop::created_exif))
+			if (term.date_val.target == date_parts_prop::original && key == prop::created_exif)
+			{
+				if (is_date_match(term.date_val, date, mod, now_days)) ++date_term_match;
+			}
+			else if (term.date_val.target == date_parts_prop::created && key == prop::created_utc)
 			{
 				if (is_date_match(term.date_val, date, mod, now_days)) ++date_term_match;
 			}
@@ -2512,6 +2548,18 @@ df::search_result df::search_matcher::match_term(const str::cached folder_name, 
 		if (is_remote == term.modifiers.positive)
 		{
 			result.type = search_result_type::match_location;
+		}
+	}
+	else if (term.type == search_term_type::panorama)
+	{
+		// The file's own declaration. An image merely shaped like a panorama does not match, so a
+		// wide crop of a landscape is not swept in with the photo spheres.
+		const auto md = file.metadata.load();
+		const bool is_panorama = md && md->is_panorama();
+
+		if (is_panorama == term.modifiers.positive)
+		{
+			result.type = search_result_type::match_flag;
 		}
 	}
 	else if (term.type == search_term_type::text)

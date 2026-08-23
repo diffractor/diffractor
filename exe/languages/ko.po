@@ -593,11 +593,11 @@ msgstr "수정된 날짜를 기준으로 정렬"
 msgid "Sort by Date created"
 msgstr "생성 날짜를 기준으로 정렬"
 
-msgid "Sort dates ascending"
-msgstr "날짜를 오름차순으로 정렬"
+msgid "Show oldest items first"
+msgstr "오래된 항목을 먼저 표시"
 
-msgid "Sort dates descending"
-msgstr "날짜를 내림차순으로 정렬"
+msgid "Show newest items first"
+msgstr "최신 항목을 먼저 표시"
 
 msgid "Sort by Group order (Default)"
 msgstr "그룹 순서로 정렬(기본값)"
@@ -731,11 +731,11 @@ msgstr "드라이브 표시"
 msgid "Show history chart"
 msgstr "기록 차트 표시"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "기록 차트 시작 연도. 비워 두면 기본값은 10년입니다."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "기록 탐색기가 제공하는 가장 이른 연도입니다. 비워 두면 사진에서 계산됩니다."
 
-msgid "Show collection folders"
-msgstr "컬렉션 폴더 표시"
+msgid "Shows the eight years ending here."
+msgstr "여기서 끝나는 8년을 표시합니다."
 
 msgid "Show favorite searches"
 msgstr "즐겨찾는 검색어 표시"
@@ -1019,17 +1019,8 @@ msgstr "컬렉션은 사용자가 선택한 폴더와 그 하위 폴더입니다
 msgid "folder"
 msgstr "폴더"
 
-msgid "music"
-msgstr "음악"
-
 msgid "folders"
 msgstr "폴더"
-
-msgid "onedrive"
-msgstr "OneDrive"
-
-msgid "picture"
-msgstr "사진"
 
 msgid "Folder"
 msgstr "폴더"
@@ -2576,6 +2567,9 @@ msgstr "수정됨"
 msgid "or"
 msgstr "또는"
 
+msgid "original"
+msgstr "원본"
+
 msgid "related"
 msgstr "관련"
 
@@ -3635,3 +3629,12 @@ msgstr "시작 문제에서 복구됨"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor가 시작을 완료하기 전에 예기치 않게 종료되어 이번 실행에서는 하드웨어 가속을 끈 기본 레이아웃을 사용합니다. 파일, 컬렉션, 최근 항목은 변경되지 않았습니다. 옵션에서 설정을 복원할 수 있습니다."
+
+msgid "Original//date"
+msgstr "원본"
+
+msgid "Group by Date Original"
+msgstr "원본 날짜별로 그룹화"
+
+msgid "Sort by Date original"
+msgstr "원본 날짜를 기준으로 정렬"

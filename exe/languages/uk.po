@@ -593,11 +593,11 @@ msgstr "Сортувати за датою зміни"
 msgid "Sort by Date created"
 msgstr "Сортувати за датою створення"
 
-msgid "Sort dates ascending"
-msgstr "Сортувати дати за зростанням"
+msgid "Show oldest items first"
+msgstr "Показувати спочатку найстаріші елементи"
 
-msgid "Sort dates descending"
-msgstr "Сортувати дати за спаданням"
+msgid "Show newest items first"
+msgstr "Показувати спочатку найновіші елементи"
 
 msgid "Sort by Group order (Default)"
 msgstr "Сортувати за порядком групи (типово)"
@@ -731,11 +731,11 @@ msgstr "Показати диски"
 msgid "Show history chart"
 msgstr "Показати діаграму історії"
 
-msgid "History chart start year. Empty defaults to 10 years."
-msgstr "Початковий рік графіка історії. Порожнє — за замовчуванням 10 років."
+msgid "Earliest year the history navigator offers. Empty works it out from your photos."
+msgstr "Найраніший рік, який пропонує навігатор історії. Порожнє значення визначається за вашими фотографіями."
 
-msgid "Show collection folders"
-msgstr "Показувати папки колекції"
+msgid "Shows the eight years ending here."
+msgstr "Показує вісім років, що закінчуються тут."
 
 msgid "Show favorite searches"
 msgstr "Показати улюблені пошукові запити"
@@ -1019,17 +1019,8 @@ msgstr "Ваша колекція — це папки, які ви обрали,
 msgid "folder"
 msgstr "папка"
 
-msgid "music"
-msgstr "музика"
-
 msgid "folders"
 msgstr "папки"
-
-msgid "onedrive"
-msgstr "onedrive"
-
-msgid "picture"
-msgstr "зображення"
 
 msgid "Folder"
 msgstr "Папка"
@@ -2578,6 +2569,9 @@ msgstr "змінений"
 msgid "or"
 msgstr "або"
 
+msgid "original"
+msgstr "оригінал"
+
 msgid "related"
 msgstr "пов'язані"
 
@@ -3697,3 +3691,12 @@ msgstr "Відновлено після проблеми із запуском"
 
 msgid "Diffractor closed unexpectedly before it finished starting, so this run uses the default layout with hardware acceleration turned off. Your files, collection and recent items are unchanged. You can restore your settings from Options."
 msgstr "Diffractor несподівано закрився, не завершивши запуск, тому цей сеанс використовує типове компонування з вимкненим апаратним прискоренням. Ваші файли, колекція та останні елементи не змінилися. Відновити налаштування можна в розділі «Опції»."
+
+msgid "Original//date"
+msgstr "Оригінал"
+
+msgid "Group by Date Original"
+msgstr "Групувати за датою оригіналу"
+
+msgid "Sort by Date original"
+msgstr "Сортувати за датою оригіналу"

@@ -75,17 +75,6 @@ struct clipboard_formats
 	static FORMATETC DropShellItems;
 };
 
-void __cdecl debug_printf(const char* fmt, ...)
-{
-	char buffer[256];
-	va_list ap;
-
-	va_start(ap, fmt);
-	_vsnprintf_s(buffer, sizeof(buffer), std::bit_cast<const char*>(fmt), ap);
-	OutputDebugStringA(buffer);
-	va_end(ap);
-}
-
 std::string win32_to_string(const IID& iid)
 {
 	LPOLESTR sz = nullptr;
@@ -549,6 +538,11 @@ std::wstring platform::to_file_system_path(const df::file_path path)
 	return result;
 };
 
+std::string platform::to_utf8_file_system_path(const df::file_path path)
+{
+	return str::utf16_to_utf8(to_file_system_path(path));
+}
+
 std::wstring platform::to_shell_path(const df::file_path path)
 {
 	return str::utf8_to_utf16(path.pack());
@@ -583,6 +577,16 @@ std::wstring platform::to_file_system_path(const df::folder_path path)
 	auto result = to_shell_path(path);
 	make_extended_path(result);
 	return result;
+}
+
+std::filesystem::path platform::to_stream_path(const df::file_path path)
+{
+	return {to_file_system_path(path)};
+}
+
+std::filesystem::path platform::to_stream_path(const df::folder_path path)
+{
+	return {to_file_system_path(path)};
 }
 
 std::wstring platform::to_shell_path(const df::folder_path path)
@@ -1149,7 +1153,7 @@ static df::paths dest_file_list(const df::folder_path target, const wchar_t* con
 		{
 			if (*sz++ == 0)
 			{
-				auto src_path = df::file_path(std::wstring_view(sz_start, sz - sz_start - 1));
+				auto src_path = df::file_path(str::utf16_to_utf8(std::wstring_view(sz_start, sz - sz_start - 1)));
 				auto src_id = target.combine_file(src_path.name());
 				const auto found = name_mapping.find(src_id);
 				result.files.emplace_back(found == name_mapping.end() ? src_id : found->second);
@@ -1236,8 +1240,8 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 				for (auto i = 0u; i < s->uNumberOfMappings; i++)
 				{
 					const auto& nm = s->lpSHNameMapping[i];
-					name_mapping[df::file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
-						df::file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
+					name_mapping[to_file_path(std::wstring_view{nm.pszOldPath, static_cast<size_t>(nm.cchOldPath)})] =
+						to_file_path(std::wstring_view{nm.pszNewPath, static_cast<size_t>(nm.cchNewPath)});
 				}
 			}
 
@@ -1318,7 +1322,7 @@ df::file_path data_object_client::first_path() const
 	{
 		if (const locked_drop_files drop(stgMedium.hGlobal); drop.is_valid())
 		{
-			result = drop.is_wide() ? df::file_path(drop.wide_list()) : df::file_path(drop.narrow_list());
+			result = drop.is_wide() ? to_file_path(drop.wide_list()) : df::file_path(drop.narrow_list());
 		}
 
 		ReleaseStgMedium(&stgMedium);
@@ -1360,7 +1364,7 @@ data_object_client::description data_object_client::files_description() const
 			{
 				const auto* sz = drop.wide_list();
 				result.first_name = str::utf16_to_utf8(sz);
-				result.has_readonly |= (file_attributes(df::folder_path(sz)) & FILE_ATTRIBUTE_READONLY) != 0;
+				result.has_readonly |= (file_attributes(to_folder_path(sz)) & FILE_ATTRIBUTE_READONLY) != 0;
 
 				while (sz[0] != 0 || sz[1] != 0)
 				{
@@ -1478,7 +1482,7 @@ df::file_path platform::resolve_link(const df::file_path path)
 			{
 				wchar_t result_path[MAX_PATH];
 				const auto success = SUCCEEDED(psl->GetPath(result_path, MAX_PATH, nullptr, 0));
-				if (success) result = df::file_path(result_path);
+				if (success) result = to_file_path(result_path);
 			}
 		}
 	}
@@ -1536,6 +1540,153 @@ std::string platform::OS()
 	char result[64];
 	sprintf_s(result, "%u.%u", osvi.dwMajorVersion, osvi.dwMinorVersion);
 	return str::utf8_cast2(result);
+}
+
+static df::machine_arch to_machine_arch(const USHORT image_file_machine)
+{
+	switch (image_file_machine)
+	{
+	case IMAGE_FILE_MACHINE_I386: return df::machine_arch::x86;
+	case IMAGE_FILE_MACHINE_AMD64: return df::machine_arch::x64;
+	case IMAGE_FILE_MACHINE_ARMNT: return df::machine_arch::arm32;
+	case IMAGE_FILE_MACHINE_ARM64: return df::machine_arch::arm64;
+	case IMAGE_FILE_MACHINE_UNKNOWN: return df::machine_arch::unknown;
+	default: return df::machine_arch::other;
+	}
+}
+
+// The build's own target, which is a compile-time fact and cannot be got wrong at runtime.
+static df::machine_arch process_arch()
+{
+#if defined(_M_ARM64) || defined(__aarch64__)
+	return df::machine_arch::arm64;
+#elif defined(_M_ARM) || defined(__arm__)
+	return df::machine_arch::arm32;
+#elif defined(_M_X64) || defined(__x86_64__)
+	return df::machine_arch::x64;
+#elif defined(_M_IX86) || defined(__i386__)
+	return df::machine_arch::x86;
+#else
+	return df::machine_arch::other;
+#endif
+}
+
+// The *native* machine, which is the whole point of the field: a 32-bit process on a 64-bit machine
+// is the number that decides whether the 32-bit build is still earning its place, and asking the
+// process is what makes that question unanswerable. IsWow64Process2 is Windows 10 1511 and later, so
+// an older system answers unknown rather than a guess.
+static df::machine_arch native_machine_arch()
+{
+	using pfnIsWow64Process2 = BOOL(WINAPI*)(HANDLE, USHORT*, USHORT*);
+
+	if (const auto kernel = GetModuleHandleW(L"kernel32.dll"))
+	{
+		if (const auto fn = std::bit_cast<pfnIsWow64Process2>(GetProcAddress(kernel, "IsWow64Process2")))
+		{
+			USHORT process_machine = IMAGE_FILE_MACHINE_UNKNOWN;
+			USHORT native_machine = IMAGE_FILE_MACHINE_UNKNOWN;
+
+			if (fn(GetCurrentProcess(), &process_machine, &native_machine))
+			{
+				return to_machine_arch(native_machine);
+			}
+		}
+	}
+
+	// Without IsWow64Process2 the native machine still has an honest source: GetNativeSystemInfo
+	// reports the machine rather than the process, and it is correct under emulation, which is the
+	// case worth knowing about. It exists on every supported Windows, so this is a fallback in
+	// availability only.
+	SYSTEM_INFO info = {};
+	GetNativeSystemInfo(&info);
+
+	switch (info.wProcessorArchitecture)
+	{
+	case PROCESSOR_ARCHITECTURE_INTEL: return df::machine_arch::x86;
+	case PROCESSOR_ARCHITECTURE_AMD64: return df::machine_arch::x64;
+	case PROCESSOR_ARCHITECTURE_ARM: return df::machine_arch::arm32;
+	case PROCESSOR_ARCHITECTURE_ARM64: return df::machine_arch::arm64;
+	case PROCESSOR_ARCHITECTURE_UNKNOWN: return df::machine_arch::unknown;
+	// The call answered with a machine this field has no member for, which is precisely what other
+	// is for. Booking it as unknown would hide it among the readings that were never taken.
+	default: return df::machine_arch::other;
+	}
+}
+
+static df::os_release windows_release()
+{
+#pragma warning(push)
+#pragma warning(disable:4996)
+	OSVERSIONINFO osvi = {};
+	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+	const auto read = GetVersionEx(&osvi) != 0;
+#pragma warning(pop)
+
+	// A reading we could not take is unknown, not other: other is the signal that the field has run
+	// out of room, and a failed call booked there would look like one.
+	if (!read || osvi.dwMajorVersion == 0) return df::os_release::unknown;
+
+	if (osvi.dwMajorVersion > 10) return df::os_release::windows_later;
+
+	if (osvi.dwMajorVersion == 10)
+	{
+		return osvi.dwBuildNumber >= 22000 ? df::os_release::windows_11 : df::os_release::windows_10;
+	}
+
+	// 6.0 is Vista and 6.2 is Windows 8.0. Neither has a value, and folding them into a neighbour
+	// would fix a wrong meaning permanently - a value's meaning is fixed once assigned.
+	if (osvi.dwMajorVersion == 6)
+	{
+		if (osvi.dwMinorVersion >= 3) return df::os_release::windows_8_1;
+		if (osvi.dwMinorVersion == 1) return df::os_release::windows_7;
+	}
+
+	return df::os_release::other;
+}
+
+// Where the running binary came from. The Store package is a full-trust desktop-bridge app, so
+// nothing about its behaviour marks it out - only its install location does.
+static df::package_kind installed_package()
+{
+#ifdef WINSTORE
+	return df::package_kind::microsoft_store;
+#else
+	const auto app_folder = platform::known_path(platform::known_folder::running_app_folder);
+
+	if (app_folder.is_empty()) return df::package_kind::unknown;
+
+	// The desktop installer puts the application in %LOCALAPPDATA%\Diffractor; anything running
+	// from anywhere else was unpacked by hand. The boundary matters: a plain prefix compare reads
+	// %LOCALAPPDATA%\DiffractorPortable as an install.
+	const auto installed_root = platform::known_path(platform::known_folder::app_data);
+
+	// A root we could not read is unknown, not portable. path_from_csidl fabricates a relative path
+	// when the shell lookup fails, so an unqualified root means the comparison never happened -
+	// booking that as portable would report every install on such a machine as unpacked by hand.
+	if (!installed_root.is_qualified()) return df::package_kind::unknown;
+
+	const std::string_view app_text = app_folder.text();
+	const std::string_view root_text = installed_root.text();
+
+	if (df::path_text_starts(app_text, root_text) &&
+		(app_text.size() == root_text.size() || df::is_path_sep(app_text[root_text.size()])))
+	{
+		return df::package_kind::installer;
+	}
+
+	return df::package_kind::portable;
+#endif
+}
+
+df::environment_facts platform::environment()
+{
+	df::environment_facts result;
+	result.family = df::os_family::windows;
+	result.release = windows_release();
+	result.process = process_arch();
+	result.machine = native_machine_arch();
+	result.package = installed_package();
+	return result;
 }
 
 void platform::trace(const std::string_view message)
@@ -2228,7 +2379,7 @@ df::folder_path platform::temp_folder()
 		return known_path(known_folder::app_cache_data);
 	}
 
-	return df::folder_path(path);
+	return to_folder_path(path);
 }
 
 static int CALLBACK browse_callback_proc(const HWND hwnd, const uint32_t uMsg, LPARAM, const LPARAM pData)
@@ -2334,7 +2485,7 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	if (str::icmp(extension, L".webp") == 0) ofn.nFilterIndex = 3;
 
 	const auto success = GetSaveFileName(&ofn) != 0;
-	path = df::file_path(w);
+	path = df::file_path(str::utf16_to_utf8(w));
 	return success;
 }
 
@@ -2368,7 +2519,7 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 
 		if (SUCCEEDED(hr) && num_files > 0 && file_paths)
 		{
-			result.saved_file_path = df::file_path(file_paths[0]);
+			result.saved_file_path = to_file_path(file_paths[0]);
 			result.success = true;
 		}
 
@@ -3136,13 +3287,13 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 		{
 			auto mapped = mapped_name(str::utf8_to_utf16(source.pack()));
 			if (mapped.empty()) mapped = mapped_name(str::utf8_to_utf16(requested.pack()));
-			return mapped.empty() ? requested : df::file_path(std::wstring_view(mapped));
+			return mapped.empty() ? requested : df::file_path(str::utf16_to_utf8(mapped));
 		};
 		const auto mapped_folder = [&mapped_name](const df::folder_path source, const df::folder_path requested)
 		{
 			auto mapped = mapped_name(str::utf8_to_utf16(source.text()));
 			if (mapped.empty()) mapped = mapped_name(str::utf8_to_utf16(requested.text()));
-			return mapped.empty() ? requested : df::folder_path(std::wstring_view(mapped));
+			return mapped.empty() ? requested : df::folder_path(str::utf16_to_utf8(mapped));
 		};
 
 		for (const auto& file : files)

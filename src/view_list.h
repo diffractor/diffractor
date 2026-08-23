@@ -700,10 +700,12 @@ public:
 		}
 	}
 
-	void mouse_wheel(pointi loc, const int zDelta, ui::key_state keys) override
+	bool mouse_wheel(const pointi loc, const ui::wheel_notch notch) override
 	{
-		_scroller.offset(_host, 0, -zDelta);
+		if (!notch.is_vertical()) return false;
+		_scroller.offset(_host, 0, -notch.delta);
 		_state.invalidate_view(view_invalid::controller);
+		return _scroller.can_scroll();
 	}
 
 	virtual text_t empty_message() { return {}; }
