@@ -550,24 +550,30 @@ consequences are load-bearing rather than incidental:
   **This one has no test**: near a pole the correct rendering is itself heavily compressed, so no
   cheap assertion separates the two, and it is verified by eye at a polar view.
 
-### A projected panorama
-
-An equirectangular panorama that the user is [standing inside](zoom.md#64-standing-inside-an-equirectangular-panorama) is rasterised the same way and for the same reason: a projection whose pixels depended on the backend would be two features, and producing them before either backend sees them settles it for free.
-
-Three things differ from the globe, and each is a consequence of the camera being inside the sphere rather than outside it:
-
-- **The destination is the whole media viewport**, not a small disc, so segments are eight pixels rather than sixteen and the mip pyramid earns its keep at a wide field of view, where one destination pixel can span dozens of source texels.
-- **The source is the decoded picture at whatever size the budget allowed**, not a fixed map, so the file's declared geometry and the decode resolution are reconciled by one scale factor rather than assumed equal. The decode is asked for the resolution the *field of view* needs — a narrow view of a large panorama reads a small arc at close to one texel per pixel, which the viewport extent alone would never ask for.
-- **The source does not cover the sphere.** A segment straddling the edge of what the file holds is evaluated per pixel, because interpolating across the gap would sample pixels that are not there, and what is outside is left transparent rather than clamped to the nearest row.
-
-`Should render a projected panorama` covers the camera against a source whose colour says which quadrant it came from, with an asymmetric probe per case: a symmetric one would pass for every mirrored or flipped member of the same family, which is exactly the defect worth catching. It was verified discriminating by negating each camera axis in turn.
-
-
 Reduced copies of the source, halved until they are small, cover the compression toward the limb,
 where one screen pixel can span dozens of source texels; the level is chosen per segment from how far
 the source coordinates moved across it. The source is the map with the heat overlay already composited
 into it, so the reduced copies are rebuilt whenever that is, and the resample runs only when the view
 or the element's size actually changed — a repaint that moved neither redraws the texture it has.
+
+### A projected panorama
+
+An equirectangular panorama that the user is [standing inside](zoom.md#64-standing-inside-an-equirectangular-panorama) has two implementations, one per tier, and the tier is the only thing that chooses between them. `draw_context::draw_panorama` is the fork: the D3D11 backend answers it with a shader, and the CPU backend does not implement it at all, so the caller rasterises in software instead. Nothing above that line knows which happened.
+
+**GPU tier.** `pano_ps.hlsl` inverts each destination pixel back onto the sphere, so the source uploads once and panning becomes a constant-buffer write rather than per-frame work — which is what [zoom.md §4](zoom.md#4-rendering-tiers) means by the GPU tier. Two things it needs that nothing else in the app does:
+
+- **A mip chain.** Every other texture is drawn at or near its own size and is created with `MipLevels = 1`; a projection minifies thousands of pixels of sphere into one viewport and aliases badly without one. `update_mipped` is a separate upload for that reason, and it is why the projection requires packed pixels: NV12 and P010 are neither render targets nor mipmappable, so `GenerateMips` would have nothing to work with. A 10-bit source is flattened to 8-bit as a consequence.
+- **Unwrapped derivatives.** Across the file's seam the texture coordinate jumps most of the way round, and a derivative that large selects the coarsest level — a blurred stripe down the join. The shader unwraps `ddx`/`ddy` before `SampleGrad`, which is the same correction the software rasteriser applies to its segment endpoints.
+
+**CPU tier.** [render_panorama.cpp](../src/render_panorama.cpp) resamples the whole viewport per frame, in segments of eight pixels with the exact inverse at the endpoints, reduced copies of the source for minification, and per-pixel coverage. Three things differ from the globe, and each is a consequence of the camera being inside the sphere rather than outside it:
+
+- **The destination is the whole media viewport**, not a small disc, so segments are eight pixels rather than sixteen and the mip pyramid earns its keep at a wide field of view, where one destination pixel can span dozens of source texels.
+- **The source is the decoded picture at whatever size the budget allowed**, not a fixed map, so the file's declared geometry and the decode resolution are reconciled by one scale factor rather than assumed equal. The decode is asked for the resolution the *field of view* needs — a narrow view of a large panorama reads a small arc at close to one texel per pixel, which the viewport extent alone would never ask for.
+- **The source does not cover the sphere.** What is outside the file is left transparent rather than clamped to the nearest row, and coverage is decided per pixel: a screen row is a curve in latitude, so both endpoints of a segment can sit inside a partial panorama's band while the middle leaves it, and both can sit outside while the middle is inside.
+
+**What differs between the tiers, and what does not.** The camera, the coverage rule, the field-of-view ladder and every gesture are identical — `panorama_shader_params` derives the camera once so neither tier can hold a different one. The filtering is not: the GPU samples anisotropically through hardware mips, the CPU bilinearly through its own isotropic pyramid, so a glancing angle is sharper on the GPU. That affects sharpness only. **No pixel samples a different place because of the tier**, which is the property worth defending, and it is what the CPU-tier test constrains.
+
+`Should render a projected panorama` covers the software rasteriser against a source whose colour says which quadrant it came from, with an asymmetric probe per case: a symmetric one would pass for every mirrored or flipped member of the same family, which is exactly the defect worth catching. It was verified discriminating by negating each camera axis in turn. The suite has no draw device, so the shader is a manual gate — the same file at the same camera with and without `-no-gpu`.
 
 ## Text
 
@@ -840,6 +846,7 @@ bridge.
 | Pixel-level transforms and differences | [render_image.cpp](../src/render_image.cpp) |
 | The sidebar globe's software resample | [render_globe.cpp](../src/render_globe.cpp), [ui_globe.h](../src/ui_globe.h) |
 | A projected panorama's software resample | [render_panorama.cpp](../src/render_panorama.cpp), [ui_panorama.h](../src/ui_panorama.h) |
+| A projected panorama's shader | [pano_ps.hlsl](../src/shaders/pano_ps.hlsl), [pano_project.hlsli](../src/shaders/pano_project.hlsli) |
 | The sidebar pie and calendar: extruded solids and their identity buffers | [render_charts.cpp](../src/render_charts.cpp), [ui_charts.h](../src/ui_charts.h) |
 | SSE/AVX/NEON paths behind the above | [util_simd.h](../src/util_simd.h) |
 | Demux, decode, scaling, resampling, hardware acceleration | [av_format.h](../src/av_format.h), [av_format.cpp](../src/av_format.cpp) |

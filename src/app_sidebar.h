@@ -1837,6 +1837,7 @@ class sidebar_map_element final : public view_element, public std::enable_shared
 	gps_coordinate _view;
 	gps_coordinate _drag_start_view;
 	bool _view_is_user_set = false;
+	bool _drag_start_view_is_user_set = false;
 
 	std::vector<map_location_area> _locations;
 	df::hash_map<uint32_t, map_location_area> _resolved_areas;
@@ -2131,6 +2132,16 @@ public:
 	void begin_drag()
 	{
 		_drag_start_view = _view;
+		_drag_start_view_is_user_set = _view_is_user_set;
+	}
+
+	// Escape unwinds the turn, so it has to unwind the pin the turn set as well. A cancelled drag is
+	// not a choice of view, and a latched flag would stop the globe following the collection for the
+	// rest of the session.
+	void cancel_drag(const pointi element_offset)
+	{
+		drag_to({0, 0}, element_offset);
+		_view_is_user_set = _drag_start_view_is_user_set;
 	}
 
 	bool drag_to(const pointi drag, const pointi element_offset)
@@ -2586,7 +2597,7 @@ public:
 
 		_tracking = false;
 		_turned = false;
-		_element->drag_to({0, 0}, _element_offset);
+		_element->cancel_drag(_element_offset);
 		invalidate();
 		return true;
 	}
@@ -2733,8 +2744,9 @@ public:
 		}
 		else if (event.type == view_element_event_type::free_graphics_resources)
 		{
-			// app_frame calls this directly on the copy it owns, but the About dialog creates a
-			// second instance that only the broadcast can reach.
+			// app_frame calls this directly on the copy it owns. The About dialog's second instance
+			// lives in a dialog's control list, which no broadcast walks, so this arm is what a route
+			// to it would need rather than proof that one exists; v-next.md records the gap.
 			free_graphics_resources();
 		}
 	}

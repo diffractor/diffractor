@@ -431,9 +431,13 @@ void database::upgrade_cached_metadata()
 		return;
 	}
 
-	const auto upgraded = stored_version < 1
-		                      ? invalidate_cached_metadata()
-		                      : request_date_pack_rescan();
+	// Only version 1 rows can answer while they wait for the re-scan. They predate the pack and carry
+	// the two plain date records this build still reads. Version 2 was stamped mid-branch against an
+	// unversioned pack, which this build refuses and which has no legacy copy beside it, so keeping
+	// those rows would leave every one of them dateless until a scan happened to reach it.
+	const auto upgraded = stored_version == 1
+		                      ? request_date_pack_rescan()
+		                      : invalidate_cached_metadata();
 
 	if (!upgraded)
 	{

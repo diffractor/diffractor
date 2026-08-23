@@ -2407,7 +2407,9 @@ public:
 
 	df::file_path region_item() const
 	{
-		return _display && _display->is_one() && _display->_item1 ? _display->_item1->path() : df::file_path{};
+		// _display is non-null for this control's whole lifetime - the constructor reads it - so the
+		// question here is only whether it resolves to one picture.
+		return _display->is_one() && _display->_item1 ? _display->_item1->path() : df::file_path{};
 	}
 
 	rectd region() const
@@ -2488,9 +2490,10 @@ public:
 		drag_region(from, to, element_offset);
 		_state.end_region_drag();
 
-		// A rectangle too small to see is a click that happened to move, not a region.
+		// A rectangle too small to see is a click that happened to move, not a region. The draw
+		// replaced what was there, so too small puts it back rather than destroying it.
 		const auto drawn = region_bounds(element_offset);
-		if (drawn.width() < 8 || drawn.height() < 8) region({});
+		if (drawn.width() < 8 || drawn.height() < 8) region(_state.region_drag_restore());
 		else _host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
 	}
 
@@ -2560,13 +2563,24 @@ public:
 			if (_display->is_zoom_mode() && !_display->is_temporary_zoom() && _zoom_grading_element &&
 				!_zoom_grading_element->bounds.is_empty())
 			{
+				// dc is shared by the whole frame, so the alpha is put back on every exit rather than
+				// on the normal one: an element that threw would otherwise dim everything painted after it.
 				const auto original_alpha = dc.colors.alpha;
+				const df::scope_exit restore_alpha([&dc, original_alpha] { dc.colors.alpha = original_alpha; });
 				dc.colors.alpha *= std::min(dc.colors.overlay_alpha, _display->_zoom_overlay_alpha);
 				const auto grading_bounds = _zoom_grading_element->bounds.offset(element_offset);
 				dc.draw_rect(grading_bounds.inflate(dc.padding1), ui::color(0, dc.colors.alpha * 0.5f));
 				_zoom_grading_element->render(dc, element_offset);
-				dc.colors.alpha = original_alpha;
 			}
+		}
+		else
+		{
+			// Nothing was painted, so the region's three buttons are not on screen. Their rectangles are
+			// read by the hit test, and leaving the last frame's behind would route a click to a control
+			// that is not there.
+			_region_close_bounds.clear();
+			_region_zoom_bounds.clear();
+			_region_crop_bounds.clear();
 		}
 	}
 
@@ -2967,7 +2981,12 @@ public:
 				_display->_selected_texture1->draw(dc, element_offset, compare_pos, true, interactive);
 				_display->_selected_texture2->draw(dc, element_offset, compare_pos, false, interactive);
 			}
+			// Both alphas are restored on every exit path, not just the normal one: dc is shared by the
+			// whole frame, so an element that threw would leave everything painted afterwards dimmed.
 			const auto original_overlay_alpha = dc.colors.overlay_alpha;
+			const df::scope_exit restore_overlay_alpha(
+				[&dc, original_overlay_alpha] { dc.colors.overlay_alpha = original_overlay_alpha; });
+
 			if (_display->is_zoom_mode())
 			{
 				dc.colors.overlay_alpha = std::min(dc.colors.overlay_alpha, _display->_zoom_overlay_alpha);
@@ -2981,11 +3000,11 @@ public:
 				if (grading && !grading->bounds.is_empty())
 				{
 					const auto original_alpha = dc.colors.alpha;
+					const df::scope_exit restore_alpha([&dc, original_alpha] { dc.colors.alpha = original_alpha; });
 					dc.colors.alpha *= dc.colors.overlay_alpha;
 					const auto grading_bounds = grading->bounds.offset(element_offset);
 					dc.draw_rect(grading_bounds.inflate(dc.padding1), ui::color(0, dc.colors.alpha * 0.5f));
 					grading->render(dc, element_offset);
-					dc.colors.alpha = original_alpha;
 				}
 			}
 
@@ -3126,7 +3145,6 @@ public:
 				rr.right = rr.left + 1;
 				dc.draw_rect(rr, ui::color(ui::average(dc.colors.background, 0), dc.colors.alpha));
 			}
-			dc.colors.overlay_alpha = original_overlay_alpha;
 		}
 	}
 

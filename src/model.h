@@ -597,6 +597,10 @@ private:
 	ui::const_surface_ptr _panorama_source;
 	ui::surface_ptr _panorama_surface;
 	ui::texture_ptr _panorama_tex;
+	// The same pixels uploaded with a mip chain, for a backend that projects them itself. Kept apart
+	// from _panorama_tex, which is where the software rasteriser puts its finished frame.
+	ui::const_surface_ptr _panorama_gpu_source;
+	ui::texture_ptr _panorama_gpu_tex;
 	panorama_view _panorama_rendered_view;
 	// The rendered pixels depend on the coverage as strongly as on the camera, and the declaration
 	// read lands after the first frames are already on screen.
@@ -604,6 +608,9 @@ private:
 	bool _panorama_rendered = false;
 
 	void update_decode(ui::draw_context& rc);
+	// Everything only a projection needs: the mipped upload, the reduced copies and the frame the
+	// software rasteriser draws into. Between them they are the largest thing the item holds.
+	void release_panorama_resources();
 
 public:
 	bool _is_video_tex = false;
@@ -727,9 +734,11 @@ public:
 		return required_width > texture_dims.cx || required_height > texture_dims.cy;
 	}
 
-	// Everything decoded from _loaded, deduplicated by buffer because these members routinely alias
-	// one surface. _loaded.s counts: a format that decodes straight to a surface has no encoded form,
-	// so its pixels are the only representation it has.
+	// Everything decoded from _loaded that survives past a draw, deduplicated by buffer because these
+	// members routinely alias one surface. _loaded.s counts: a format that decodes straight to a
+	// surface has no encoded form, so its pixels are the only representation it has. The panorama's
+	// own surfaces are absent deliberately - release_undisplayed drops them before it measures, and a
+	// displayed texture is never measured at all.
 	size_t retained_decoded_bytes() const noexcept
 	{
 		std::array<const ui::surface*, 4> seen{};
@@ -913,6 +922,10 @@ public:
 	};
 
 	std::array<zoom_layout_state, 2> _zoom_layouts;
+	// Whether this display has already asked the file for its panorama declaration. Held here rather
+	// than on the session because the session outlives every display: a read released with its
+	// display publishes nothing, and the next display is the thing that should ask again.
+	bool _panorama_read_queued = false;
 	mutable bool _preview_changed = false;
 
 	std::vector<ui::const_image_ptr> _images;
@@ -1360,7 +1373,9 @@ public:
 	{
 		if (!_is_one || !_item1) return false;
 		const auto md = _item1->metadata();
-		return md && md->panorama == prop::panorama_projection::equirectangular;
+		// Dimensions are what the coverage is derived from, so an item the scan has not measured yet
+		// cannot be stood inside - the sidecar merge sets the declaration without ever seeing a pixel.
+		return md && md->panorama == prop::panorama_projection::equirectangular && !md->dimensions().is_empty();
 	}
 
 	// Whether the next magnified draw is a projection. The flat override is per item and visible in
@@ -1397,34 +1412,38 @@ public:
 		return {true, _common._panorama.geometry, _common._panorama.view};
 	}
 
-	// Keyed on the path so a second panorama opens at its own centre. Returns true when this is a new
-	// item, which is the one moment the declaration is worth reading. The path alone gates it: a
+	// Keyed on the path so a second panorama opens at its own centre. The path alone gates it: a
 	// repopulate - a sidecar arriving, index progress - must not throw away where the user is looking
-	// or the flat/projected choice they made.
-	bool panorama_item(const df::file_path path, const sizei source)
+	// or the flat/projected choice they made. Whether the declaration still needs reading is a
+	// separate question, and `resolved` answers that one.
+	void panorama_item(const df::file_path path, const sizei source)
 	{
 		auto& session = _common._panorama;
 
-		if (session.path == path) return false;
+		if (session.path == path) return;
 
 		session.path = path;
 		session.geometry = prop::panorama_geometry::assumed(source);
 		session.resolved = false;
 		session.flat = false;
 		session.view.reset(session.geometry);
-		return true;
 	}
 
 	// The declared coverage, once the file has answered. Applied only while the item it was read for
 	// is still the one on screen, and the camera is re-centred because the patch it centred on has
-	// just changed shape.
+	// just changed shape. A declaration that resolves to nothing is not recorded as an answer, so a
+	// later attempt is still free to ask.
 	void panorama_geometry(const df::file_path path, const prop::panorama_geometry& declared, const sizei source)
 	{
 		auto& session = _common._panorama;
 
 		if (session.path != path || session.resolved) return;
 
-		session.geometry = prop::panorama_geometry::resolve(declared, source);
+		const auto resolved = prop::panorama_geometry::resolve(declared, source);
+
+		if (!resolved.is_valid()) return;
+
+		session.geometry = resolved;
 		session.resolved = true;
 		session.view.reset(session.geometry);
 		_async.invalidate_view(view_invalid::view_redraw);
@@ -2060,11 +2079,16 @@ public:
 
 	rectd drawn_region(const df::file_path path) const
 	{
+		// An empty key means there is no one picture to own a region, not a picture every control
+		// shares. Without this, two photo_controls that both resolve to no item would answer with -
+		// and write over - each other's rectangle.
+		if (path.is_empty()) return {};
 		return _drawn_region.path == path ? _drawn_region.region : rectd{};
 	}
 
 	void drawn_region(const df::file_path path, const rectd region)
 	{
+		if (path.is_empty()) return;
 		if (_drawn_region.path != path) _drawn_region = {path, {}, {}, false};
 		_drawn_region.region = region;
 	}
@@ -2079,6 +2103,7 @@ public:
 	// back; a move keeps it.
 	void begin_region_drag(const df::file_path path, const bool replaces)
 	{
+		if (path.is_empty()) return;
 		const auto previous = drawn_region(path);
 		_drawn_region = {path, replaces ? rectd{} : previous, previous, true};
 	}

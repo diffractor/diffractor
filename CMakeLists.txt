@@ -413,7 +413,7 @@ if (WIN32)
     file(MAKE_DIRECTORY "${_shader_dir}")
 
     # ShaderModel 4.0 throughout; vs.hlsl is the only vertex shader.
-    set(_pixel_shaders circle_ps font_ps rgb_bicubic_ps rgb_ps solid_ps yuv_bicubic_ps yuv_ps)
+    set(_pixel_shaders circle_ps font_ps pano_ps rgb_bicubic_ps rgb_ps solid_ps yuv_bicubic_ps yuv_ps)
     set(_vertex_shaders vs)
     set(_shader_outputs "")
 
@@ -432,6 +432,7 @@ if (WIN32)
                 /Fo "${_out}" "${CMAKE_SOURCE_DIR}/src/shaders/${_shader}.hlsl"
                 MAIN_DEPENDENCY "${CMAKE_SOURCE_DIR}/src/shaders/${_shader}.hlsl"
                 DEPENDS "${CMAKE_SOURCE_DIR}/src/shaders/common.hlsli"
+                        "${CMAKE_SOURCE_DIR}/src/shaders/pano_project.hlsli"
                 COMMENT "Compiling ${_shader}.hlsl (${_profile})"
                 VERBATIM)
 

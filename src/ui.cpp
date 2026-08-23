@@ -722,7 +722,8 @@ public:
 	}
 };
 
-class zoom_navigator_controller final : public view_controller{
+class zoom_navigator_controller final : public view_controller
+{
 	display_state_ptr _display;
 	bool _tracking = false;
 
@@ -1008,9 +1009,12 @@ public:
 		_tracking = false;
 		_parent->release_region_drag();
 
-		// A rectangle too small to see is a click that happened to move, not a region.
+		// A rectangle too small to see is a click that happened to move, not a region. A Ctrl-draw
+		// cleared what was there when it began, so this puts it back rather than committing the empty
+		// rectangle - the same answer escape() and the destructor already give, and without it a stray
+		// Ctrl-click inside an existing region silently deleted it.
 		const auto drawn = _parent->region_bounds(_element_offset);
-		if (!_moving && (drawn.width() < 8 || drawn.height() < 8)) _parent->region({});
+		if (!_moving && (drawn.width() < 8 || drawn.height() < 8)) _parent->region(_start_region);
 
 		_host->invalidate_view(view_invalid::view_redraw | view_invalid::controller);
 	}
@@ -1075,10 +1079,13 @@ public:
 			return;
 		}
 
+		// An unresolved command is dropped rather than invoked, for the same reason the items menu
+		// drops one: asking the host to perform a command the state cannot describe is not something
+		// the button can promise.
 		const auto command = _state.find_command(_command);
-		if (command && !command->enable) return;
+		if (!command || !command->enable) return;
 
-		const auto item = _parent->_display ? _parent->_display->_item1 : df::item_element_ptr{};
+		const auto item = _parent->_display->_item1;
 		if (!item) return;
 
 		// After the item, because source_extent() reads the display the line above just tested.
@@ -1237,6 +1244,11 @@ public:
 			stop_auto_pan();
 			return;
 		}
+
+		// Auto-pan moves the flat centre, which a projection is not showing. Left running it would
+		// repaint at full rate for nothing and leave the picture jumped when the user returns to it.
+		if (_parent->_display->is_panorama_projected()) return;
+
 		_start_zoom_state = _parent->_display->zoom_state();
 		_start_loc = loc;
 		_auto_velocity = {};

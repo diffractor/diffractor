@@ -250,6 +250,7 @@ public:
 	// can fall back to them rather than leaving the row with no date at all.
 	bool read_date_pack(prop::date_pack& dates)
 	{
+		const auto restored_before = dates.group_count();
 		const auto ser_len = read_len();
 		const auto end = _pos + ser_len;
 
@@ -315,7 +316,12 @@ public:
 		dates.restore_overflow(static_cast<prop::date_source>(overflow));
 
 		_pos = end;
-		return true;
+
+		// Whether the pack yielded a date, not whether its framing was acceptable. A body written by a
+		// later release can be structurally perfect and still add nothing here - every source bit in it
+		// may be one this build has no name for - and the caller must then fall back to the legacy
+		// records beside it rather than leave the row with no date at all.
+		return dates.group_count() > restored_before;
 	}
 
 	void read_val(str::cached& v)

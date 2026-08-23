@@ -908,7 +908,11 @@ prop::panorama_geometry metadata_xmp::panorama(const df::file_path path)
 			}
 		}
 
-		// A stitcher that wrote a sidecar rather than an embedded packet still declared the sphere.
+		// A stitcher that wrote a sidecar rather than an embedded packet still declared the sphere. The
+		// embedded reading is discarded first: read_panorama_geometry fills only what a packet declares,
+		// so joining an incomplete embedded declaration to the sidecar's would describe neither file.
+		result = {};
+
 		const auto sidecar = blob_from_file(probe_xmp_path(path, {}));
 
 		if (!sidecar.empty())

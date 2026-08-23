@@ -150,10 +150,15 @@ bool panorama_renderer::render(ui::surface& destination, const prop::panorama_ge
 
 	const auto full_width = static_cast<double>(geometry.full_width);
 
+	// Taken once for the whole frame: yaw, pitch and field of view are fixed for the duration of a
+	// render, and the five transcendentals they imply are what would otherwise be paid three times
+	// per segment.
+	const auto camera = view.camera_basis();
+
 	const auto sample_at = [&](const double x, const double y, double& u, double& v, double& latitude)
 	{
 		double dx, dy, dz;
-		view.direction(x, y, viewport, dx, dy, dz);
+		view.direction(x, y, viewport, camera, dx, dy, dz);
 		latitude = std::asin(std::clamp(dy, -1.0, 1.0));
 		panorama_texel_at(geometry, std::atan2(dx, dz), latitude, u, v);
 	};
@@ -176,6 +181,10 @@ bool panorama_renderer::render(ui::surface& destination, const prop::panorama_ge
 		{
 			while (u < 0.0) u += full_width;
 			while (u >= full_width) u -= full_width;
+
+			// Every longitude is covered by a file that closes the circle, including the pixel or two
+			// a writer rounded away - the sampler wraps across the join rather than stopping at it.
+			return v >= 0.0 && v < geometry.cropped_height;
 		}
 
 		return u >= 0.0 && u < geometry.cropped_width && v >= 0.0 && v < geometry.cropped_height;

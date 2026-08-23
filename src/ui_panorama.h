@@ -202,30 +202,41 @@ public:
 		        panorama_latitude_at_top(geometry) - y * panorama_latitude_span(geometry));
 	}
 
+	// The camera's own trigonometry, which cannot change while one frame is drawn. The exact inverse
+	// below is evaluated at least three times per segment, so recomputing these inside it would cost
+	// more than the per-pixel inverse the segment scheme exists to avoid.
+	struct camera_basis_t
+	{
+		double tan_half_fov = 0.0;
+		double sin_pitch = 0.0;
+		double cos_pitch = 1.0;
+		double sin_yaw = 0.0;
+		double cos_yaw = 1.0;
+	};
+
+	camera_basis_t camera_basis() const noexcept
+	{
+		return {std::tan(_fov / 2.0), std::sin(_pitch), std::cos(_pitch), std::sin(_yaw), std::cos(_yaw)};
+	}
+
 	// The direction a viewport pixel looks along, as a unit vector. Square pixels: both axes are
 	// scaled by the same half-width, so the vertical field follows the viewport's shape instead of
 	// stretching to fill it.
-	void direction(const double x, const double y, const sized viewport, double& out_x, double& out_y,
-	               double& out_z) const noexcept
+	void direction(const double x, const double y, const sized viewport, const camera_basis_t& camera,
+	               double& out_x, double& out_y, double& out_z) const noexcept
 	{
 		const auto half = viewport.Width / 2.0;
-		const auto tan_half_fov = std::tan(_fov / 2.0);
-		const auto cam_x = (x - half) / half * tan_half_fov;
-		const auto cam_y = -(y - viewport.Height / 2.0) / half * tan_half_fov;
-
-		const auto sin_pitch = std::sin(_pitch);
-		const auto cos_pitch = std::cos(_pitch);
-		const auto sin_yaw = std::sin(_yaw);
-		const auto cos_yaw = std::cos(_yaw);
+		const auto cam_x = (x - half) / half * camera.tan_half_fov;
+		const auto cam_y = -(y - viewport.Height / 2.0) / half * camera.tan_half_fov;
 
 		// Pitch about X first, then yaw about Y: rolling the horizon is not something a viewer may
 		// do to a picture the stitcher levelled.
-		const auto pitched_y = cam_y * cos_pitch + sin_pitch;
-		const auto pitched_z = -cam_y * sin_pitch + cos_pitch;
+		const auto pitched_y = cam_y * camera.cos_pitch + camera.sin_pitch;
+		const auto pitched_z = -cam_y * camera.sin_pitch + camera.cos_pitch;
 
-		const auto wx = cam_x * cos_yaw + pitched_z * sin_yaw;
+		const auto wx = cam_x * camera.cos_yaw + pitched_z * camera.sin_yaw;
 		const auto wy = pitched_y;
-		const auto wz = -cam_x * sin_yaw + pitched_z * cos_yaw;
+		const auto wz = -cam_x * camera.sin_yaw + pitched_z * camera.cos_yaw;
 
 		const auto length = std::sqrt(wx * wx + wy * wy + wz * wz);
 		const auto scale = length > 1e-12 ? 1.0 / length : 0.0;
@@ -233,6 +244,12 @@ public:
 		out_x = wx * scale;
 		out_y = wy * scale;
 		out_z = wz * scale;
+	}
+
+	void direction(const double x, const double y, const sized viewport, double& out_x, double& out_y,
+	               double& out_z) const noexcept
+	{
+		direction(x, y, viewport, camera_basis(), out_x, out_y, out_z);
 	}
 
 	// Which source texel a viewport pixel shows, or false where the file holds no sphere there.
@@ -282,6 +299,37 @@ struct panorama_request
 	prop::panorama_geometry geometry;
 	panorama_view view;
 };
+
+// What a backend needs to draw the projection, derived in one place so a shader and the software
+// rasteriser are never handed different cameras. The scales carry the file's coverage: a direction
+// at the left of the file lands at u 0, and one a full turn later at `full width / cropped width`,
+// so anything at or past 1 is sphere the file does not hold.
+inline ui::panorama_params panorama_shader_params(const prop::panorama_geometry& geometry,
+                                                  const panorama_view& view, const sized viewport) noexcept
+{
+	ui::panorama_params result;
+
+	result.yaw = static_cast<float>(view.yaw());
+	result.pitch = static_cast<float>(view.pitch());
+	result.tan_half_fov = static_cast<float>(std::tan(view.fov() / 2.0));
+	result.aspect = static_cast<float>(viewport.Width / std::max(1.0, viewport.Height));
+
+	result.longitude_left = static_cast<float>(panorama_longitude_at_left(geometry));
+	// A file that closes the circle covers all of it. Scaling by its declared crop instead would
+	// leave the pixel or two a writer rounded away uncovered, and the join - the one place the
+	// tolerance exists to make seamless - would show a hairline of background.
+	result.u_scale = panorama_wraps_longitude(geometry)
+		                 ? 1.0f
+		                 : static_cast<float>(geometry.full_width /
+		                 	static_cast<double>(std::max(1, geometry.cropped_width)));
+	result.latitude_top = static_cast<float>(panorama_latitude_at_top(geometry));
+	result.v_scale = static_cast<float>(geometry.full_height /
+		static_cast<double>(std::max(1, geometry.cropped_height)));
+
+	result.wraps = panorama_wraps_longitude(geometry);
+
+	return result;
+}
 
 // Resamples an equirectangular source through the camera above, in software, into a surface the
 // caller uploads as a texture - so both draw backends show the same pixels. The exact inverse is

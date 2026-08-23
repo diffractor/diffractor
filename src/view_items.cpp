@@ -99,35 +99,44 @@ std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bo
 {
 	std::vector<ui::command_ptr> result;
 
+	// A null entry is the menu's separator, so an unresolved command must be dropped rather than
+	// emplaced - it would become a divider instead of a visible failure. That is also why a
+	// separator is only emitted where there is already something for it to divide: two adjacent
+	// nulls draw as a double rule, and a trailing one as a rule under the last entry.
+	const auto add_separator = [&result]
+	{
+		if (!result.empty() && result.back() != nullptr) result.emplace_back(nullptr);
+	};
+
+	const auto add_command = [&result, &state](const commands id)
+	{
+		if (auto c = state.find_command(id)) result.emplace_back(std::move(c));
+	};
+
 	auto top = std::make_shared<ui::command>();
 	top->icon = icon_index::up;
 	top->text = tt.tooltip_scroll_to_top;
 	top->enable = !at_top;
 	top->invoke = std::move(scroll_to_top);
 	result.emplace_back(std::move(top));
-	result.emplace_back(nullptr);
+	add_separator();
 
 	if (const auto group = state.find_command(commands::menu_group_toolbar); group && group->menu)
 	{
 		for (auto& c : group->menu()) result.emplace_back(std::move(c));
 	}
 
-	result.emplace_back(nullptr);
-
-	// A null entry is the menu's separator, so an unresolved command must be dropped rather than
-	// emplaced - it would become a divider instead of a visible failure.
-	const auto add_command = [&result, &state](const commands id)
-	{
-		if (auto c = state.find_command(id)) result.emplace_back(std::move(c));
-	};
+	add_separator();
 
 	for (const auto id : {commands::filter_photos, commands::filter_videos, commands::filter_audio})
 	{
 		add_command(id);
 	}
 
-	result.emplace_back(nullptr);
+	add_separator();
 	add_command(commands::browse_recursive);
+
+	if (!result.empty() && result.back() == nullptr) result.pop_back();
 
 	return result;
 }
@@ -1439,7 +1448,8 @@ bool items_view::escape()
 }
 
 void items_view::update_regions()
-{	// Single geometry pass. Regions are laid out back to front: the item grid is the background of
+{
+	// Single geometry pass. Regions are laid out back to front: the item grid is the background of
 	// the view and every piece of chrome that overlaps it is carved out first, so hit testing can
 	// simply walk them in priority order.
 	_regions = {};

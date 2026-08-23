@@ -33,6 +33,7 @@
 #define IDR_SHADER_YUV   126
 #define IDR_SHADER_YUV_BICUBIC   127
 #define IDR_SHADER_CIRCLE   128
+#define IDR_SHADER_PANO   129
 
 // Next default values for new objects
 // 

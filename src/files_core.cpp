@@ -1541,11 +1541,20 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 
 		// The budget belongs here rather than at the callers: the const_image_ptr overload of
 		// image_to_surface gates at its head but the df::cspan one does not, and this is the single
-		// point both reach. The header has just been read, so these are the file's own dimensions.
-		if (exceeds_decode_budget(_jpeg_decoder.dimensions()))
+		// point both reach. The header has just been read, so these are the file's own dimensions -
+		// but libjpeg reduces while it decodes, so the ceiling is what the decode will allocate rather
+		// than what the file stores. Charging the full size would refuse a large stitch even as a
+		// thumbnail, which is the one request that was always affordable.
+		const auto source_dimensions = _jpeg_decoder.dimensions();
+		const auto scale_hint = ui::calc_scale_down_factor(source_dimensions, target_extent);
+		const auto decode_bytes = (static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4) /
+			(static_cast<int64_t>(scale_hint) * scale_hint);
+
+		if (decode_bytes > df::max_decode_bytes)
 		{
-			df::log(__FUNCTION__, std::format("decode of {} x {} is over the {} budget",
-			                                  _jpeg_decoder.dimensions().cx, _jpeg_decoder.dimensions().cy,
+			df::log(__FUNCTION__, std::format("decode of {} x {} needs {}, over the {} budget",
+			                                  source_dimensions.cx, source_dimensions.cy,
+			                                  df::file_size(decode_bytes).str(),
 			                                  df::file_size(df::max_decode_bytes).str()));
 			return {};
 		}
@@ -1559,7 +1568,6 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
 		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
 		const auto use_yuv = can_use_yuv && setting.use_yuv && _jpeg_decoder.can_render_nv12();
-		const auto scale_hint = ui::calc_scale_down_factor(_jpeg_decoder.dimensions(), target_extent);
 
 		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
 			return {};

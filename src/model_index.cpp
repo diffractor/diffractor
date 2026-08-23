@@ -2569,10 +2569,18 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				thumbnail_surface = surf;
 			}
 
-			if (is_valid(thumbnail_image))
+			// Same ceiling as the two above, and a real gate for the same reason: assert_true evaluates
+			// nothing in Release, so an encode that came back over the ceiling would reach both the
+			// database row and the in-memory budget unchallenged.
+			if (is_valid(thumbnail_image) && thumbnail_image->data().size() < df::two_fifty_six_k)
 			{
-				df::assert_true(thumbnail_image->data().size() < df::two_fifty_six_k);
 				write.thumb = thumbnail_image;
+			}
+			else
+			{
+				if (is_valid(thumbnail_image)) df::log(__FUNCTION__, "thumbnail over the ceiling");
+				thumbnail_image.reset();
+				thumbnail_surface.reset();
 			}
 		}
 		else if (load_thumb && is_valid(sr.thumbnail_image))

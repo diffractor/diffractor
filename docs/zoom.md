@@ -206,7 +206,7 @@ An equirectangular file is a sphere unrolled onto a rectangle. Drawn flat, its h
 - **A partial panorama ends.** Most phone panoramas cover a band rather than a whole sphere, and where the file holds nothing the frame shows nothing — not the nearest row stretched, and not the sky invented. [metadata](metadata.md#panorama) owns which patch a file declares.
 - **The user can ask for the flat pixels.** Judging a stitching seam or focus means seeing what is stored, so a control in the zoom chrome switches between the two and shows which is in force ([L6](#3-the-laws)). It is per item, because it is a judgement about one picture rather than a preference about panoramas.
 - **The navigator shows the whole file with the camera's patch marked on it**, which is [L10](#3-the-laws) answered in the projection's own terms.
-- **Both backends draw the same pixels.** The resample is software either way, for the reason [rendering](rendering.md) gives the globe: a projection whose pixels depended on the backend would be two features.
+- **Both backends show the same picture.** The camera, the coverage and the ladder are one piece of arithmetic; only the filtering differs, and only in sharpness. [rendering](rendering.md) owns which backend draws it and how.
 
 ### 6.3 A region drawn on the picture
 

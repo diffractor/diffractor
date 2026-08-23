@@ -4072,6 +4072,8 @@ void texture_state::free_graphics_resources()
 	_last_draw_tex.reset();
 	_fade_out_tex.reset();
 	_panorama_tex.reset();
+	_panorama_gpu_tex.reset();
+	_panorama_gpu_source.reset();
 	_panorama_rendered = false;
 	_tex_invalid = true;
 
@@ -4460,6 +4462,10 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 {
 	const auto media_bounds = _display_bounds;
 
+	// Leaving the projection is the only moment its resources stop being needed while the item stays
+	// on screen, and nothing else releases them until it is navigated away from.
+	if (_panorama.active) release_panorama_resources();
+
 	_panorama = {};
 	update_decode(rc);
 
@@ -4623,24 +4629,38 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 	}
 }
 
+void texture_state::release_panorama_resources()
+{
+	_panorama_renderer.set_source(nullptr);
+	_panorama_source.reset();
+	_panorama_surface.reset();
+	_panorama_tex.reset();
+	_panorama_gpu_tex.reset();
+	_panorama_gpu_source.reset();
+	_panorama_rendered = false;
+}
+
 void texture_state::layout(ui::measure_context& mc, const recti bounds, const df::item_element_ptr& i)
 {
 	_display_bounds = bounds;
 	refresh(i);
 }
 
-// zoom.md: the file declared a sphere, so the user is put inside it. The resample is software on
-// both backends, for the reason rendering.md gives the globe: a projection whose pixels differed by
-// backend would be two features. The camera and the decoded source together decide the frame, so a
-// repaint that moved neither reuses the texture it already has.
+// zoom.md: the file declared a sphere, so the user is put inside it. The GPU projects it with a
+// shader where it can and the CPU rasterises the same frame where it cannot; rendering.md owns the
+// two tiers, and the camera both are handed is derived once so neither can hold a different one.
+// The camera and the decoded source together decide the frame, so a repaint that moved neither
+// reuses the texture it already has.
 void texture_state::draw_panorama(ui::draw_context& rc, const pointi offset, const prop::panorama_geometry& geometry,
                                   const panorama_view& view)
 {
 	_panorama = {true, geometry, view};
 	update_decode(rc);
 
-	// A decode that lands while projected arms a dissolve nothing here draws. Left armed it would run
-	// against the flat picture the moment the user asked for it.
+	// A decode that lands while projected arms a dissolve nothing here draws, and builds a flat
+	// texture nothing here draws either. Both are kept deliberately: leaving the projection is one
+	// keystroke, and the flat picture is expected to be there when it happens rather than decoded
+	// from scratch. Left armed, the dissolve would run against that picture the moment it appeared.
 	_fade_out_tex.reset();
 	_display_alpha_animation.reset(1.0f);
 
@@ -4652,7 +4672,37 @@ void texture_state::draw_panorama(ui::draw_context& rc, const pointi offset, con
 	rc.draw_rect(media_bounds.offset(offset), ui::color(ui::style::color::group_background, 1.0f));
 
 	const auto& source = ui::is_valid(_retained_surface) ? _retained_surface : _loaded.s;
-	if (!ui::is_valid(source) || !ui::is_packed(source->format()) || !geometry.is_valid()) return;
+
+	if (!ui::is_valid(source) || !ui::is_packed(source->format()) || !geometry.is_valid())
+	{
+		// A projection asks for more source than the flat view does, so it can be refused where the
+		// flat view was not. Saying why is what the flat path already does; an unexplained grey
+		// rectangle is the same defect wearing a different mode.
+		draw_display_problem(rc, media_bounds.offset(offset), _display_problem, calc_display_dimensions(), 1.0f);
+		return;
+	}
+
+	const auto viewport = sized(media_bounds.extent());
+	const auto params = panorama_shader_params(geometry, view, viewport);
+
+	// The backend projects it if it can. A shader turns panning into a constant-buffer write, so the
+	// whole per-frame resample below is work only the CPU renderer has to do.
+	if (_panorama_gpu_source != source)
+	{
+		_panorama_gpu_tex = rc.create_texture();
+
+		if (_panorama_gpu_tex && _panorama_gpu_tex->update_mipped(source) == ui::texture_update_result::failed)
+		{
+			_panorama_gpu_tex.reset();
+		}
+
+		_panorama_gpu_source = source;
+	}
+
+	if (_panorama_gpu_tex && rc.draw_panorama(_panorama_gpu_tex, media_bounds.offset(offset), params, 1.0f))
+	{
+		return;
+	}
 
 	if (_panorama_source != source)
 	{
@@ -4708,7 +4758,9 @@ void texture_state::draw_panorama(ui::draw_context& rc, const pointi offset, con
 		_panorama_rendered = true;
 	}
 
-	rc.draw_texture(_panorama_tex, media_bounds.offset(offset));
+	// Bilinear rather than the default point: the destination is normally the viewport exactly, but
+	// the budget can clamp it, and a clamped frame magnified with point sampling is blocky.
+	rc.draw_texture(_panorama_tex, media_bounds.offset(offset), 1.0f, ui::texture_sampler::bilinear);
 }
 
 
@@ -4776,11 +4828,15 @@ void display_state_t::populate(const view_state& state)
 		// is the only one that can be looked around.
 		if (declares_equirectangular())
 		{
+			const auto md = _item1->metadata();
 			const auto path = _item1->path();
-			const auto source = _item1->metadata()->dimensions();
+			const auto source = md->dimensions();
 
-			if (panorama_item(path, source))
+			panorama_item(path, source);
+
+			if (!_common._panorama.resolved && !_panorama_read_queued)
 			{
+				_panorama_read_queued = true;
 				const auto weak = weak_from_this();
 
 				_async.queue_async(async_queue::load, [weak, path, source, &async = _async]

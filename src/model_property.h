@@ -124,11 +124,15 @@ namespace prop
 
 		bool operator==(const panorama_geometry&) const noexcept = default;
 
+		// Every member arrives straight from the file as a 32-bit integer, so the two sums are widened:
+		// adding two declarations near the top of the range is signed overflow, and a wrapped negative
+		// would pass the bound this test exists to enforce.
 		bool is_valid() const noexcept
 		{
 			return full_width > 0 && full_height > 0 && cropped_width > 0 && cropped_height > 0 &&
 				cropped_left >= 0 && cropped_top >= 0 &&
-				cropped_left + cropped_width <= full_width && cropped_top + cropped_height <= full_height;
+				static_cast<int64_t>(cropped_left) + cropped_width <= full_width &&
+				static_cast<int64_t>(cropped_top) + cropped_height <= full_height;
 		}
 
 		// A writer that declared equirectangular and no crop. The pixels are taken to span the full

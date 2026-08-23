@@ -509,6 +509,26 @@ static void should_place_a_partial_panorama_on_the_sphere()
 	// A crop that runs off the full panorama is not a declaration at all.
 	const prop::panorama_geometry impossible{4000, 2000, 3900, 0, 400, 2000};
 	assert_equal(false, impossible.is_valid(), "a crop past the edge declares nothing");
+
+	// A file that closes the circle covers all of it. Writers round these numbers, so one a pixel
+	// short of the full turn is still seamless - and it has to be *covered* to the full turn, not
+	// merely blended across, or the join shows a hairline of background instead of a picture.
+	const prop::panorama_geometry rounded{4000, 2000, 0, 800, 3999, 400};
+	assert_equal(true, panorama_wraps_longitude(rounded), "a pixel short of the turn still closes it");
+
+	constexpr sized square{600.0, 600.0};
+	panorama_view seam_view;
+	seam_view.reset(rounded);
+
+	const auto wrapped = panorama_shader_params(rounded, seam_view, square);
+	assert_equal(1.0f, wrapped.u_scale, "so its coverage is the whole turn");
+
+	// And a genuinely partial file is still scaled by its own crop, or half a sphere would be
+	// stretched across all of it.
+	const auto strip_half = prop::panorama_geometry{4000, 2000, 0, 800, 2000, 400};
+	assert_equal(false, panorama_wraps_longitude(strip_half), "half a turn does not close the circle");
+	assert_equal(2.0f, panorama_shader_params(strip_half, seam_view, square).u_scale,
+	             "and it covers half of what a full file would");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -751,7 +771,8 @@ static void should_look_around_without_choosing_a_scale()
 }
 
 static void should_accelerate_pan_from_drag_origin()
-{	const auto accelerated = df::zoom_view_state::accelerate_pan({3.0, 4.0}, 10.0);
+{
+	const auto accelerated = df::zoom_view_state::accelerate_pan({3.0, 4.0}, 10.0);
 	assert_zoom_near(4.5, accelerated.X, "accelerated pan x");
 	assert_zoom_near(6.0, accelerated.Y, "accelerated pan y");
 
@@ -1614,9 +1635,11 @@ static void should_edit_single_line_text()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-// The Windows date picker was the only platform control left in the UI: it ignores the app's
+// The Windows date picker is the only platform control left in the UI: it ignores the app's
 // scaling and theme and has no Linux counterpart. Its replacement is a segmented field, and the
-// segments, the typing and the stepping are arithmetic that can be pinned without a window.
+// segments, the typing and the stepping are arithmetic that can be pinned without a window. Only
+// the model ships here - ui::date_control still creates the platform picker, and drawing the field
+// is 1.27.3's - so this pins the arithmetic ahead of the element that will use it.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 static void should_edit_a_segmented_date()
 {

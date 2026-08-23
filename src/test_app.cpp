@@ -1915,7 +1915,8 @@ static void should_land_on_what_followed_a_removed_set()
 // design.md: "Only photos, video, and audio take part, so a folder, document, or archive is stepped
 // over rather than stalling the sequence". The fixture folder holds all three kinds of passenger.
 static void should_step_over_items_that_cannot_play()
-{	browsing_fixture f;
+{
+	browsing_fixture f;
 
 	const auto archive = f.find("benchmarks.zip");
 	const auto document = f.find("place.json");
@@ -2266,10 +2267,23 @@ static void should_offer_the_items_menu_at_every_scroll_position()
 		             "and Show items in subfolders, which was on no toolbar at all");
 	}
 
-	// Invoking the first entry is what scrolls, and only when there is somewhere to scroll to.
+	// Invoking the first entry is what scrolls. A menu entry performs its command whether or not it
+	// is enabled - dimming is what the user is shown, not a second gate - so the scroll runs here
+	// even though this menu was built at the top.
 	const auto at_top_menu = items_scroll_menu(state, true, scroll);
 	at_top_menu.front()->invoke();
 	assert_equal(1, scrolled, "the entry performs the scroll the click used to");
+
+	// A separator is only ever between two entries: a double rule, or a rule under the last entry,
+	// is what an unresolved command silently turns into.
+	assert_equal(false, at_top_menu.front() == nullptr, "the menu does not open on a separator");
+	assert_equal(false, at_top_menu.back() == nullptr, "and does not end on one");
+
+	for (auto i = 1u; i < at_top_menu.size(); ++i)
+	{
+		assert_equal(false, at_top_menu[i] == nullptr && at_top_menu[i - 1] == nullptr,
+		             "no two separators are adjacent");
+	}
 }
 
 // design.md "Navigation and search" specifies the address box as an editing session with a

@@ -669,6 +669,49 @@ static void should_read_a_date_pack_written_by_a_later_release()
 	             "and the record after it is not knocked out of alignment");
 }
 
+// A pack can be structurally perfect and still restore nothing: a later release may name a date
+// source this build has no member for, and every group in the body may carry only that. Recording
+// "a pack was read" rather than "a date was restored" would then discard the plain date records
+// written beside the pack for exactly this case, and the row would answer with no date at all -
+// the same defect as a refused pack, one level further down.
+static void should_fall_back_when_a_pack_names_no_source_this_build_knows()
+{
+	constexpr uint64_t unknown_source = 1ull << 40;
+
+	df::blob body;
+	body.push_back(2); // the pack version this build writes
+	body.push_back(1); // one group
+	body.push_back(18); // this build's own group stride
+	body.push_back(8); // and its own trailer
+
+	const auto push = [&body](const auto v)
+	{
+		const auto* const src = std::bit_cast<const uint8_t*>(&v);
+		body.insert(body.end(), src, src + sizeof(v));
+	};
+
+	push(unknown_source);
+	push(df::date_t(2031, 7, 1, 12, 0, 0).to_int64());
+	push(static_cast<int16_t>(prop::date_pack::no_offset));
+	push(static_cast<uint64_t>(0)); // no overflow
+
+	metadata_packer packer;
+	// Production order: the copies an older build reads are written before the pack.
+	packer.write(prop::created_exif.id, df::date_t(2011, 2, 3));
+	packer.write_prop_id(prop::dates_packed.id);
+	packer.write_len(body.size());
+	packer._data.insert(packer._data.end(), body.begin(), body.end());
+
+	const auto unpacked = std::make_shared<prop::item_metadata>();
+	metadata_unpacker unpacker(packer.cdata());
+	unpacker.unpack(unpacked);
+
+	assert_equal(df::date_t(2011, 2, 3), unpacked->dates.original(),
+	             "the row answers from the record written beside the pack");
+	assert_equal(true, unpacked->dates.has_source(prop::date_source::legacy_original),
+	             "at legacy authority, so a re-scan still replaces it");
+}
+
 static void should_store_webservice_results()
 {
 	const auto index_path = _temps.next_path();
@@ -1277,7 +1320,8 @@ static void should_report_a_rotated_copy_to_presence()
 	             "presence grades a turned copy the same way duplicate search would");
 }
 
-static void should_require_equal_size_for_duplicate_crc(){
+static void should_require_equal_size_for_duplicate_crc()
+{
 	df::index_file_item first;
 	first.ft = files::file_type_from_name("first.jpg");
 	first.name = str::cache("first.jpg");
@@ -2514,6 +2558,8 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should write dates an older build can read"s, should_write_dates_an_older_build_can_read);
 	tests.add("Should read a date pack written by a later release"s,
 	          should_read_a_date_pack_written_by_a_later_release);
+	tests.add("Should fall back when a date pack names no source this build knows"s,
+	          should_fall_back_when_a_pack_names_no_source_this_build_knows);
 	tests.add("Should store webservice results"s, should_store_webservice_results);
 	tests.add("Should bound webservice cache"s, should_bound_webservice_cache);
 	tests.add("Should detect duplicates"s, should_detect_duplicates);

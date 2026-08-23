@@ -191,7 +191,9 @@ try {
         Check = {
             foreach ($d in ($docFiles | Where-Object { $_.Name -ne 'third-party.md' })) {
                 $text = Get-Content $d.FullName -Raw
-                foreach ($m in [regex]::Matches($text, '(?<![\w./-])(?:\.\./)*(src/[A-Za-z0-9_./-]+\.(?:h|cpp))')) {
+                # Longest extension first, and a boundary after it: bare 'h' would otherwise claim
+                # the '.h' of a '.hlsl' shader and report the truncation as a missing file.
+                foreach ($m in [regex]::Matches($text, '(?<![\w./-])(?:\.\./)*(src/[A-Za-z0-9_./-]+\.(?:hlsli|hlsl|cpp|h))(?![\w])')) {
                     $p = $m.Groups[1].Value
                     if (-not (Test-Path $p)) { "$($d.Name): references missing $p" }
                 }

@@ -75,17 +75,6 @@ struct clipboard_formats
 	static FORMATETC DropShellItems;
 };
 
-void __cdecl debug_printf(const char* fmt, ...)
-{
-	char buffer[256];
-	va_list ap;
-
-	va_start(ap, fmt);
-	_vsnprintf_s(buffer, sizeof(buffer), std::bit_cast<const char*>(fmt), ap);
-	OutputDebugStringA(buffer);
-	va_end(ap);
-}
-
 std::string win32_to_string(const IID& iid)
 {
 	LPOLESTR sz = nullptr;

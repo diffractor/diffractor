@@ -211,6 +211,25 @@ namespace ui
 		return format == texture_format::RGB || format == texture_format::ARGB;
 	}
 
+	// What a backend needs to invert a destination pixel back onto the sphere. Packed to the layout
+	// pano_project.hlsli declares, and built by panorama_shader_params in ui_panorama.h so the
+	// software rasteriser and the shader are handed the same camera.
+	struct panorama_params
+	{
+		float yaw = 0.0f;
+		float pitch = 0.0f;
+		float tan_half_fov = 0.0f;
+		float aspect = 1.0f;
+
+		float longitude_left = 0.0f;
+		float u_scale = 1.0f;
+		float latitude_top = 0.0f;
+		float v_scale = 1.0f;
+
+		// Decides the addressing mode, not the arithmetic: only the blend at the join reads across it.
+		bool wraps = false;
+	};
+
 	// Selects the YUV->RGB conversion applied to NV12/P010 textures. A single value
 	// encodes both the colour matrix (BT.601/709/2020) and the signal range: the
 	// *_limited variants are the usual video ranges (Y 16-235), rec601_full is
@@ -1321,6 +1340,15 @@ namespace ui
 		virtual texture_update_result update(sizei dims, texture_format format, orientation orientation,
 		                                     const uint8_t* pixels, size_t stride, size_t buffer_size) = 0;
 
+		// Uploads with a full mip chain, for a source that will be minified a long way - a projected
+		// panorama samples thousands of pixels of sphere into one viewport. Separate from update()
+		// because every other texture in the app is drawn at or near its own size and would pay for a
+		// chain it never reads. A backend with no answer refuses, and the caller rasterises instead.
+		virtual texture_update_result update_mipped(const const_surface_ptr& surface)
+		{
+			return texture_update_result::failed;
+		}
+
 		virtual bool is_valid() const = 0;
 	};
 
@@ -1398,6 +1426,15 @@ namespace ui
 		                          texture_sampler sampler) = 0;
 		virtual void draw_texture(const texture_ptr& t, const quadd& dst, recti src, float alpha,
 		                          texture_sampler sampler, const texture_transform& transform) = 0;
+
+		// Draws an equirectangular panorama as the sphere it describes, through the camera in params.
+		// False when the backend has no projection of its own, which is the CPU renderer's answer: the
+		// caller then rasterises it in software. Optional rather than pure so a backend gains the
+		// projection by implementing it, never by being obliged to.
+		virtual bool draw_panorama(const texture_ptr& t, recti dst, const panorama_params& params, float alpha)
+		{
+			return false;
+		}
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
 		virtual void draw_edge_shadows(float alpha) = 0;
 

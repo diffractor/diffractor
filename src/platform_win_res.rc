@@ -131,6 +131,7 @@ IDR_SHADER_YUV          SHADER                  "yuv_ps.cso"
 IDR_SHADER_YUV_BICUBIC  SHADER          "yuv_bicubic_ps.cso"
 IDR_SHADER_FONT         SHADER                  "font_ps.cso"
 IDR_SHADER_CIRCLE       SHADER                "circle_ps.cso"
+IDR_SHADER_PANO         SHADER                  "pano_ps.cso"
 
 
 /////////////////////////////////////////////////////////////////////////////
