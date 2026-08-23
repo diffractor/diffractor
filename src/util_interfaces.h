@@ -13,8 +13,6 @@
 
 #include <variant>
 
-class LoadJob;
-
 enum class view_type
 {
 	none,
@@ -35,6 +33,11 @@ enum class repeat_mode
 	repeat_all,
 	repeat_one
 };
+
+constexpr bool is_valid_repeat_mode(const uint32_t value) noexcept
+{
+	return value <= static_cast<uint32_t>(repeat_mode::repeat_one);
+}
 
 // design.md "Play and Slideshow": what a tick does when the displayed item reaches its end.
 enum class playback_advance

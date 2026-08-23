@@ -1275,10 +1275,21 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	}
 
 	static constexpr int io_buffer_size = df::two_fifty_six_k;
-	auto* const io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
+	auto* io_buffer = static_cast<uint8_t*>(av_mallocz(io_buffer_size + 16));
+	auto* fc = io_buffer ? avformat_alloc_context() : nullptr;
+	auto* pb = fc ? avio_alloc_context(io_buffer, io_buffer_size, 0, file.get(), av_read, nullptr, av_seek) : nullptr;
 
-	auto* fc = avformat_alloc_context();
-	auto* pb = avio_alloc_context(io_buffer, io_buffer_size, 0, file.get(), av_read, nullptr, av_seek);
+	if (!pb)
+	{
+		// close() frees fc->pb itself, which is correct only while fc->pb is the context allocated
+		// here. Handing avformat_open_input a null pb would let FFmpeg open the file and own the
+		// AVIOContext, and the teardown would then free it twice.
+		if (fc) avformat_free_context(fc);
+		av_freep(&io_buffer);
+		df::log(__FUNCTION__, "could not allocate the format context");
+		return false;
+	}
+
 	fc->pb = pb;
 	fc->flags |= AVFMT_FLAG_GENPTS;
 
@@ -1520,6 +1531,16 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 	{
 		video_stream = fc->streams[video_stream_index];
 
+		// Same ceiling av_decode_still applies, for the same reason: a container is free to declare
+		// an implausible frame size, and the index walk opens every av file it finds. Refused before
+		// anything is allocated for it, including the hardware device context below.
+		if (video_stream && video_stream->codecpar &&
+			reject_over_budget_source(nullptr, {video_stream->codecpar->width, video_stream->codecpar->height},
+			                          "ffmpeg video"))
+		{
+			video_stream = nullptr;
+		}
+
 		if (video_stream && video_stream->codecpar && video_codec)
 		{
 			auto* vc = avcodec_alloc_context3(video_codec);
@@ -1600,6 +1621,10 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 				// frame duration or a priming-sample adjustment, and leaves both unset.
 				vc->pkt_timebase = video_stream->time_base;
 				vc->framerate = av_guess_frame_rate(fc, fc->streams[video_stream_index], nullptr);
+
+				// codecpar can understate what the bitstream then asks for, so the ceiling the check
+				// above applied is restated where the decoder itself enforces it.
+				if (df::max_decode_bytes > 0) vc->max_pixels = df::max_decode_bytes / 4;
 
 				if (avcodec_open2(vc, video_codec, nullptr) == 0)
 				{
@@ -2687,6 +2712,19 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 		{
 			frame = sw_frame;
 		}
+		else
+		{
+			// Left as a hardware frame, sws would refuse the pixel format and answer null - a black
+			// picture with nothing in the log to attribute it to.
+			if (!_hw_download_failure_logged)
+			{
+				_hw_download_failure_logged = true;
+				df::log(__FUNCTION__, "could not download the hardware frame");
+			}
+
+			av_frame_free(&sw_frame);
+			return false;
+		}
 	}
 
 	const sizei src_extent = {frame->width, frame->height};
@@ -2707,7 +2745,11 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 			const int linesize[4] = {static_cast<int>(surface_out->stride()), 0, 0, 0};
 
 			const auto ret = sws_scale(_scaler, frame->data, frame->linesize, 0, src_extent.cy, data, linesize);
-			success = ret > 0;
+			// alloc does not zero, so a short conversion would publish uninitialised heap below the
+			// rows it did convert. The three sibling call sites require the full height for the same reason.
+			success = ret == src_extent.cy;
+
+			if (!success) df::log(__FUNCTION__, std::format("sws_scale converted {} of {} rows", ret, src_extent.cy));
 		}
 	}
 

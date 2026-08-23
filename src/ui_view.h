@@ -11,8 +11,6 @@
 
 #pragma once
 
-class ui_element_render;
-class ui_element_state;
 class view_controller;
 class view_element;
 class view_elements;

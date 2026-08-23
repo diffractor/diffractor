@@ -96,10 +96,6 @@ public:
 	const std::shared_ptr<selected_location_t>& location() const { return _location; }
 	void update_location(const location_t& loc);
 
-	void broadcast_event(const view_element_event& event) const override
-	{
-	}
-
 private:
 	void rebuild_markers();
 	void select_default_location();

@@ -1108,12 +1108,26 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					info.crc32c = old_first->crc32c.load();
 					info.phash = old_first->phash.load();
 
-					if (old_first->file_modified != df::date_t(file_first->attributes.modified) ||
-						old_first->size.to_int64() != static_cast<int64_t>(file_first->attributes.size))
+					// The bytes changed, so a hash of the previous bytes is no longer a description of
+					// this file. Clearing it is what asks the displayed-item worker to compute it again;
+					// carrying it forward would report an edited file and an untouched copy as identical.
+					//
+					// A node built from the database carries no filesystem stamp at all - db_item_t has
+					// neither a modified time nor a size - so for those the question is answered by the
+					// scan stamp instead, which is persisted and is the same test needs_scan_impl makes.
+					// Reading the absent stamp as a difference wiped every cached checksum on the first
+					// validation of every launch; reading it as a match would keep a stale one forever.
+					const auto fs_modified = df::date_t(file_first->attributes.modified);
+					const auto old_modified = old_first->file_modified.load();
+
+					const auto content_changed = old_modified.is_valid()
+						                             ? (old_modified != fs_modified ||
+							                             old_first->size.to_int64() !=
+							                             static_cast<int64_t>(file_first->attributes.size))
+						                             : (old_first->metadata_scanned.load() < fs_modified);
+
+					if (content_changed)
 					{
-						// The bytes changed, so a hash of the previous bytes is no longer a description of
-						// this file. Clearing it is what asks the displayed-item worker to compute it again;
-						// carrying it forward would report an edited file and an untouched copy as identical.
 						info.crc32c = 0;
 					}
 
@@ -2798,6 +2812,11 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 void index_state::scan_item(const df::item_element_ptr& i, const bool load_thumb, const bool scan_if_offline)
 {
 	const auto node = validate_folder(i->folder(), true, platform::now());
+
+	// validate_folder answers null for a folder never indexed that cannot now be enumerated - an
+	// ejected card, a dropped share, a directory that grants write but not list.
+	if (!node.folder) return;
+
 	scan_item(node.folder, i->path(), load_thumb, load_thumb && i->should_load_thumbnail(), i->has_thumb(),
 	          scan_if_offline, i, true, i->file_type());
 }

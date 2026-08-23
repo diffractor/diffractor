@@ -4140,6 +4140,7 @@ void app_frame::initialise_commands()
 
 					const auto po_entries = load_po(lang_path);
 					tt.load_lang(lang_path.name(), po_entries);
+					register_file_group_spellings();
 					language_changed(lang_code);
 				};
 

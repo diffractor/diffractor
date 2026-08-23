@@ -795,9 +795,11 @@ namespace df
 			return size > other;
 		}
 
+		// Compare in the wider type: truncating size to int reinterprets a large span as a negative
+		// number, and this overload is the only bound in front of several unchecked parser reads.
 		bool operator>(const int other) const
 		{
-			return static_cast<int>(size) > other;
+			return other < 0 || size > static_cast<size_t>(other);
 		}
 
 		const uint8_t* begin() const
@@ -856,7 +858,7 @@ namespace df
 
 		bool operator>(const int other) const
 		{
-			return static_cast<int>(size) > other;
+			return other < 0 || size > static_cast<size_t>(other);
 		}
 
 		span sub(const size_t pos) const

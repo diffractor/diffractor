@@ -649,6 +649,9 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tags_run]->enable = view_mode == view_type::tags && !view_processing && _view_tags &&
 		_view_tags->can_run();
 	_commands[commands::tool_adjust_date]->enable = can_save_metadata;
+	// A machine with no writer cannot burn at all, and design.md is explicit that a capability the
+	// platform lacks is absent rather than dimmed - dimming would say "not now" forever.
+	_commands[commands::tool_burn]->visible = has_burner;
 	_commands[commands::tool_burn]->enable = has_selection && has_burner;
 	_commands[commands::tool_convert]->enable = is_media_or_items_view && photos_only_result.success();
 	_commands[commands::tool_copy_to_folder]->enable = can_process_local_items;

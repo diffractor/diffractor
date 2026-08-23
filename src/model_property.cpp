@@ -411,6 +411,9 @@ std::vector<prop::prop_scope> prop::search_scopes()
 		// spelling a user sees for the second one.
 		dates_packed,
 		panorama,
+		// Registered as a name and never stored against an item, so any value the user types for it
+		// is compared against nothing.
+		encoding_tool,
 	};
 
 	std::vector<prop_scope> result;
@@ -443,12 +446,20 @@ std::vector<prop::prop_scope> prop::key_scopes()
 	// `date.pack` is the storage the three dates live in rather than a date anyone asks for, and
 	// `digitized` is the old spelling of the concept now called `created` - offering both teaches a
 	// fourth date that no longer exists. `panorama` has no arm in has_type for the same reason it has
-	// none in compare_val; `@panorama` is the spelling that answers.
+	// none in compare_val; `@panorama` is the spelling that answers. The rest below are names with no
+	// stored value behind them, so `with:` would answer no and `without:` would answer the whole
+	// collection - and `null` is not a scope at all.
 	const std::unordered_set<const key*> exclusions
 	{
 		created_digitized,
 		dates_packed,
 		panorama,
+		null,
+		crc32c,
+		encoding_tool,
+		media_category,
+		streams,
+		unique_id,
 	};
 
 	std::vector<prop_scope> result;
@@ -528,7 +539,8 @@ search_presence_mask prop::item_metadata::calc_search_presence() const
 	if (!is_null(dates.created())) result.types |= prop::created_utc.search_presence_bit;
 	if (is_panorama()) result.types |= prop::panorama.search_presence_bit;
 	if (!is_null(year)) result.types |= prop::year.search_presence_bit;
-	if (orientation != ui::orientation::top_left) result.types |= prop::orientation.search_presence_bit;
+	if (orientation != ui::orientation::top_left && orientation != ui::orientation::none)
+		result.types |= prop::orientation.search_presence_bit;
 	if (coordinate.is_valid()) result.types |= latitude.search_presence_bit;
 	if (!is_null(altitude)) result.types |= prop::altitude.search_presence_bit;
 	if (!is_null(gps_speed)) result.types |= prop::gps_speed.search_presence_bit;

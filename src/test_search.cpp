@@ -1661,6 +1661,148 @@ static void should_distinguish_with_without_scope()
 	           .is_not_match("with:rating");
 }
 
+// The scope spells the polarity, but everything else the tokenizer read belongs to the term. A
+// leading `-` inverts, and an `or` joins - both were being discarded because the modifier was
+// rebuilt from the polarity alone rather than carried.
+static void should_carry_modifiers_through_with_and_without()
+{
+	// `-with:` is the same question as `without:`, and `-without:` the same as `with:`.
+	prop_test().rate(5)
+	           .is_not_match("-with:rating")
+	           .is_match("-without:rating");
+
+	prop_test().genre("Jazz")
+	           .is_match("-with:rating")
+	           .is_not_match("-without:rating");
+
+	// `or` must union the two, not intersect them: an item carrying only one of the pair matches.
+	prop_test().genre("Jazz")
+	           .is_match("with:genre or with:rating");
+
+	prop_test().rate(5)
+	           .is_match("with:genre or with:rating");
+
+	// And the same for a location term, which takes its own arm.
+	prop_test().rate(5)
+	           .is_match("-with:location")
+	           .is_not_match("-without:location");
+}
+
+// `with:` completes from prop::key_scopes(), so a name on that list is a promise that asking for it
+// answers. These are the arms that were missing, and the names that had no stored value behind them.
+static void should_answer_every_offered_with_scope()
+{
+	prop_test().orientation(ui::orientation::left_top)
+	           .is_match("with:orientation")
+	           .is_not_match("without:orientation");
+
+	// top_left is the default and none means nothing was recorded, so neither is an orientation
+	// anyone asked for - the test that answered `!= left_top` had these exactly backwards.
+	prop_test().orientation(ui::orientation::top_left).rate(3)
+	           .is_not_match("with:orientation")
+	           .is_match("without:orientation");
+
+	prop_test().orientation(ui::orientation::none).rate(3)
+	           .is_not_match("with:orientation")
+	           .is_match("without:orientation");
+
+	prop_test().dimensions(4000, 3000)
+	           .is_match("with:megapixels")
+	           .is_not_match("without:megapixels");
+
+	prop_test().rate(3)
+	           .is_not_match("with:megapixels")
+	           .is_match("without:megapixels");
+
+	prop_test().audio_channels(2)
+	           .is_match("with:audio.channels")
+	           .is_not_match("without:audio.channels");
+
+	const auto scopes = prop::key_scopes();
+	const auto offered = [&scopes](const std::string_view name)
+	{
+		return std::ranges::any_of(scopes, [name](const prop::prop_scope& s) { return s.scope == name; });
+	};
+
+	assert_equal(true, offered("orientation"), "an answerable scope stays on the list");
+	assert_equal(true, offered("megapixels"), "megapixels answers and stays on the list");
+	assert_equal(true, offered("audio.channels"), "audio.channels answers and stays on the list");
+
+	// Each of these is a registered name with nothing stored behind it, so `with:` would answer no
+	// for every item and `without:` would answer the whole collection.
+	assert_equal(false, offered("null"), "null is not a scope");
+	assert_equal(false, offered("encoding.tool"), "encoding.tool is never stored");
+	assert_equal(false, offered("media.category"), "media.category is never stored");
+	assert_equal(false, offered("streams"), "streams is never stored");
+	assert_equal(false, offered("id"), "id is never stored");
+}
+
+// format_term writes the media type's display name, which is translated, and the vocabulary offers
+// the plural. Anything the address box can show has to be something the parser reads back, because
+// a term that fails to re-parse is dropped silently - and the search is persisted as text.
+//
+// The plural is what makes this discriminating: the suite runs in English, where a display name is
+// its own untranslated name, so only the plural exercises the same fallback a translated catalog
+// would take.
+static void should_read_back_a_media_type_term()
+{
+	const auto* const photo = &file_group::photo;
+
+	assert_equal(true, parse_file_group("photo") == photo, "the canonical name parses");
+	assert_equal(true, parse_file_group("photos") == photo, "the plural the vocabulary offers parses");
+	assert_equal(true, parse_file_group(photo->display_name(false)) == photo,
+	             "the display name format_term writes parses");
+	assert_equal(true, parse_file_group(photo->display_name(true)) == photo,
+	             "the plural display name parses");
+	assert_equal(true, parse_file_group("PHOTOS") == photo, "the match does not depend on case");
+	assert_equal(true, parse_file_group("") == nullptr, "an empty term names no group");
+	assert_equal(true, parse_file_group("not-a-group") == nullptr, "an unknown term names no group");
+
+	// The whole round trip: a media type set by a sidebar click, written out as the address box
+	// text that is persisted, and read back on the next launch.
+	df::search_t search;
+	search.add_media_type(photo);
+	const auto text = search.text();
+
+	assert_equal(true, df::search_t::parse(text).has_media_type(),
+	             std::format("a formatted media type survives a re-parse ('{}')", text));
+
+	prop_test().is_match(text);
+	prop_test().media_type("test.mp4").is_not_match(text);
+	prop_test().is_match("@photos");
+	prop_test().media_type("test.mp4").is_not_match("@photos");
+}
+
+// Every part of the query has to be found: the result test counts one hit per part, so a part that
+// matched must move on to the next part rather than ending the walk. And the highlights it hands
+// back have to be in text order, because both renderers walk the text forwards and drop anything
+// behind the position they have reached.
+static void should_complete_on_every_word()
+{
+	ui::match_highlights m;
+
+	const std::vector<std::string_view> two = {"my", "pictures"};
+	assert_equal(true, find_auto_complete(two, "c:\\users\\zac\\my pictures", true, m),
+	             "both words present is a match");
+	assert_equal(static_cast<size_t>(2), m.size(), "one highlight per query part");
+
+	// Typed in the other order, which is what the user does when they remember the distinctive word
+	// first. The highlights must still come back ascending.
+	const std::vector<std::string_view> reversed = {"pictures", "my"};
+	assert_equal(true, find_auto_complete(reversed, "c:\\users\\zac\\my pictures", true, m),
+	             "word order does not decide the match");
+	assert_equal(static_cast<size_t>(2), m.size(), "still one highlight per query part");
+	assert_equal(true, m[0].offset < m[1].offset, "the highlights are in text order");
+
+	const std::vector<std::string_view> missing = {"my", "videos"};
+	assert_equal(false, find_auto_complete(missing, "c:\\users\\zac\\my pictures", true, m),
+	             "one word absent is not a match");
+
+	const std::vector<std::string_view> one = {"pictures"};
+	assert_equal(true, find_auto_complete(one, "c:\\users\\zac\\my pictures", true, m),
+	             "a single word still matches");
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Prediction and completion
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1866,6 +2008,10 @@ void register_search_tests(view_state& state, test_registry& tests)
 
 	// Issue #58 - search with/without scope
 	tests.add("Should distinguish with/without scope"s, should_distinguish_with_without_scope);
+	tests.add("Should carry modifiers through with and without"s, should_carry_modifiers_through_with_and_without);
+	tests.add("Should answer every offered with scope"s, should_answer_every_offered_with_scope);
+	tests.add("Should read back a media type term"s, should_read_back_a_media_type_term);
+	tests.add("Should complete on every word"s, should_complete_on_every_word);
 
 	// One row per query/date pair. The name carries both so a failure names the case and
 	// /test: can select a single row.

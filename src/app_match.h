@@ -29,6 +29,8 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 {
 	std::vector<str::part_t> found_subs;
 
+	// Every part has to be found: the result test below counts one hit per query part, so a part
+	// that matches must move on to the next part rather than ending the walk.
 	for (const auto& q : queries)
 	{
 		if (!q.empty())
@@ -52,7 +54,6 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 					str::normalize_for_compare(text[match_pos]) == str::normalize_for_compare(q[0]))
 				{
 					found_subs.emplace_back(match_pos, 1);
-					break;
 				}
 			}
 			else
@@ -62,7 +63,6 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 				if (found != std::string_view::npos)
 				{
 					found_subs.emplace_back(found, q.size());
-					break;
 				}
 			}
 		}
@@ -72,6 +72,14 @@ inline bool find_auto_complete(const std::vector<std::string_view>& queries, con
 
 	if (is_match)
 	{
+		// Both text renderers walk the string forwards and consume highlights in order, dropping any
+		// whose offset is already behind them. found_subs is built in query order, which is not text
+		// order the moment the user types the words in a different order from the one they appear in.
+		std::ranges::sort(found_subs, [](const str::part_t& l, const str::part_t& r)
+		{
+			return l.offset < r.offset;
+		});
+
 		match = std::move(found_subs);
 	}
 

@@ -167,7 +167,7 @@ BEGIN
             VALUE "FileDescription", "Diffractor"
             VALUE "FileVersion", "1.27.2.1305"
             VALUE "InternalName", "Diffractor.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2024 Diffractor - Zac Walker"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Diffractor - Zac Walker"
             VALUE "OriginalFilename", "Diffractor.exe"
             VALUE "ProductName", "Diffractor"
             VALUE "ProductVersion", "1.27.2.1305"

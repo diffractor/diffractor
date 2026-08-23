@@ -1037,36 +1037,29 @@ void df::search_t::parse_part(const search_part& part)
 
 	if (type == prop::null)
 	{
-		if (str::icmp(part.scope, "without") == 0 || str::icmp(part.scope, tt.query_without) == 0)
+		const auto is_with = str::icmp(part.scope, "with") == 0 || str::icmp(part.scope, tt.query_with) == 0;
+		const auto is_without = str::icmp(part.scope, "without") == 0 || str::icmp(part.scope, tt.query_without) == 0;
+
+		if (is_with || is_without)
 		{
+			// The scope spells the polarity and a leading `-` inverts it. Everything else the tokenizer
+			// read - the or/and join and the grouping parentheses - belongs to the term either way, so
+			// the modifier is carried rather than rebuilt from the polarity alone.
+			auto mods = part.modifier;
+			mods.positive = part.modifier.positive == is_with;
+
 			if (str::icmp(part.term, "location") == 0)
 			{
-				_terms.emplace_back(search_term_type::has_location, search_term_modifier(false));
+				_terms.emplace_back(search_term_type::has_location, mods);
 				return;
 			}
 
-			const auto* const without_type = prop::from_prefix(part.term);
+			const auto* const scope_type = prop::from_prefix(part.term);
 
 			// an unresolvable scope would build a null-key has_type term, which inverts to "match everything"
-			if (without_type != prop::null)
+			if (scope_type != prop::null)
 			{
-				_terms.emplace_back(search_term(without_type, false));
-				return;
-			}
-		}
-		if (str::icmp(part.scope, "with") == 0 || str::icmp(part.scope, tt.query_with) == 0)
-		{
-			if (str::icmp(part.term, "location") == 0)
-			{
-				_terms.emplace_back(search_term_type::has_location, search_term_modifier(true));
-				return;
-			}
-
-			const auto* const with_type = prop::from_prefix(part.term);
-
-			if (with_type != prop::null)
-			{
-				_terms.emplace_back(search_term(with_type, true));
+				_terms.emplace_back(search_term(scope_type, mods));
 				return;
 			}
 		}
@@ -1089,7 +1082,9 @@ void df::search_t::parse_part(const search_part& part)
 
 	if (part.scope == "@")
 	{
-		static const hash_map<std::string_view, search_term_type, ihash, ieq> pre_title_stop_words
+		// Rebuilt per call rather than held in a function static: the tt.* entries are views into
+		// the loaded catalog, and switching language in-session rewrites the buffers behind them.
+		const hash_map<std::string_view, search_term_type, ihash, ieq> pre_title_stop_words
 		{
 			{tt.query_duplicates, search_term_type::duplicate},
 			{tt.query_duplicates_alt1, search_term_type::duplicate},
@@ -2108,8 +2103,12 @@ bool has_type(const prop::key_ref t, const df::index_file_item& file)
 		if (t == prop::raw_file_name) return !prop::is_null(md->raw_file_name);
 		if (t == prop::pixel_format) return !prop::is_null(md->pixel_format);
 		if (t == prop::bitrate) return !prop::is_null(md->bitrate);
-		if (t == prop::orientation) return md->orientation != ui::orientation::left_top;
+		// top_left is the default and none means nothing was recorded, so neither is an orientation
+		// anyone asked for. This is the same test the packer and the presence bit apply.
+		if (t == prop::orientation)
+			return md->orientation != ui::orientation::top_left && md->orientation != ui::orientation::none;
 		if (t == prop::dimensions) return !prop::is_null(md->width);
+		if (t == prop::megapixels) return !prop::is_null(md->width);
 		if (t == prop::year) return !prop::is_null(md->year);
 		if (t == prop::rating) return !prop::is_null(md->rating);
 		if (t == prop::season) return !prop::is_null(md->season);
@@ -2135,7 +2134,11 @@ bool has_type(const prop::key_ref t, const df::index_file_item& file)
 		if (t == prop::video_codec) return !prop::is_null(md->video_codec);
 		if (t == prop::audio_sample_rate) return !prop::is_null(md->audio_sample_rate);
 		if (t == prop::audio_sample_type) return !prop::is_null(md->audio_sample_type);
+		if (t == prop::audio_channels) return md->audio_channels != 0;
 		if (t == prop::audio_codec) return !prop::is_null(md->audio_codec);
+		if (t == prop::altitude) return md->altitude != 0.0f;
+		if (t == prop::gps_speed) return md->gps_speed != 0.0f;
+		if (t == prop::doc_id) return !prop::is_null(md->doc_id);
 		if (t == prop::album_artist) return !prop::is_null(md->album_artist);
 		if (t == prop::artist) return !prop::is_null(md->artist);
 		if (t == prop::album) return !prop::is_null(md->album);

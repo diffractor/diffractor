@@ -334,6 +334,9 @@ struct file_tools_result
 
 file_group_ref file_group_from_index(int from_id);
 file_group_ref parse_file_group(const std::string& text);
+// Teaches parse_file_group the plural and current-language spellings of every media type. Called at
+// startup and again whenever a catalog is loaded, because format_term writes the translated name.
+void register_file_group_spellings();
 void load_file_types();
 file_tools_result scan_tools();
 void apply_tools(file_tools_result result);

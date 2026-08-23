@@ -2983,6 +2983,7 @@ bool app_frame::init(const std::string_view command_line_text)
 
 		const auto po_entries = load_po(lang_path);
 		tt.load_lang(lang_path.name(), po_entries);
+		register_file_group_spellings();
 	}
 
 	update_font_size();

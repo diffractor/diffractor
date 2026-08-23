@@ -114,7 +114,7 @@ VIAddVersionKey CompanyName "${PRODUCT_PUBLISHER}"
 VIAddVersionKey CompanyWebsite "${PRODUCT_WEB_SITE}"
 VIAddVersionKey FileVersion "${FILE_VERSION}"
 VIAddVersionKey FileDescription ""
-VIAddVersionKey LegalCopyright "Copyright (C) 2025 Zac Walker"
+VIAddVersionKey LegalCopyright "Copyright (C) 2026 Zac Walker"
 
 
 

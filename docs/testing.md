@@ -94,7 +94,7 @@ A test that drives the completion strategy must run the pass on a real worker th
 Recorded so they are not rediscovered as surprises:
 
 - `app_dup_report.cpp` is a read-only diagnostic whose logic lives entirely in an anonymous namespace; it mirrors the index's union-find rather than owning behavior.
-- `ui_dialog.h`, `ui_text_view.h` and `ui_plasma.h` have no coverage. The suite has no `ui::draw_context`, so anything whose only output is pixels on a real device is verified by eye.
+- `ui_dialog.h` and `ui_plasma.h` have no coverage. The suite has no `ui::draw_context`, so anything whose only output is pixels on a real device is verified by eye.
 - View-level behavior for `view_locate`, `view_tags`, `view_batch`, `view_items` and `view_media` is covered only through their planning helpers.
 - Nothing drives `view_state::tick` end to end; `calc_playback_advance` covers the decision, not the player calls around it.
 - Maker note decoding is exercised only on Canon. The other makes libexif handles reach the same call, but no fixture carries one.

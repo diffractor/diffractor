@@ -30,7 +30,6 @@ namespace df
 		has_type,
 		match_multiple,
 		match_flag,
-		match_label,
 		match_file_group,
 		match_date,
 		match_folder,

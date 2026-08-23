@@ -207,6 +207,9 @@ public:
 class av_scaler final : df::no_copy
 {
 	SwsContext* _scaler = nullptr;
+	// A download that fails fails for every later frame too, and this runs from a paint, so the
+	// report is made once rather than once a frame.
+	bool _hw_download_failure_logged = false;
 
 public:
 	~av_scaler() override;

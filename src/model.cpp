@@ -125,9 +125,18 @@ void display_state_t::load_compare_preview(const int elapsed_numerator, const in
 		const auto path1 = i1->path();
 		const auto path2 = i2->path();
 
+		// The pane these land in, not the hover popup's 256 square: a compare pane is half the media
+		// area, so the hover constant would upscale visibly. Decoding at the source's own size is
+		// the other end of the same mistake - two 4K frames per pointer move, past the texture budget.
+		const auto pane1 = st1->display_bounds().extent();
+		const auto pane2 = st2->display_bounds().extent();
+		const auto max_dim1 = pane1.is_empty() ? video_preview_size : pane1;
+		const auto max_dim2 = pane2.is_empty() ? video_preview_size : pane2;
+
 		_async.queue_media_preview(
 			[t = ui_owned(_async, shared_from_this()), path1, path2, st1 = ui_owned(_async, st1),
-				st2 = ui_owned(_async, st2), pos1, pos2, duration1, duration2](media_preview_state& decoder)
+				st2 = ui_owned(_async, st2), pos1, pos2, duration1, duration2, max_dim1, max_dim2](
+			media_preview_state& decoder)
 			{
 				if (decoder.open1(path1) &&
 					decoder.open2(path2))
@@ -135,8 +144,8 @@ void display_state_t::load_compare_preview(const int elapsed_numerator, const in
 					auto surface1 = std::make_shared<ui::surface>();
 					auto surface2 = std::make_shared<ui::surface>();
 
-					if (decoder.decoder1->extract_seek_frame(surface1, {}, pos1, duration1) &&
-						decoder.decoder2->extract_seek_frame(surface2, {}, pos2, duration2))
+					if (decoder.decoder1->extract_seek_frame(surface1, max_dim1, pos1, duration1) &&
+						decoder.decoder2->extract_seek_frame(surface2, max_dim2, pos2, duration2))
 					{
 						t->_async.queue_ui([t, st1, st2, surface1, surface2]
 						{
@@ -3570,39 +3579,44 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 
 	_events.invalidate_view(view_invalid::address);
 
-	_async.queue_async(async_queue::query, [this, view, new_search, selection, path_changed, token]
-	{
-		// A newer open supersedes this one before the worker reaches it, so retire here rather than
-		// walking the index for a search nobody is waiting on.
-		if (token.is_cancelled()) return;
+	// The host is UI-owned and is only ever used on the UI hop below, so it crosses the worker as a
+	// handle whose release is posted back rather than as a plain owning reference - a truncated
+	// query queue would otherwise run a view host destructor on the query thread.
+	_async.queue_async(async_queue::query,
+	                   [this, view = ui_owned(_async, view), new_search, selection, path_changed, token]
+	                   {
+		                   // A newer open supersedes this one before the worker reaches it, so retire
+		                   // here rather than walking the index for a search nobody is waiting on.
+		                   if (token.is_cancelled()) return;
 
-		bool is_first = true;
+		                   bool is_first = true;
 
-		auto cb = [this, view, &is_first, new_search, selection, path_changed, token](
-			index_state::query_item_results query_items, const bool is_complete)
-		{
-			_async.queue_ui(
-				[this, view, new_search, query_items = std::move(query_items), selection, is_first, is_complete,
-					path_changed]
-				{
-					if (new_search == _search)
-					{
-						auto append_items = item_index.
-							materialize_query_items(std::move(query_items), existing_items());
-						this->append_items(view, std::move(append_items), selection, is_first, is_complete);
+		                   auto cb = [this, view, &is_first, new_search, selection, path_changed, token](
+			                   index_state::query_item_results query_items, const bool is_complete)
+		                   {
+			                   _async.queue_ui(
+				                   [this, view, new_search, query_items = std::move(query_items), selection, is_first,
+					                   is_complete, path_changed]
+				                   {
+					                   if (new_search == _search)
+					                   {
+						                   auto append_items = item_index.
+							                   materialize_query_items(std::move(query_items), existing_items());
+						                   this->append_items(view.shared(), std::move(append_items), selection,
+						                                      is_first, is_complete);
 
-						if (is_complete)
-						{
-							_events.search_complete(new_search, path_changed);
-						}
-					}
-				});
+						                   if (is_complete)
+						                   {
+							                   _events.search_complete(new_search, path_changed);
+						                   }
+					                   }
+				                   });
 
-			is_first = false;
-		};
+			                   is_first = false;
+		                   };
 
-		item_index.query_items(new_search, cb, token);
-	});
+		                   item_index.query_items(new_search, cb, token);
+	                   });
 
 
 	return true;

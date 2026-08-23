@@ -91,7 +91,7 @@ Defects confirmed in the source before 1.27.1 and deliberately left, each with t
 - **`validate_folder` files every unchanged collection folder into `_distinct_other_folders`,** and `auto_complete_folders` walks the three folder sets without de-duplicating, so an ordinary collection folder is offered twice in the address bar.
 - **`index_state::stats` is still an unsynchronized cross-thread struct**, and `index_items::replace` still copies the parent's child vector under the exclusive index lock.
 - **`utf8_to_a` sizes its buffer from `string_view::size()` and then passes `-1` to `MultiByteToWideChar`.** Every current caller passes a NUL-terminated temporary, so it is correct today and an out-of-bounds read the moment one does not.
-- **A stale checksum survives in the database after the file's bytes change.** `validate_folder` now clears the in-memory `crc32c` when the modified time or size differs, so the displayed-item worker recomputes it - but `perform_writes` upserts with `coalesce(excluded.crc, item_properties.crc)`, so a zero cannot clear the stored value and the stale one returns on the next launch. It self-heals only for items the user displays. Clearing it properly needs a deliberate "write null" path through the item write. The same argument applies to `phash`, which nothing invalidates on a content change at all.
+- **A stale checksum survives in the database after the file's bytes change.** `validate_folder` now clears the in-memory `crc32c` when the modified time or size differs, so the displayed-item worker recomputes it - but `perform_writes` upserts with `coalesce(excluded.crc, item_properties.crc)`, so a zero cannot clear the stored value and the stale one returns on the next launch. It self-heals only for items the user displays. Clearing it properly needs a deliberate "write null" path through the item write. The same argument applies to `phash`, which nothing invalidates on a content change at all. **1.27.3 narrowed the clear** so a cache-loaded folder, which carries no filesystem stamp at all, is no longer read as a changed one - before that the whole collection's checksums were wiped on the first validation of every launch, so the stored value did not survive to be stale.
 
 ---
 
@@ -99,7 +99,7 @@ Defects confirmed in the source before 1.27.1 and deliberately left, each with t
 
 Each was raised while 1.27.2 was being planned or reviewed, and each was deliberately not taken. What 1.27.2 did take is in [1.27.2](v-1.27.2.md).
 
-- **`.vscode/tasks.json` still drives MSBuild against `df.sln`.** 1.27.2 deleted the solution and every vendored `.vcxproj`, so all five build tasks in the workspace invoke a build description that no longer exists. Not a shipping defect and invisible to a user, but it is the first thing a contributor touches.
+- **`.vscode/tasks.json` still drives MSBuild against `df.sln`.** 1.27.2 deleted the solution and every vendored `.vcxproj`, so all five build tasks in the workspace invoke a build description that no longer exists. Not a shipping defect and invisible to a user, but it is the first thing a contributor touches. *(Closed in [1.27.3](v-1.27.3.md); the file is untracked, so this only ever affected a workspace that already had one.)*
 - **A calendar popup on the date control.** The segmented field 1.27.2 built the model for is complete without one: every segment is typed or stepped. A calendar is a second control with its own layout, focus, keyboard and locale problems, and it is worth building only if picking a date by looking at a month turns out to be something users reach for.
 - **The tile caption under Group by Date Created shows the resolved date, not the creation date.** `populate_info` is built without knowing the active order, so the caption is less specific than the group it sits in. The group header states the bucket, so nothing is misfiled.
 
@@ -150,7 +150,7 @@ Confirmed in the source before 1.27.2 shipped. What was fixed is in [1.27.2](v-1
 - **`item_selector::match` has no production caller.** Its recursive boundary is now correct, including for a drive root, but nothing in the application calls it: `platform::select_folders` enumerates from `selector.folder()` and `iterate_items` filters with `wildcard_icmp`. The live instance of the same boundary defect was in `path_contains`, which backs the Sync overlap guard, and that is fixed. Either give `match` a caller or delete it with its test.
 - **Two long-lived caches are unsynchronised.** `platform::create_icon_surface` keeps a function-static `unordered_map` with no lock and no thread assertion, and it gained a caller this release in `file_type::default_thumbnail()`. Every call site found looks like UI-thread element construction, but nothing enforces it, and a concurrent rehash corrupts the bucket chain rather than failing.
 - **Smaller, each confirmed and each left:** the rename planner counts a skipped row's destination in `destination_counts`, so two rows skipped onto one existing name re-block the whole batch that Skip was meant to leave running; auto-rename appends the extension-like tail twice for a folder whose name contains a dot; the software backend truncates a non-BMP code point to one UTF-16 unit in the highlighted-text path; NV12 reads one chroma sample past the row for an odd source width; `platform::utf16_to_utf8` on Linux calls the `str::` implementation it exists to check, so the cross-check test passes vacuously there; the media controls element is painted into `bounds` inflated by its padding but hit-tested against `bounds` alone, so a click on its rounded corner falls through to the media; and `parse_mpf_index` has no hostile-input test, so its 64-bit bounds arithmetic would pass with the 32-bit form restored.
-- **`src/pch.cpp` is an orphan** left by the MSBuild retirement — no CMake target compiles it — and the workspace `tasks.json` still drives the deleted `df.sln`. Neither ships; both imply a second build description the `one-build-description` lint exists to prevent.
+- **`pch.cpp` is an orphan** left by the MSBuild retirement — no CMake target compiles it — and the workspace `tasks.json` still drives the deleted `df.sln`. Neither ships; both imply a second build description the `one-build-description` lint exists to prevent. *(Both closed in [1.27.3](v-1.27.3.md).)*
 - **The final commit of the branch carries 446 files of whitespace-only churn**, most of it vendored `libopenmpt`. It does not affect the binary, but it makes the commit unreviewable and will muddy the next `third-party/` upgrade diff.
 
 ### Found by the third review, not taken
@@ -161,7 +161,7 @@ A third adversarial pass over the second pass's own fixes. What it fixed is in [
 - **`unpack_environment` casts every field blind.** The reserved-bit check catches a writer that added a *field*; nothing catches one that added a *value* to an existing field, which is how the format is designed to grow and does not bump the layout version. A future `package_kind` decodes to an enumerator that does not exist, matching no arm. Only the round-trip test decodes today, so nothing is misreported yet — but the ingest that eventually reads this is exactly the second reader the encoders are careful for.
 - **The once-only settings migration is stamped by `save_options`, not where it runs.** A launch that ends without any save runs it again. Every path that reaches a save closes the window, and a re-run is idempotent unless the user changed the order and then lost the change some other way, so the exposure is small — but the guarantee the comment makes is "once", and what implements it is "once per saved session".
 - **"Today" and "Yesterday" headers compare a UTC now against a local key.** Every value fed to `date_key` is a local wall clock now, and `platform::now()` is not, so for part of every day at a nonzero offset today's photographs fall into the month bucket and yesterday's take the Today header. The link the header builds uses the same UTC now, so the cell still opens the items it drew and only the label is wrong. It predates the branch and the correction touches `age:` matching as well, which is a wider change than a label deserves this late.
-- **`element_broadcast` reaches nine views, two that need it are absent, and four of the nine cannot respond.** `_view_batch` and `_view_controls` are not in the list, and the four list-derived tool views do not override `broadcast_event`, so the call lands on an empty base. The same call carries `dpi_changed` and `font_changed`. No texture-caching element was confirmed living in the missing hosts, so this is a structural gap rather than a demonstrated defect — but it is the third time this release that a broadcast has failed to reach something.
+- **`element_broadcast` reaches nine views, two that need it are absent, and several of the nine cannot respond.** `_view_batch` and `_view_controls` are not in the list. The count of inert recipients was recorded here as four and was actually six: `_view_locate` overrode `broadcast_event` with an *empty body*, and `_view_edit`, `_view_rename`, `_view_sync`, `_view_import` and `_view_tags` have no override at all. The same call carries `dpi_changed` and `font_changed`. [1.27.3](v-1.27.3.md) closed the two that were demonstrably holding device resources - the Locate map's tile textures and the Photo edit texture - leaving the four guided-task views, none of which was found holding one.
 - **The software backend reports success for a frame it had no buffer for.** `render()` answers `{}`, which means "did not fail", when the GDI buffer could not be acquired; the caller never consults `is_valid()`. It is the last-resort backend after a GPU fault, so a silent permanent blank there has nowhere left to fall back to. Logging the transition is the minimum.
 - **Smaller, each confirmed and each left:** an MPF entry's declared TIFF format is never read, so a big-endian SHORT count is read as a LONG and the "unread images" row reports a nonsense number; `is_range_separator` was narrowed from a wide code point to a single byte, so a non-ASCII separator no longer splits and UTF-8 continuation bytes reach a locale-dependent `ispunct`; the items-view scroll menu filters unresolved commands out of the four it adds by hand but splices the group menu's twenty-three unfiltered, where a null becomes a separator rather than a visible failure; `sidebar_history_element::tooltip` indexes its counts without the range guard both its siblings use; `app_logo_element`'s `free_graphics_resources` handler cannot be reached on the About dialog's instance, which is the instance the comment says it exists for; and `progress_i` in `platform.h` is a forward declaration of a type that is never defined or used.
 
@@ -177,6 +177,76 @@ Two independent passes over the projection, split by layer. What they found and 
 - **The declaration read shares `async_queue::load` with the image it belongs to**, so on first display it lands after the first projected frames. That much is handled — the geometry is part of the re-render key — but if an `SXMPFiles::OpenFile` can block behind a long index-scan open on the same queue, it becomes a stall on the queue that also carries the displayed image. The toolkit's internal locking was not read, so this is a hypothesis rather than a measurement.
 - **Nothing tests the model layer of the projection.** The suite covers the geometry, the camera, the ladder and the software rasteriser. It does not cover `texture_state::draw_panorama`, the panorama branch of `calc_scale_hint`, the packed re-decode, or the `populate` → `queue_ui` → `panorama_geometry` publication — and the two highest-severity findings of this review were both in that last one. They are unit-testable against `panorama_item` and `panorama_geometry` without a draw context, which is where the next test should start.
 - **Nothing compares the two tiers against each other.** The rasteriser has a test; the shader has none, because the suite has no draw device. A host-side evaluation of the shader's arithmetic checked against `panorama_texel_at` over a sweep of geometries would have caught the seam-unwrap divergence this review found, and would catch the next one.
+
+---
+
+## 1F. Found by the 1.27.3 opening review, not taken
+
+A six-way adversarial pass over the whole tree at the 1.27.2 baseline, before any 1.27.3 work began.
+What it fixed is in [1.27.3](v-1.27.3.md); these were confirmed in the source and deliberately left,
+each with the reason.
+
+- **Copy and Move report no collisions when the destination cannot be enumerated.** `check_overwrite`
+  answers `{}` both for "nothing collides" and for "`iterate_file_items` failed", and the caller reads
+  the empty vector as the first. The prompt is skipped, `replace_existing` stays false, and the shell
+  auto-renames every collision — which is exactly the outcome the comment above the prompt says it
+  exists to prevent. The trigger is a destination the user can write but not list, an unreachable
+  share, or a cloud placeholder folder. Nothing is destroyed, so it is a stated-behaviour gap rather
+  than a safety hole, and it belongs with the rest of [§4.2](#42-collision-and-destruction-gaps): the
+  fix is a third answer, "could not determine", with wording of its own.
+- **The lossless JPEG rotate path can never fire for a rotation.** `image_edits::is_no_loss` gates on
+  `!has_crop`, and `has_crop` compares the crop quad's vertices against the image corners for
+  *equality* — but a rotation has no storage of its own and *is* a rotated crop quad, whose vertices
+  are never the axis-aligned corners. So every rotate-only save of a JPEG takes the full
+  decode/re-encode instead of the coefficient shuffle, costing a generation of DCT loss on the one
+  operation written to avoid it. Worse in shape than in effect today: `angle_to_transform` answers
+  `none` for any angle it does not recognise, `transform` then succeeds and returns a **non-empty**
+  blob, and `update_impl` reads non-empty as "the edit was applied" — so loosening the gate without
+  also making `transform` refuse an unrecognised angle would write an unrotated file and report
+  success. Both halves have to move together, which is why it was not taken as a patch.
+- **A perceptual hash computed for a file outside the collection can never be stored, so it is
+  recomputed forever.** `resolve_similar_presence` hashes the probe file and calls `save_phash`, whose
+  in-memory lookup misses and whose `UPDATE ... WHERE folder=? AND name=?` matches no row. Every
+  `view_invalid::presence` re-queues the work, so browsing an unindexed folder — a camera card, a
+  Downloads folder — re-opens and re-decodes each of those files for the whole session. Bounded by the
+  displayed set and off the UI thread. The counter that shows it, `phash_unpersisted`, already exists;
+  what it does not say is that each miss costs a decode. Memoising per `(path, modified)` for the
+  lifetime of the request set is the fix.
+- **A cache-loaded folder still reports itself as changed on the first validation of every launch.**
+  Same root as the checksum wipe [1.27.3](v-1.27.3.md) fixed — the cached row carries no filesystem
+  stamp — but `changes_detected` errs in the safe direction, so it costs a republish rather than an
+  answer. Storing the modified time and size beside the row is the honest fix and is a schema
+  decision, not a patch.
+- **Drawing and hit testing disagree about the sign of the media element's offset, in two places.**
+  `photo_control::controller_from_location` computes `loc + element_offset` where the convention
+  everywhere else is `bounds.offset(element_offset).contains(loc)`, and `items_view::render` passes
+  the offset negated in the zoom branch and unnegated everywhere else while
+  `media_controller_from_location` passes it unnegated in both. Both are inert today because the media
+  scroller is zeroed in exactly the states that reach them, so there was nothing to observe and no way
+  to test the correction. They become a divergence of twice the scroll offset the moment a scrolled
+  media pane can hold a magnified image.
+- **Modal dialogs cache textures that `element_broadcast` never walks.** `wallpaper_control` and five
+  other `create_texture()` sites in `ui_dialog.h` hold device resources on hosts the broadcast has no
+  route to. Whether any of those dialogs can be open across a device loss long enough to matter was
+  not established, so this is a structural gap rather than a demonstrated defect — the same status the
+  Locate map had before this review, and that one turned out to be real.
+- **`av_format_decoder::open`'s early returns bypass the CPU fallback.** The shared-texture *build*
+  failure now falls through to `av_scaler`, but the three `return failed` paths above it — no
+  D3D11VA device context, no video device, no immediate context — still answer failed outright. They
+  were already doing so, and each means the frame carries no usable hardware context at all, so the
+  fallback would be reasoning from a frame nothing has verified.
+- **Still test-only, with no production caller:** `posting_list`, `inverted_index`,
+  `postings_intersect`/`union`/`difference` (roughly lines 51-257 of `model_postings.h`, kept alive by
+  two tests — `trigram_index` in the same file *is* live); `item_selector::match`, carried unchanged
+  from [§1D](#1d-found-by-the-1272-pre-release-review); `platform::write_shell_tags`, which is
+  implemented on both platforms for nobody; `location_cache::find_by_id`; and
+  `ui::probe_software_rasterizer`, which is a gate rather than a product and is correctly test-only.
+  `search_result_type` is also very nearly write-only: of thirteen enumerators only four are ever
+  discriminated on.
+- **`edit_view::display_changed` reads `display->_selected_texture1->loaded()` unguarded** where the
+  same member is guarded at roughly ten sites in `ui_controls.h`. Not reachable — `_item1` non-null
+  implies the texture exists and `get_tex` never returns null — but it is the inconsistency the
+  absent-handle rule is about.
 
 ---
 

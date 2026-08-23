@@ -17,7 +17,6 @@
 #include "ui_elements.h"
 
 class group_title_control;
-class sort_items_element;
 class view_state;
 class index_state;
 class async_strategy;
@@ -163,10 +162,6 @@ namespace df
 
 	using item_groups = std::vector<item_group_ptr>;
 	using item_elements = std::vector<item_element_ptr>;
-
-	struct item_less;
-	struct item_eq;
-	struct item_hash;
 
 	using unique_item_elements = hash_map<file_path, item_element_ptr, ihash, ieq>;
 
@@ -2332,7 +2327,6 @@ namespace df
 		friend class item_set;
 		friend class item_element;
 		friend class item_group_header;
-		friend class sort_items_element;
 	};
 
 

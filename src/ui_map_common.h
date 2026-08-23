@@ -272,7 +272,9 @@ private:
 	pointi _temp_drag_offset = {0, 0};
 
 	std::map<map_tile_id, cache_entry_ptr> _tile_cache;
-	std::map<map_tile_id, ui::texture_ptr> _texture_cache;
+	// A derived GPU cache rather than logical state, so it is shed on device loss from the const
+	// broadcast the same way an element's texture is.
+	mutable std::map<map_tile_id, ui::texture_ptr> _texture_cache;
 
 	// Item-location markers, indexed spatially so only the visible ones are
 	// projected/clustered each view change.
@@ -478,6 +480,14 @@ public:
 		_texture_cache.clear();
 	}
 
+	// The tile textures belong to the lost device. Keeping the decoded tiles means the map redraws
+	// from what is already in memory; keeping the textures would draw nothing at all, because the
+	// cache hit returns before the placeholder the miss path draws.
+	void free_graphics_resources() const
+	{
+		_texture_cache.clear();
+	}
+
 	// Provide the item-location markers to aggregate on the map. `markers` is indexed
 	// by the caller; hit_test_marker returns the representative coordinate's index so
 	// the caller can map a hovered cluster back to its own item array.
@@ -564,8 +574,11 @@ public:
 	// none. Fills the on-screen anchor and aggregated photo count.
 	int hit_test_marker(const pointi loc, const sizei& extent, pointi& anchor_out, int& count_out) const
 	{
-		for (const auto& c : _clusters)
+		// Reverse order: render_markers draws them forwards, so the last one is on top and is the
+		// one the user sees where two bubbles overlap.
+		for (auto i = _clusters.rbegin(); i != _clusters.rend(); ++i)
 		{
+			const auto& c = *i;
 			const int radius = cluster_radius(c.count);
 			const auto dx = loc.x - c.screen_pos.x;
 			const auto dy = loc.y - c.screen_pos.y;

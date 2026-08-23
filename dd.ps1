@@ -210,12 +210,9 @@ function Update-AllVersionFiles {
     $content = $content -replace '(name="diffractor\.exe"\s+)version="\d+\.\d+\.\d+\.\d+"', "`$1version=`"$fileVersion`""
     Set-Content $AppManifestFile $content -NoNewline
     
-    # Update dd.ps1 StorePackageName
-    Write-Host "Updating dd.ps1 StorePackageName..." -ForegroundColor Yellow
-    $ddContent = Get-Content $PSCommandPath -Raw
-    $ddContent = $ddContent -replace '\$StorePackageName = "Diffractor_\d+\.\d+\.\d+\.\d+_x64"', "`$StorePackageName = `"Diffractor_${fileVersion}_x64`""
-    Set-Content $PSCommandPath $ddContent -NoNewline
-    
+    # $StorePackageName is computed from the exe's own FileVersion further down, so there is no
+    # literal here to rewrite - the version bump reaches it for free.
+
     Write-Host ""
     Write-Host "Version updated successfully!" -ForegroundColor Green
     Write-Host ""

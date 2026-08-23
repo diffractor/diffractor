@@ -115,7 +115,9 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	file_load_result _loaded;
 	ui::const_surface_ptr _preview_source;
 	ui::const_surface_ptr _dialog_preview_source;
-	ui::texture_ptr _texture;
+	// Shed on device loss from the const broadcast; render rebuilds whenever it is absent, so
+	// clearing it is the whole recovery.
+	mutable ui::texture_ptr _texture;
 	display_state_ptr _media_display;
 	view_element_ptr _media_element;
 	view_element_ptr _play_element;
@@ -128,7 +130,6 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 
 public:
 	edit_view(view_state& s, view_host_ptr host, edit_view_state& evs);
-
 	recti calc_media_bounds() const
 	{
 		return {0, 0, _extent.cx, _extent.cy};
@@ -158,6 +159,15 @@ public:
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
 	bool can_exit() override;
 	void display_changed() override;
+
+	void broadcast_event(const view_element_event& event) const override
+	{
+		if (event.type == view_element_event_type::free_graphics_resources) _texture.reset();
+		if (_media_element) _media_element->dispatch_event(event);
+		if (_play_element) _play_element->dispatch_event(event);
+		if (_scrubber_element) _scrubber_element->dispatch_event(event);
+	}
+
 	static void draw_handle(ui::draw_context& dc, recti handle_bounds2, float alpha);
 
 	bool check_path(df::file_path& path, const ui::control_frame_ptr& owner) const;

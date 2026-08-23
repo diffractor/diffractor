@@ -569,13 +569,12 @@ public:
 
 	bool read(const std::string_view section, const std::string_view name, repeat_mode& v) const
 	{
+		// Reject values outside the closed ontology rather than inventing a state: an enumerator no
+		// switch has an arm for behaves as none while the menu ticks nothing.
 		uint32_t vv{};
-		if (_file->read(section, name, vv))
-		{
-			v = std::bit_cast<repeat_mode>(vv);
-			return true;
-		}
-		return false;
+		if (!_file->read(section, name, vv) || !is_valid_repeat_mode(vv)) return false;
+		v = static_cast<repeat_mode>(vv);
+		return true;
 	}
 
 	bool read(const std::string_view section, const std::string_view name, zoom_navigator_mode& v) const

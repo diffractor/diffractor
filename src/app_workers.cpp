@@ -437,6 +437,23 @@ static void start_media_preview()
 	log_func lf(__FUNCTION__);
 	platform::set_thread_description("media_preview");
 
+	// Every other worker truncates its queue on the way out, and for the same reason: these tasks
+	// hold handles to UI-owned objects, and leaving them in a file static defers their release to
+	// static destruction, after the factories and COM are already gone. It runs on the way out of
+	// the loop AND out of the catch, so a throw does not skip it. The lambdas are destroyed after
+	// the lock is released, because releasing a ui_owned_ptr posts to the UI queue.
+	const df::scope_exit truncate([]
+	{
+		std::deque<std::function<void(media_preview_state&)>> must_run;
+		std::function<void(media_preview_state&)> next;
+
+		{
+			platform::exclusive_lock media_lock(media_preview_mutex);
+			std::swap(media_preview_must_run, must_run);
+			std::swap(next_media_preview, next);
+		}
+	});
+
 	try
 	{
 		platform::thread_init c;

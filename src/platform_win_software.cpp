@@ -19,6 +19,7 @@
 #include "platform_win_visual.h"
 
 #include "av_format.h"
+#include "files.h"
 #include "render_software.h"
 #include "ui_elements.h"
 #include "platform_win_res.h"
@@ -29,53 +30,13 @@
 // Decode a PNG resource (shadow art) into a straight-alpha BGRA surface.
 //////////////////////////////////////////////////////////////////////////////////////////////
 
-static ui::surface_ptr decode_png_resource_to_surface(const factories_ptr& f, const uint32_t res_id)
+static ui::surface_ptr decode_png_resource_to_surface(const uint32_t res_id)
 {
-	// WIC is optional - startup continues without it - so the shadow art simply does not load.
-	if (!f || !f->wic) return nullptr;
-
-	ComPtr<IWICStream> stream;
-	ComPtr<IWICBitmapDecoder> decoder;
-	ComPtr<IWICBitmapFrameDecode> frame;
-	ComPtr<IWICFormatConverter> converter;
-
-	auto* const res_handle = FindResourceA(get_resource_instance, MAKEINTRESOURCEA(res_id), "PNG");
-	if (!res_handle) return nullptr;
-
-	auto* const data_handle = LoadResource(get_resource_instance, res_handle);
-	if (!data_handle) return nullptr;
-
-	auto* const data = LockResource(data_handle);
-	const auto data_size = SizeofResource(get_resource_instance, res_handle);
-	if (!data || !data_size) return nullptr;
-
-	auto hr = f->wic->CreateStream(&stream);
-	if (SUCCEEDED(hr)) hr = stream->InitializeFromMemory(static_cast<BYTE*>(data), data_size);
-	if (SUCCEEDED(hr))
-		hr = f->wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
-		                                     &decoder);
-	if (SUCCEEDED(hr)) hr = decoder->GetFrame(0, &frame);
-	if (SUCCEEDED(hr)) hr = f->wic->CreateFormatConverter(&converter);
-	if (SUCCEEDED(hr))
-		hr = converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0f,
-		                           WICBitmapPaletteTypeMedianCut);
-
-	if (FAILED(hr)) return nullptr;
-
-	uint32_t w = 0;
-	uint32_t h = 0;
-	if (FAILED(converter->GetSize(&w, &h)) || w == 0 || h == 0) return nullptr;
-
-	auto surface = std::make_shared<ui::surface>();
-	surface->alloc(static_cast<int>(w), static_cast<int>(h), ui::texture_format::ARGB, ui::orientation::top_left);
-
-	if (FAILED(converter->CopyPixels(nullptr, static_cast<uint32_t>(surface->stride()),
-		static_cast<uint32_t>(surface->size()), surface->pixels())))
-	{
-		return nullptr;
-	}
-
-	return surface;
+	// The same decoder the hardware backend uses for the same resource. WIC is optional - startup
+	// continues without it - so decoding here through the app's own PNG path is what stops the two
+	// backends drawing different chrome on a machine that has no WIC.
+	files ff;
+	return ff.image_to_surface(load_resource(static_cast<int>(res_id), L"PNG"));
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -649,6 +610,9 @@ public:
 
 	ui::surface_ptr _shadow;
 	ui::surface_ptr _inverse_shadow;
+	// Decoding runs inside replay_scene, so a failure that is not latched is re-attempted once per
+	// shadow, per tile, per frame.
+	bool _shadow_art_loaded = false;
 
 	std::map<ui::style::font_face, std::shared_ptr<software_text_renderer>> _text_renderers;
 
@@ -1182,12 +1146,25 @@ public:
 	// The shadow is drawn in the band of `width` pixels outside `bounds`, which is what the
 	// hardware backend's shadow vertices cover. `width` must be honoured - draw_edge_shadows and
 	// the audio visualizer both pass sizes other than the frame default.
+	void ensure_shadow_art()
+	{
+		if (_shadow_art_loaded) return;
+		_shadow_art_loaded = true;
+
+		_shadow = decode_png_resource_to_surface(IDB_SHADOW);
+		_inverse_shadow = decode_png_resource_to_surface(IDB_INVERSE_SHADOW);
+
+		if (!ui::is_valid(_shadow) || !ui::is_valid(_inverse_shadow))
+		{
+			df::log(__FUNCTION__, "shadow art could not be decoded - shadows will not be drawn");
+		}
+	}
+
 	void do_draw_shadow(const recti bounds, const int width, const float alpha, const bool inverse)
 	{
 		if (width <= 0 || alpha <= 0.0f) return;
 
-		if (!_shadow) _shadow = decode_png_resource_to_surface(_f, IDB_SHADOW);
-		if (!_inverse_shadow) _inverse_shadow = decode_png_resource_to_surface(_f, IDB_INVERSE_SHADOW);
+		ensure_shadow_art();
 
 		const auto& s = inverse ? _inverse_shadow : _shadow;
 		if (ui::is_valid(s)) stretch_shadow(*s, bounds.inflate(width), width, alpha);
@@ -1522,7 +1499,8 @@ void software_draw_context::do_bubble_background(const recti bounds, const point
 {
 	_canvas.clear(ui::color(0, 0, 0, 0));
 
-	if (!_shadow) _shadow = decode_png_resource_to_surface(_f, IDB_SHADOW);
+	ensure_shadow_art();
+
 	if (ui::is_valid(_shadow))
 	{
 		stretch_shadow(*_shadow, recti(0, 0, bounds.width(), bounds.height()), 32, 1.0f);

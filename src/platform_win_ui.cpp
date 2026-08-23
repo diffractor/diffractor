@@ -6399,6 +6399,12 @@ public:
 						continue;
 					}
 
+					// design.md "Command availability": a command the platform cannot perform is
+					// absent, not dimmed. `visible` is where that is answered, and the toolbar has
+					// always honoured it - a menu that ignored it left the same command hidden in
+					// one surface and permanently greyed in another.
+					if (!c->visible) continue;
+
 					auto text = str::utf8_to_utf16(c->text);
 					const auto id = ++cmd_id;
 					_menu_commands[id] = c;

@@ -85,6 +85,28 @@ file_group_ref parse_file_group(const std::string& text)
 	return nullptr;
 }
 
+// `@photo` is not the only spelling that reaches parse_file_group: format_term writes the group's
+// translated display name, and the search vocabulary offers the plural. A term that cannot be read
+// back is dropped silently, so an address box the user can read has to be one the parser accepts.
+//
+// They are registered here rather than compared per call because parse_file_group runs on the
+// auto-complete worker once per candidate per keystroke, and display_name reads the translation
+// catalog, which the language switch replaces wholesale. A canonical name always wins a collision.
+void register_file_group_spellings()
+{
+	for (const auto g : s_config.groups)
+	{
+		const auto add = [g](const std::string_view name)
+		{
+			if (!str::is_empty(name)) s_config.groups_by_name.try_emplace(str::cache(name), g);
+		};
+
+		add(g->plural_name);
+		add(g->display_name(false));
+		add(g->display_name(true));
+	}
+}
+
 static constexpr file_traits photo_traits = file_traits::bitmap | file_traits::cache_metadata |
 	file_traits::zoom | file_traits::hide_overlays |
 	file_traits::thumbnail | file_traits::photo_metadata;
@@ -557,6 +579,10 @@ void load_file_types()
 		g->id = next_id;
 		next_id += 1;
 	}
+
+	// The plural and the current-language spellings, so the address box round trips before any
+	// catalog is loaded. Loading one calls this again.
+	register_file_group_spellings();
 
 	for (auto& ft : s_config.types)
 	{

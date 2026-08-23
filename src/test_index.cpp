@@ -1956,6 +1956,72 @@ static void should_index_offline_placeholder()
 	assert_equal(true, online_thumb_valid, "thumbnail loaded after hydration");
 }
 
+// A folder brought in from the database has no filesystem stamp on it at all - the cached row
+// carries neither a modified time nor a size - so the first validate_folder of every launch cannot
+// answer "have the bytes changed?" by comparing stamps. It has to ask the scan timestamp instead,
+// which is persisted. Getting this wrong in either direction is silent: read the absent stamp as a
+// difference and every cached checksum is wiped on every launch, so duplicate detection loses its
+// byte-identical rung; read it as a match and an edited file keeps the hash of its old bytes and is
+// reported identical to its untouched copy.
+static void should_keep_a_cached_checksum_the_bytes_still_describe()
+{
+	const auto index_path = _temps.next_path();
+	const auto file_path = _temps.next_path(".jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
+
+	const auto file_modified = platform::file_attributes(file_path).modified;
+	assert_equal(true, df::date_t(file_modified).is_valid(), "the fixture has a modified time to reason about");
+
+	null_async_strategy as;
+	location_cache locations;
+
+	constexpr uint32_t cached_crc = 0x1234u;
+
+	// Writes one cached row for the file, reopens it in a fresh index (which is what builds a node
+	// with no stamp), runs the validation index_folders makes, and answers with the surviving hash.
+	const auto crc_after_validation = [&](const df::date_t scanned) -> uint32_t
+	{
+		const auto db_name = _temps.next_path();
+
+		{
+			index_state index(as, locations);
+			database db(index);
+			db.open(db_name.folder(), db_name.file_name_without_extension());
+
+			std::deque<item_db_write> writes;
+			item_db_write w;
+			w.path = file_path;
+			w.md = std::make_shared<prop::item_metadata>();
+			w.crc32c = cached_crc;
+			w.metadata_scanned = scanned;
+			writes.emplace_back(std::move(w));
+
+			db.perform_writes(std::move(writes));
+			db.close();
+		}
+
+		index_state index(as, locations);
+		database db(index);
+		db.open(db_name.folder(), db_name.file_name_without_extension());
+
+		assert_equal(cached_crc, index.find_item(file_path).crc32c.load(), "the cached hash was loaded");
+
+		index.validate_folder(file_path.folder(), true, platform::now());
+		return index.find_item(file_path).crc32c.load();
+	};
+
+	// Scanned after the bytes were last written: nothing has happened to the file since we hashed it.
+	const auto scanned_after = df::date_t(file_modified).add_day(1);
+	assert_equal(cached_crc, crc_after_validation(scanned_after),
+	             "a hash of bytes nothing has touched survives the first validation after a launch");
+
+	// Scanned before the bytes were last written: the file was edited while we were not looking, so
+	// the stored hash describes bytes that are gone.
+	const auto scanned_before = df::date_t(file_modified).add_day(-1);
+	assert_equal(0u, crc_after_validation(scanned_before),
+	             "a hash of bytes that have since been rewritten is cleared");
+}
+
 // Verifies the item-level half of hydration recovery: an item whose thumbnail could not be
 // loaded while it was a cloud placeholder is allowed to load it again once the file transitions
 // from offline to online (item_element::update).
@@ -2588,6 +2654,8 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should index concurrently"s, should_index_concurrently);
 	tests.add("Should index offline OneDrive placeholder"s, should_index_offline_placeholder);
 	tests.add("Should clear failed thumbnail on hydration"s, should_clear_failed_thumbnail_on_hydration);
+	tests.add("Should keep a cached checksum the bytes still describe"s,
+	          should_keep_a_cached_checksum_the_bytes_still_describe);
 	tests.add("Should refresh same item metadata after hydration"s, should_refresh_same_item_metadata_after_hydration);
 	tests.add("Should trigger rescan only after full metadata load"s,
 	          should_trigger_rescan_only_after_full_metadata_load);

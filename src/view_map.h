@@ -84,6 +84,14 @@ public:
 		_engine.render(dc, _extent);
 	}
 
+	void broadcast_event(const view_element_event& event) const override
+	{
+		if (event.type == view_element_event_type::free_graphics_resources)
+		{
+			_engine.free_graphics_resources();
+		}
+	}
+
 	// The map's primary axis and its scale are the same thing, so the modifier changes nothing here.
 	bool mouse_wheel(const pointi loc, const ui::wheel_notch notch) override
 	{

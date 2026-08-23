@@ -576,6 +576,31 @@ public:
 		return *this;
 	}
 
+	prop_test& orientation(const ui::orientation o)
+	{
+		_f.safe_ps()->orientation = o;
+		return *this;
+	}
+
+	prop_test& dimensions(const int cx, const int cy)
+	{
+		_f.safe_ps()->width = static_cast<uint16_t>(cx);
+		_f.safe_ps()->height = static_cast<uint16_t>(cy);
+		return *this;
+	}
+
+	prop_test& audio_channels(const uint16_t n)
+	{
+		_f.safe_ps()->audio_channels = n;
+		return *this;
+	}
+
+	prop_test& media_type(const std::string_view name)
+	{
+		_f.ft = files::file_type_from_name(name);
+		return *this;
+	}
+
 	prop_test& is_match(const std::string_view query)
 	{
 		const auto search = df::search_t::parse(query);

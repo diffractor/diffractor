@@ -831,6 +831,12 @@ public:
 	ComPtr<ID3D11Device> _shared_texture_device; // decode device the producer copy belongs to
 	sizei _shared_texture_dimensions;
 	ui::texture_format _shared_texture_format = ui::texture_format::None;
+	// A driver that refuses the cross-device bridge refuses it for as long as the device, extent and
+	// format are the same, so the refusal is remembered against that key. Without it the kernel calls
+	// and the log line below repeat on the UI thread once per frame for the rest of the session.
+	ComPtr<ID3D11Device> _shared_texture_refused_device;
+	sizei _shared_texture_refused_dimensions;
+	ui::texture_format _shared_texture_refused_format = ui::texture_format::None;
 
 	void free_scaler()
 	{
@@ -2590,9 +2596,14 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		// The decode device is part of the key: a second video decodes on its own FFmpeg device,
 		// and reusing a producer copy owned by the previous device makes CopySubresourceRegion a
 		// cross-device call that the runtime rejects, leaving stale frames on screen.
-		if (!_shared_texture || !_shared_texture_render || _shared_texture_device != video_device ||
-			_shared_texture_dimensions != texture_extent ||
-			_shared_texture_format != video_tex_format)
+		const auto build_already_refused = _shared_texture_refused_device == video_device &&
+			_shared_texture_refused_dimensions == texture_extent &&
+			_shared_texture_refused_format == video_tex_format;
+
+		if (!build_already_refused &&
+			(!_shared_texture || !_shared_texture_render || _shared_texture_device != video_device ||
+				_shared_texture_dimensions != texture_extent ||
+				_shared_texture_format != video_tex_format))
 		{
 			_shared_texture.Reset();
 			_shared_texture_render.Reset();
@@ -2645,6 +2656,8 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 				_shared_texture_dimensions = texture_extent;
 				_shared_texture_format = video_tex_format;
 				_shared_texture_device = video_device;
+				_shared_texture_refused_format = ui::texture_format::None;
+				_shared_texture_refused_device.Reset();
 				_texture.Reset(); // force the render-side SRV texture to be recreated below
 
 				// The decoder's surface pool is one texture array allocated in full when the stream
@@ -2658,6 +2671,19 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 				        std::format("Video decode pool {} x {} x {} surfaces = {}", tex_desc_src.Width,
 				                    tex_desc_src.Height, tex_desc_src.ArraySize,
 				                    df::file_size(surface_bytes * tex_desc_src.ArraySize).str()));
+			}
+			else
+			{
+				// The cross-device bridge this whole path exists for is unavailable. Say so once: without
+				// a line here the picture simply stops, with nothing to attribute it to. The refusal is
+				// remembered against this key so the attempt is not repeated per frame, and the CPU
+				// fallback below is what keeps video on screen.
+				_shared_texture_refused_device = video_device;
+				_shared_texture_refused_dimensions = texture_extent;
+				_shared_texture_refused_format = video_tex_format;
+
+				df::log(__FUNCTION__, std::format("Video shared texture unavailable (0x{:08x}) - scaling on the CPU",
+				                                  static_cast<uint32_t>(hr)));
 			}
 		}
 
@@ -2768,8 +2794,12 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			}
 		}
 	}
-	else
+
+	if (result == ui::texture_update_result::failed)
 	{
+		// Either a software-decoded frame, or a hardware frame whose shared-texture chain the driver
+		// refused. av_scaler downloads a hardware frame itself, so both reach a picture here - this
+		// is the last fallback, and drawing nothing is never the better answer.
 		if (!_scaler) _scaler = std::make_unique<av_scaler>();
 
 		auto surface = std::make_shared<ui::surface>();

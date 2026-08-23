@@ -29,7 +29,6 @@ namespace ui
 
 namespace df
 {
-	struct progress_i;
 	class item_selector;
 	class item_set;
 	class date_t;
