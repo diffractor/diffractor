@@ -351,6 +351,30 @@ static void should_bound_the_software_buffer_as_the_client_grows()
 	             "a grown client is writable to its new edges without reallocating the tile");
 }
 
+static void should_refuse_an_impossible_movie()
+{
+	// The probe is the whole of whether Render is offered, so an unstable answer would make the
+	// command appear and disappear between toolbar rebuilds.
+	const auto answer = platform::can_write_movies();
+	assert_equal(answer, platform::can_write_movies(), "the encoder probe answers the same way twice");
+
+	platform::movie_writer_request request;
+	request.path = _temps.next_path(".mp4");
+	request.extent = {0, 0};
+	request.frame_rate = 30;
+	request.video_bitrate = 6000000;
+
+	// A writer that accepted this would leave a zero-byte file where the movie should be, and the
+	// render would report success.
+	assert_equal(true, platform::create_movie_writer(request) == nullptr, "a zero-sized movie is refused");
+	assert_equal(false, platform::exists(request.path), "and no partial file is left behind");
+
+	request.extent = {1920, 1080};
+	request.frame_rate = 0;
+	assert_equal(true, platform::create_movie_writer(request) == nullptr, "a movie with no frame rate is refused");
+	assert_equal(false, platform::exists(request.path), "and still leaves nothing behind");
+}
+
 void register_platform_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should convert extended file system paths"s, should_convert_extended_file_system_paths);
@@ -368,4 +392,5 @@ void register_platform_tests(view_state& state, test_registry& tests)
 	tests.add("Should render common controls into a buffer"s, should_render_common_controls_into_a_buffer);
 	tests.add("Should bound the software buffer as the client grows"s,
 	          should_bound_the_software_buffer_as_the_client_grows);
+	tests.add("Should refuse an impossible movie"s, should_refuse_an_impossible_movie);
 }

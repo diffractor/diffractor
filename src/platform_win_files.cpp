@@ -2489,6 +2489,104 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	return success;
 }
 
+namespace
+{
+	// The common dialogs take a double-null-terminated list of null-separated pairs, which no
+	// ordinary string handling produces. Built through '|' and substituted so the shape stays
+	// readable here.
+	std::wstring build_dialog_filter(const std::vector<platform::file_dialog_filter>& filters)
+	{
+		std::string text;
+
+		for (const auto& filter : filters)
+		{
+			text += std::format("{} ({})|{}|", filter.text, filter.extensions, filter.extensions);
+		}
+
+		text += "|";
+		auto result = str::utf8_to_utf16(text);
+
+		for (auto&& c : result)
+		{
+			if (c == '|') c = 0;
+		}
+
+		return result;
+	}
+
+	// The buffer a multi-select open dialog writes: the folder, then each name, each null
+	// terminated. MAX_PATH per file is the documented shape and the reason for the size.
+	constexpr size_t open_dialog_buffer = 64 * 1024;
+}
+
+bool platform::prompt_for_open_paths(std::vector<df::file_path>& paths,
+                                     const std::vector<file_dialog_filter>& filters, const bool allow_multiple)
+{
+	std::vector<wchar_t> buffer(open_dialog_buffer, 0);
+	const auto filter = build_dialog_filter(filters);
+
+	OPENFILENAME ofn = {};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = app_wnd();
+	ofn.lpstrFilter = filter.c_str();
+	ofn.lpstrFile = buffer.data();
+	ofn.nMaxFile = static_cast<DWORD>(buffer.size());
+	ofn.nFilterIndex = 1;
+	ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR |
+		(allow_multiple ? OFN_ALLOWMULTISELECT : 0);
+
+	if (!GetOpenFileName(&ofn)) return false;
+
+	paths.clear();
+
+	const std::wstring first(buffer.data());
+	auto* next = buffer.data() + first.size() + 1;
+
+	if (!allow_multiple || *next == 0)
+	{
+		// A single selection is the whole path, whether or not multi-select was permitted.
+		paths.emplace_back(str::utf16_to_utf8(first));
+		return true;
+	}
+
+	const auto folder = df::folder_path(str::utf16_to_utf8(first));
+
+	while (*next)
+	{
+		const std::wstring name(next);
+		paths.emplace_back(folder.combine_file(str::utf16_to_utf8(name)));
+		next += name.size() + 1;
+	}
+
+	return !paths.empty();
+}
+
+bool platform::prompt_for_save_path(df::file_path& path, const std::vector<file_dialog_filter>& filters)
+{
+	wchar_t w[MAX_PATH];
+	w[0] = 0;
+
+	const auto initial_name = to_shell_path(path);
+	if (initial_name.size() < std::size(w)) wcscpy_s(w, initial_name.c_str());
+
+	const auto extension = str::utf8_to_utf16(path.extension());
+	const auto filter = build_dialog_filter(filters);
+
+	OPENFILENAME ofn = {};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = app_wnd();
+	ofn.lpstrFilter = filter.c_str();
+	ofn.lpstrFile = w;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.nFilterIndex = 1;
+	ofn.lpstrDefExt = extension.c_str();
+	ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+
+	const auto success = GetSaveFileName(&ofn) != 0;
+	if (success) path = df::file_path(str::utf16_to_utf8(w));
+	return success;
+}
+
 // autocrop
 // https://github.com/rajbot/autocrop
 

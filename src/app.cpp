@@ -26,6 +26,7 @@
 #include "files.h"
 #include "view_items.h"
 #include "view_edit.h"
+#include "view_movie.h"
 #include "view_media.h"
 #include "view_selector.h"
 #include "view_import.h"
@@ -604,6 +605,7 @@ app_frame::app_frame(ui::plat_app_ptr pa) :
 		                                                 select_from_selector(item, keys);
 	                                                 });
 	_view_edit = std::make_shared<edit_view>(_state, _view_frame, _edit_view_state);
+	_view_movie = std::make_shared<movie_view>(_state, _view_frame, _movie_view_state);
 	_selector_frame->view(_view_selector);
 	_view_media = std::make_shared<media_view>(_state, _view_frame);
 
@@ -815,6 +817,8 @@ void app_frame::tick()
 		_view_frame->tick();
 		_view_items->update_edit_caret();
 		_selector_frame->tick();
+
+		if (_state.view_mode() == view_type::movie) _view_movie->tick();
 
 		const auto progress = _view->progress();
 		const auto animate_status = (progress.active && progress.total == 0) || setting.show_debug_info;
@@ -1153,6 +1157,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto show_top_bar = !_state.is_full_screen && (!display || !display->is_zoom_mode());
 		const auto show_items_controls = show_top_bar && view_mode == view_type::items;
 		const auto can_show_view_controls = view_mode == view_type::edit ||
+			view_mode == view_type::movie ||
 			view_mode == view_type::rename ||
 			view_mode == view_type::batch ||
 			view_mode == view_type::sync ||
@@ -2170,6 +2175,7 @@ void app_frame::element_broadcast(const view_element_event& event)
 	_view_items->broadcast_event(event);
 	_view_selector->broadcast_event(event);
 	_view_edit->broadcast_event(event);
+	_view_movie->broadcast_event(event);
 	_view_media->broadcast_event(event);
 	_view_rename->broadcast_event(event);
 	_view_sync->broadcast_event(event);
@@ -2232,6 +2238,11 @@ app_frame::selector_strip app_frame::selector_strip_for_view(const view_type m) 
 		return selector_strip::metadata;
 	case view_type::batch:
 		return _view_batch->mode() == batch_tool_mode::metadata ? selector_strip::metadata : selector_strip::none;
+	// Movie draws its own strip. That strip is the document -- ordered, duplicable, and removing a
+	// tile removes it from the movie -- so sharing the selector would make one click mean "select"
+	// in every other view and "seek" here.
+	case view_type::movie:
+		return selector_strip::none;
 	default:
 		return selector_strip::none;
 	}
@@ -2385,6 +2396,9 @@ void app_frame::view_changed(const view_type m)
 		break;
 	case view_type::edit: v = _view_edit;
 		vc = _view_edit->controls(_app_frame);
+		break;
+	case view_type::movie: v = _view_movie;
+		vc = _view_movie->controls(_app_frame);
 		break;
 	case view_type::rename: v = _view_rename;
 		vc = _view_rename->controls(_app_frame);

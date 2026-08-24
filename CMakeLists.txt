@@ -207,6 +207,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/model_db.cpp
         src/model_index.cpp
         src/model_items.cpp
+        src/model_movie.cpp
         src/model_search.cpp
         src/model_tile_cache.cpp
         src/render_color.cpp
@@ -230,6 +231,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/view_import.cpp
         src/view_items.cpp
         src/view_locate.cpp
+        src/view_movie.cpp
         src/view_rename.cpp
         src/view_selector.cpp
         src/view_sync.cpp
@@ -283,6 +285,7 @@ set(DIFFRACTOR_TEST_SOURCES
         src/test_locations.cpp
         src/test_media_edit.cpp
         src/test_metadata.cpp
+        src/test_movie.cpp
         src/test_render.cpp
         src/test_runner.cpp
         src/test_search.cpp
@@ -297,6 +300,7 @@ if (WIN32)
     set(DIFFRACTOR_PLATFORM_SOURCES
             src/platform_win.cpp
             src/platform_win_d3d11.cpp
+            src/platform_win_encode.cpp
             src/platform_win_files.cpp
             src/platform_win_font.cpp
             src/platform_win_settings.cpp

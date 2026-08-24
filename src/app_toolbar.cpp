@@ -26,6 +26,7 @@
 #include "view_rename.h"
 #include "view_batch.h"
 #include "view_locate.h"
+#include "view_movie.h"
 
 #include "app_sidebar.h"
 #include "app_commands.h"
@@ -667,6 +668,14 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_import]->enable = is_media_or_items_view;
 	_commands[commands::tool_locate]->enable = can_save_metadata;
 	_commands[commands::tool_move_to_folder]->enable = can_process_local_items;
+
+	const auto is_movie_view = view_mode == view_type::movie && _view_movie;
+	_commands[commands::tool_movie]->enable = is_media_or_items_view && has_selection;
+	_commands[commands::tool_movie_add]->enable = is_movie_view;
+	_commands[commands::tool_movie_open]->enable = is_movie_view;
+	_commands[commands::tool_movie_import]->enable = is_movie_view;
+	_commands[commands::tool_movie_save]->enable = is_movie_view && _view_movie->has_clips();
+	_commands[commands::tool_movie_remove]->enable = is_movie_view && _view_movie->has_clips();
 	_commands[commands::tool_new_folder]->enable = is_media_or_items_view && has_save_folder;
 	_commands[commands::tool_open_with]->enable = has_selection;
 	_commands[commands::tool_rename]->enable = can_process_local_items;
@@ -1034,6 +1043,12 @@ void app_frame::update_command_text()
 	def_command(commands::menu_display_options, command_group::none, icon_index::none, tt.command_display_options);
 	def_command(commands::tool_edit, command_group::tools, icon_index::edit, tt.command_edit,
 	            tt.tooltip_edit1);
+	def_command(commands::tool_movie, command_group::tools, icon_index::video, tt.command_movie, tt.tooltip_movie);
+	def_command(commands::tool_movie_add, command_group::tools, icon_index::add, tt.command_movie_add);
+	def_command(commands::tool_movie_remove, command_group::tools, icon_index::del, tt.command_movie_remove);
+	def_command(commands::tool_movie_open, command_group::tools, icon_index::folder, tt.command_movie_open);
+	def_command(commands::tool_movie_save, command_group::tools, icon_index::save, tt.command_movie_save);
+	def_command(commands::tool_movie_import, command_group::tools, icon_index::import, tt.command_movie_import);
 	def_command(commands::edit_copy, command_group::file_management, icon_index::edit_copy, tt.command_edit_copy);
 	def_command(commands::edit_copy_item_path, command_group::file_management, icon_index::edit_copy,
 	            tt.command_edit_copy_item_path);

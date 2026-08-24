@@ -17,6 +17,7 @@
 #include "model_property.h"
 #include "model_items.h"
 #include "model_locations.h"
+#include "model_movie.h"
 #include "model_visits.h"
 #include "av_format.h"
 #include "av_player.h"
@@ -2714,6 +2715,32 @@ public:
 	detach_file_handles(detach_file_handles&& other) noexcept = delete;
 	detach_file_handles& operator=(const detach_file_handles& other) = delete;
 	detach_file_handles& operator=(detach_file_handles&& other) noexcept = delete;
+};
+
+
+// The Movie view's durable state. Held by the application so a timeline survives leaving Movie and
+// coming back; UI-thread-owned, and read by nothing else. docs/movie.md owns the behaviour.
+class movie_view_state
+{
+public:
+	movie_project project;
+
+	double playhead = 0;
+	bool is_playing = false;
+
+	// The dialog controls bind to int and bool references, so the settings are held here in the
+	// units those controls speak and pushed into the document whenever one of them changes.
+	bool crossfade = true;
+	bool cut = false;
+	int transition_tenths = 10;
+	bool fade_in = true;
+	bool fade_out = true;
+	int photo_tenths = 40;
+	int clip_hold_tenths = 40;
+	bool clip_hold_is_default = true;
+
+	void read_from_project();
+	movie_settings to_settings() const;
 };
 
 

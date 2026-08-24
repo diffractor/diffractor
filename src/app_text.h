@@ -1245,6 +1245,34 @@ struct app_text_t
 	text_t editing_title = "Editing";
 	text_t edit_info =
 		"Adjust the crop, rotation, perspective, and color of a photo. Nothing is written to disk until you save.";
+	text_t movie_title = "Movie";
+	text_t movie_info =
+		"Assemble the selected photos and videos into one video. Add, remove and reorder clips on the strip below, and trim the selected one. The preview is what will be rendered; nothing is written until you render or save.";
+	text_t movie_settings_title = "Movie";
+	text_t movie_clip_title = "Selected clip";
+	text_t movie_crossfade = "Crossfade between clips";
+	text_t movie_cut = "Cut between clips";
+	text_t movie_transition_length = "Transition (tenths of a second)";
+	text_t movie_fade_in = "Fade in from black";
+	text_t movie_fade_out = "Fade out to black";
+	text_t movie_photo_duration = "Photo duration (tenths of a second)";
+	text_t movie_clip_duration = "This photo (tenths of a second)";
+	text_t movie_use_default = "Use the movie default";
+	text_t movie_empty = "Add photos and videos to build a movie.";
+	text_t movie_output_fmt = "Output {} x {} at {} fps, {} long.";
+	text_t movie_clip_fmt = "{} - clip {} of {}, starting at {}.";
+	text_t movie_project_files = "Movie project";
+	text_t movie_maker_files = "Windows Movie Maker project";
+	text_t movie_media_files = "Photos and videos";
+	text_t movie_open_failed_fmt = "Could not read the project {}.";
+	text_t movie_save_failed_fmt = "Could not save the project {}.";
+	text_t command_movie = "Movie";
+	text_t tooltip_movie = "Assemble the selected photos and videos into one video.";
+	text_t command_movie_add = "Add files";
+	text_t command_movie_remove = "Remove clip";
+	text_t command_movie_open = "Open project";
+	text_t command_movie_save = "Save project";
+	text_t command_movie_import = "Import Movie Maker project";
 	text_t convert_info =
 		"Convert the selected photos to another format and optionally limit their size. The originals are kept and new files are written to the destination folder.";
 	text_t edit_metadata_info =

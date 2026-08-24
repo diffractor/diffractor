@@ -105,6 +105,25 @@ bool platform::eject(df::folder_path)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+// Writing a movie.
+//
+// There is no system encoder to hand the job to here, and Diffractor ships none: the FFmpeg build
+// is configured without encoders on both platforms. Answering false is what makes Render absent
+// rather than dimmed, so the Movie view builds and runs with everything except the render.
+// docs/movie.md#94-the-platform-boundary and docs/linux.md record this as debt.
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+bool platform::can_write_movies()
+{
+	return false;
+}
+
+platform::movie_writer_ptr platform::create_movie_writer(const movie_writer_request&)
+{
+	return {};
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 // Deletion and file operations.
 //
 // can_recycle answers false, so the interface presents deletion as permanent rather than implying
@@ -317,6 +336,16 @@ bool platform::browse_for_folder(df::folder_path&)
 }
 
 bool platform::prompt_for_save_path(df::file_path&)
+{
+	return false;
+}
+
+bool platform::prompt_for_open_paths(std::vector<df::file_path>&, const std::vector<file_dialog_filter>&, bool)
+{
+	return false;
+}
+
+bool platform::prompt_for_save_path(df::file_path&, const std::vector<file_dialog_filter>&)
 {
 	return false;
 }

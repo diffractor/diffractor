@@ -21,6 +21,7 @@ class edit_view_controls;
 class items_view;
 class selector_view;
 class edit_view;
+class movie_view;
 class media_view;
 class rename_view;
 class batch_tool_view;
@@ -513,6 +514,7 @@ public:
 	std::shared_ptr<av_player> _player;
 	view_state _state;
 	edit_view_state _edit_view_state;
+	movie_view_state _movie_view_state;
 	database _db;
 	tile_cache_db _tile_db;
 	const ui::plat_app_ptr _pa;
@@ -607,6 +609,7 @@ public:
 	std::shared_ptr<items_view> _view_items;
 	std::shared_ptr<selector_view> _view_selector;
 	std::shared_ptr<edit_view> _view_edit;
+	std::shared_ptr<movie_view> _view_movie;
 	std::shared_ptr<media_view> _view_media;
 	std::shared_ptr<view_base> _view;
 

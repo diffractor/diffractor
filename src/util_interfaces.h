@@ -19,6 +19,7 @@ enum class view_type
 	items,
 	media,
 	edit,
+	movie,
 	rename,
 	batch,
 	import,

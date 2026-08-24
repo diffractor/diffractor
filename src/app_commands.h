@@ -170,6 +170,12 @@ enum class commands
 	tool_import,
 	tool_locate,
 	tool_move_to_folder,
+	tool_movie,
+	tool_movie_add,
+	tool_movie_import,
+	tool_movie_open,
+	tool_movie_remove,
+	tool_movie_save,
 	tool_new_folder,
 	tool_open_with,
 	// Re-plans the active task view after a run, so its results are never mistaken for a live plan.

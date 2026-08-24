@@ -22,6 +22,7 @@
 #include "ui_controllers.h"
 #include "ui_map.h"
 #include "view_edit.h"
+#include "view_movie.h"
 #include "view_items.h"
 #include "app_match.h"
 #include "app_text.h"
@@ -3698,6 +3699,12 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::tool_delete, [this] { delete_items(_state.selected_items()); });
 	add_command_invoke(commands::tool_desktop_background, [this] { desktop_background_invoke(_state, _app_frame); });
 	add_command_invoke(commands::tool_edit, [this] { edit_invoke(_state); });
+	add_command_invoke(commands::tool_movie, [this] { _state.view_mode(view_type::movie); });
+	add_command_invoke(commands::tool_movie_add, [this] { _view_movie->add_files(); });
+	add_command_invoke(commands::tool_movie_remove, [this] { _view_movie->remove_current(); });
+	add_command_invoke(commands::tool_movie_open, [this] { _view_movie->open_project(); });
+	add_command_invoke(commands::tool_movie_save, [this] { _view_movie->save_project(); });
+	add_command_invoke(commands::tool_movie_import, [this] { _view_movie->import_project(); });
 	add_command_invoke(commands::edit_copy, [this] { cut_copy_invoke(_state, _app_frame, _view_frame, false); });
 	add_command_invoke(commands::edit_copy_item_path, [this] { copy_item_path_invoke(_state); });
 	add_command_invoke(commands::edit_cut, [this] { cut_copy_invoke(_state, _app_frame, _view_frame, true); });

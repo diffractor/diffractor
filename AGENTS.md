@@ -52,6 +52,7 @@ GitHub issues own work, status, discussion, and follow-up. Source owns exact API
 | [rendering](docs/rendering.md) | Backends and parity, device/swap-chain, frame and resize lifecycle, batching, text, video pipeline |
 | [zoom](docs/zoom.md) | The zoom model, laws, rendering tiers, and how zoom is judged |
 | [selection controls](docs/selection-controls.md) | The selection panel: form classification, content, ordering, density, responsive behavior |
+| [movie](docs/movie.md) | Assembling photos and videos into one video: the timeline document, trims and transitions, the project file, and video encoding |
 | [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
 | [Linux port](docs/linux.md) | Portability assessment, platform-boundary debt, staging and open decisions for a Linux build |
 | [README](README.md) | Product overview, build prerequisites, command line |

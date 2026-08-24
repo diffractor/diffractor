@@ -813,6 +813,18 @@ video_info_t av_format_decoder::video_information() const
 	return result;
 }
 
+double av_format_decoder::video_frame_rate() const
+{
+	if (!_format_context || _video_stream_index < 0) return 0;
+
+	// The codec context often carries nothing, and a stream that declares no rate still has one that
+	// can be inferred from its timestamps, which is what av_guess_frame_rate is for.
+	const auto guessed = av_guess_frame_rate(_format_context, _format_context->streams[_video_stream_index],
+	                                         nullptr);
+
+	return guessed.num > 0 && guessed.den > 0 ? av_q2d(guessed) : 0.0;
+}
+
 // An empty, owning AVChannelLayout. The deleter uninitialises the layout (it can
 // own a heap allocation for custom orders) before releasing it.
 static channel_layout_ptr make_channel_layout()
@@ -1775,6 +1787,7 @@ av_media_info av_format_decoder::info() const
 	result.render_dimensions = vid_info.render_dimensions;
 	result.display_dimensions = vid_info.display_dimensions;
 	result.display_orientation = calc_orientation();
+	result.video_frame_rate = video_frame_rate();
 
 	const auto* ctx = _format_context;
 

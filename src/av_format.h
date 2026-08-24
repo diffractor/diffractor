@@ -405,6 +405,9 @@ public:
 	int64_t bitrate = 0;
 	double start = 0;
 	double end = 0;
+	// Frames per second as the container reports it, guessed where the stream does not say. Zero
+	// when there is no video stream.
+	double video_frame_rate = 0;
 
 	sizei display_dimensions;
 	sizei render_dimensions;
@@ -560,6 +563,7 @@ public:
 
 
 	video_info_t video_information() const;
+	double video_frame_rate() const;
 	audio_info_t audio_info() const;
 
 	bool extract_seek_frame(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,

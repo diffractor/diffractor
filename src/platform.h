@@ -306,6 +306,54 @@ namespace platform
 	ui::const_surface_ptr create_icon_surface(char32_t ch);
 	bool eject(df::folder_path path);
 
+	///////////////////////////////////////////////////////////////////////////////////////////////
+	// Writing a movie.
+	//
+	// The intention is "take these finished frames and samples and leave one playable video file at
+	// this path". Diffractor composites and decodes; the platform owns the codec, the container and
+	// whatever hardware is behind them. docs/movie.md#93-the-encoder-and-the-licensing-problem
+	// explains why the codec is the system's to supply rather than ours to ship.
+	///////////////////////////////////////////////////////////////////////////////////////////////
+
+	struct movie_writer_request
+	{
+		df::file_path path;
+		sizei extent;
+		int frame_rate = 30;
+		int video_bitrate = 0;
+		bool with_audio = false;
+		int sample_rate = 48000;
+		int channels = 2;
+		int audio_bitrate = 192000;
+	};
+
+	class movie_writer
+	{
+	public:
+		virtual ~movie_writer() = default;
+
+		// One composited frame, at the request's extent, shown from `time` seconds until the next.
+		virtual bool write_frame(const ui::const_surface_ptr& surface, double time) = 0;
+		// Interleaved 16-bit samples at the request's rate and channel count.
+		virtual bool write_audio(const int16_t* samples, size_t sample_count, double time) = 0;
+		// Finishes the container. Until this returns true there is no output file, only a partial
+		// one the writer owns and will remove.
+		virtual bool close() = 0;
+		// Abandons the write and removes the partial file. Idempotent, and what the destructor does
+		// when close was never called, so a cancelled or thrown-out render leaves nothing behind.
+		virtual void abandon() = 0;
+		virtual std::string last_error() const = 0;
+	};
+
+	using movie_writer_ptr = std::shared_ptr<movie_writer>;
+
+	// Asked of the running system rather than fixed at build time: the same build offers Render on
+	// a machine with an encoder and does not offer it on one without. The answer is cached after
+	// the first probe, which does build and discard a writer.
+	bool can_write_movies();
+	movie_writer_ptr create_movie_writer(const movie_writer_request& request);
+
+
 	enum class file_op_result_code
 	{
 		OK,
@@ -476,6 +524,20 @@ namespace platform
 
 	bool browse_for_folder(df::folder_path& path);
 	bool prompt_for_save_path(df::file_path& path);
+
+	// One entry in a file dialog's type list. `extensions` is the shell's own pattern form,
+	// semicolon separated, because that is what every platform's dialog takes.
+	struct file_dialog_filter
+	{
+		std::string text;
+		std::string extensions;
+	};
+
+	// For a file the user names for a task the shell knows nothing about -- a project, a playlist.
+	// The first filter is the default. An empty result means the user cancelled.
+	bool prompt_for_open_paths(std::vector<df::file_path>& paths, const std::vector<file_dialog_filter>& filters,
+	                           bool allow_multiple);
+	bool prompt_for_save_path(df::file_path& path, const std::vector<file_dialog_filter>& filters);
 
 	// The operating system's own UTF-16 conversion. Nothing in the app calls these: str::utf16_to_utf8
 	// and str::utf8_to_utf16 are the conversions it uses, and these exist so a test can check those
