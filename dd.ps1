@@ -62,6 +62,9 @@ param(
     [ValidateSet("desktop", "store", "run", "run32", "cpu", "test", "bean", "build", "bump-build", "bump-ver", "deploy", "release", "loc", "code", "clear-cache", "setup", "configure", "clean", "info", "help", "")]
     [string]$Command = "",
 
+    # Package the version already in the tree, for rebuilding a submission that was never accepted.
+    [switch]$NoBump,
+
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Rest = @()
 )
@@ -94,9 +97,11 @@ if (-not $IsLinuxHost) {
 # Insider dev machine must not raise it. Bump this when a new release ships.
 $MaxVersionTestedCap = "10.0.26200.0"
 
-# Signing certificates
+# Signing certificates. The desktop cert is a real CA-issued one, so SmartScreen trusts the
+# installer. The Store cert is self-signed on CN=<publisher id> because the Store re-signs what it
+# distributes; only the Identity/Publisher match matters, so regenerating it costs nothing.
 $DesktopSignThumbprint = "B3B4EA219B9BCB79749D5E84066DDCAC61E5C4C3"
-$StoreSignThumbprint = "0BC1CD0A4F37CE2A5A2CE72DAA9B08B1EC1CB522"
+$StoreSignThumbprint = "F9B6105B47FA98932E21D265ACD3936A5F626EB6"
 
 # Version file paths. Forward slashes so the same literals resolve on both hosts.
 $NsiFile = Join-Path $InstallerDir "diff.nsi"
@@ -624,8 +629,13 @@ function Assert-StoreVersionUnused {
 }
 
 function Build-Store {
+    param(
+        [switch]$NoBump
+    )
+
     # Auto-increment build number before building
-    Invoke-BumpBuild
+    if ($NoBump) { Write-Host "Skipping the build-number bump (-NoBump)." -ForegroundColor Yellow }
+    else { Invoke-BumpBuild }
 
     $version = Get-CurrentVersion
     $storePackage = "Diffractor_$($version.FileVersion)_x64"
@@ -1321,7 +1331,7 @@ function Deploy-Desktop {
 # Main entry point
 switch ($Command) {
     "desktop" { Build-Desktop }
-    "store" { Build-Store }
+    "store" { Build-Store -NoBump:$NoBump }
     "deploy" { Deploy-Desktop }
     "release" { New-GitHubRelease }
     "run32" { Start-Diffractor -Platform "Win32" }
