@@ -151,17 +151,6 @@ HRESULT STDMETHODCALLTYPE resource_font_file_stream::GetLastWriteTime(OUT UINT64
 	return E_NOTIMPL;
 }
 
-std::string format_guid(REFGUID id)
-{
-	wchar_t sz[50]; // GUID string is typically 38 characters + null terminator
-	const int result = StringFromGUID2(id, sz, _countof(sz));
-	if (result == 0)
-	{
-		return "<invalid-guid>";
-	}
-	return str::utf16_to_utf8(sz);
-}
-
 class resource_font_file_loader final : public IDWriteFontFileLoader
 {
 public:
@@ -183,7 +172,8 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, std::format("E_NOINTERFACE {}", format_guid(riid)));
+		// DirectWrite routinely probes for interfaces this loader does not implement (e.g. remote
+		// font support); answering E_NOINTERFACE is the correct and expected outcome, not worth logging.
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
@@ -273,8 +263,6 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, std::format("E_NOINTERFACE {}", format_guid(riid)));
-
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}
@@ -357,7 +345,6 @@ public:
 			return S_OK;
 		}
 
-		df::log(__FUNCTION__, std::format("E_NOINTERFACE {}", format_guid(riid)));
 		*ppvObject = nullptr;
 		return E_NOINTERFACE;
 	}

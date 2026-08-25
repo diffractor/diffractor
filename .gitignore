@@ -45,3 +45,5 @@ exe/tiles/*.png
 /matches.txt
 /run_search.py
 /search_*.ps1
+*.msixupload
+*.appxsym

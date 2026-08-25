@@ -379,7 +379,14 @@ static void iterate_items(const df::search_t& search_in,
 
 					if (found_node.folder)
 					{
-						for (const auto& folder_entry : *found_node.folder->folders_snapshot())
+						// Keep the snapshot alive for the whole loop: folders_snapshot() returns a
+						// temporary shared_ptr, and dereferencing it into the range-for only extends the
+						// vector's lifetime through the initializer, not the loop body. A concurrent
+						// replace_child() dropping the last other reference mid-loop would otherwise free
+						// the vector out from under the iteration.
+						const auto folders_snapshot = found_node.folder->folders_snapshot();
+
+						for (const auto& folder_entry : *folders_snapshot)
 						{
 							if (token.is_cancelled()) break;
 
@@ -2308,7 +2315,11 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 			if (recursive)
 			{
-				for (const auto& sub_folder : *node.folder->folders_snapshot())
+				// See the comment at the other folders_snapshot() call sites: the returned shared_ptr
+				// must outlive the loop, not just the range-for initializer.
+				const auto folders_snapshot = node.folder->folders_snapshot();
+
+				for (const auto& sub_folder : *folders_snapshot)
 				{
 					folders_to_scan.emplace_back(folder_path.combine(sub_folder->name));
 				}
@@ -3291,7 +3302,11 @@ void index_state::index_folders(df::cancel_token token)
 				}
 			}
 
-			for (const auto& sub_folder : *node.folder->folders_snapshot())
+			// See the comment at the other folders_snapshot() call sites: the returned shared_ptr must
+			// outlive the loop, not just the range-for initializer.
+			const auto folders_snapshot = node.folder->folders_snapshot();
+
+			for (const auto& sub_folder : *folders_snapshot)
 			{
 				const auto sub_folder_path = folder_path.combine(sub_folder->name);
 				const auto is_excluded = df::is_excluded(roots, sub_folder_path);
@@ -4319,7 +4334,11 @@ void index_state::scan_folder(const df::folder_path folder_path, const df::index
 		scan_item(folder, {folder_path, f.name}, false, false, false, false, {}, false, f.ft);
 	}
 
-	for (const auto& f : *folder->folders_snapshot())
+	// See the comment at the other folders_snapshot() call sites: the returned shared_ptr must
+	// outlive the loop, not just the range-for initializer.
+	const auto folders_snapshot = folder->folders_snapshot();
+
+	for (const auto& f : *folders_snapshot)
 	{
 		queue_scan_folder(folder_path.combine(f->name));
 	}
@@ -5095,7 +5114,14 @@ static df::count_and_size sum_items(const df::index_folder_info_const_ptr& folde
 {
 	df::count_and_size result;
 
-	for (const auto& sub_folder : *folder->folders_snapshot())
+	// folders_snapshot() returns a temporary shared_ptr; dereferencing it into the range-for only
+	// extends the pointee's lifetime through the initializer, not the loop body, so the snapshot is
+	// bound to a name here to keep the vector alive for the whole loop. A concurrent replace_child()
+	// dropping the last other reference mid-loop would otherwise free it out from under the recursion -
+	// the observed crash (null index_folder_item read in folders_snapshot -> _Lock_and_load).
+	const auto folders_snapshot = folder->folders_snapshot();
+
+	for (const auto& sub_folder : *folders_snapshot)
 	{
 		result += sum_items(sub_folder);
 	}
