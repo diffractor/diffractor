@@ -28,6 +28,10 @@ struct movie_clip
 	// read project starts with every clip missing and the view resolves them; a clip that stays
 	// missing keeps its stored times, so the trim survives a relink.
 	bool is_missing = true;
+	// Whether the probe has answered for this clip at all. Not saved: it is the difference between
+	// "we have not looked yet" and "we looked and it is gone", and only the second is a thing to
+	// tell the user about or to offer to repair.
+	bool is_probed = false;
 	double source_duration = 0;
 	double start = 0;
 	double end = 0;
@@ -38,6 +42,13 @@ struct movie_clip
 	double duration() const
 	{
 		return std::max(0.0, end - start);
+	}
+
+	// Probed, and not there. Distinct from not yet probed, which looks identical in the document and
+	// means the opposite to the user.
+	bool is_lost() const
+	{
+		return is_probed && is_missing;
 	}
 
 	bool is_trimmed() const
@@ -174,16 +185,29 @@ public:
 	size_t size() const { return _clips.size(); }
 	bool is_empty() const { return _clips.empty(); }
 
-	// Index of the clip the controls panel describes. Always in range while the timeline is not
-	// empty, so the panel never has to test it.
+	// Index of the clip the controls panel describes and the strip marks. Always in range while the
+	// timeline is not empty, so the panel never has to test it. Focus is one clip; the selection is
+	// a set, and the two are different facts.
 	size_t current() const { return _current; }
 	void current(size_t i);
 	const movie_clip* current_clip() const;
+
+	// Sorted, and empty only when the timeline is. A command that acts on "the clips" acts on this.
+	const std::vector<size_t>& selected() const { return _selected; }
+	bool is_selected(size_t i) const;
+	// One click's worth of selection: plain replaces, `extend` runs from the anchor, `toggle` adds
+	// or removes one. Focus always lands on `index` whichever it was.
+	void select(size_t index, bool extend, bool toggle);
+	void select_all();
 
 	void append(const movie_clip& clip);
 	void insert(size_t at, const movie_clip& clip);
 	void remove(size_t at);
 	void move(size_t from, size_t to);
+	// Moves every selected clip to the drop point, keeping their order relative to each other and
+	// carrying focus with them. `to` counts positions in the list as it stands before the move.
+	void move_selection(size_t to);
+	void remove_selection();
 	void replace(size_t at, const movie_clip& clip);
 	// For a change the user did not make and cannot want to undo: the probe filling in a clip's
 	// duration and extent. An undo entry here would make Ctrl+Z appear to do nothing.
@@ -199,6 +223,13 @@ public:
 	void reset(std::vector<movie_clip> clips, const movie_settings& s, df::file_path path);
 	void mark_saved(df::file_path path);
 
+	// The selection a timeline was built from, and empty when it came from a project file or has
+	// been edited since. Re-entering Movie with a different selection replaces a timeline that is
+	// still exactly what that selection produced, and leaves an edited one alone: the first is a
+	// view of a selection, the second is a document.
+	const std::vector<df::file_path>& seeded_from() const { return _seed; }
+	void mark_seeded(std::vector<df::file_path> seed);
+
 	bool can_undo() const { return !_undo.empty(); }
 	void undo();
 
@@ -210,15 +241,21 @@ private:
 	{
 		std::vector<movie_clip> clips;
 		movie_settings settings;
+		std::vector<size_t> selected;
 		size_t current = 0;
+		size_t anchor = 0;
 	};
 
 	void push_undo();
+	void select_only(size_t index);
 
 	std::vector<movie_clip> _clips;
 	movie_settings _settings;
 	std::vector<undo_entry> _undo;
 	df::file_path _path;
+	std::vector<df::file_path> _seed;
+	std::vector<size_t> _selected;
 	size_t _current = 0;
+	size_t _anchor = 0;
 	bool _modified = false;
 };

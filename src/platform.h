@@ -663,6 +663,9 @@ namespace platform
 		virtual bool has_bitmap() const = 0;
 		virtual description files_description() const = 0;
 		virtual df::file_path first_path() const = 0;
+		// Every path the drop carries, in the order it carries them. first_path() answers the one a
+		// target that opens a single item needs; a target that appends to a list needs all of them.
+		virtual std::vector<df::file_path> drop_paths() const = 0;
 
 		virtual file_op_result drop_files(df::folder_path save_path, drop_effect effect) = 0;
 		virtual file_op_result save_bitmap(df::folder_path save_path, std::string_view name, bool as_png) = 0;

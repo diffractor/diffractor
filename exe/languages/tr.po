@@ -3640,3 +3640,135 @@ msgstr "Orijinal Tarihe Göre Gruplandır"
 
 msgid "Sort by Date original"
 msgstr "Orijinal tarihe göre sırala"
+
+msgid "Movie mixer"
+msgstr "Film karıştırıcı"
+
+msgid "Assemble the selected photos and videos into one video. Add, remove and reorder clips on the strip below, and trim the selected one. The preview is what will be rendered; nothing is written until you render or save."
+msgstr "Seçili fotoğrafları ve videoları tek bir videoda birleştirin. Aşağıdaki şeritte klip ekleyin, kaldırın ve sıralarını değiştirin, seçili klibi kırpın. Önizleme, işlenecek olanın aynısıdır; siz işleyene veya kaydedene kadar hiçbir şey yazılmaz."
+
+msgid "Movie"
+msgstr "Film"
+
+msgid "Selected clip"
+msgstr "Seçili klip"
+
+msgid "Crossfade between clips"
+msgstr "Klipler arasında çapraz geçiş"
+
+msgid "Cut between clips"
+msgstr "Klipler arasında kesme"
+
+msgid "Transition (tenths of a second)"
+msgstr "Geçiş (saniyenin onda biri)"
+
+msgid "Fade in from black"
+msgstr "Siyahtan aç"
+
+msgid "Fade out to black"
+msgstr "Siyaha karart"
+
+msgid "Photo duration (tenths of a second)"
+msgstr "Fotoğraf süresi (saniyenin onda biri)"
+
+msgid "This photo (tenths of a second)"
+msgstr "Bu fotoğraf (saniyenin onda biri)"
+
+msgid "Use the movie default"
+msgstr "Film varsayılanını kullan"
+
+msgid "Add photos and videos to build a movie."
+msgstr "Film oluşturmak için fotoğraf ve video ekleyin."
+
+msgid "Output {} x {} at {} fps, {} long."
+msgstr "Çıktı {} x {}, {} fps, süre {}."
+
+msgid "{} - clip {} of {}, starting at {}."
+msgstr "{} - klip {}/{}, başlangıç {}."
+
+msgid "Movie project"
+msgstr "Film projesi"
+
+msgid "Windows Movie Maker project"
+msgstr "Windows Movie Maker projesi"
+
+msgid "Photos and videos"
+msgstr "Fotoğraflar ve videolar"
+
+msgid "Could not read the project {}."
+msgstr "{} projesi okunamadı."
+
+msgid "Could not save the project {}."
+msgstr "{} projesi kaydedilemedi."
+
+msgid "Assemble the selected photos and videos into one video."
+msgstr "Seçili fotoğrafları ve videoları tek bir videoda birleştirir."
+
+msgid "Add files"
+msgstr "Dosya ekle"
+
+msgid "Remove from movie"
+msgstr "Filmden kaldır"
+
+msgid "Send to the end"
+msgstr "Sona gönder"
+
+msgid "Open project"
+msgstr "Projeyi aç"
+
+msgid "Save project"
+msgstr "Projeyi kaydet"
+
+msgid "Import Movie Maker project"
+msgstr "Movie Maker projesini içe aktar"
+
+msgid "Video"
+msgstr "Video"
+
+msgid "Rendering the movie"
+msgstr "Film işleniyor"
+
+msgid "The movie could not be rendered. {}"
+msgstr "Film işlenemedi. {}"
+
+msgid "Rendered {}."
+msgstr "{} işlendi."
+
+msgid "Rendering was canceled. Nothing was written."
+msgstr "İşleme iptal edildi. Hiçbir şey yazılmadı."
+
+msgid "No missing clip was found in that folder."
+msgstr "Bu klasörde eksik klip bulunamadı."
+
+msgid "This movie has changes that are not in a project file. It is kept while Diffractor is running, and closing Diffractor discards it."
+msgstr "Bu filmde hiçbir proje dosyasında bulunmayan değişiklikler var. Diffractor çalıştığı sürece korunur, Diffractor kapatılınca atılır."
+
+msgid "Close without saving"
+msgstr "Kaydetmeden kapat"
+
+msgid "Render"
+msgstr "İşle"
+
+msgid "Write the movie to a video file."
+msgstr "Filmi bir video dosyasına yazar."
+
+msgid "Relink missing files"
+msgstr "Eksik dosyaları yeniden bağla"
+
+msgid "Point clips whose source file has moved at a folder you choose."
+msgstr "Kaynak dosyası taşınmış klipleri seçtiğiniz bir klasöre yönlendirir."
+
+msgid "1 element of the imported project was left out because Movie cannot represent it."
+msgid_plural "{count} elements of the imported project were left out because Movie cannot represent them."
+msgstr[0] "İçe aktarılan projenin 1 ögesi, Film onu temsil edemediği için dışarıda bırakıldı."
+msgstr[1] "İçe aktarılan projenin {count} ögesi, Film onları temsil edemediği için dışarıda bırakıldı."
+
+msgid "1 clip cannot find its source file."
+msgid_plural "{count} clips cannot find their source files."
+msgstr[0] "1 klip kaynak dosyasını bulamıyor."
+msgstr[1] "{count} klip kaynak dosyalarını bulamıyor."
+
+msgid "1 clip was relinked."
+msgid_plural "{count} clips were relinked."
+msgstr[0] "1 klip yeniden bağlandı."
+msgstr[1] "{count} klip yeniden bağlandı."

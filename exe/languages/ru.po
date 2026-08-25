@@ -3675,3 +3675,138 @@ msgstr "Группировать по дате оригинала"
 
 msgid "Sort by Date original"
 msgstr "Сортировать по дате оригинала"
+
+msgid "Movie mixer"
+msgstr "Микшер фильма"
+
+msgid "Assemble the selected photos and videos into one video. Add, remove and reorder clips on the strip below, and trim the selected one. The preview is what will be rendered; nothing is written until you render or save."
+msgstr "Соберите выбранные фотографии и видео в один ролик. Добавляйте, удаляйте и меняйте порядок клипов на полосе ниже и обрезайте выбранный клип. Предварительный просмотр показывает то, что будет отрисовано; ничего не записывается, пока вы не выполните отрисовку или не сохраните."
+
+msgid "Movie"
+msgstr "Фильм"
+
+msgid "Selected clip"
+msgstr "Выбранный клип"
+
+msgid "Crossfade between clips"
+msgstr "Перекрёстное затухание между клипами"
+
+msgid "Cut between clips"
+msgstr "Склейка между клипами"
+
+msgid "Transition (tenths of a second)"
+msgstr "Переход (десятые доли секунды)"
+
+msgid "Fade in from black"
+msgstr "Появление из чёрного"
+
+msgid "Fade out to black"
+msgstr "Затемнение в чёрное"
+
+msgid "Photo duration (tenths of a second)"
+msgstr "Длительность фотографии (десятые доли секунды)"
+
+msgid "This photo (tenths of a second)"
+msgstr "Эта фотография (десятые доли секунды)"
+
+msgid "Use the movie default"
+msgstr "Использовать значение фильма по умолчанию"
+
+msgid "Add photos and videos to build a movie."
+msgstr "Добавьте фотографии и видео, чтобы собрать фильм."
+
+msgid "Output {} x {} at {} fps, {} long."
+msgstr "Результат {} x {}, {} кадр/с, длительность {}."
+
+msgid "{} - clip {} of {}, starting at {}."
+msgstr "{} - клип {} из {}, начало {}."
+
+msgid "Movie project"
+msgstr "Проект фильма"
+
+msgid "Windows Movie Maker project"
+msgstr "Проект Windows Movie Maker"
+
+msgid "Photos and videos"
+msgstr "Фотографии и видео"
+
+msgid "Could not read the project {}."
+msgstr "Не удалось прочитать проект {}."
+
+msgid "Could not save the project {}."
+msgstr "Не удалось сохранить проект {}."
+
+msgid "Assemble the selected photos and videos into one video."
+msgstr "Собирает выбранные фотографии и видео в один ролик."
+
+msgid "Add files"
+msgstr "Добавить файлы"
+
+msgid "Remove from movie"
+msgstr "Удалить из фильма"
+
+msgid "Send to the end"
+msgstr "Переместить в конец"
+
+msgid "Open project"
+msgstr "Открыть проект"
+
+msgid "Save project"
+msgstr "Сохранить проект"
+
+msgid "Import Movie Maker project"
+msgstr "Импортировать проект Movie Maker"
+
+msgid "Video"
+msgstr "Видео"
+
+msgid "Rendering the movie"
+msgstr "Отрисовка фильма"
+
+msgid "The movie could not be rendered. {}"
+msgstr "Не удалось отрисовать фильм. {}"
+
+msgid "Rendered {}."
+msgstr "Отрисовано: {}."
+
+msgid "Rendering was canceled. Nothing was written."
+msgstr "Отрисовка отменена. Ничего не записано."
+
+msgid "No missing clip was found in that folder."
+msgstr "В этой папке не найдено ни одного отсутствующего клипа."
+
+msgid "This movie has changes that are not in a project file. It is kept while Diffractor is running, and closing Diffractor discards it."
+msgstr "В этом фильме есть изменения, которых нет ни в одном файле проекта. Он сохраняется, пока Diffractor запущен, а при закрытии Diffractor он теряется."
+
+msgid "Close without saving"
+msgstr "Закрыть без сохранения"
+
+msgid "Render"
+msgstr "Отрисовать"
+
+msgid "Write the movie to a video file."
+msgstr "Записывает фильм в видеофайл."
+
+msgid "Relink missing files"
+msgstr "Переподключить отсутствующие файлы"
+
+msgid "Point clips whose source file has moved at a folder you choose."
+msgstr "Переназначает клипы, исходные файлы которых были перемещены, на выбранную вами папку."
+
+msgid "1 element of the imported project was left out because Movie cannot represent it."
+msgid_plural "{count} elements of the imported project were left out because Movie cannot represent them."
+msgstr[0] "1 элемент импортированного проекта пропущен, так как Фильм не может его представить."
+msgstr[1] "{count} элемента импортированного проекта пропущены, так как Фильм не может их представить."
+msgstr[2] "{count} элементов импортированного проекта пропущено, так как Фильм не может их представить."
+
+msgid "1 clip cannot find its source file."
+msgid_plural "{count} clips cannot find their source files."
+msgstr[0] "1 клип не может найти свой исходный файл."
+msgstr[1] "{count} клипа не могут найти свои исходные файлы."
+msgstr[2] "{count} клипов не могут найти свои исходные файлы."
+
+msgid "1 clip was relinked."
+msgid_plural "{count} clips were relinked."
+msgstr[0] "1 клип переподключён."
+msgstr[1] "{count} клипа переподключены."
+msgstr[2] "{count} клипов переподключено."

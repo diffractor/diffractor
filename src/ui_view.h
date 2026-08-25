@@ -30,7 +30,8 @@ enum class menu_type
 	view,
 	sidebar,
 	media,
-	items
+	items,
+	movie
 };
 
 enum class view_element_event_type
@@ -531,6 +532,14 @@ public:
 	virtual menu_type context_menu(const pointi loc)
 	{
 		return menu_type::view;
+	}
+
+	// Files dropped on this view, in view coordinates. A view that answers true has consumed the
+	// drop; the default is false, which leaves the frame's own handling - opening the first item, or
+	// copying into the folder being shown - alone.
+	virtual bool drop_paths(const std::vector<df::file_path>& paths, const pointi loc)
+	{
+		return false;
 	}
 
 	virtual bool escape()

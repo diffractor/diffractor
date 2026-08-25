@@ -3801,3 +3801,138 @@ msgstr "Seskupit podle data originálu"
 
 msgid "Sort by Date original"
 msgstr "Řadit podle data originálu"
+
+msgid "Movie mixer"
+msgstr "Mixér filmu"
+
+msgid "Assemble the selected photos and videos into one video. Add, remove and reorder clips on the strip below, and trim the selected one. The preview is what will be rendered; nothing is written until you render or save."
+msgstr "Sestavte z vybraných fotografií a videí jedno video. Klipy na pásu níže přidávejte, odebírejte a přeuspořádávejte a vybraný klip ořízněte. Náhled odpovídá tomu, co se vykreslí; dokud nevykreslíte nebo neuložíte, nic se nezapisuje."
+
+msgid "Movie"
+msgstr "Film"
+
+msgid "Selected clip"
+msgstr "Vybraný klip"
+
+msgid "Crossfade between clips"
+msgstr "Prolínání mezi klipy"
+
+msgid "Cut between clips"
+msgstr "Střih mezi klipy"
+
+msgid "Transition (tenths of a second)"
+msgstr "Přechod (desetiny sekundy)"
+
+msgid "Fade in from black"
+msgstr "Rozjasnit z černé"
+
+msgid "Fade out to black"
+msgstr "Ztmavit do černé"
+
+msgid "Photo duration (tenths of a second)"
+msgstr "Doba zobrazení fotografie (desetiny sekundy)"
+
+msgid "This photo (tenths of a second)"
+msgstr "Tato fotografie (desetiny sekundy)"
+
+msgid "Use the movie default"
+msgstr "Použít výchozí hodnotu filmu"
+
+msgid "Add photos and videos to build a movie."
+msgstr "Přidejte fotografie a videa a sestavte film."
+
+msgid "Output {} x {} at {} fps, {} long."
+msgstr "Výstup {} x {} při {} fps, délka {}."
+
+msgid "{} - clip {} of {}, starting at {}."
+msgstr "{} - klip {} z {}, začíná v {}."
+
+msgid "Movie project"
+msgstr "Projekt filmu"
+
+msgid "Windows Movie Maker project"
+msgstr "Projekt Windows Movie Maker"
+
+msgid "Photos and videos"
+msgstr "Fotografie a videa"
+
+msgid "Could not read the project {}."
+msgstr "Projekt {} se nepodařilo načíst."
+
+msgid "Could not save the project {}."
+msgstr "Projekt {} se nepodařilo uložit."
+
+msgid "Assemble the selected photos and videos into one video."
+msgstr "Sestaví z vybraných fotografií a videí jedno video."
+
+msgid "Add files"
+msgstr "Přidat soubory"
+
+msgid "Remove from movie"
+msgstr "Odebrat z filmu"
+
+msgid "Send to the end"
+msgstr "Přesunout na konec"
+
+msgid "Open project"
+msgstr "Otevřít projekt"
+
+msgid "Save project"
+msgstr "Uložit projekt"
+
+msgid "Import Movie Maker project"
+msgstr "Importovat projekt Movie Maker"
+
+msgid "Video"
+msgstr "Video"
+
+msgid "Rendering the movie"
+msgstr "Vykreslování filmu"
+
+msgid "The movie could not be rendered. {}"
+msgstr "Film se nepodařilo vykreslit. {}"
+
+msgid "Rendered {}."
+msgstr "Vykresleno: {}."
+
+msgid "Rendering was canceled. Nothing was written."
+msgstr "Vykreslování bylo zrušeno. Nic nebylo zapsáno."
+
+msgid "No missing clip was found in that folder."
+msgstr "V dané složce nebyl nalezen žádný chybějící klip."
+
+msgid "This movie has changes that are not in a project file. It is kept while Diffractor is running, and closing Diffractor discards it."
+msgstr "Tento film obsahuje změny, které nejsou v souboru projektu. Zůstane zachován, dokud Diffractor běží, a jeho ukončením se zahodí."
+
+msgid "Close without saving"
+msgstr "Zavřít bez uložení"
+
+msgid "Render"
+msgstr "Vykreslit"
+
+msgid "Write the movie to a video file."
+msgstr "Zapíše film do souboru videa."
+
+msgid "Relink missing files"
+msgstr "Znovu propojit chybějící soubory"
+
+msgid "Point clips whose source file has moved at a folder you choose."
+msgstr "Nasměruje klipy, jejichž zdrojový soubor se přesunul, do vybrané složky."
+
+msgid "1 element of the imported project was left out because Movie cannot represent it."
+msgid_plural "{count} elements of the imported project were left out because Movie cannot represent them."
+msgstr[0] "1 prvek importovaného projektu byl vynechán, protože jej Film neumí zachytit."
+msgstr[1] "{count} prvky importovaného projektu byly vynechány, protože je Film neumí zachytit."
+msgstr[2] "{count} prvků importovaného projektu bylo vynecháno, protože je Film neumí zachytit."
+
+msgid "1 clip cannot find its source file."
+msgid_plural "{count} clips cannot find their source files."
+msgstr[0] "1 klip nemůže najít svůj zdrojový soubor."
+msgstr[1] "{count} klipy nemohou najít své zdrojové soubory."
+msgstr[2] "{count} klipů nemůže najít své zdrojové soubory."
+
+msgid "1 clip was relinked."
+msgid_plural "{count} clips were relinked."
+msgstr[0] "1 klip byl znovu propojen."
+msgstr[1] "{count} klipy byly znovu propojeny."
+msgstr[2] "{count} klipů bylo znovu propojeno."

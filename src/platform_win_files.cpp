@@ -1331,6 +1331,36 @@ df::file_path data_object_client::first_path() const
 	return result;
 }
 
+std::vector<df::file_path> data_object_client::drop_paths() const
+{
+	std::vector<df::file_path> result;
+	STGMEDIUM stgMedium;
+
+	if (_pData && SUCCEEDED(_pData->GetData(&clipboard_formats::Drop, &stgMedium)))
+	{
+		if (const locked_drop_files drop(stgMedium.hGlobal); drop.is_valid())
+		{
+			if (drop.is_wide())
+			{
+				for (const auto* sz = drop.wide_list(); *sz != 0; sz += wcslen(sz) + 1)
+				{
+					result.emplace_back(to_file_path(sz));
+				}
+			}
+			else
+			{
+				for (const auto* sz = drop.narrow_list(); *sz != 0; sz += strlen(sz) + 1)
+				{
+					result.emplace_back(df::file_path(sz));
+				}
+			}
+		}
+
+		ReleaseStgMedium(&stgMedium);
+	}
+
+	return result;
+}
 
 static platform::drop_effect to_drop_effect(const DWORD dwEffect)
 {

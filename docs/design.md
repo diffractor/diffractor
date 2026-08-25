@@ -108,6 +108,7 @@ Names are closed in the same way scope and target are. One concept has one name,
 | Items | Browser | `items` |
 | Fullscreen | Presentation | `media` |
 | Edit | Task view | `edit` |
+| Movie mixer | Task view | `movie` |
 | Tags | Task view | `tags` |
 | Locate | Task view | `locate` |
 | Rename | Task view | `rename` |
@@ -133,7 +134,7 @@ The search/address box navigates folders, dates, locations, media types, ratings
 
 - **Items** is the windowed browser. It shows grouped thumbnails or details alongside an optional media/metadata preview.
 - **Fullscreen** gives media the whole display for immersive photo, video, audio, comparison, or selection presentation.
-- **Task views** cover Edit, Tags, Locate, Rename, Convert, Metadata, Date, Import, and Sync.
+- **Task views** cover Edit, Tags, Locate, Rename, Convert, Metadata, Date, Import, and Sync. **Movie mixer** is one too, and is owned by [movie.md](movie.md).
 
 Items is the only windowed browsing presentation. Its browser and preview use a resizable divider and scroll independently. Relayout from resizing, toolbar wrapping, or presentation changes preserves orientation in each pane: the focused visible item remains at its prior screen position when possible, otherwise the content nearest the viewport center is retained, with proportional scroll position as a fallback when that content no longer exists. When a command names the items it has just produced — a paste, or opening a specific file — the listing scrolls that new selection into view, because the command selected it in order to show it. Zoom or comparison may temporarily give the content area to media; leaving restores the browser without changing scope or target. Fullscreen is temporary presentation state and preserves scope, query, filters, grouping, sorting, focus, selection, splitter position, and Items scroll position.
 

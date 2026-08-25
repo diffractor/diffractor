@@ -2725,8 +2725,28 @@ class movie_view_state
 public:
 	movie_project project;
 
+	// What is playing. The movie and the clip are two players over the same document and only one
+	// of them runs: two pictures moving at once, to two different times, is not a preview.
+	enum class playing_t
+	{
+		nothing,
+		movie,
+		clip,
+	};
+
+	playing_t playing = playing_t::nothing;
+
+	// Position on the finished movie, and position in the current clip's source. They are different
+	// clocks over the same material, so neither is derived from the other.
 	double playhead = 0;
-	bool is_playing = false;
+	double clip_playhead = 0;
+
+	// What the last project read carried that Movie has no answer for. Kept because it is stated in
+	// the explainer: a project that imported as a silently different movie is exactly the hidden
+	// state the product promise forbids.
+	int import_ignored = 0;
+
+	bool is_playing() const { return playing != playing_t::nothing; }
 
 	// The dialog controls bind to int and bool references, so the settings are held here in the
 	// units those controls speak and pushed into the document whenever one of them changes.

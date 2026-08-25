@@ -862,14 +862,81 @@ movie_load_result read_wlmp(const std::string_view xml)
 
 void movie_project::push_undo()
 {
-	_undo.emplace_back(undo_entry{_clips, _settings, _current});
+	_undo.emplace_back(undo_entry{_clips, _settings, _selected, _current, _anchor});
 	if (_undo.size() > max_undo) _undo.erase(_undo.begin());
 	_modified = true;
 }
 
+void movie_project::select_only(const size_t index)
+{
+	if (_clips.empty())
+	{
+		_selected.clear();
+		_current = 0;
+		_anchor = 0;
+		return;
+	}
+
+	_current = std::min(index, _clips.size() - 1);
+	_anchor = _current;
+	_selected.assign(1, _current);
+}
+
 void movie_project::current(const size_t i)
 {
-	_current = _clips.empty() ? 0 : std::min(i, _clips.size() - 1);
+	select_only(i);
+}
+
+bool movie_project::is_selected(const size_t i) const
+{
+	return std::find(_selected.begin(), _selected.end(), i) != _selected.end();
+}
+
+void movie_project::select(const size_t index, const bool extend, const bool toggle)
+{
+	if (index >= _clips.size()) return;
+
+	if (toggle)
+	{
+		const auto found = std::find(_selected.begin(), _selected.end(), index);
+
+		if (found != _selected.end())
+		{
+			// The last selected clip cannot be toggled away: a command that acts on the selection
+			// would then have nothing to act on while the strip still shows a focused clip.
+			if (_selected.size() > 1) _selected.erase(found);
+		}
+		else
+		{
+			_selected.emplace_back(index);
+			std::sort(_selected.begin(), _selected.end());
+		}
+
+		_anchor = index;
+	}
+	else if (extend)
+	{
+		_selected.clear();
+
+		for (auto i = std::min(_anchor, index); i <= std::max(_anchor, index); ++i)
+		{
+			_selected.emplace_back(i);
+		}
+	}
+	else
+	{
+		_selected.assign(1, index);
+		_anchor = index;
+	}
+
+	_current = index;
+}
+
+void movie_project::select_all()
+{
+	_selected.clear();
+	for (size_t i = 0; i < _clips.size(); ++i) _selected.emplace_back(i);
+	if (_current >= _clips.size()) _current = _clips.empty() ? 0 : _clips.size() - 1;
 }
 
 const movie_clip* movie_project::current_clip() const
@@ -887,7 +954,7 @@ void movie_project::insert(const size_t at, const movie_clip& clip)
 	push_undo();
 	const auto index = std::min(at, _clips.size());
 	_clips.insert(_clips.begin() + index, clip);
-	_current = index;
+	select_only(index);
 }
 
 void movie_project::remove(const size_t at)
@@ -896,7 +963,7 @@ void movie_project::remove(const size_t at)
 
 	push_undo();
 	_clips.erase(_clips.begin() + at);
-	current(_current > at ? _current - 1 : _current);
+	select_only(_current > at ? _current - 1 : _current);
 }
 
 void movie_project::move(const size_t from, const size_t to)
@@ -908,7 +975,68 @@ void movie_project::move(const size_t from, const size_t to)
 	_clips.erase(_clips.begin() + from);
 	const auto index = std::min(to, _clips.size());
 	_clips.insert(_clips.begin() + index, clip);
-	_current = index;
+	select_only(index);
+}
+
+void movie_project::move_selection(const size_t to)
+{
+	if (_selected.empty() || _clips.empty()) return;
+
+	std::vector<movie_clip> moved;
+	std::vector<movie_clip> rest;
+	size_t insert_at = 0;
+	size_t focus_offset = 0;
+
+	// `to` counts positions in the list as it stands, so the destination has to be re-expressed
+	// against the clips that will still be there once the selection is lifted out.
+	for (size_t i = 0; i < _clips.size(); ++i)
+	{
+		if (is_selected(i))
+		{
+			if (i == _current) focus_offset = moved.size();
+			moved.emplace_back(_clips[i]);
+		}
+		else
+		{
+			if (i < to) ++insert_at;
+			rest.emplace_back(_clips[i]);
+		}
+	}
+
+	if (moved.empty()) return;
+
+	insert_at = std::min(insert_at, rest.size());
+
+	// A block dropped where it already is changes nothing, and must not cost an undo step.
+	if (_selected.front() == insert_at && _selected.back() - _selected.front() + 1 == _selected.size()) return;
+
+	push_undo();
+
+	rest.insert(rest.begin() + insert_at, moved.begin(), moved.end());
+	_clips = std::move(rest);
+
+	_selected.clear();
+	for (size_t i = 0; i < moved.size(); ++i) _selected.emplace_back(insert_at + i);
+
+	_current = insert_at + focus_offset;
+	_anchor = _current;
+}
+
+void movie_project::remove_selection()
+{
+	if (_selected.empty() || _clips.empty()) return;
+
+	push_undo();
+
+	const auto first = _selected.front();
+
+	// Erased from the back so the earlier indices stay valid as the list shrinks.
+	for (auto it = _selected.rbegin(); it != _selected.rend(); ++it)
+	{
+		if (*it < _clips.size()) _clips.erase(_clips.begin() + *it);
+	}
+
+	select_only(first);
 }
 
 void movie_project::replace(const size_t at, const movie_clip& clip)
@@ -969,14 +1097,24 @@ void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s
 	_clips = std::move(clips);
 	_settings = s;
 	_path = path;
+	_seed.clear();
 	_undo.clear();
-	_current = 0;
 	_modified = false;
+	select_only(0);
 }
 
 void movie_project::mark_saved(const df::file_path path)
 {
 	_path = path;
+	_modified = false;
+}
+
+void movie_project::mark_seeded(std::vector<df::file_path> seed)
+{
+	_seed = std::move(seed);
+	// A seeded timeline has no state before itself, so there is nothing to undo back to and nothing
+	// yet for the user to have changed.
+	_undo.clear();
 	_modified = false;
 }
 
@@ -989,6 +1127,13 @@ void movie_project::undo()
 
 	_clips = std::move(entry.clips);
 	_settings = entry.settings;
-	current(entry.current);
+	_selected = std::move(entry.selected);
+	_current = entry.current;
+	_anchor = entry.anchor;
 	_modified = true;
+
+	// The stored selection came from a list that may have been longer than this one.
+	std::erase_if(_selected, [this](const size_t i) { return i >= _clips.size(); });
+	if (_selected.empty() && !_clips.empty()) select_only(std::min(_current, _clips.size() - 1));
+	if (_current >= _clips.size()) _current = _clips.empty() ? 0 : _clips.size() - 1;
 }

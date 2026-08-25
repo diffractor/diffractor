@@ -587,6 +587,102 @@ static void should_end_a_silent_clip_at_the_stream_end()
 	ses->close(false);
 }
 
+// Movie's preview wants frames from a session and supplies its own sound, so the session opens
+// without its audio stream. That is not a saving: process_io stops reading when *either* packet
+// queue fills, so a session whose audio nothing drains stalls its own video and delivers nothing.
+static void should_open_a_session_without_its_audio()
+{
+	df::file_path path;
+
+	// Short, so driving it to the end is a test rather than a wait, and with sound, because opening
+	// it without that sound is the whole claim.
+	for (const auto* const name : {"StPauls.MOV", "tvp.mp4", "gizmo.mp4", "indy.mp4"})
+	{
+		const auto candidate = test_files_folder.combine_file(name);
+
+		av_format_decoder probe;
+		if (!probe.open(candidate, media_intent::metadata)) continue;
+		probe.init_streams(-1, -1, false, false, false);
+
+		const auto duration = probe.end_time() - probe.start_time();
+
+		if (probe.has_audio() && probe.has_video() && duration > 0.0 && duration < 30.0)
+		{
+			path = candidate;
+			break;
+		}
+	}
+
+	assert_equal(false, path.is_empty(), "a short test clip with sound is available");
+
+	const auto file_type = files::file_type_from_name(path);
+	const auto ses = make_test_session();
+
+	assert_equal(true, ses->open(path, file_type, 0.0, true, -1, -1, false, false, true, true),
+	             "session opened video only");
+
+	assert_equal(true, ses->video_stream_id() >= 0, "the video stream is open");
+	assert_equal(-1, ses->audio_stream_id(), "and the audio stream is not");
+	assert_equal(false, ses->has_audio_clock(), "so the wall clock times it, as a silent clip is timed");
+
+	// Drive the demux, decode and present work the player threads normally own. Reaching the end of
+	// the stream is the claim: an undrained audio queue stops the reader, so a stalled session runs
+	// out of frames part way through and never gets there.
+	const platform::thread_event video_event(false, false);
+	const platform::thread_event audio_event(false, false);
+	const platform::thread_event read_event(false, false);
+
+	auto now = df::now();
+	auto presented = 0;
+	auto ended = false;
+
+	for (auto i = 0; i < 3000 && !ended; ++i)
+	{
+		ses->process_io(video_event, audio_event);
+		ses->process_video(read_event);
+		now += 0.02;
+		if (ses->update_for_present(now)) ++presented;
+		ended = ses->has_ended(now);
+	}
+
+	assert_equal(true, presented > 10,
+	             std::format("a video-only session keeps presenting frames (presented {})", presented));
+	assert_equal(true, ended, "and reaches the end of the stream rather than stalling part way");
+
+	ses->close(false);
+}
+
+// Playing a clip to judge a trim is not the user watching that file. Saving a position for it would
+// overwrite the resume point they set by actually watching it, silently and on every scrub.
+static void should_not_save_a_position_for_borrowed_playback()
+{
+	const auto path = test_files_folder.combine_file("indy.mp4");
+	const auto file_type = files::file_type_from_name(path);
+
+	auto saved_for = df::file_path{};
+	auto save_count = 0;
+
+	const auto record = [&saved_for, &save_count](const df::file_path p, double)
+	{
+		saved_for = p;
+		++save_count;
+	};
+
+	// The control: ordinary playback still records where it was left.
+	const auto watched = make_test_session(record);
+	assert_equal(true, watched->open(path, file_type, 0.0, true, -1, -1, false, false, true), "session opened");
+	watched->close(true);
+	assert_equal(1, save_count, "watching a file saves its position");
+	assert_equal(path.pack(), saved_for.pack(), "and saves it against that file");
+
+	const auto borrowed = make_test_session(record);
+	borrowed->remembers_position(false);
+	assert_equal(true, borrowed->open(path, file_type, 0.0, true, -1, -1, false, false, true), "session opened");
+	borrowed->close(true);
+
+	assert_equal(1, save_count, "playback that stands for something else leaves the position alone");
+}
+
 // Read-ahead used to be counted in frames alone, so what it cost depended entirely on the
 // resolution: sixteen queued 1920x816 frames measured 63 MB of process commit, and 4K is four
 // times the frame. The budget is stated in bytes now, and this holds the queue to it.
@@ -908,7 +1004,164 @@ static void should_save_the_accepted_target_while_synchronizing()
 	assert_equal(17.0, position_to_save(true, 17.0, 42.0), "synchronizing wins over a stale presented time");
 }
 
+// The Movie preview asks for a frame every fortieth of a second, each a few frames on from the
+// last. Reopening the file and seeking for every one of those is what made the preview a blank
+// rectangle - the playhead runs on the wall clock and never comes back to a position whose decode
+// has finally landed. So the decoder walks forward from where it already sits, and seeks only when
+// the request is behind it.
+static void should_walk_video_frames_forward()
+{
+	const auto path = test_files_folder.combine_file("indy.mp4");
+
+	av_format_decoder dec;
+	assert_equal(true, dec.open(path, media_intent::thumbnail), "decoder opened");
+	dec.init_streams(-1, -1, false, true, false);
+	assert_equal(true, dec.has_video(), "indy.mp4 has video");
+
+	const auto start = dec.start_time();
+	assert_equal(true, dec.end_time() - start > 1.0, "the clip is long enough to walk");
+
+	auto previous = -1.0;
+
+	for (auto step = 0; step < 8; ++step)
+	{
+		const auto wanted = start + 0.2 + step * 0.08;
+
+		ui::surface_ptr s;
+		assert_equal(true, dec.extract_frame_at(s, {256, 256}, wanted, 0.02),
+		             std::format("frame decoded at {:.2f}s", wanted));
+		assert_equal(true, is_valid(s), "frame surface");
+		assert_equal(true, std::abs(s->time() - wanted) < 0.5,
+		             std::format("step lands near {:.2f}s (got {:.2f}s)", wanted, s->time()));
+		assert_equal(true, s->time() >= previous, "a forward walk never goes backwards");
+
+		previous = s->time();
+	}
+
+	// Backwards is the case a walk cannot answer. Without a seek the decoder is already past the
+	// request, so every frame it reaches is late and it hands back the first one it sees.
+	const auto back_wanted = start + 0.2;
+
+	ui::surface_ptr back;
+	assert_equal(true, dec.extract_frame_at(back, {256, 256}, back_wanted, 0.02), "frame decoded behind the walk");
+	assert_equal(true, std::abs(back->time() - back_wanted) < 0.5,
+	             std::format("a request behind the decoder seeks (wanted {:.2f}s, got {:.2f}s)",
+	                         back_wanted, back->time()));
+
+	dec.close();
+}
+
+// The Movie trim control draws where the sound is, because a trim is usually aimed at the start or
+// the end of someone talking and that is invisible in a picture. Peaks are per bucket over the
+// whole stream, so a stream with content must produce buckets that differ from one another - a
+// measurement that answers the same number everywhere draws a flat line and says nothing.
+static void should_measure_audio_peaks()
+{
+	df::file_path voiced_path;
+
+	for (const auto* const name : {"indy.mp4", "gizmo.mp4", "tagged.mkv", "tagged.webm", "anamorphic.mp4"})
+	{
+		const auto candidate = test_files_folder.combine_file(name);
+
+		av_format_decoder probe;
+		if (!probe.open(candidate, media_intent::metadata)) continue;
+		probe.init_streams(-1, -1, false, false, false);
+
+		if (probe.has_audio())
+		{
+			voiced_path = candidate;
+			break;
+		}
+	}
+
+	assert_equal(false, voiced_path.is_empty(), "a test file with audio is available");
+
+	av_format_decoder dec;
+	assert_equal(true, dec.open(voiced_path, media_intent::playback), "decoder opened");
+	dec.init_streams(-1, -1, false, false, false);
+	assert_equal(true, dec.has_audio(), "the test file has audio");
+
+	constexpr int buckets = 64;
+	const auto peaks = dec.extract_audio_peaks(buckets);
+
+	assert_equal(static_cast<size_t>(buckets), peaks.size(), "one level per bucket");
+
+	const auto loudest = *std::ranges::max_element(peaks);
+	const auto quietest = *std::ranges::min_element(peaks);
+
+	assert_equal(true, loudest > 0, "the stream registers a level somewhere");
+	assert_equal(true, loudest > quietest, "the level varies across the stream rather than reading flat");
+
+	dec.close();
+
+	// A file opened without its audio answers empty rather than a row of zeros, so the control can
+	// tell silence it measured from a track that is not there.
+	av_format_decoder video_only;
+	assert_equal(true, video_only.open(voiced_path, media_intent::playback), "decoder reopened");
+	video_only.init_streams(-1, -1, false, true, false);
+	assert_equal(true, video_only.extract_audio_peaks(buckets).empty(), "no audio stream means no levels");
+}
+
+// The Movie preview plays a clip from a buffer rather than by chasing packets against a clock, so
+// the whole stream is decoded once into interleaved stereo at a known rate. The cap is what stops a
+// long clip spending hundreds of megabytes on a preview.
+static void should_decode_audio_into_a_buffer()
+{
+	df::file_path voiced_path;
+
+	for (const auto* const name : {"indy.mp4", "gizmo.mp4", "tagged.mkv", "tagged.webm", "anamorphic.mp4"})
+	{
+		const auto candidate = test_files_folder.combine_file(name);
+
+		av_format_decoder probe;
+		if (!probe.open(candidate, media_intent::metadata)) continue;
+		probe.init_streams(-1, -1, false, false, false);
+
+		if (probe.has_audio())
+		{
+			voiced_path = candidate;
+			break;
+		}
+	}
+
+	assert_equal(false, voiced_path.is_empty(), "a test file with audio is available");
+
+	constexpr int rate = 48000;
+	constexpr double cap_seconds = 0.5;
+
+	av_format_decoder capped_dec;
+	assert_equal(true, capped_dec.open(voiced_path, media_intent::playback), "decoder opened");
+	capped_dec.init_streams(-1, -1, false, false, false);
+	assert_equal(true, capped_dec.has_audio(), "the test file has audio");
+
+	const auto capped = capped_dec.extract_audio_pcm(rate, cap_seconds);
+
+	assert_equal(false, capped.empty(), "the stream decodes to samples");
+	assert_equal(true, capped.size() % 2 == 0, "interleaved stereo is a whole number of pairs");
+	assert_equal(static_cast<size_t>(cap_seconds * rate) * 2, capped.size(),
+	             "and stops exactly at the cap rather than reading the whole file");
+
+	// Silence would pass every check above, so the buffer has to be shown to carry signal. The cap
+	// above is deliberately short, and the opening of a clip is often quiet, so this reads enough of
+	// the stream to be sure.
+	av_format_decoder full_dec;
+	assert_equal(true, full_dec.open(voiced_path, media_intent::playback), "decoder reopened for a longer read");
+	full_dec.init_streams(-1, -1, false, false, false);
+
+	const auto samples = full_dec.extract_audio_pcm(rate, 60.0);
+	assert_equal(false, samples.empty(), "a longer read also decodes");
+
+	const auto loudest = std::ranges::max(samples, {}, [](const int16_t v) { return std::abs(v); });
+	assert_equal(true, std::abs(loudest) > 0, "the buffer carries signal rather than silence");
+
+	av_format_decoder video_only;
+	assert_equal(true, video_only.open(voiced_path, media_intent::playback), "decoder reopened");
+	video_only.init_streams(-1, -1, false, true, false);
+	assert_equal(true, video_only.extract_audio_pcm(rate, cap_seconds).empty(), "no audio stream means no buffer");
+}
+
 void register_av_tests(view_state& state, test_registry& tests)
+
 {
 	//
 	// Resume
@@ -953,6 +1206,9 @@ void register_av_tests(view_state& state, test_registry& tests)
 	// Playback
 	//
 	tests.add("Should end a silent clip at the stream end"s, should_end_a_silent_clip_at_the_stream_end);
+	tests.add("Should open a session without its audio"s, should_open_a_session_without_its_audio);
+	tests.add("Should not save a position for borrowed playback"s,
+	          should_not_save_a_position_for_borrowed_playback);
 	tests.add("Should bound video read ahead by bytes"s, should_bound_video_read_ahead_by_bytes);
 	tests.add("Should land audio and video on the sought position"s,
 	          should_land_audio_and_video_on_the_sought_position);
@@ -963,6 +1219,9 @@ void register_av_tests(view_state& state, test_registry& tests)
 	tests.add("Should preview video frames at hover positions"s, should_preview_video_frames_at_hover_positions);
 	tests.add("Should reuse the preview decoder across hovers"s, should_reuse_the_preview_decoder_across_hovers);
 	tests.add("Should allow tolerance for hover thumbnails"s, should_allow_tolerance_for_hover_thumbnails);
+	tests.add("Should walk video frames forward"s, should_walk_video_frames_forward);
+	tests.add("Should measure audio peaks"s, should_measure_audio_peaks);
+	tests.add("Should decode audio into a buffer"s, should_decode_audio_into_a_buffer);
 
 	//
 	// Session lifetime

@@ -483,6 +483,7 @@ int count_search_results(index_state& index, std::string_view query);
 std::shared_ptr<av_player> make_test_player();
 // Never opened, so it holds no file and no decoder threads; only its identity is of interest.
 std::shared_ptr<av_session> make_test_session();
+std::shared_ptr<av_session> make_test_session(std::function<void(df::file_path, double)> save_position);
 
 // The gazetteer costs seconds to load, so every test that needs real place data shares one
 // loaded instance. A test that mutates it (set_display_language) must restore it before returning.

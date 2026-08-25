@@ -61,6 +61,11 @@ inline double position_to_save(const bool is_synchronizing, const double accepte
 	return is_synchronizing ? accepted_seek : last_frame_time;
 }
 
+// How many sessions the player will decode frames for beside the one it is playing. Two, because
+// the only caller is Movie's preview and a crossfade mixes exactly two clips. docs/movie.md owns
+// why the preview needs them and why it cannot pump them itself.
+inline constexpr size_t av_max_frame_sessions = 2;
+
 class av_session final : public std::enable_shared_from_this<av_session>
 {
 	av_visualizer _visualizer;
@@ -154,6 +159,11 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	std::atomic<int> _volume = 1000;
 	std::atomic<bool> _mute = false;
 
+	// Cleared by a caller whose playback is not the user viewing the file. Movie plays a clip to
+	// judge a trim, and without this every scrub would rewrite the resume position the user set by
+	// actually watching it.
+	std::atomic<bool> _remembers_position = true;
+
 	mutable platform::mutex _presentation_mutex;
 	df::file_path _path;
 
@@ -243,6 +253,13 @@ public:
 		return _state == av_play_state::playing || _state == av_play_state::paused;
 	}
 
+	// False for playback that stands for something other than the user viewing this file, so
+	// closing it leaves their resume position alone. See _remembers_position.
+	void remembers_position(const bool x)
+	{
+		_remembers_position = x;
+	}
+
 	bool is_playing() const
 	{
 		return _state == av_play_state::playing;
@@ -279,7 +296,7 @@ public:
 
 	bool open(const df::file_path path, const file_type_ref file_type, const double starting_position,
 	          const bool auto_play, const int video_track, const int audio_track, const bool can_use_hw,
-	          const bool use_last_played_pos, const bool can_use_threads,
+	          const bool use_last_played_pos, const bool can_use_threads, const bool video_only = false,
 	          const platform::file_ptr& file = {})
 	{
 		df::assert_true(_state == av_play_state::detached);
@@ -294,7 +311,10 @@ public:
 
 		if (result)
 		{
-			_decoder.init_streams(video_track, audio_track, can_use_hw, false, can_use_threads);
+			// video_only is not an optimisation. process_io stops reading when *either* packet queue
+			// fills, so a session whose audio nothing drains stalls its own video -- which is exactly
+			// what a caller that wants frames and supplies its own sound would otherwise get.
+			_decoder.init_streams(video_track, audio_track, can_use_hw, video_only, can_use_threads);
 
 			_has_video = _decoder.has_video();
 			_has_audio = _decoder.has_audio();
@@ -385,7 +405,7 @@ public:
 		_mt = nullptr;
 		_path = {};
 
-		if (save_position && !path.is_empty() && _save_media_position)
+		if (save_position && _remembers_position && !path.is_empty() && _save_media_position)
 		{
 			_save_media_position(path, position);
 		}
@@ -833,6 +853,13 @@ class av_player final : public std::enable_shared_from_this<av_player>
 	platform::mutex _thread_mutex;
 	std::atomic<std::shared_ptr<av_session>> _thread_session;
 
+	// Sessions the player decodes for but never plays. Movie's preview needs pictures from two
+	// clips at once and supplies its own sound, so it opens these video-only and reads their frames
+	// itself. They share the read and video threads with the playing session -- a second pump would
+	// be a second set of threads doing the same work -- and never reach the audio thread, because a
+	// video-only session has no audio stream to drain.
+	std::array<std::atomic<std::shared_ptr<av_session>>, av_max_frame_sessions> _frame_sessions;
+
 	mutable _Guarded_by_(_thread_mutex) std::string _audio_device_id;
 	mutable _Guarded_by_(_thread_mutex) std::string _play_audio_device_id;
 
@@ -878,14 +905,67 @@ public:
 			{
 				df::scope_locked_inc l(df::loading_media);
 				auto ses = p->open_impl(path, file_type, starting_position, auto_play, video_track, audio_track,
-				                        can_use_hw, use_last_played_pos, file);
+				                        can_use_hw, use_last_played_pos, false, file);
 				if (cb) p->_host.queue_ui([cb, ses] { cb(ses); });
 			});
+	}
+
+	// For a caller that has a path rather than an item, and whose playback stands for something
+	// other than the user viewing that file: Movie's clip player plays a clip of a timeline, so it
+	// must not write a resume position for the file that clip came from.
+	void open_detached(const df::file_path path, const file_type_ref file_type, const double start_position,
+	                   const bool auto_play, const std::function<void(std::shared_ptr<av_session>)>& cb)
+	{
+		queue([path, file_type, start_position, auto_play, cb](const std::shared_ptr<av_player>& p)
+		{
+			df::scope_locked_inc l(df::loading_media);
+			auto ses = p->open_impl(path, file_type, start_position, auto_play, -1, -1, false, false, false, {});
+
+			if (ses)
+			{
+				ses->remembers_position(false);
+				if (start_position > 0) ses->seek(start_position, false);
+			}
+
+			if (cb) p->_host.queue_ui([cb, ses] { cb(ses); });
+		});
 	}
 
 	void close(const std::shared_ptr<av_session>& ses, const std::function<void()>& cb)
 	{
 		queue([ses, cb](const std::shared_ptr<av_player>& p) { p->close_impl(ses, cb); });
+	}
+
+	// Opens a session in `slot` purely as a source of pictures. Video only -- process_io stops
+	// reading when *either* packet queue fills, so a session whose audio nothing drains would stall
+	// its own video -- and software decoded, because a hardware surface the caller has to download
+	// every frame costs more than it saves. It never becomes the playing session, and it never
+	// writes a resume position: it stands for a clip of a timeline, not for the user watching a file.
+	void open_frames(const size_t slot, const df::file_path path, const file_type_ref file_type,
+	                 const double start_position, const std::function<void(std::shared_ptr<av_session>)>& cb)
+	{
+		if (slot >= av_max_frame_sessions) return;
+
+		queue([slot, path, file_type, start_position, cb](const std::shared_ptr<av_player>& p)
+		{
+			df::scope_locked_inc l(df::loading_media);
+			auto ses = p->open_frames_impl(slot, path, file_type, start_position);
+			if (cb) p->_host.queue_ui([cb, ses] { cb(ses); });
+		});
+	}
+
+	void close_frames(const size_t slot, const std::shared_ptr<av_session>& ses)
+	{
+		if (slot >= av_max_frame_sessions) return;
+
+		queue([slot, ses](const std::shared_ptr<av_player>& p)
+		{
+			if (ses) ses->close(false);
+			if (p->_frame_sessions[slot].load() == ses) p->_frame_sessions[slot].store(nullptr);
+
+			p->_read_event.set();
+			p->_video_event.set();
+		});
 	}
 
 	void play(const std::shared_ptr<av_session>& ses)
@@ -911,11 +991,12 @@ private:
 	std::shared_ptr<av_session> open_impl(const df::file_path path, const file_type_ref file_type,
 	                                      const double starting_position, const bool auto_play,
 	                                      const int video_track, const int audio_track, const bool can_use_hw,
-	                                      const bool use_last_played_pos, const platform::file_ptr& file)
+	                                      const bool use_last_played_pos, const bool video_only,
+	                                      const platform::file_ptr& file)
 	{
 		const auto ses = std::make_shared<av_session>(_host, _save_media_position);
 		const auto open_result = ses->open(path, file_type, starting_position, auto_play, video_track, audio_track,
-		                                   can_use_hw, use_last_played_pos, true, file);
+		                                   can_use_hw, use_last_played_pos, true, video_only, file);
 		auto result = open_result ? ses : nullptr;
 
 		// Only a successful open takes over the decode threads. Publishing a null would silently
@@ -952,6 +1033,33 @@ private:
 		{
 			_host.queue_ui(cb);
 		}
+	}
+
+	std::shared_ptr<av_session> open_frames_impl(const size_t slot, const df::file_path path,
+	                                             const file_type_ref file_type, const double start_position)
+	{
+		// Replacing a slot closes what was there first, or the read thread goes on demuxing a file
+		// nothing is looking at for as long as the new one takes to open.
+		if (const auto previous = _frame_sessions[slot].exchange(nullptr)) previous->close(false);
+
+		const auto ses = std::make_shared<av_session>(_host, _save_media_position);
+
+		// Paused, not playing: the caller decides when the picture moves, because it is composing a
+		// timeline and its playhead is not this file's.
+		if (!ses->open(path, file_type, start_position, false, -1, -1, false, false, true, true, {}))
+		{
+			return nullptr;
+		}
+
+		ses->remembers_position(false);
+		if (start_position > 0) ses->seek(start_position, true);
+
+		_frame_sessions[slot].store(ses);
+
+		_read_event.set();
+		_video_event.set();
+
+		return ses;
 	}
 
 public:
@@ -994,6 +1102,14 @@ public:
 			if (session)
 			{
 				session->process_video(_read_event);
+			}
+
+			// The frame sources decode on the same thread rather than on one of their own: they are
+			// two more video streams, and a preview that had its own decode thread would compete
+			// with playback for the same cores while claiming to be the cheaper path.
+			for (const auto& slot : _frame_sessions)
+			{
+				if (const auto frames = slot.load()) frames->process_video(_read_event);
 			}
 		}
 	}
@@ -1292,6 +1408,11 @@ public:
 			if (const auto session = _thread_session.load())
 			{
 				session->process_io(_video_event, _audio_event);
+			}
+
+			for (const auto& slot : _frame_sessions)
+			{
+				if (const auto frames = slot.load()) frames->process_io(_video_event, _audio_event);
 			}
 		}
 	}

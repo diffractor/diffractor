@@ -293,6 +293,82 @@ static void should_trim_movie_clips()
 	assert_equal(9.0, photos.clips()[1].end, "a photo the user set keeps its own length");
 }
 
+static void should_select_and_move_movie_clips()
+{
+	movie_project project;
+
+	for (auto i = 0; i < 5; ++i)
+	{
+		project.append(make_video(std::format("{}.mp4", i), 10, {1920, 1080}, 30));
+	}
+
+	const auto names = [&]
+	{
+		std::string result;
+		for (const auto& c : project.clips()) result += c.path.file_name_without_extension();
+		return result;
+	};
+
+	assert_equal("01234", names(), "five clips in the order they were added");
+
+	project.select(1, false, false);
+	assert_equal(1, static_cast<int>(project.selected().size()), "a plain click selects one");
+	assert_equal(1, static_cast<int>(project.current()), "and focuses it");
+
+	project.select(3, true, false);
+	assert_equal(3, static_cast<int>(project.selected().size()), "shift runs from the anchor");
+	assert_equal(3, static_cast<int>(project.current()), "and focus lands on the clicked clip");
+	assert_equal(true, project.is_selected(2), "including everything between");
+
+	project.select(0, false, true);
+	assert_equal(4, static_cast<int>(project.selected().size()), "ctrl adds one");
+	assert_equal(0, static_cast<int>(project.selected().front()), "and the set stays sorted");
+
+	project.select(0, false, true);
+	assert_equal(3, static_cast<int>(project.selected().size()), "ctrl on a selected clip removes it");
+
+	// The last selected clip cannot be toggled away, or a command that acts on the selection would
+	// have nothing to act on while the strip still shows a focused clip.
+	project.select(1, false, false);
+	project.select(1, false, true);
+	assert_equal(1, static_cast<int>(project.selected().size()), "the final selected clip is kept");
+
+	// Moving a block keeps the clips in their own order and carries focus with them. Extending from
+	// the anchor already leaves focus on the clip that was clicked last.
+	project.select(1, false, false);
+	project.select(2, true, false);
+	assert_equal(2, static_cast<int>(project.current()), "focus is on the end of the extended range");
+	project.move_selection(5);
+
+	assert_equal("03412", names(), "a selected block moves to the drop point in its own order");
+	assert_equal(3, static_cast<int>(project.selected().front()), "and is selected where it landed");
+	assert_equal(4, static_cast<int>(project.current()), "with focus still on the same clip");
+
+	project.undo();
+	assert_equal("01234", names(), "undo restores the order");
+	assert_equal(2, static_cast<int>(project.selected().size()), "and the selection that made it");
+
+	// Dropping a block back where it already is must not cost an undo step, or Ctrl+Z would appear
+	// to do nothing after a mis-drag.
+	const auto before = project.can_undo();
+	project.select(0, false, false);
+	project.move_selection(0);
+	assert_equal(before, project.can_undo(), "a block dropped where it already is changes nothing");
+
+	project.select(1, false, false);
+	project.select(2, true, false);
+	project.remove_selection();
+	assert_equal("034", names(), "removing the selection takes every clip in it");
+	assert_equal(1, static_cast<int>(project.current()), "and focus lands where the block was");
+	assert_equal(1, static_cast<int>(project.selected().size()), "with something selected again");
+
+	project.select_all();
+	assert_equal(3, static_cast<int>(project.selected().size()), "select all takes every clip");
+	project.remove_selection();
+	assert_equal(true, project.is_empty(), "and removing them empties the timeline");
+	assert_equal(0, static_cast<int>(project.selected().size()), "leaving nothing selected");
+}
+
 //
 // The project file
 //
@@ -459,6 +535,71 @@ static void should_import_a_movie_maker_project()
 	             "a project with no media is refused");
 }
 
+// Re-entering Movie with a different selection must replace a timeline that is still exactly what
+// the last selection produced, and must leave an edited one alone. The view decides that from the
+// seed and the modified flag, so this is what those two have to mean.
+static void should_tell_a_seeded_timeline_from_an_edited_one()
+{
+	const std::vector<df::file_path> seed{movie_test_path("a.mp4"), movie_test_path("b.mp4")};
+
+	movie_project project;
+	project.append(make_video("a.mp4", 10, {1920, 1080}, 30));
+	project.append(make_video("b.mp4", 10, {1920, 1080}, 30));
+	project.mark_seeded(seed);
+
+	assert_equal(false, project.is_modified(), "seeding is not an edit the user made");
+	assert_equal(false, project.can_undo(), "and there is nothing before a seed to undo to");
+	assert_equal(seed.size(), project.seeded_from().size(), "the seed is what the timeline was built from");
+	assert_equal(true, seed == project.seeded_from(), "and it is that selection exactly");
+
+	project.trim(0, 1.0, 5.0);
+	assert_equal(true, project.is_modified(), "a trim is an edit, so the timeline is now a document");
+
+	// A project file is not a seed: re-entering with any selection must leave it alone.
+	project.reset({make_video("c.mp4", 10, {1920, 1080}, 30)}, {}, movie_test_path("p.otio"));
+	assert_equal(false, project.is_modified(), "a freshly opened project is unmodified");
+	assert_equal(true, project.seeded_from().empty(), "but it came from no selection, so it is never replaced");
+}
+
+// A clip nobody has looked for yet and a clip that has been looked for and is gone are one state in
+// the document and the opposite thing to the user: only the second is marked on the strip, counted
+// in the explainer, and offered a relink.
+static void should_tell_an_unprobed_clip_from_a_lost_one()
+{
+	auto clip = make_video("a.mp4", 10, {1920, 1080}, 30);
+
+	assert_equal(true, clip.is_missing, "a clip starts unresolved");
+	assert_equal(false, clip.is_probed, "because nothing has looked for it yet");
+	assert_equal(false, clip.is_lost(), "so it is not a clip that is gone");
+
+	clip.is_probed = true;
+	assert_equal(true, clip.is_lost(), "a probe that did not find it is what makes it gone");
+
+	clip.is_missing = false;
+	assert_equal(false, clip.is_lost(), "and a clip that was found is not");
+
+	// Relinking replaces where the work was aimed and keeps the work: the stored trim survives, and
+	// the clip goes back to unprobed so the new source is measured before the trim is clamped to it.
+	movie_project project;
+	auto trimmed = make_video("b.mp4", 10, {1920, 1080}, 30);
+	trimmed.is_probed = true;
+	project.append(trimmed);
+	project.trim(0, 2, 8);
+
+	auto relinked = project.clips()[0];
+	relinked.path = movie_test_path("b-moved.mp4");
+	relinked.is_probed = false;
+	project.replace(0, relinked);
+
+	assert_equal("b-moved.mp4", project.clips()[0].path.name().sv(), "the relink re-points the clip");
+	assert_equal(2.0, project.clips()[0].start, "the in point survives it");
+	assert_equal(8.0, project.clips()[0].end, "and so does the out point");
+	assert_equal(false, project.clips()[0].is_probed, "and the new source is measured before it is trusted");
+
+	project.undo();
+	assert_equal("b.mp4", project.clips()[0].path.name().sv(), "a relink is an edit, so it can be undone");
+}
+
 void register_movie_tests(view_state& state, test_registry& tests)
 {
 	//
@@ -476,7 +617,12 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	// The timeline document
 	//
 	tests.add("Should edit the movie timeline"s, should_edit_the_movie_timeline);
+	tests.add("Should select and move movie clips"s, should_select_and_move_movie_clips);
 	tests.add("Should trim movie clips"s, should_trim_movie_clips);
+	tests.add("Should tell a seeded movie timeline from an edited one"s,
+	          should_tell_a_seeded_timeline_from_an_edited_one);
+	tests.add("Should tell an unprobed movie clip from a lost one"s,
+	          should_tell_an_unprobed_clip_from_a_lost_one);
 
 	//
 	// The project file

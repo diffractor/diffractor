@@ -176,6 +176,7 @@ public:
 	DWORD preferred_drop_effect() const;
 	description files_description() const override;
 	df::file_path first_path() const override;
+	std::vector<df::file_path> drop_paths() const override;
 };
 
 draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,

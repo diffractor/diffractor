@@ -614,6 +614,29 @@ The D3D glyph atlas grows on demand and is capped; a glyph too large for the cap
 rendered without being cached rather than being allowed to grow the atlas without
 bound.
 
+## A session that is not the user watching a file
+
+`av_session` normally stands for exactly that: this person is viewing this file. Two
+of its behaviours follow from that assumption, and both have to be switchable for a
+caller — Movie's preview — that is using a session as a frame source rather than as
+a viewing.
+
+- **Opening without audio.** `open()` takes `video_only`, which reaches
+  `init_streams`. This is not an optimisation. `process_io` stops reading when
+  *either* packet queue fills, so a session whose audio nothing drains stalls its own
+  video and delivers nothing. A caller that wants frames and supplies its own sound
+  must say so at open, or it gets neither.
+- **Remembering the position.** `close()` writes the play position back so the file
+  resumes where it was left. Playing a clip to judge a trim is not a viewing, and
+  saving for it would overwrite the resume point the user set by actually watching —
+  silently, and on every scrub. `remembers_position(false)` turns that off for the
+  session's whole life rather than at each close, because the caller knows what the
+  playback is for and the close site does not.
+
+A video-only session has no device clock, so it is timed off the wall clock exactly
+as a silent clip is. That is the right answer for Movie, whose clock is the movie's
+playhead rather than any one clip's.
+
 ## Hardware video pipeline
 
 Hardware-accelerated video decode is integrated in

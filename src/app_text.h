@@ -1245,7 +1245,7 @@ struct app_text_t
 	text_t editing_title = "Editing";
 	text_t edit_info =
 		"Adjust the crop, rotation, perspective, and color of a photo. Nothing is written to disk until you save.";
-	text_t movie_title = "Movie";
+	text_t movie_title = "Movie mixer";
 	text_t movie_info =
 		"Assemble the selected photos and videos into one video. Add, remove and reorder clips on the strip below, and trim the selected one. The preview is what will be rendered; nothing is written until you render or save.";
 	text_t movie_settings_title = "Movie";
@@ -1266,10 +1266,24 @@ struct app_text_t
 	text_t movie_media_files = "Photos and videos";
 	text_t movie_open_failed_fmt = "Could not read the project {}.";
 	text_t movie_save_failed_fmt = "Could not save the project {}.";
-	text_t command_movie = "Movie";
+	text_t movie_video_files = "Video";
+	text_t movie_rendering = "Rendering the movie";
+	text_t movie_render_failed_fmt = "The movie could not be rendered. {}";
+	text_t movie_rendered_fmt = "Rendered {}.";
+	text_t movie_render_cancelled = "Rendering was canceled. Nothing was written.";
+	text_t movie_relink_none = "No missing clip was found in that folder.";
+	text_t movie_unsaved_prompt =
+		"This movie has changes that are not in a project file. It is kept while Diffractor is running, and closing Diffractor discards it.";
+	text_t movie_discard = "Close without saving";
+	text_t command_movie = "Movie mixer";
 	text_t tooltip_movie = "Assemble the selected photos and videos into one video.";
+	text_t command_movie_render = "Render";
+	text_t tooltip_movie_render = "Write the movie to a video file.";
+	text_t command_movie_relink = "Relink missing files";
+	text_t tooltip_movie_relink = "Point clips whose source file has moved at a folder you choose.";
 	text_t command_movie_add = "Add files";
-	text_t command_movie_remove = "Remove clip";
+	text_t command_movie_remove = "Remove from movie";
+	text_t command_movie_send_to_end = "Send to the end";
 	text_t command_movie_open = "Open project";
 	text_t command_movie_save = "Save project";
 	text_t command_movie_import = "Import Movie Maker project";
@@ -1507,6 +1521,14 @@ struct app_text_t
 		"{first-name} will have existing GPS position metadata overwritten.",
 		"{first-name} and {other} other items will have existing GPS position metadata overwritten."
 	};
+	plural_text movie_ignored_fmt = {
+		"1 element of the imported project was left out because Movie cannot represent it.",
+		"{count} elements of the imported project were left out because Movie cannot represent them."
+	};
+	plural_text movie_missing_fmt = {
+		"1 clip cannot find its source file.", "{count} clips cannot find their source files."
+	};
+	plural_text movie_relink_fmt = {"1 clip was relinked.", "{count} clips were relinked."};
 };
 
 extern app_text_t tt;

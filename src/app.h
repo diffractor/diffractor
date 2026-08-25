@@ -369,6 +369,20 @@ public:
 	{
 		auto result = platform::drop_effect::none;
 
+		// The Movie timeline is a document, so a drop adds to the movie rather than opening a file
+		// or copying one into a folder. It is answered before anything else because none of the
+		// questions below - is this over the items, is there a save path - mean anything there.
+		if (_state.view_mode() == view_type::movie)
+		{
+			if (data.has_drop_files())
+			{
+				update_status(tt.command_movie_add, data.files_description().first_name);
+				result = platform::drop_effect::copy;
+			}
+
+			return result;
+		}
+
 		if (df::dragging_items == 0)
 		{
 			if (_view->is_over_items(loc))
@@ -409,6 +423,17 @@ public:
 	platform::drop_effect drag_drop(platform::clipboard_data& data, const ui::key_state keys, const pointi loc) override
 	{
 		auto result = platform::drop_effect::none;
+
+		if (_state.view_mode() == view_type::movie)
+		{
+			if (data.has_drop_files() && _view->drop_paths(data.drop_paths(), loc))
+			{
+				result = platform::drop_effect::copy;
+			}
+
+			drag_leave();
+			return result;
+		}
 
 		if (df::dragging_items == 0)
 		{
@@ -578,6 +603,7 @@ public:
 	ui::toolbar_ptr _locate_commands;
 	ui::toolbar_ptr _sync_commands;
 	ui::toolbar_ptr _tags_commands;
+	ui::toolbar_ptr _movie_commands;
 	ui::toolbar_ptr _busy_commands;
 
 	std::string _last_favorite_tags;

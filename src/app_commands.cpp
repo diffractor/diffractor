@@ -3702,9 +3702,13 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::tool_movie, [this] { _state.view_mode(view_type::movie); });
 	add_command_invoke(commands::tool_movie_add, [this] { _view_movie->add_files(); });
 	add_command_invoke(commands::tool_movie_remove, [this] { _view_movie->remove_current(); });
+	add_command_invoke(commands::tool_movie_send_to_end, [this] { _view_movie->send_selection_to_end(); });
+	add_command_invoke(commands::tool_movie_select_all, [this] { _view_movie->select_all(); });
 	add_command_invoke(commands::tool_movie_open, [this] { _view_movie->open_project(); });
 	add_command_invoke(commands::tool_movie_save, [this] { _view_movie->save_project(); });
 	add_command_invoke(commands::tool_movie_import, [this] { _view_movie->import_project(); });
+	add_command_invoke(commands::tool_movie_relink, [this] { _view_movie->relink_missing(); });
+	add_command_invoke(commands::tool_movie_render, [this] { _view_movie->render_movie(); });
 	add_command_invoke(commands::edit_copy, [this] { cut_copy_invoke(_state, _app_frame, _view_frame, false); });
 	add_command_invoke(commands::edit_copy_item_path, [this] { copy_item_path_invoke(_state); });
 	add_command_invoke(commands::edit_cut, [this] { cut_copy_invoke(_state, _app_frame, _view_frame, true); });
@@ -4162,6 +4166,7 @@ void app_frame::initialise_commands()
 	{
 		std::vector<ui::command_ptr> result = {
 			find_command(commands::tool_edit),
+			find_command(commands::tool_movie),
 			find_command(commands::tool_tag),
 			find_command(commands::tool_locate),
 			find_command(commands::tool_adjust_date),

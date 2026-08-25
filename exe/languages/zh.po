@@ -3638,3 +3638,135 @@ msgstr "按原始日期分组"
 
 msgid "Sort by Date original"
 msgstr "按原始日期排序"
+
+msgid "Movie mixer"
+msgstr "影片混编"
+
+msgid "Assemble the selected photos and videos into one video. Add, remove and reorder clips on the strip below, and trim the selected one. The preview is what will be rendered; nothing is written until you render or save."
+msgstr "将选定的照片和视频合成为一个视频。在下方的胶片条中添加、移除和重新排列剪辑，并裁剪选定的剪辑。预览即为渲染结果；在渲染或保存之前不会写入任何内容。"
+
+msgid "Movie"
+msgstr "影片"
+
+msgid "Selected clip"
+msgstr "选定的剪辑"
+
+msgid "Crossfade between clips"
+msgstr "剪辑之间交叉淡化"
+
+msgid "Cut between clips"
+msgstr "剪辑之间硬切"
+
+msgid "Transition (tenths of a second)"
+msgstr "转场（十分之一秒）"
+
+msgid "Fade in from black"
+msgstr "从黑场淡入"
+
+msgid "Fade out to black"
+msgstr "淡出到黑场"
+
+msgid "Photo duration (tenths of a second)"
+msgstr "照片时长（十分之一秒）"
+
+msgid "This photo (tenths of a second)"
+msgstr "此照片（十分之一秒）"
+
+msgid "Use the movie default"
+msgstr "使用影片默认值"
+
+msgid "Add photos and videos to build a movie."
+msgstr "添加照片和视频以创建影片。"
+
+msgid "Output {} x {} at {} fps, {} long."
+msgstr "输出 {} x {}，{} fps，时长 {}。"
+
+msgid "{} - clip {} of {}, starting at {}."
+msgstr "{} - 第 {}/{} 个剪辑，开始于 {}。"
+
+msgid "Movie project"
+msgstr "影片项目"
+
+msgid "Windows Movie Maker project"
+msgstr "Windows Movie Maker 项目"
+
+msgid "Photos and videos"
+msgstr "照片和视频"
+
+msgid "Could not read the project {}."
+msgstr "无法读取项目 {}。"
+
+msgid "Could not save the project {}."
+msgstr "无法保存项目 {}。"
+
+msgid "Assemble the selected photos and videos into one video."
+msgstr "将选定的照片和视频合成为一个视频。"
+
+msgid "Add files"
+msgstr "添加文件"
+
+msgid "Remove from movie"
+msgstr "从影片中移除"
+
+msgid "Send to the end"
+msgstr "移到末尾"
+
+msgid "Open project"
+msgstr "打开项目"
+
+msgid "Save project"
+msgstr "保存项目"
+
+msgid "Import Movie Maker project"
+msgstr "导入 Movie Maker 项目"
+
+msgid "Video"
+msgstr "视频"
+
+msgid "Rendering the movie"
+msgstr "正在渲染影片"
+
+msgid "The movie could not be rendered. {}"
+msgstr "无法渲染影片。{}"
+
+msgid "Rendered {}."
+msgstr "已渲染 {}。"
+
+msgid "Rendering was canceled. Nothing was written."
+msgstr "渲染已取消。未写入任何内容。"
+
+msgid "No missing clip was found in that folder."
+msgstr "在该文件夹中未找到任何缺失的剪辑。"
+
+msgid "This movie has changes that are not in a project file. It is kept while Diffractor is running, and closing Diffractor discards it."
+msgstr "此影片有未保存到项目文件中的更改。Diffractor 运行期间会保留，关闭 Diffractor 将丢弃这些更改。"
+
+msgid "Close without saving"
+msgstr "不保存并关闭"
+
+msgid "Render"
+msgstr "渲染"
+
+msgid "Write the movie to a video file."
+msgstr "将影片写入视频文件。"
+
+msgid "Relink missing files"
+msgstr "重新链接缺失的文件"
+
+msgid "Point clips whose source file has moved at a folder you choose."
+msgstr "将源文件已移动的剪辑指向您选择的文件夹。"
+
+msgid "1 element of the imported project was left out because Movie cannot represent it."
+msgid_plural "{count} elements of the imported project were left out because Movie cannot represent them."
+msgstr[0] "导入项目中有 1 个元素因影片无法表示而被略过。"
+msgstr[1] "导入项目中有 {count} 个元素因影片无法表示而被略过。"
+
+msgid "1 clip cannot find its source file."
+msgid_plural "{count} clips cannot find their source files."
+msgstr[0] "有 1 个剪辑找不到其源文件。"
+msgstr[1] "有 {count} 个剪辑找不到其源文件。"
+
+msgid "1 clip was relinked."
+msgid_plural "{count} clips were relinked."
+msgstr[0] "已重新链接 1 个剪辑。"
+msgstr[1] "已重新链接 {count} 个剪辑。"

@@ -936,6 +936,7 @@ static int get_stream_type(const AVFormatContext* ctx, const int stream_num)
 bool av_format_decoder::seek(const double wanted) const
 {
 	auto success = false;
+	_sequential_time = -1;
 
 	auto* const fc = _format_context;
 
@@ -1120,6 +1121,7 @@ void av_format_decoder::close()
 
 	_pts_vid.clear();
 	_pts_aud.clear();
+	_sequential_time = -1;
 
 	AVFormatContext* fc = nullptr;
 	std::swap(fc, _format_context);
@@ -2101,9 +2103,264 @@ bool av_format_decoder::extract_thumbnail(ui::surface_ptr& dest_surface, const s
 	return success;
 }
 
+bool av_format_decoder::extract_frame_at(ui::surface_ptr& dest_surface, const sizei max_dim, const double wanted_time,
+                                         const double tolerance_seconds, df::cancel_token abandon)
+{
+	if (!_has_video || !_video_context)
+	{
+		return false;
+	}
+
+	const auto start = start_time();
+	const auto target = std::clamp(wanted_time, start, std::max(start, end_time()));
+
+	// Walking forward is the whole point, but only while walking is the cheaper answer. Past this
+	// much unread stream a seek reaches the target sooner than decoding every frame between.
+	constexpr double max_forward_walk_seconds = 3.0;
+
+	if (_sequential_time < 0 || target < _sequential_time || target > _sequential_time + max_forward_walk_seconds)
+	{
+		// A container-level seek does not flush the decoder, so buffered pre-seek frames are dropped
+		// and the timestamp estimator reset - the same pairing every other seeking caller here uses.
+		if (!seek(target) && target > start + 2.0)
+		{
+			return false;
+		}
+
+		avcodec_flush_buffers(_video_context);
+		_pts_vid.clear();
+		_sequential_time = -1;
+	}
+
+	ui::surface_ptr decoded;
+
+	if (!decode_nearest_frame(decoded, max_dim, target, std::max(0.0, tolerance_seconds), abandon))
+	{
+		// The decoder is now somewhere unknown - at end of stream, or wherever a failed walk left
+		// it - so the next call must seek rather than assume it can step on from here.
+		_sequential_time = -1;
+		return false;
+	}
+
+	_sequential_time = decoded->time();
+	dest_surface = std::move(decoded);
+	return true;
+}
+
+// One sample as a signed value in -1..1. Only the formats FFmpeg's decoders actually emit are
+// handled; anything else answers silence rather than reading the buffer as the wrong type.
+static double read_audio_sample(const uint8_t* base, const AVSampleFormat packed, const int index)
+{
+	switch (packed)
+	{
+	case AV_SAMPLE_FMT_U8:
+		return (static_cast<int>(base[index]) - 128) / 128.0;
+	case AV_SAMPLE_FMT_S16:
+		return std::bit_cast<const int16_t*>(base)[index] / 32768.0;
+	case AV_SAMPLE_FMT_S32:
+		return std::bit_cast<const int32_t*>(base)[index] / 2147483648.0;
+	case AV_SAMPLE_FMT_FLT:
+		return std::bit_cast<const float*>(base)[index];
+	case AV_SAMPLE_FMT_DBL:
+		return std::bit_cast<const double*>(base)[index];
+	default:
+		return 0.0;
+	}
+}
+
+// Peak, not mean: a level indicator exists so speech stands out at a glance, and averaging over a
+// bucket flattens exactly the thing being looked for.
+static void accumulate_audio_peaks(const AVFrame& frame, std::vector<uint8_t>& peaks,
+                                   const double samples_per_bucket, int64_t& sample_index)
+{
+	const auto samples = frame.nb_samples;
+	if (samples <= 0 || peaks.empty() || samples_per_bucket <= 0) return;
+
+	const auto fmt = static_cast<AVSampleFormat>(frame.format);
+	const auto packed = av_get_packed_sample_fmt(fmt);
+	const auto channels = std::max(1, frame.ch_layout.nb_channels);
+
+	// One channel is read, not all of them: this is a level indicator, and reading the first keeps
+	// the walk linear in the stream's length rather than in its channel count.
+	const auto* const base = frame.extended_data ? frame.extended_data[0] : frame.data[0];
+	const auto stride = av_sample_fmt_is_planar(fmt) ? 1 : channels;
+
+	if (base)
+	{
+		for (int i = 0; i < samples; ++i)
+		{
+			const auto bucket = static_cast<size_t>((sample_index + i) / samples_per_bucket);
+			if (bucket >= peaks.size()) break;
+
+			const auto level = std::clamp(std::abs(read_audio_sample(base, packed, i * stride)), 0.0, 1.0);
+			peaks[bucket] = std::max(peaks[bucket], static_cast<uint8_t>(std::lround(level * 255.0)));
+		}
+	}
+
+	sample_index += samples;
+}
+
+std::vector<uint8_t> av_format_decoder::extract_audio_peaks(const int buckets, df::cancel_token abandon)
+{
+	if (!_has_audio || !_audio_context || buckets <= 0)
+	{
+		return {};
+	}
+
+	const auto duration = end_time() - start_time();
+	const auto sample_rate = _audio_context->sample_rate;
+
+	if (duration <= 0 || sample_rate <= 0)
+	{
+		return {};
+	}
+
+	std::vector<uint8_t> result(static_cast<size_t>(buckets), 0);
+
+	// Buckets are filled by sample position rather than by timestamp, so a stream whose timestamps
+	// are broken still lands its samples in the column they belong to.
+	const auto samples_per_bucket = std::max(1.0, duration * sample_rate / buckets);
+	int64_t sample_index = 0;
+
+	for (;;)
+	{
+		if (df::is_closing || abandon.is_cancelled())
+		{
+			return {};
+		}
+
+		const auto packet = read_packet();
+
+		if (!packet || packet->eof)
+		{
+			break;
+		}
+
+		if (packet->pkt->stream_index != _audio_stream_index)
+		{
+			continue;
+		}
+
+		if (try_avcodec_send_packet(_audio_context, packet->pkt) != 0)
+		{
+			continue;
+		}
+
+		av_frame frame;
+
+		while (avcodec_receive_frame(_audio_context, &frame.frm) == 0)
+		{
+			accumulate_audio_peaks(frame.frm, result, samples_per_bucket, sample_index);
+			av_frame_unref(&frame.frm);
+		}
+	}
+
+	return result;
+}
+
 double av_format_decoder::to_video_seconds(const int64_t vt) const
 {
 	return calc_duration(vt, {_video_base.num, _video_base.den}, _video_start_time);
+}
+
+// Interleaved stereo, so one sample pair is two adjacent values and a position in the clip is a
+// multiply. Every caller of this wants to play from a time, not to walk a packet stream.
+static constexpr int pcm_channels = 2;
+
+std::vector<int16_t> av_format_decoder::extract_audio_pcm(const int sample_rate, const double max_seconds,
+                                                          df::cancel_token abandon)
+{
+	if (!_has_audio || !_audio_context || sample_rate <= 0 || max_seconds <= 0)
+	{
+		return {};
+	}
+
+	const auto layout = av_get_def_channel_layout(pcm_channels);
+	if (!layout) return {};
+
+	SwrContext* swr = nullptr;
+
+	if (swr_alloc_set_opts2(&swr, layout.get(), AV_SAMPLE_FMT_S16, sample_rate,
+	                        &_audio_context->ch_layout, _audio_context->sample_fmt,
+	                        _audio_context->sample_rate, 0, nullptr) != 0 || !swr)
+	{
+		if (swr) swr_free(&swr);
+		return {};
+	}
+
+	if (swr_init(swr) != 0)
+	{
+		swr_free(&swr);
+		return {};
+	}
+
+	const auto max_values = static_cast<size_t>(max_seconds * sample_rate) * pcm_channels;
+
+	std::vector<int16_t> result;
+	std::vector<int16_t> converted;
+	auto stopped = false;
+
+	// Shared by the decode loop and the flush that follows it, so the tail swr is holding is not
+	// left behind - a dropped tail is a click at the end of every clip.
+	const auto drain = [&](const AVFrame* frame)
+	{
+		const auto capacity = swr_get_out_samples(swr, frame ? frame->nb_samples : 0);
+		if (capacity <= 0) return;
+
+		converted.resize(static_cast<size_t>(capacity) * pcm_channels);
+
+		auto* out = std::bit_cast<uint8_t*>(converted.data());
+		const auto** in = frame ? const_cast<const uint8_t**>(frame->extended_data) : nullptr;
+		const auto produced = swr_convert(swr, &out, capacity, in, frame ? frame->nb_samples : 0);
+
+		if (produced <= 0) return;
+
+		const auto values = static_cast<size_t>(produced) * pcm_channels;
+		const auto room = max_values > result.size() ? max_values - result.size() : 0u;
+		const auto take = std::min(values, room);
+
+		result.insert(result.end(), converted.begin(), converted.begin() + take);
+		if (take < values) stopped = true;
+	};
+
+	while (!stopped)
+	{
+		if (df::is_closing || abandon.is_cancelled())
+		{
+			swr_free(&swr);
+			return {};
+		}
+
+		const auto packet = read_packet();
+
+		if (!packet || packet->eof)
+		{
+			break;
+		}
+
+		if (packet->pkt->stream_index != _audio_stream_index)
+		{
+			continue;
+		}
+
+		if (try_avcodec_send_packet(_audio_context, packet->pkt) != 0)
+		{
+			continue;
+		}
+
+		av_frame frame;
+
+		while (!stopped && avcodec_receive_frame(_audio_context, &frame.frm) == 0)
+		{
+			drain(&frame.frm);
+			av_frame_unref(&frame.frm);
+		}
+	}
+
+	if (!stopped) drain(nullptr);
+
+	swr_free(&swr);
+	return result;
 }
 
 

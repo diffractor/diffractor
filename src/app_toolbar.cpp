@@ -154,6 +154,22 @@ void app_frame::create_toolbars()
 		find_command(commands::view_close),
 	};
 
+	const std::vector<ui::command_ptr> movie_commands =
+	{
+		find_command(commands::tool_movie_render),
+		find_command(commands::tool_movie_add),
+		find_command(commands::tool_movie_remove),
+		find_command(commands::tool_movie_relink),
+		find_command(commands::tool_movie_open),
+		find_command(commands::tool_movie_save),
+		find_command(commands::tool_movie_import),
+		find_command(commands::view_cancel),
+		nullptr,
+		find_command(commands::view_maximize),
+		find_command(commands::view_restore),
+		find_command(commands::view_close),
+	};
+
 	ui::toolbar_styles tb_styles;
 	tb_styles.button_extent = {30, 40};
 	_navigate1 = _app_frame->create_toolbar(tb_styles, tbButtonsNav1);
@@ -203,6 +219,7 @@ void app_frame::create_toolbars()
 	_locate_commands = _app_frame->create_toolbar(tb_styles, locate_commands);
 	_sync_commands = _app_frame->create_toolbar(tb_styles, sync_commands);
 	_tags_commands = _app_frame->create_toolbar(tb_styles, tags_commands);
+	_movie_commands = _app_frame->create_toolbar(tb_styles, movie_commands);
 	_busy_commands = _app_frame->create_toolbar(tb_styles, busy_commands);
 }
 
@@ -670,12 +687,25 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_move_to_folder]->enable = can_process_local_items;
 
 	const auto is_movie_view = view_mode == view_type::movie && _view_movie;
-	_commands[commands::tool_movie]->enable = is_media_or_items_view && has_selection;
+	// A timeline outlives the view, so clearing the selection must not lock the user out of the
+	// movie they are part way through building.
+	_commands[commands::tool_movie]->enable = is_media_or_items_view &&
+		(has_selection || (_view_movie && _view_movie->has_clips()));
 	_commands[commands::tool_movie_add]->enable = is_movie_view;
 	_commands[commands::tool_movie_open]->enable = is_movie_view;
 	_commands[commands::tool_movie_import]->enable = is_movie_view;
 	_commands[commands::tool_movie_save]->enable = is_movie_view && _view_movie->has_clips();
 	_commands[commands::tool_movie_remove]->enable = is_movie_view && _view_movie->has_clips();
+	_commands[commands::tool_movie_send_to_end]->enable = is_movie_view && _view_movie->has_clips();
+	_commands[commands::tool_movie_select_all]->enable = is_movie_view && _view_movie->has_clips();
+	// Nothing to repair is not the same as a repair that is unavailable, so the offer appears only
+	// once the probe has found a clip that is gone.
+	_commands[commands::tool_movie_relink]->visible = is_movie_view && _view_movie->has_missing_clips();
+	_commands[commands::tool_movie_relink]->enable = is_movie_view && _view_movie->has_missing_clips();
+	// A machine with no encoder cannot render at all, so Render is absent rather than dimmed, as
+	// Burn is on a machine with no writer.
+	_commands[commands::tool_movie_render]->visible = platform::can_write_movies();
+	_commands[commands::tool_movie_render]->enable = is_movie_view && !view_processing && _view_movie->can_render();
 	_commands[commands::tool_new_folder]->enable = is_media_or_items_view && has_save_folder;
 	_commands[commands::tool_open_with]->enable = has_selection;
 	_commands[commands::tool_rename]->enable = can_process_local_items;
@@ -881,6 +911,7 @@ void app_frame::update_button_state(const bool resize)
 	_tool_commands->update_button_state(resize, close_text_changed);
 	_sync_commands->update_button_state(resize, close_text_changed);
 	_tags_commands->update_button_state(resize, close_text_changed);
+	_movie_commands->update_button_state(resize, close_text_changed);
 
 	const view_element_event e{view_element_event_type::update_command_state, _view_frame};
 	_view->broadcast_event(e);
@@ -1044,11 +1075,18 @@ void app_frame::update_command_text()
 	def_command(commands::tool_edit, command_group::tools, icon_index::edit, tt.command_edit,
 	            tt.tooltip_edit1);
 	def_command(commands::tool_movie, command_group::tools, icon_index::video, tt.command_movie, tt.tooltip_movie);
+	def_command(commands::tool_movie_render, command_group::tools, icon_index::movies, tt.command_movie_render,
+	            tt.tooltip_movie_render);
 	def_command(commands::tool_movie_add, command_group::tools, icon_index::add, tt.command_movie_add);
 	def_command(commands::tool_movie_remove, command_group::tools, icon_index::del, tt.command_movie_remove);
+	def_command(commands::tool_movie_relink, command_group::tools, icon_index::link, tt.command_movie_relink,
+	            tt.tooltip_movie_relink);
 	def_command(commands::tool_movie_open, command_group::tools, icon_index::folder, tt.command_movie_open);
 	def_command(commands::tool_movie_save, command_group::tools, icon_index::save, tt.command_movie_save);
 	def_command(commands::tool_movie_import, command_group::tools, icon_index::import, tt.command_movie_import);
+	def_command(commands::tool_movie_send_to_end, command_group::tools, icon_index::right,
+	            tt.command_movie_send_to_end);
+	def_command(commands::tool_movie_select_all, command_group::tools, icon_index::none, tt.command_select_all);
 	def_command(commands::edit_copy, command_group::file_management, icon_index::edit_copy, tt.command_edit_copy);
 	def_command(commands::edit_copy_item_path, command_group::file_management, icon_index::edit_copy,
 	            tt.command_edit_copy_item_path);
@@ -1270,6 +1308,9 @@ void app_frame::update_command_text()
 		     commands::tool_refresh,
 		     commands::edit_item_save, commands::edit_item_save_and_prev, commands::edit_item_save_and_next,
 		     commands::edit_item_save_as, commands::edit_item_preview,
+		     commands::tool_movie_add, commands::tool_movie_remove, commands::tool_movie_open,
+		     commands::tool_movie_save, commands::tool_movie_import,
+		     commands::tool_movie_render, commands::tool_movie_relink,
 		     commands::menu_group_toolbar, commands::filter_photos, commands::filter_videos,
 		     commands::filter_audio
 	     })

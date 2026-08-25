@@ -504,6 +504,11 @@ private:
 	double _end_time = 0;
 	std::atomic<int> _rotation = 0;
 
+	// Where extract_frame_at last left the decoder, so the next call can tell a step forward from a
+	// jump. Negative means the position is unknown and the next call must seek. Any seek clears it,
+	// so a decoder shared with another extraction path cannot walk on from somewhere it no longer is.
+	mutable double _sequential_time = -1;
+
 	av_rational _video_base;
 	av_rational _audio_base;
 	av_rational _video_stream_aspect_ratio;
@@ -574,6 +579,22 @@ public:
 	bool extract_thumbnail(ui::surface_ptr& dest_surface, sizei max_dim, double pos_numerator = 10,
 	                       double pos_denominator = 100, bool exact_frame = true,
 	                       double tolerance_fraction = 0.0, df::cancel_token abandon = {});
+	// The frame nearest `wanted_time`, decoding forward from wherever this decoder already sits and
+	// seeking only when the target is behind it or far enough ahead that walking there costs more.
+	// A caller stepping through a clip in order therefore keeps one decoder open across frames
+	// instead of reopening the file for each, which is the difference between a preview and a
+	// slideshow.
+	bool extract_frame_at(ui::surface_ptr& dest_surface, sizei max_dim, double wanted_time,
+	                      double tolerance_seconds = 0.0, df::cancel_token abandon = {});
+	// Peak amplitude per bucket over the whole audio stream, 0-255, for showing where the sound is.
+	// Empty when the file carries no audio. This decodes the stream once from wherever it is
+	// positioned, so it belongs on a worker and on a decoder nothing else is using.
+	std::vector<uint8_t> extract_audio_peaks(int buckets, df::cancel_token abandon = {});
+	// The whole audio stream as interleaved 16-bit stereo at `sample_rate`. A buffer is what lets a
+	// caller play a clip by position rather than by packet clock, and that simplicity is what it is
+	// bought with: 48 kHz stereo costs 192 KB a second, so the read stops at `max_seconds`.
+	// Empty when the file carries no audio. Decodes the whole stream, so it belongs on a worker.
+	std::vector<int16_t> extract_audio_pcm(int sample_rate, double max_seconds, df::cancel_token abandon = {});
 	file_load_result render_frame(const av_frame_ptr& frame_in) const;
 	void receive_frames(av_packet_queue& packets, av_frame_queue& frames);
 

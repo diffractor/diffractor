@@ -49,7 +49,7 @@
 
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1305";
+const std::string_view g_app_build = "1307";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -724,6 +724,16 @@ void app_frame::prepare_frame()
 			frame_delay = std::min(frame_delay, 1000 / plasma::frames_per_second);
 		}
 
+		// A playing movie composes a new frame per refresh, so it needs the cadence video playback
+		// gets. Left on the idle timer the preview advanced five times a second, which reads as the
+		// picture stepping rather than playing.
+		if (_state.view_mode() == view_type::movie && _view_movie && _view_movie->is_playing())
+		{
+			_view_movie->tick();
+			vf->frame()->invalidate();
+			frame_delay = std::min(frame_delay, animation_delay_ms);
+		}
+
 		if (progress.active && progress.total == 0)
 		{
 			frame_delay = std::min(frame_delay, animation_delay_ms);
@@ -1182,6 +1192,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto locate_commands_extent = _locate_commands->measure_toolbar(_extent.cx);
 		const auto sync_commands_extent = _sync_commands->measure_toolbar(_extent.cx);
 		const auto tags_commands_extent = _tags_commands->measure_toolbar(_extent.cx);
+		const auto movie_commands_extent = _movie_commands->measure_toolbar(_extent.cx);
 		const auto busy_commands_extent = _busy_commands->measure_toolbar(_extent.cx);
 
 		const auto cy_address = mc.text_line_height(ui::style::font_face::dialog) + mc.padding2 * 2;
@@ -1189,7 +1200,7 @@ void app_frame::layout(ui::measure_context& mc)
 			navigate1_extent.cy, navigate2_extent.cy, navigate3_extent.cy, cy_address,
 			media_edit_commands_extent.cy, tool_commands_extent.cy, import_commands_extent.cy,
 			sync_commands_extent.cy, locate_commands_extent.cy, tags_commands_extent.cy,
-			busy_commands_extent.cy
+			movie_commands_extent.cy, busy_commands_extent.cy
 		}) + mc.padding2;
 		const auto top_height = df::mul_div(top_content_height, 6, 5);
 
@@ -1258,6 +1269,8 @@ void app_frame::layout(ui::measure_context& mc)
 				? sync_commands_extent
 				: view_mode == view_type::tags
 				? tags_commands_extent
+				: view_mode == view_type::movie
+				? movie_commands_extent
 				: sizei{};
 		const auto title_limit = show_items_controls
 			                         ? nav1_bounds.left
@@ -1286,6 +1299,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto locate_commands_bounds = command_bounds(locate_commands_extent);
 		const auto sync_commands_bounds = command_bounds(sync_commands_extent);
 		const auto tags_commands_bounds = command_bounds(tags_commands_extent);
+		const auto movie_commands_bounds = command_bounds(movie_commands_extent);
 		const auto busy_commands_bounds = command_bounds(busy_commands_extent);
 
 		const auto show_media_edit_commands = !view_processing && view_mode == view_type::edit;
@@ -1295,6 +1309,7 @@ void app_frame::layout(ui::measure_context& mc)
 		const auto show_locate_commands = !view_processing && view_mode == view_type::locate;
 		const auto show_sync_commands = !view_processing && view_mode == view_type::sync;
 		const auto show_tags_commands = !view_processing && view_mode == view_type::tags;
+		const auto show_movie_commands = !view_processing && view_mode == view_type::movie;
 		const auto show_busy_commands = view_processing && can_show_view_controls;
 
 		const auto selector_top = client_bounds.bottom - selector_height;
@@ -1334,6 +1349,7 @@ void app_frame::layout(ui::measure_context& mc)
 		positions.emplace_back(_locate_commands, locate_commands_bounds, show_locate_commands);
 		positions.emplace_back(_sync_commands, sync_commands_bounds, show_sync_commands);
 		positions.emplace_back(_tags_commands, tags_commands_bounds, show_tags_commands);
+		positions.emplace_back(_movie_commands, movie_commands_bounds, show_movie_commands);
 		positions.emplace_back(_busy_commands, busy_commands_bounds, show_busy_commands);
 
 		if (_view_controls && _view_controls->_dlg)
@@ -1526,6 +1542,7 @@ void app_frame::complete_pending_events()
 				_view_frame->frame()->options_changed();
 				_selector_frame->frame()->options_changed();
 				_view_edit->options_changed();
+				_view_movie->options_changed();
 				_navigate1->options_changed();
 				_search_edit->options_changed();
 				_navigate2->options_changed();
@@ -1536,6 +1553,7 @@ void app_frame::complete_pending_events()
 				_tool_commands->options_changed();
 				_sync_commands->options_changed();
 				_tags_commands->options_changed();
+				_movie_commands->options_changed();
 
 				_state.update_search_is_favorite_or_collection_root();
 
@@ -3156,6 +3174,15 @@ static constexpr commands s_menu_items[] = {
 	commands::tool_new_folder,
 };
 
+static constexpr commands s_menu_movie[] = {
+	commands::tool_movie_send_to_end,
+	commands::tool_movie_remove,
+	commands::tool_movie_relink,
+	commands::none,
+	commands::tool_movie_select_all,
+	commands::tool_movie_add,
+};
+
 static constexpr commands s_menu_view[] = {
 	commands::view_close,
 };
@@ -3190,6 +3217,8 @@ std::vector<ui::command_ptr> app_frame::menu(const pointi loc)
 		case menu_type::media: ids = s_menu_media;
 			break;
 		case menu_type::items: ids = s_menu_items;
+			break;
+		case menu_type::movie: ids = s_menu_movie;
 			break;
 		case menu_type::view:
 		default: ids = s_menu_view;
