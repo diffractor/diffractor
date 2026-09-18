@@ -2236,9 +2236,6 @@ msgstr "Użyj akceleracji sprzętowej, aby narysować interfejs użytkownika Dif
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Użyj akceleracji sprzętowej do dekodowania wideo (jeśli jest dostępna)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "Użyj tekstur w formacie NV12 i P010 (automatycznie wyłączane w przypadku wykrycia problemów)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Pokaż wewnętrzny cień otaczający panel widoku obrazu."
 
@@ -3696,6 +3693,9 @@ msgstr "Cięcie między klipami"
 msgid "Transition (tenths of a second)"
 msgstr "Przejście (dziesiąte części sekundy)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Rozjaśnianie z czerni"
 
@@ -3765,6 +3765,21 @@ msgstr "Renderowanie filmu"
 msgid "The movie could not be rendered. {}"
 msgstr "Nie można wyrenderować filmu. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "Wyrenderowano {}."
 
@@ -3809,3 +3824,4 @@ msgid_plural "{count} clips were relinked."
 msgstr[0] "1 klip został połączony ponownie."
 msgstr[1] "{count} klipy zostały połączone ponownie."
 msgstr[2] "{count} klipów zostało połączonych ponownie."
+

@@ -2236,9 +2236,6 @@ msgstr "Diffractor kullanıcı arayüzünü çizmek için donanım hızlandırma
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Videonun kodunu çözmek için donanım hızlandırmayı kullanın (varsa)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "NV12 ve P010 biçim dokularını kullanın (Sorun algılanırsa otomatik olarak kapatılır)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Resim görüntüleme panelini çevreleyen bir iç gölge gösterin."
 
@@ -3662,6 +3659,9 @@ msgstr "Klipler arasında kesme"
 msgid "Transition (tenths of a second)"
 msgstr "Geçiş (saniyenin onda biri)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Siyahtan aç"
 
@@ -3731,6 +3731,21 @@ msgstr "Film işleniyor"
 msgid "The movie could not be rendered. {}"
 msgstr "Film işlenemedi. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "{} işlendi."
 
@@ -3772,3 +3787,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "1 klip yeniden bağlandı."
 msgstr[1] "{count} klip yeniden bağlandı."
+

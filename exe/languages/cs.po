@@ -2321,13 +2321,6 @@ msgstr ""
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Použít hardwarovou akceleraci k dekódování videa (je-li k dispozici)"
 
-msgid ""
-"Use NV12 and P010 format textures (Automatically turned off if problems "
-"detected)"
-msgstr ""
-"Použít textury formátu NV12 a P010 (Automaticky se vypne, pokud jsou "
-"zjištěny problémy)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Zobrazit vložený stín kolem panelu zobrazení obrázku."
 
@@ -3823,6 +3816,9 @@ msgstr "Střih mezi klipy"
 msgid "Transition (tenths of a second)"
 msgstr "Přechod (desetiny sekundy)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Rozjasnit z černé"
 
@@ -3892,6 +3888,21 @@ msgstr "Vykreslování filmu"
 msgid "The movie could not be rendered. {}"
 msgstr "Film se nepodařilo vykreslit. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "Vykresleno: {}."
 
@@ -3936,3 +3947,4 @@ msgid_plural "{count} clips were relinked."
 msgstr[0] "1 klip byl znovu propojen."
 msgstr[1] "{count} klipy byly znovu propojeny."
 msgstr[2] "{count} klipů bylo znovu propojeno."
+

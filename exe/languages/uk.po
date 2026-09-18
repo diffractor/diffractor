@@ -2236,9 +2236,6 @@ msgstr "Використовуйте апаратне прискорення д�
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Використовувати апаратне прискорення для декодування відео (за наявності)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "Використовуйте текстури формату NV12 і P010 (автоматично вимикається при виявленні проблем)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Показати вставну тінь навколо панелі перегляду зображення."
 
@@ -3722,6 +3719,9 @@ msgstr "Склейка між кліпами"
 msgid "Transition (tenths of a second)"
 msgstr "Перехід (десяті частки секунди)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Поява з чорного"
 
@@ -3791,6 +3791,21 @@ msgstr "Візуалізація фільму"
 msgid "The movie could not be rendered. {}"
 msgstr "Не вдалося візуалізувати фільм. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "Візуалізовано: {}."
 
@@ -3835,3 +3850,4 @@ msgid_plural "{count} clips were relinked."
 msgstr[0] "1 кліп перепризначено."
 msgstr[1] "{count} кліпи перепризначено."
 msgstr[2] "{count} кліпів перепризначено."
+

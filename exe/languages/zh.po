@@ -2234,9 +2234,6 @@ msgstr "使用硬件加速绘制Diffractor用户界面（需要重启）"
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "使用硬件加速解码视频（如果可用）"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "使用NV12和P010格式纹理（如果检测到问题自动关闭）"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "在图像视图面板周围显示插入阴影。"
 
@@ -3660,6 +3657,9 @@ msgstr "剪辑之间硬切"
 msgid "Transition (tenths of a second)"
 msgstr "转场（十分之一秒）"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "从黑场淡入"
 
@@ -3729,6 +3729,21 @@ msgstr "正在渲染影片"
 msgid "The movie could not be rendered. {}"
 msgstr "无法渲染影片。{}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "已渲染 {}。"
 
@@ -3770,3 +3785,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "已重新链接 1 个剪辑。"
 msgstr[1] "已重新链接 {count} 个剪辑。"
+

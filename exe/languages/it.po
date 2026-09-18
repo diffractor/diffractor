@@ -2236,9 +2236,6 @@ msgstr "Usa l'accelerazione hardware per disegnare l'interfaccia utente di Diffr
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Usa l'accelerazione hardware per decodificare i video (se disponibile)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "Usa texture in formato NV12 e P010 (disattivato automaticamente se vengono rilevati problemi)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Mostra un'ombra interna attorno al pannello di visualizzazione dell'immagine."
 
@@ -3666,6 +3663,9 @@ msgstr "Stacco netto tra i clip"
 msgid "Transition (tenths of a second)"
 msgstr "Transizione (decimi di secondo)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Dissolvenza in apertura dal nero"
 
@@ -3735,6 +3735,21 @@ msgstr "Rendering del filmato in corso"
 msgid "The movie could not be rendered. {}"
 msgstr "Non è stato possibile eseguire il rendering del filmato. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "{} è stato renderizzato."
 
@@ -3776,3 +3791,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "1 clip è stato ricollegato."
 msgstr[1] "{count} clip sono stati ricollegati."
+

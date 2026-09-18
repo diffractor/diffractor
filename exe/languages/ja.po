@@ -2234,9 +2234,6 @@ msgstr "ハードウェアアクセラレーションを使用してDiffractor�
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "ハードウェアアクセラレーションを使用してビデオをデコードします (利用可能な場合)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "NV12およびP010形式のテクスチャを使用します (問題が検出された場合は自動的にオフになります)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "画像表示パネルの周りに内側の影を表示します。"
 
@@ -3662,6 +3659,9 @@ msgstr "クリップ間をカット"
 msgid "Transition (tenths of a second)"
 msgstr "トランジション (10 分の 1 秒)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "黒からフェードイン"
 
@@ -3731,6 +3731,21 @@ msgstr "ムービーをレンダリングしています"
 msgid "The movie could not be rendered. {}"
 msgstr "ムービーをレンダリングできませんでした。{}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "{} をレンダリングしました。"
 
@@ -3772,3 +3787,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "1 個のクリップを再リンクしました。"
 msgstr[1] "{count} 個のクリップを再リンクしました。"
+

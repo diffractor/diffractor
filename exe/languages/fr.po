@@ -2236,9 +2236,6 @@ msgstr "Utiliser l'accélération matérielle pour dessiner l'interface utilisat
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Utiliser l'accélération matérielle pour décoder la vidéo (si disponible)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "Utiliser les textures aux formats NV12 et P010 (automatiquement désactivées si des problèmes sont détectés)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Afficher une ombre incrustée entourant le panneau d'affichage de l'image."
 
@@ -3662,6 +3659,9 @@ msgstr "Coupe franche entre les clips"
 msgid "Transition (tenths of a second)"
 msgstr "Transition (dixièmes de seconde)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Ouverture en fondu depuis le noir"
 
@@ -3731,6 +3731,21 @@ msgstr "Rendu du film en cours"
 msgid "The movie could not be rendered. {}"
 msgstr "Impossible d'effectuer le rendu du film. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "{} a été rendu."
 
@@ -3772,3 +3787,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "1 clip a été reconnecté."
 msgstr[1] "{count} clips ont été reconnectés."
+

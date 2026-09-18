@@ -2234,9 +2234,6 @@ msgstr "하드웨어 가속을 사용하여 Diffractor 사용자 인터페이스
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "하드웨어 가속을 사용하여 비디오 디코딩(가능한 경우)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "NV12 및 P010 형식 텍스처 사용(문제가 감지되면 자동으로 꺼짐)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "이미지 보기 패널 주위에 삽입 그림자를 표시합니다."
 
@@ -3660,6 +3657,9 @@ msgstr "클립 사이 컷"
 msgid "Transition (tenths of a second)"
 msgstr "전환 (10분의 1초)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "검은 화면에서 페이드 인"
 
@@ -3729,6 +3729,21 @@ msgstr "동영상 렌더링 중"
 msgid "The movie could not be rendered. {}"
 msgstr "동영상을 렌더링할 수 없습니다. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "{}을(를) 렌더링했습니다."
 
@@ -3770,3 +3785,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "클립 1개를 다시 연결했습니다."
 msgstr[1] "클립 {count}개를 다시 연결했습니다."
+

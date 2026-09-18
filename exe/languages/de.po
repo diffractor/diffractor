@@ -2237,9 +2237,6 @@ msgstr "Hardware-Beschleunigung verwenden, um die Benutzeroberfläche von Diffra
 msgid "Use hardware acceleration to decode video (when available)"
 msgstr "Hardware-Beschleunigung verwenden, um Video zu decodieren (wenn verfügbar)"
 
-msgid "Use NV12 and P010 format textures (Automatically turned off if problems detected)"
-msgstr "Texturen im NV12- und P010-Format verwenden (automatisch ausgeschaltet, wenn Probleme erkannt werden)"
-
 msgid "Show an inset shadow surrounding the image view panel."
 msgstr "Einen eingesetzten (Inset-) Schatten zeigen, der das Bildansichtsfenster umgibt."
 
@@ -3666,6 +3663,9 @@ msgstr "Harter Schnitt zwischen Clips"
 msgid "Transition (tenths of a second)"
 msgstr "Übergang (Zehntelsekunden)"
 
+msgid "Fade (tenths of a second)"
+msgstr ""
+
 msgid "Fade in from black"
 msgstr "Von Schwarz aufblenden"
 
@@ -3735,6 +3735,21 @@ msgstr "Film wird gerendert"
 msgid "The movie could not be rendered. {}"
 msgstr "Der Film konnte nicht gerendert werden. {}"
 
+msgid "The movie has no length."
+msgstr ""
+
+msgid "The encoder would not accept this movie."
+msgstr ""
+
+msgid "There was not enough memory for a movie frame."
+msgstr ""
+
+msgid "A clip could not be decoded."
+msgstr ""
+
+msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
 msgid "Rendered {}."
 msgstr "{} wurde gerendert."
 
@@ -3776,3 +3791,4 @@ msgid "1 clip was relinked."
 msgid_plural "{count} clips were relinked."
 msgstr[0] "1 Clip wurde neu verknüpft."
 msgstr[1] "{count} Clips wurden neu verknüpft."
+
