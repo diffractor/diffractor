@@ -48,3 +48,16 @@ CREATE TABLE IF NOT EXISTS item_imports
 
     CONSTRAINT pk_item_imports PRIMARY KEY (name, modified, size)
 );
+
+-- Reserved for future face vectors. The release keeps the table so enabling detection later does
+-- not require a migration over a large database, but this build writes nothing here.
+CREATE TABLE IF NOT EXISTS item_faces
+(
+    folder        TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    model_version INTEGER NOT NULL,
+    scanned       INTEGER64 NOT NULL,
+    faces         BLOB NULL,
+
+    CONSTRAINT pk_item_faces PRIMARY KEY (folder, name)
+);
