@@ -960,6 +960,48 @@ static void should_tag_webp_surface_alpha()
 	assert_equal(true, decoded->format() == ui::texture_format::ARGB, "alpha webp surface is ARGB");
 }
 
+static void should_decode_webp_at_the_requested_size()
+{
+	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
+
+	const auto full = load_webp(data);
+	assert_equal(true, is_valid(full), "the fixture decodes");
+
+	const auto native = full->dimensions();
+	const sizei target{native.cx / 4, native.cy / 4};
+
+	// libwebp rescales inside the decoder, so the surface comes back at the size asked for rather
+	// than at the file's size with a downscale still owed. Every caller of image_to_surface asks
+	// for a bounded size, so this is the ordinary path, not a special one.
+	const auto scaled = load_webp(data, false, target);
+	assert_equal(true, is_valid(scaled), "a reduced decode succeeds");
+	assert_equal(true, scaled->dimensions().cx <= target.cx, "the decode fits inside the requested width");
+	assert_equal(true, scaled->dimensions().cy <= target.cy, "and inside the requested height");
+	assert_equal(true, scaled->dimensions().cx > native.cx / 8, "and is not scaled past the target");
+	assert_equal(true, scaled->format() == full->format(), "and keeps the format the file earned");
+
+	// Aspect is preserved rather than stretched to the box, so a reduced decode frames the picture
+	// the same way the full one does.
+	const auto full_aspect = static_cast<double>(native.cx) / native.cy;
+	const auto scaled_aspect = static_cast<double>(scaled->dimensions().cx) / scaled->dimensions().cy;
+	assert_near(full_aspect, scaled_aspect, 0.02, "the reduced decode keeps the aspect ratio");
+
+	// A target at or above the source is left alone, so nothing is ever enlarged into.
+	const auto larger = load_webp(data, false, {native.cx * 2, native.cy * 2});
+	assert_equal(native.cx, larger->dimensions().cx, "a larger target does not enlarge");
+
+	// The reduced decode must produce the same picture as decoding in full and scaling afterwards,
+	// which is the path it replaces. What it saves is the colour conversion and the scaler pass;
+	// libwebp still walks the whole bitstream, so on a small file that saving is inside the noise and
+	// is deliberately not asserted here.
+	files ff;
+	const auto scaled_after = ff.fit_within(load_webp(data, false), target);
+	assert_equal(scaled_after->dimensions().cx, scaled->dimensions().cx,
+	             "a reduced decode agrees with decode-then-scale on width");
+	assert_equal(scaled_after->dimensions().cy, scaled->dimensions().cy,
+	             "a reduced decode agrees with decode-then-scale on height");
+}
+
 static void should_decode_opaque_lossy_webp_as_nv12()
 {
 	const auto data = df::blob_from_file(test_files_folder.combine_file("lake.webp"));
@@ -996,7 +1038,44 @@ static void should_decode_opaque_lossy_webp_as_nv12()
 	assert_equal(true, average_difference < 3.0,
 	             std::format("webp NV12 average RGB difference: {}", average_difference));
 
-	assert_equal(true, !is_valid(save_webp(nv12, {}, {})), "webp encoder rejects NV12 rather than reading it as BGRX");
+	// VP8 encodes YCbCr 4:2:0, so an NV12 surface is handed over as planes rather than converted to
+	// packed pixels for libwebp to convert straight back. The picture has to survive that, which is
+	// what catches a wrong plane order, a missed de-interleave or a skipped range conversion.
+	{
+		file_encode_params planar_params;
+		planar_params.webp_quality = thumbnail_webp_quality;
+		planar_params.webp_fast = true;
+
+		const auto planar_encoded = save_webp(nv12, {}, planar_params);
+		assert_equal(true, is_valid(planar_encoded), "nv12 encodes as webp through the planar path");
+
+		files planar_ff;
+		const auto round_trip = planar_ff.image_to_surface(planar_encoded, {}, false);
+		assert_equal(true, ui::is_valid(round_trip), "the planar webp decodes again");
+		assert_equal(true, round_trip->dimensions() == dimensions, "the planar webp keeps its size");
+
+		uint64_t planar_difference = 0;
+
+		for (auto y = 0; y < dimensions.cy; ++y)
+		{
+			const auto* const expected = rgb->pixels_line(y);
+			const auto* const actual = round_trip->pixels_line(y);
+
+			for (auto x = 0; x < dimensions.cx * 4; x += 4)
+			{
+				for (auto channel = 0; channel < 3; ++channel)
+				{
+					planar_difference += std::abs(static_cast<int>(expected[x + channel]) - actual[x + channel]);
+				}
+			}
+		}
+
+		const auto planar_average = static_cast<double>(planar_difference) / (dimensions.cx * dimensions.cy * 3);
+		// Measured 2.07: one further lossy generation of an already lossy source. A wrong plane order
+		// or a missed de-interleave is a colour swap, which lands an order of magnitude above this.
+		assert_equal(true, planar_average < 6.0,
+		             std::format("planar webp round trip average difference: {}", planar_average));
+	}
 
 	files ff;
 	const auto image = std::make_shared<ui::image>(df::cspan(data), dimensions, ui::image_format::WEBP,
@@ -1013,10 +1092,76 @@ static void should_decode_opaque_lossy_webp_as_nv12()
 	             "webp downscale honors target extent");
 }
 
-// setting.use_yuv is what the Advanced option, safe start and the D3D11 driver-fault fallback
-// all turn off, so a decoder that ignores it leaves every one of them with no effect. A user on
-// a driver that faults creating NV12 textures then has no way out of the fault.
-static void should_honor_the_yuv_texture_setting()
+// A JPEG thumbnail used to be decoded YCbCr -> packed by libjpeg, reduced, then converted packed ->
+// YCbCr again by libwebp before VP8 saw it. Two conversions, the first at the DCT-scaled size, both
+// discarded. Keeping the planes throughout is what removes them, and the reduction has to stay
+// planar for that to hold - which is what this pins.
+static void should_thumbnail_a_jpeg_without_leaving_yuv()
+{
+	files ff;
+	const auto data = df::blob_from_file(test_files_folder.combine_file("Test.jpg"));
+	assert_equal(true, !data.empty(), "loaded jpeg bytes");
+
+	constexpr sizei ceiling{256, 256};
+	const auto surface = ff.image_to_surface(data, ceiling, true, decode_intent::thumbnail);
+
+	assert_equal(true, ui::is_valid(surface), "thumbnail decode produced a surface");
+	assert_equal(true, surface->format() == ui::texture_format::NV12, "a 4:2:0 jpeg stays planar to the encoder");
+	assert_equal(true, surface->color_space() == ui::color_space::rec601_full, "jpeg planes are full range");
+
+	const auto extent = surface->dimensions();
+	assert_equal(true, extent.cx <= ceiling.cx && extent.cy <= ceiling.cy, "the planar reduction honours the ceiling");
+	assert_equal(true, ((extent.cx | extent.cy) & 1) == 0, "the planar reduction lands on an even extent");
+
+	const auto thumb = ff.surface_to_thumbnail(surface);
+	assert_equal(true, is_valid(thumb) && thumb->format() == ui::image_format::WEBP,
+	             "the planar surface encodes as webp");
+
+	// The range conversion is the one thing planes do not carry across: libwebp's YUV is limited
+	// range and VP8 signals none, so a full-range source handed over untouched comes back with
+	// crushed blacks. Compare against the packed decode of the same file, which never left full range.
+	const auto packed = ff.image_to_surface(data, ceiling, false, decode_intent::thumbnail);
+	const auto decoded = ff.image_to_surface(thumb, {}, false);
+
+	assert_equal(true, ui::is_valid(packed) && ui::is_valid(decoded), "both comparison surfaces decoded");
+
+	// The planar reduction rounds down to an even extent, so the two can differ by a pixel on an
+	// axis. Compare the region they share.
+	const auto common = sizei{
+		std::min(packed->dimensions().cx, decoded->dimensions().cx),
+		std::min(packed->dimensions().cy, decoded->dimensions().cy)
+	};
+
+	assert_equal(true, packed->dimensions().cx - common.cx <= 1 && packed->dimensions().cy - common.cy <= 1,
+	             "the thumbnail is within a pixel of the packed decode on each axis");
+
+	uint64_t difference = 0;
+
+	for (auto y = 0; y < common.cy; ++y)
+	{
+		const auto* const expected = packed->pixels_line(y);
+		const auto* const actual = decoded->pixels_line(y);
+
+		for (auto x = 0; x < common.cx * 4; x += 4)
+		{
+			for (auto channel = 0; channel < 3; ++channel)
+			{
+				difference += std::abs(static_cast<int>(expected[x + channel]) - actual[x + channel]);
+			}
+		}
+	}
+
+	// Measured 3.82 with the range conversion and 8.05 without it, so this separates the two cleanly.
+	const auto average = static_cast<double>(difference) / (common.cx * common.cy * 3);
+	assert_equal(true, average < 5.5, std::format("planar thumbnail average difference: {}", average));
+}
+
+// The caller decides the pixel format, because only it knows whether these pixels are bound for a
+// texture, for a luma plane or for a packed reader. setting.use_yuv is the durable record of a
+// driver fault and reaches the decoders only through ui::yuv_textures_enabled at the display call
+// site - a decoder that reads it directly would also force packed on an analysis or thumbnail
+// decode that never goes near a texture.
+static void should_let_the_caller_choose_the_decoded_pixel_format()
 {
 	const auto saved = setting.use_yuv;
 	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
@@ -1026,17 +1171,29 @@ static void should_honor_the_yuv_texture_setting()
 	const auto jpeg = ff.load(test_files_folder.combine_file("exif-rotated.jpg"), false);
 	assert_equal(true, is_valid(jpeg.i), "loaded jpeg");
 
-	setting.use_yuv = true;
-	const auto webp_on = load_webp(webp, true);
-	const auto jpeg_on = jpeg.to_surface({}, true);
-	assert_equal(true, is_valid(webp_on) && webp_on->format() == ui::texture_format::NV12, "webp nv12 while on");
-	assert_equal(true, is_valid(jpeg_on) && jpeg_on->format() == ui::texture_format::NV12, "jpeg nv12 while on");
+	const auto webp_yuv = load_webp(webp, true);
+	const auto jpeg_yuv = jpeg.to_surface({}, true);
+	assert_equal(true, is_valid(webp_yuv) && webp_yuv->format() == ui::texture_format::NV12,
+	             "webp nv12 when the caller allows it");
+	assert_equal(true, is_valid(jpeg_yuv) && jpeg_yuv->format() == ui::texture_format::NV12,
+	             "jpeg nv12 when the caller allows it");
 
+	const auto webp_packed = load_webp(webp, false);
+	const auto jpeg_packed = jpeg.to_surface({}, false);
+	assert_equal(true, is_valid(webp_packed) && webp_packed->format() == ui::texture_format::RGB,
+	             "webp rgb when the caller refuses planar");
+	assert_equal(true, is_valid(jpeg_packed) && jpeg_packed->format() == ui::texture_format::RGB,
+	             "jpeg rgb when the caller refuses planar");
+
+	// The latch belongs to the texture upload, not to the decode. A thumbnail or analysis decode on
+	// a machine whose driver faulted must still be free to take the cheaper planar path.
 	setting.use_yuv = false;
-	const auto webp_off = load_webp(webp, true);
-	const auto jpeg_off = jpeg.to_surface({}, true);
-	assert_equal(true, is_valid(webp_off) && webp_off->format() == ui::texture_format::RGB, "webp rgb while off");
-	assert_equal(true, is_valid(jpeg_off) && jpeg_off->format() == ui::texture_format::RGB, "jpeg rgb while off");
+	const auto webp_latched = load_webp(webp, true);
+	const auto jpeg_latched = jpeg.to_surface({}, true);
+	assert_equal(true, is_valid(webp_latched) && webp_latched->format() == ui::texture_format::NV12,
+	             "webp still honours the caller with the fault latch set");
+	assert_equal(true, is_valid(jpeg_latched) && jpeg_latched->format() == ui::texture_format::NV12,
+	             "jpeg still honours the caller with the fault latch set");
 }
 
 // A thumbnail scaled to fit a box is regularly odd on one axis. decode_jpeg crops those to even and
@@ -1044,10 +1201,6 @@ static void should_honor_the_yuv_texture_setting()
 // pixel rather than 1.5, for the majority of a collection's thumbnails.
 static void should_decode_odd_sized_webp_as_nv12()
 {
-	const auto saved = setting.use_yuv;
-	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
-	setting.use_yuv = true;
-
 	constexpr sizei odd_extent{321, 215};
 	const auto surface = std::make_shared<ui::surface>();
 	assert_equal(true, surface->alloc(odd_extent, ui::texture_format::RGB) != nullptr, "allocated odd surface");
@@ -1079,10 +1232,6 @@ static void should_decode_odd_sized_webp_as_nv12()
 // bytes. An opaque thumbnail must carry no alpha plane, or it also loses the NV12 decode path.
 static void should_keep_thumbnail_alpha_only_when_needed()
 {
-	const auto saved = setting.use_yuv;
-	const df::scope_exit restore([saved] { setting.use_yuv = saved; });
-	setting.use_yuv = true;
-
 	files ff;
 	const auto loaded = ff.load(test_files_folder.combine_file("Test.jpg"), false);
 	const auto photo = loaded.to_surface(setting.thumbnail_max_dimension, false, {}, decode_intent::thumbnail);
@@ -1586,7 +1735,10 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should honor webp save quality"s, should_honor_webp_save_quality);
 	tests.add("Should tag webp surface alpha"s, should_tag_webp_surface_alpha);
 	tests.add("Should decode opaque lossy webp as nv12"s, should_decode_opaque_lossy_webp_as_nv12);
-	tests.add("Should honor the yuv texture setting"s, should_honor_the_yuv_texture_setting);
+	tests.add("Should decode webp at the requested size"s, should_decode_webp_at_the_requested_size);
+	tests.add("Should let the caller choose the decoded pixel format"s,
+	          should_let_the_caller_choose_the_decoded_pixel_format);
+	tests.add("Should thumbnail a jpeg without leaving yuv"s, should_thumbnail_a_jpeg_without_leaving_yuv);
 	tests.add("Should decode odd sized webp as nv12"s, should_decode_odd_sized_webp_as_nv12);
 	tests.add("Should keep thumbnail alpha only when needed"s, should_keep_thumbnail_alpha_only_when_needed);
 	tests.add("Should refuse truncated webp decode"s, should_refuse_truncated_webp_decode);

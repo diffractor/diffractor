@@ -6,7 +6,8 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Tests for application coordination (app*, view_* task views) -- settings persistence, and the rename, import, sync and convert planning that decides what an operation will do before it runs.
+// Purpose: Tests for application coordination (app*, view_* task views): command registration
+// and input dispatch, settings persistence, and rename, import, sync and convert planning.
 
 #include "pch.h"
 #include "files.h"
@@ -22,6 +23,7 @@
 #include "app_commands.h"
 #include "app_search.h"
 #include "ui_dialog.h"
+#include "app.h"
 #include "view_rename.h"
 #include "view_tags.h"
 #include "view_items.h"
@@ -2114,6 +2116,85 @@ static void should_keep_shuffle_exclusive_with_sorting()
 	assert_equal(true, f.state.effective_group_order() == group_by::file_type, "a plain search groups as chosen");
 }
 
+static void should_bind_every_advertised_command()
+{
+	const auto app = std::make_shared<app_frame>(nullptr);
+	app->initialise_commands();
+	assert_equal(false, app->_commands.empty(), "the command table is populated");
+
+	std::vector<std::string> unbound;
+	for (const auto& [id, command] : app->_commands)
+	{
+		if (!command->invoke && !command->menu) unbound.emplace_back(command->text);
+	}
+	std::ranges::sort(unbound);
+	assert_equal(std::string{}, str::combine(unbound, ", "), "commands without an action or submenu");
+}
+
+static void should_invoke_link_commands_and_selection_shortcuts()
+{
+	const auto saved_favorite_tags_only = setting.sidebar.show_favorite_tags_only;
+	const df::scope_exit restore([saved_favorite_tags_only]
+	{
+		setting.sidebar.show_favorite_tags_only = saved_favorite_tags_only;
+	});
+	const auto app = std::make_shared<app_frame>(nullptr);
+	app->initialise_commands();
+	app->_view_has_focus = false;
+
+	const auto click_link = [&app](const commands id, const std::string_view text)
+	{
+		const auto link = std::make_shared<link_element>(text, id);
+		link->bounds = recti(0, 0, 180, 24);
+		link->is_visible(true);
+		const pointi offset{20, 40};
+		const pointi location{60, 50};
+		hit_test_context ctx{location, recti(0, 0, 200, 100)};
+		const auto controller = link->controller_from_location(app->_view_frame, location, offset, ctx);
+		assert_equal(true, controller != nullptr, "a command link can be clicked");
+		controller->on_mouse_left_button_down(location, {});
+		controller->on_mouse_left_button_up(location, {});
+	};
+
+	setting.sidebar.show_favorite_tags_only = true;
+	click_link(commands::view_favorite_tags, tt.command_all_tags);
+	assert_equal(false, setting.sidebar.show_favorite_tags_only, "Show all tags removes the favorites restriction");
+	click_link(commands::view_favorite_tags, tt.command_favorite_tags);
+	assert_equal(true, setting.sidebar.show_favorite_tags_only, "Favorite tags restores the restriction");
+
+	df::item_set items;
+	for (const auto name : {"command-photo.jpg"sv, "command-video.mp4"sv, "command-audio.mp3"sv})
+	{
+		df::index_file_item indexed;
+		indexed.name = str::cache(name);
+		indexed.ft = files::file_type_from_name(name);
+		const auto item = std::make_shared<df::item_element>(df::file_path(df::folder_path("c:\\commands"), name), indexed);
+		item->add_to(items);
+	}
+	app->_state.append_items(app->_view_frame, items, {}, true, true);
+	click_link(commands::filter_videos, tt.command_filter_videos);
+	assert_equal(true, app->_state.filter().has_group(file_group::video), "the video link enables the filter");
+	app->_state.update_item_groups();
+
+	ui::key_state control;
+	control.control = true;
+	assert_equal(true, app->key_down('A', control), "the keyboard dispatcher handles Ctrl+A");
+	for (const auto& item : items.items())
+	{
+		assert_equal(item->file_type()->group == file_group::video, item->is_selected(),
+		             "Ctrl+A selects visible videos, not hidden photos or audio");
+	}
+
+	click_link(commands::filter_videos, tt.command_filter_videos);
+	assert_equal(false, app->_state.filter().has_group(file_group::video), "the video link clears the filter");
+	app->_state.update_item_groups();
+	assert_equal(true, app->key_down('A', control), "Ctrl+A still works after clearing the filter");
+	for (const auto& item : items.items())
+	{
+		assert_equal(true, item->is_selected(), "Ctrl+A selects every visible item");
+	}
+}
+
 // Two commands claiming one key means the second is unreachable, and nothing in the running app
 // reports it. Dispatch (app_frame::key_down) walks `_commands`, an UNORDERED map, and takes the
 // first match whose `enable` is set - so a collision is only safe while the two can never be
@@ -2690,6 +2771,8 @@ static void should_discard_a_superseded_completion()
 
 void register_app_tests(view_state& state, test_registry& tests)
 {
+	tests.add("Should bind every advertised command"s, should_bind_every_advertised_command);
+	tests.add("Should invoke link commands and selection shortcuts"s, should_invoke_link_commands_and_selection_shortcuts);
 	tests.add("INI file settings should persist values"s, should_persist_to_ini_file);
 	tests.add("Should store an order an older build can read"s, should_store_an_order_an_older_build_can_read);
 	tests.add("Should Rename with substitutions"s, should_rename_with_substitutions);

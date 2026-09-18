@@ -36,6 +36,18 @@ struct movie_probe_result
 	double frame_rate = 0;
 };
 
+// Why a render stopped, as a reason rather than a sentence. The worker cannot word it: the text a
+// user reads is translated, and translation belongs to the UI thread that owns app_text.
+enum class movie_render_error
+{
+	none,
+	no_length,
+	no_encoder,
+	no_memory,
+	undecodable,
+	encoder_failed,
+};
+
 class movie_view_controls final : public view_controls_host
 {
 public:
@@ -119,12 +131,15 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 
 	// The preview's own sound. The player owns one audio device and plays one session on it, and
 	// the clip player already borrows that session -- so a crossfade, which needs two sources
-	// audible at once, is mixed here from whole-clip buffers and written to a device this view
-	// owns. docs/movie.md#12 owns the asymmetry that follows: the clip is heard through the
-	// player's resampler and device, the movie through these buffers and this mixer.
+	// audible at once, is mixed here from bounded source-time chunks and written to a device this
+	// view owns. The clip is heard through the player's resampler and device; the movie uses this
+	// mixer, and the two never play at once.
 	struct preview_audio
 	{
 		df::file_path path;
+		double start = 0;
+		double end = 0;
+		int sample_rate = 0;
 		std::shared_ptr<const std::vector<int16_t>> pcm;
 	};
 
@@ -166,6 +181,10 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 	std::shared_ptr<std::atomic_int> _render_cancel;
 	size_t _render_generation = 0;
 	std::string _status;
+	bool _project_io_active = false;
+	size_t _project_io_generation = 0;
+	size_t _probe_generation = 0;
+	std::function<void(bool)> _project_save_complete;
 
 public:
 	movie_view(view_state& s, view_host_ptr host, movie_view_state& ms);
@@ -178,7 +197,7 @@ public:
 	void refresh() override;
 	void layout(ui::measure_context& mc, sizei extent) override;
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
-	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
+	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx) override;
 	bool mouse_wheel(pointi loc, ui::wheel_notch notch) override;
 	bool key_down(char32_t key, ui::key_state keys) override;
 	bool escape() override;
@@ -231,12 +250,14 @@ public:
 	// Writes the movie. Asks for a destination, then runs on a worker over a snapshot of the document.
 	void render_movie();
 	void render_progress(size_t generation, int percent);
-	void render_finished(size_t generation, bool ok, bool cancelled, const std::string& error, str::cached name);
+	void render_finished(size_t generation, bool ok, bool cancelled, movie_render_error reason,
+	                     const std::string& message, str::cached name);
 
 	bool has_clips() const { return !_movie_state.project.is_empty(); }
 	bool has_missing_clips() const;
 	bool can_undo() const { return _movie_state.project.can_undo(); }
 	bool can_render() const;
+	bool project_io_active() const { return _project_io_active; }
 	bool is_playing() const { return _movie_state.is_playing(); }
 	// Where the clip player has reached, or nothing when it is not the one running. The trim control
 	// asks so its frame and its marker follow the player instead of the handles.
@@ -307,14 +328,17 @@ private:
 	void pump_preview_audio();
 	// The clip's whole audio, or null while it is being read. Decoded once per clip, off the queue
 	// the preview's pictures do not use, so reading a long stream never delays a frame.
-	const std::vector<int16_t>* preview_pcm(size_t slot, const movie_clip& clip);
-	void preview_pcm_loaded(size_t slot, df::file_path path, std::vector<int16_t> pcm);
+	const std::vector<int16_t>* preview_pcm(size_t slot, const movie_clip& clip, double source_time);
+	void preview_pcm_loaded(size_t slot, df::file_path path, double start, double end, int sample_rate,
+	                        std::vector<int16_t> pcm);
 	// Retires the clip player and puts its position back at the focused clip's in point.
 	void rewind_clip_player();
 	// Adopts a session the player opened, if the focus has not moved on since it was asked for.
 	void open_clip_session(df::file_path path, double at);
 	void clip_session_opened(df::file_path path, std::shared_ptr<av_session> ses);
 	void close_clip_session();
+	bool confirm_save_or_discard(std::function<void()> after_save = {});
+	void save_project(std::function<void(bool)> complete);
 	// Replaces the timeline with the clips a selection produces. Only ever called for a timeline the
 	// user has not edited; an edited one is a document and is left alone.
 	void seed_from(const std::vector<df::file_path>& paths);

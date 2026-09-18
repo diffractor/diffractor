@@ -348,9 +348,10 @@ public:
 	void update_edit_caret();
 	recti calc_spliter_bounds() const { return _regions.splitter; }
 	void update_regions();
-	view_controller_ptr media_controller_from_location(const view_host_ptr& host, pointi loc);
-	view_controller_ptr items_controller_from_location(const view_host_ptr& host, pointi loc);
-	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
+	recti region_bounds(view_region region) const;
+	view_controller_ptr media_controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx);
+	view_controller_ptr items_controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx);
+	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx) override;
 
 	void broadcast_event(const view_element_event& event) const override;
 

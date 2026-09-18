@@ -50,6 +50,15 @@ static void set_can_animate(const bool can_animate)
 	ui::animations_enabled = can_animate;
 }
 
+// Whether a decoder may produce NV12 for this backend. Three things have to agree: the CPU
+// renderer presents BGRA and would convert a planar surface straight back, a device may not
+// sample NV12 at all, and setting.use_yuv is the durable latch a driver fault sets (see
+// disable_yuv_textures). It is not a preference - nothing offers it to the user.
+static void set_yuv_textures(const bool enabled)
+{
+	ui::yuv_textures_enabled = enabled;
+}
+
 static constexpr std::string_view to_string(const D3D_FEATURE_LEVEL fl)
 {
 	switch (fl)
@@ -182,6 +191,9 @@ bool factories::init(const bool use_gpu)
 	}
 
 	set_can_animate(should_animate());
+	// Earned below by a device that says it can sample NV12. Nothing before that point may hand a
+	// planar surface to a texture.
+	set_yuv_textures(false);
 
 	ComPtr<ID3D11Device> device;
 	ComPtr<ID3D11DeviceContext> context;
@@ -269,6 +281,7 @@ bool factories::init(const bool use_gpu)
 			df::log(__FUNCTION__, "D3D11 hardware unavailable - using CPU software rendering");
 			software_mode = true;
 			set_can_animate(false);
+			set_yuv_textures(false);
 			device.Reset();
 			context.Reset();
 			hr = S_OK;
@@ -285,6 +298,7 @@ bool factories::init(const bool use_gpu)
 			platform::set_crash_guard(platform::crash_guard::gpu_render, false);
 			software_mode = true;
 			set_can_animate(false);
+			set_yuv_textures(false);
 			dxgi_device.Reset();
 			device.Reset();
 			context.Reset();
@@ -299,6 +313,29 @@ bool factories::init(const bool use_gpu)
 		{
 			dxgi_device1->SetMaximumFrameLatency(1);
 		}
+	}
+
+	if (SUCCEEDED(hr) && device)
+	{
+		uint32_t support = 0;
+
+		supports_p010 = SUCCEEDED(device->CheckFormatSupport(DXGI_FORMAT_P010, &support))
+			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
+
+		supports_nv12 = SUCCEEDED(device->CheckFormatSupport(DXGI_FORMAT_NV12, &support))
+			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
+
+		df::log(__FUNCTION__, supports_p010 ? "     p010 supported" : "     p010 not-supported");
+		df::log(__FUNCTION__, supports_nv12 ? "     nv12 supported" : "     nv12 not-supported");
+
+		// setting.use_yuv is the durable record of a driver that already faulted uploading one of
+		// these, not something the user chose.
+		if (!setting.use_yuv)
+		{
+			df::log(__FUNCTION__, "     yuv textures disabled by a previous driver fault");
+		}
+
+		set_yuv_textures(supports_nv12 && setting.use_yuv);
 	}
 
 	if (SUCCEEDED(hr) && device)
@@ -373,6 +410,9 @@ void factories::downgrade_to_software()
 
 	software_mode = true;
 	set_can_animate(false);
+	// The CPU canvas presents BGRA, so a planar surface decoded for the device that just went away
+	// would only be converted straight back.
+	set_yuv_textures(false);
 
 	// Drop every reference to the lost device. Draw contexts must already have been
 	// destroyed by the caller; anything still holding a device child simply keeps a dead
@@ -989,8 +1029,6 @@ public:
 
 	int _adapters_count = 0;
 	int _reset_device_count = 0;
-	bool _supports_p010 = false;
-	bool _supports_nv12 = false;
 	bool _is_reset = false;
 	bool _is_valid = false;
 	int _base_font_size = 0;
@@ -1199,19 +1237,6 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 	if (SUCCEEDED(hr))
 	{
 		df::log(__FUNCTION__, std::format("draw context created - feature level {}", to_string(_f->d3d_feature_level)));
-
-
-		uint32_t support = 0;
-
-		_supports_p010 = SUCCEEDED(_f->d3d_device->CheckFormatSupport(to_format(ui::texture_format::P010), &support))
-			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
-
-		_supports_nv12 = SUCCEEDED(_f->d3d_device->CheckFormatSupport(to_format(ui::texture_format::NV12), &support))
-			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
-
-		df::log(__FUNCTION__, _supports_p010 ? "     p010 supported" : "     p010 not-supported");
-		df::log(__FUNCTION__, _supports_nv12 ? "     nv12 supported" : "     nv12 not-supported");
-
 
 		if (SUCCEEDED(hr))
 		{
@@ -1848,7 +1873,7 @@ void d3d11_draw_context_impl::sample_video_memory()
 HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& context)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	df::perf_timer timer(df::gpu_perf.submit_us, &df::gpu_perf.submit_max_us);
+	df::perf_timer timer(df::gpu_perf.submit_us, &df::gpu_perf.submit_max_us, &df::gpu_perf.submit_latency);
 	df::bump(df::gpu_perf.frames);
 	sample_video_memory();
 
@@ -2856,10 +2881,12 @@ static int yuv_upload_seh_filter(const bool is_yuv, const unsigned int code)
 // Fall back to RGB video/JPEG rendering after a YUV texture driver fault. Persist the choice
 // immediately (via the same backend the app reads at startup) so the fallback survives even if
 // the app later crashes before a clean shutdown - mirroring the graphics crash-guard durability.
+// setting.use_yuv is that latch and nothing else; there is no option offering it to the user.
 static void disable_yuv_textures()
 {
 	setting.use_yuv = false;
 	setting.write();
+	ui::yuv_textures_enabled = false;
 }
 
 static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc,
@@ -3031,9 +3058,9 @@ ui::texture_update_result d3d11_texture::update(const ui::const_surface_ptr& s)
 		const auto fmt = s->format();
 		_cs = s->color_space();
 
-		// Surfaces decoded before setting.use_yuv was turned off are still cached, so convert
-		// them here rather than ask a driver that has already faulted for another YUV texture.
-		if (!setting.use_yuv && (fmt == ui::texture_format::NV12 || fmt == ui::texture_format::P010))
+		// Surfaces decoded before the gate closed are still cached, so convert them here rather than
+		// ask a driver that has already faulted for another YUV texture.
+		if (!ui::yuv_textures_enabled && (fmt == ui::texture_format::NV12 || fmt == ui::texture_format::P010))
 		{
 			if (!_scaler) _scaler = std::make_unique<av_scaler>();
 

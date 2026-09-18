@@ -174,7 +174,102 @@ static void should_convert_yuv_surfaces_for_software_rendering()
 	assert_equal(true, scaled->format() == ui::texture_format::RGB, "scaled P010 format");
 }
 
-static void should_area_downscale_packed_surfaces()
+// An enlargement is what area_downscale refuses, and it is the case the software backend hits every
+// frame when the window is larger than the video. swscale answers it with an RGB->YUV->RGB round
+// trip through its scalar full-chroma converter, so this path exists to keep it out of that.
+static void should_bilinear_resize_packed_surfaces()
+{
+	const auto make_source = [](const int cx, const int cy)
+	{
+		auto s = std::make_shared<ui::surface>();
+		s->alloc(cx, cy, ui::texture_format::ARGB, ui::orientation::left_bottom);
+		s->color_space(ui::color_space::rec709_limited);
+		return s;
+	};
+
+	// Two samples widened to four. Sampling at centres and clamping the outer half sample is what
+	// keeps the ends exact; extrapolating instead is what puts a dark fringe round an enlargement.
+	{
+		const auto src = make_source(2, 1);
+		auto* const row = src->pixels_line(0);
+		row[0] = row[1] = row[2] = row[3] = 0;
+		row[4] = row[5] = row[6] = row[7] = 200;
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::bilinear_resize(src, dst, {4, 1}), "widen a two sample ramp");
+		assert_equal(true, dst->dimensions() == sizei{4, 1}, "enlarged dimensions");
+		assert_equal(true, dst->format() == ui::texture_format::ARGB, "enlarged format");
+		assert_equal(true, dst->orientation() == ui::orientation::left_bottom, "enlarged orientation");
+		assert_equal(true, dst->color_space() == ui::color_space::rec709_limited, "enlarged colour space");
+
+		const auto* const out = dst->pixels_line(0);
+		assert_equal(0, static_cast<int>(out[0]), "first sample keeps the source end");
+		assert_equal(50, static_cast<int>(out[4]), "quarter weight");
+		assert_equal(150, static_cast<int>(out[8]), "three quarter weight");
+		assert_equal(200, static_cast<int>(out[12]), "last sample keeps the source end");
+	}
+
+	// A flat surface must survive any enlargement untouched, which a pair of weights not summing to
+	// 256 would shift.
+	{
+		const auto src = make_source(7, 5);
+
+		for (auto y = 0; y < 5; ++y)
+		{
+			auto* const row = src->pixels_line(y);
+
+			for (auto x = 0; x < 7; ++x)
+			{
+				row[x * 4 + 0] = 19;
+				row[x * 4 + 1] = 140;
+				row[x * 4 + 2] = 233;
+				row[x * 4 + 3] = 77;
+			}
+		}
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::bilinear_resize(src, dst, {31, 22}), "enlarge a flat surface");
+
+		auto flat = true;
+
+		for (auto y = 0; y < 22; ++y)
+		{
+			const auto* const row = dst->pixels_line(y);
+
+			for (auto x = 0; x < 31; ++x)
+			{
+				flat = flat && row[x * 4 + 0] == 19 && row[x * 4 + 1] == 140 &&
+					row[x * 4 + 2] == 233 && row[x * 4 + 3] == 77;
+			}
+		}
+
+		assert_equal(true, flat, "an enlarged flat surface is unchanged");
+	}
+
+	// One axis growing while the other shrinks is neither a reduction nor an enlargement, so
+	// area_downscale refuses it and this is what answers it.
+	{
+		const auto src = make_source(16, 16);
+		ui::surface_ptr dst;
+		assert_equal(false, ui::area_downscale(src, dst, {32, 8}), "the area filter refuses a mixed resize");
+		assert_equal(true, ui::bilinear_resize(src, dst, {32, 8}), "bilinear takes a mixed resize");
+		assert_equal(true, dst->dimensions() == sizei{32, 8}, "mixed resize dimensions");
+	}
+
+	// Planar surfaces are four bytes a pixel to this walk; they belong to swscale.
+	{
+		ui::surface nv12;
+		nv12.alloc(8, 8, ui::texture_format::NV12);
+		const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
+		{
+		});
+
+		ui::surface_ptr dst;
+		assert_equal(false, ui::bilinear_resize(nv12_view, dst, {16, 16}), "refuse a planar format");
+	}
+}
+
+static void should_area_downscale_packed_and_planar_surfaces()
 {
 	const auto make_source = [](const int cx, const int cy, const ui::texture_format format)
 	{
@@ -284,12 +379,123 @@ static void should_area_downscale_packed_surfaces()
 		assert_equal(false, ui::area_downscale(rgb, dst, {16, 4}), "refuse an enlargement");
 		assert_equal(false, ui::area_downscale(rgb, dst, {0, 4}), "refuse an empty extent");
 
+		// P010 samples are 16 bit, which the Q8 accumulators cannot hold.
+		ui::surface p010;
+		p010.alloc(8, 8, ui::texture_format::P010);
+		const auto p010_view = ui::const_surface_ptr(&p010, [](const ui::surface*)
+		{
+		});
+		assert_equal(false, ui::area_downscale(p010_view, dst, {4, 4}), "refuse a 16 bit planar format");
+
+		// NV12 chroma is one pair per 2x2 luma block, so an odd extent has no whole answer.
 		ui::surface nv12;
 		nv12.alloc(8, 8, ui::texture_format::NV12);
 		const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
 		{
 		});
-		assert_equal(false, ui::area_downscale(nv12_view, dst, {4, 4}), "refuse a planar format");
+		assert_equal(false, ui::area_downscale(nv12_view, dst, {5, 4}), "refuse an odd nv12 extent");
+	}
+
+	// NV12 reduces as two planes: the luma on its own, and the interleaved chroma pair at half the
+	// extent. A flat picture must survive both, and U must not bleed into V.
+	{
+		ui::surface nv12;
+		nv12.alloc(64, 32, ui::texture_format::NV12);
+		nv12.color_space(ui::color_space::rec601_full);
+
+		const auto stride = nv12.stride();
+		auto* const luma = nv12.pixels();
+		auto* const chroma = luma + stride * 32;
+
+		for (auto y = 0; y < 32; ++y)
+		{
+			auto* const row = luma + stride * y;
+			for (auto x = 0; x < 64; ++x) row[x] = static_cast<uint8_t>(((x + y) & 1) ? 200 : 0);
+		}
+
+		for (auto y = 0; y < 16; ++y)
+		{
+			auto* const row = chroma + stride * y;
+			for (auto x = 0; x < 32; ++x)
+			{
+				row[x * 2] = 90;
+				row[x * 2 + 1] = 210;
+			}
+		}
+
+		const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
+		{
+		});
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::area_downscale(nv12_view, dst, {32, 16}), "reduce an nv12 surface");
+		assert_equal(true, dst->format() == ui::texture_format::NV12, "reduced nv12 format");
+		assert_equal(true, dst->color_space() == ui::color_space::rec601_full, "reduced nv12 colour space");
+
+		const auto dst_stride = dst->stride();
+		auto luma_correct = true;
+
+		for (auto y = 0; y < 16; ++y)
+		{
+			const auto* const row = dst->pixels() + dst_stride * y;
+			for (auto x = 0; x < 32; ++x) luma_correct = luma_correct && row[x] == 100;
+		}
+
+		assert_equal(true, luma_correct, "nv12 luma is the 2x2 mean");
+
+		auto chroma_correct = true;
+
+		for (auto y = 0; y < 8; ++y)
+		{
+			const auto* const row = dst->pixels() + dst_stride * 16 + dst_stride * y;
+			for (auto x = 0; x < 16; ++x)
+			{
+				chroma_correct = chroma_correct && row[x * 2] == 90 && row[x * 2 + 1] == 210;
+			}
+		}
+
+		assert_equal(true, chroma_correct, "nv12 chroma keeps u and v apart");
+	}
+
+	// The luma-plane entry point is what lets a planar decode reach the face detector with no colour
+	// work, so it must agree with the surface path on the same pixels.
+	{
+		ui::surface nv12;
+		nv12.alloc(64, 32, ui::texture_format::NV12);
+
+		const auto stride = nv12.stride();
+		auto seed = 0x9e3779b9u;
+
+		for (auto y = 0; y < 32; ++y)
+		{
+			auto* const row = nv12.pixels() + stride * y;
+
+			for (auto x = 0; x < 64; ++x)
+			{
+				seed = seed * 1664525u + 1013904223u;
+				row[x] = static_cast<uint8_t>(seed >> 24);
+			}
+		}
+
+		const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
+		{
+		});
+
+		ui::surface_ptr dst;
+		assert_equal(true, ui::area_downscale(nv12_view, dst, {16, 8}), "reduce the nv12 reference");
+
+		std::vector<uint8_t> plane(16 * 8);
+		assert_equal(true, ui::area_downscale_luma(nv12.pixels(), stride, {64, 32}, plane.data(), 16, {16, 8}),
+		             "reduce the luma plane on its own");
+
+		auto identical = true;
+
+		for (auto y = 0; y < 8; ++y)
+		{
+			identical = identical && memcmp(dst->pixels() + dst->stride() * y, plane.data() + y * 16, 16) == 0;
+		}
+
+		assert_equal(true, identical, "the luma plane agrees with the surface path");
 	}
 
 	// Same size on one axis is still a reduction; the identity run must not be rejected or shifted.
@@ -1523,7 +1729,8 @@ void register_render_tests(view_state& state, test_registry& tests)
 	          should_rasterise_one_scene_to_one_answer_on_every_platform);
 	tests.add("Should convert YUV surfaces for software rendering"s,
 	          should_convert_yuv_surfaces_for_software_rendering);
-	tests.add("Should area downscale packed surfaces"s, should_area_downscale_packed_surfaces);
+	tests.add("Should area downscale packed and planar surfaces"s, should_area_downscale_packed_and_planar_surfaces);
+	tests.add("Should bilinear resize packed surfaces"s, should_bilinear_resize_packed_surfaces);
 	tests.add("Should estimate decode cost"s, should_estimate_decode_cost);
 	tests.add("Should refuse over budget sources"s, should_refuse_over_budget_sources);
 	tests.add("Should animate alpha between values"s, should_animate_alpha_between_values);

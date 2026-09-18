@@ -124,6 +124,7 @@ diffractor_dependency(bzip2 VENDORED_MODULE vendored/bzip2 VENDORED_DIR third-pa
 diffractor_dependency(lzma VENDORED_MODULE vendored/lzma VENDORED_DIR third-party/liblzma OPTIONAL)
 diffractor_dependency(brotli VENDORED_MODULE vendored/brotli VENDORED_DIR third-party/brotli OPTIONAL)
 diffractor_dependency(highway VENDORED_MODULE vendored/highway VENDORED_DIR third-party/highway OPTIONAL)
+
 # Tracked music. Declared before the forks because FFmpeg's configure enables its libopenmpt
 # demuxer only when it can already see the library, and a dependency can only be stated on a target
 # that already exists.
@@ -205,6 +206,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/metadata_exif.cpp
         src/model.cpp
         src/model_db.cpp
+        src/model_faces.cpp
         src/model_index.cpp
         src/model_items.cpp
         src/model_movie.cpp
@@ -279,6 +281,7 @@ endif ()
 set(DIFFRACTOR_TEST_SOURCES
         src/test_app.cpp
         src/test_av.cpp
+        src/test_faces.cpp
         src/test_files.cpp
         src/test_fixtures.cpp
         src/test_index.cpp
@@ -448,8 +451,18 @@ if (WIN32)
 
     # The script names them without a path, so the directory holding them is what makes them found.
     target_include_directories(diffractor PRIVATE "${_shader_dir}")
+
+    # The .rc embeds these by name, and the generator only tracks the .rc itself: editing one of them
+    # otherwise leaves the compiled resource stale and the binary silently running the old copy. That
+    # failure is invisible - it builds clean and the application uses last week's schema.
+    file(GLOB _rc_embedded_resources
+            "${CMAKE_SOURCE_DIR}/src/Res/*.sql"
+            "${CMAKE_SOURCE_DIR}/src/Res/*.png"
+            "${CMAKE_SOURCE_DIR}/src/Res/*.ico"
+            "${CMAKE_SOURCE_DIR}/src/Res/models/*")
+
     set_source_files_properties("${CMAKE_SOURCE_DIR}/src/platform_win_res.rc"
-            PROPERTIES OBJECT_DEPENDS "${_shader_outputs}")
+            PROPERTIES OBJECT_DEPENDS "${_shader_outputs};${_rc_embedded_resources}")
 endif ()
 
 # Every resolved dependency is named here rather than relying on one library to pull in another.

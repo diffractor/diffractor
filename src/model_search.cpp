@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -245,6 +245,25 @@ df::search_t df::search_t::parse(const std::string_view text)
 	return result;
 }
 
+// Wrapping a value so the tokenizer reads it back whole. The rule lives here alone because every
+// formatted term has to agree with the tokenizer's single un-quoting rule.
+static std::string quote_term_value(const std::string_view term_text)
+{
+	const char quote_char = term_text.find('\"') == std::string::npos ? '\"' : '\'';
+	std::string result;
+	result += quote_char;
+
+	// the tokenizer has no escape, so a value containing the delimiter is doubled and un-doubled on read
+	for (const auto c : term_text)
+	{
+		result += c;
+		if (c == quote_char) result += c;
+	}
+
+	result += quote_char;
+	return result;
+}
+
 static std::string term_quote(const std::string_view term_text)
 {
 	auto has_special_char = term_text.find_first_of(" \t\'\"!-#@") != std::string::npos;
@@ -273,28 +292,7 @@ static std::string term_quote(const std::string_view term_text)
 		}
 	}
 
-	std::string result;
-
-	if (has_special_char)
-	{
-		const char quote_char = term_text.find('\"') == std::string::npos ? '\"' : '\'';
-		result = quote_char;
-
-		// the tokenizer has no escape, so a value containing the delimiter is doubled and un-doubled on read
-		for (const auto c : term_text)
-		{
-			result += c;
-			if (c == quote_char) result += c;
-		}
-
-		result += quote_char;
-	}
-	else
-	{
-		result = term_text;
-	}
-
-	return result;
+	return has_special_char ? quote_term_value(term_text) : std::string(term_text);
 }
 
 // A search term has to read back as itself, so numbers are trimmed rather than rounded away.

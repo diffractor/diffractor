@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -921,6 +921,7 @@ void settings_t::read()
 	store.read(s_index, s_onedrive_music, collection.onedrive_music);
 	store.read(s_index, s_more, collection.more_folders);
 
+
 	store.read(s_favorite_search, s_title, search.title, search.count);
 	store.read(s_favorite_search, s_path, search.path, search.count);
 
@@ -1093,6 +1094,7 @@ void settings_t::write() const
 	store.write(s_index, s_onedrive_video, collection.onedrive_video);
 	store.write(s_index, s_onedrive_music, collection.onedrive_music);
 	store.write(s_index, s_more, collection.more_folders);
+
 
 	store.write(s_favorite_search, s_title, search.title, search.count);
 	store.write(s_favorite_search, s_path, search.path, search.count);

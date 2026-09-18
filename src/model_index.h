@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -115,6 +115,7 @@ struct index_statistic
 	int thumbs_saved = 0;
 
 	int media_item_count = 0;
+	int picture_item_count = 0;
 	int index_item_count = 0;
 	int indexed_dup_folder_count = 0;
 	int indexed_max_compare_count = 0;
@@ -753,7 +754,6 @@ public:
 	{
 		return _cache_loaded_event;
 	}
-
 	void merge_folder(df::folder_path folder_path, const db_items_t& items);
 
 	void save_media_position(df::file_path id, double media_position);
@@ -930,10 +930,12 @@ public:
 	void queue_load_visible_thumbnails(const df::item_elements& visible);
 	// Load one tooltip/hover thumbnail without cancelling the visible-items thumbnail batch.
 	// Checks the thumbnail database first, then decodes locally or asks the cloud shell provider.
-	void queue_load_thumbnail(df::item_element_ptr item);
+	void queue_load_thumbnail(df::item_element_ptr item,
+	                         view_invalid invalid = view_invalid::tooltip | view_invalid::view_redraw);
 	// Fetch shell (cloud provider) thumbnails for visible cloud-only placeholders WITHOUT
 	// hydrating. Best-effort; caches the result in the database so it is not re-fetched.
-	void queue_scan_offline_thumbnails(const df::item_set& items, bool visible_only = true);
+	void queue_scan_offline_thumbnails(const df::item_set& items, bool visible_only = true,
+	                                   view_invalid invalid = view_invalid::tooltip | view_invalid::view_redraw);
 	void queue_update_presence(const df::item_set& items);
 	void queue_update_predictions();
 	void queue_update_summary();

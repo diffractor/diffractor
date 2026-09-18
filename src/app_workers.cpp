@@ -44,6 +44,13 @@ struct worker_queue_binding
 
 void start_worker_group(std::vector<worker_queue_binding> bindings, std::string_view group_name);
 
+static void record_queue_wait(const platform::task_queue::task_t& task, df::queue_counters* const perf)
+{
+	const auto wait_us = task.wait_us();
+	df::bump(perf->wait_us, wait_us);
+	df::record_peak(perf->wait_max_us, static_cast<uint32_t>(std::min<uint64_t>(wait_us, UINT32_MAX)));
+}
+
 platform::thread_event media_preview_event(false, false);
 static platform::mutex media_preview_mutex;
 static _Guarded_by_(media_preview_mutex) std::function<void(media_preview_state&)> next_media_preview;
@@ -218,6 +225,7 @@ static void start_database(database& db, platform::task_queue& database_task_que
 					{
 						try
 						{
+							record_queue_wait(t, perf);
 							df::perf_timer timer(perf->busy_us, &perf->task_max_us);
 							t();
 						}
@@ -543,6 +551,7 @@ static void drain_queue(platform::task_queue& q, df::queue_counters* perf)
 		{
 			try
 			{
+				record_queue_wait(t, perf);
 				df::perf_timer timer(perf->busy_us, &perf->task_max_us);
 				t();
 			}
@@ -708,6 +717,7 @@ void start_map_worker(platform::task_queue& q)
 						df::scope_locked_inc l(df::jobs_running);
 						df::bump(perf->batches);
 						df::bump(perf->tasks);
+						record_queue_wait(task, perf);
 						df::perf_timer timer(perf->busy_us, &perf->task_max_us);
 						task();
 					}
@@ -765,6 +775,7 @@ static void start_tile_db_worker(tile_cache_db& db, platform::task_queue& queue)
 				{
 					try
 					{
+						record_queue_wait(t, perf);
 						df::perf_timer timer(perf->busy_us, &perf->task_max_us);
 						t();
 					}

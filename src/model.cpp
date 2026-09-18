@@ -1577,9 +1577,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
@@ -2197,9 +2197,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -4377,12 +4377,16 @@ void texture_state::update_decode(ui::draw_context& rc)
 				_decode_cancel = cancel;
 				const df::cancel_token token(*cancel);
 
+				// A projection reads the pixels itself, and the CPU backend presents BGRA, so planar
+				// is asked for only when it can reach the sampler as planes.
+				const auto can_use_yuv = !wants_packed && ui::yuv_textures_enabled;
+
 				// A placeholder decodes in a fraction of the time a full-size image does, so it goes to
 				// the thumbnail queue rather than waiting behind the full-size decodes on the display
 				// queue.
 				_async.queue_async(placeholder ? async_queue::render : async_queue::render_display,
 				                   [&as = _async, ld = _loaded, retained, scale_hint, placeholder, generation, cancel,
-					                   token, wants_packed, t = ui_owned(_async, shared_from_this())]
+					                   token, wants_packed, can_use_yuv, t = ui_owned(_async, shared_from_this())]
 				                   {
 					                   if (cancel->load(std::memory_order_relaxed)) return;
 					                   files loader;
@@ -4391,10 +4395,10 @@ void texture_state::update_decode(ui::draw_context& rc)
 						                   retained->dimensions().cy >= scale_hint.cy &&
 						                   (!wants_packed || ui::is_packed(retained->format()));
 					                   auto s = can_reuse
-						                            ? loader.scale_if_needed(retained, scale_hint)
-						                            : ld.to_surface(scale_hint, !wants_packed, token);
+						                            ? loader.fit_within(retained, scale_hint)
+						                            : ld.to_surface(scale_hint, can_use_yuv, token);
 					                   auto zoom = ui::is_valid(s)
-						                               ? loader.scale_if_needed(
+						                               ? loader.fit_within(
 							                               s, df::zoom_view_state::navigator_surface_extent)
 						                               : nullptr;
 

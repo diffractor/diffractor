@@ -793,6 +793,8 @@ bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv, cons
 	_impl->dinfo.do_block_smoothing = FALSE;
 	_impl->dinfo.dct_method = JDCT_ISLOW;
 
+	// Power-of-two denominators only. read_nv12 relies on _DCT_scaled_size being a power of two for
+	// ui::calc_stride's 16-byte rounding to cover the samples libjpeg writes per row.
 	if (scale_hint > 0)
 	{
 		_impl->dinfo.scale_num = 1;

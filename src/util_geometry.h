@@ -995,6 +995,13 @@ public:
 		_trans[5] = aff[5];
 	}
 
+	// The six coefficients in this class's own order, for handing the matrix to a library that takes
+	// one. Note the layout: transform() reads (t0, t2) as the first row, not (t0, t1).
+	const double* coefficients() const noexcept
+	{
+		return _trans;
+	}
+
 	pointd transform(const pointd p) const noexcept
 	{
 		pointd result;

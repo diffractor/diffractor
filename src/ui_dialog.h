@@ -1729,7 +1729,7 @@ namespace ui
 
 		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
+		                                             hit_test_context& ctx) override
 		{
 			view_controller_ptr result;
 
@@ -1748,7 +1748,7 @@ namespace ui
 					{
 						if (e.element->bounds.contains(loc - scroll_offset))
 						{
-							result = e.element->controller_from_location(host, loc, scroll_offset, excluded_bounds);
+							result = e.element->controller_from_location(host, loc, scroll_offset, ctx);
 							if (result)
 							{
 								return result;
@@ -2079,7 +2079,7 @@ namespace ui
 			{
 				if (is_valid(surface))
 				{
-					_surfaces.emplace_back(ff.scale_if_needed(surface, max_dims));
+					_surfaces.emplace_back(ff.fit_within(surface, max_dims));
 					if (_surfaces.size() >= max_surfaces) break;
 				}
 			}
@@ -3260,9 +3260,9 @@ namespace ui
 			return _owner;
 		}
 
-		view_controller_ptr controller_from_location(const pointi loc) override
+		view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 		{
-			if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
+			if (_scroller.can_scroll() && ctx.occluded(_scroller.scroll_bounds()))
 			{
 				return std::make_shared<scroll_controller>(shared_from_this(), _scroller, _scroller.scroll_bounds());
 			}
@@ -3271,7 +3271,7 @@ namespace ui
 
 			for (const auto& r : _results)
 			{
-				auto controller = r->controller_from_location(shared_from_this(), loc, offset, {});
+				auto controller = r->controller_from_location(shared_from_this(), loc, offset, ctx);
 				if (controller) return controller;
 			}
 
@@ -3921,9 +3921,9 @@ public:
 	{
 	}
 
-	view_controller_ptr controller_from_location(const pointi loc) override
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 	{
-		if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
+		if (_scroller.can_scroll() && ctx.occluded(_scroller.scroll_bounds()))
 		{
 			return std::make_shared<scroll_controller>(shared_from_this(), _scroller, _scroller.scroll_bounds());
 		}
@@ -3940,7 +3940,7 @@ public:
 			const auto in_body = i >= split_header && i < split_body;
 			// Body elements scrolled under the header or footer must not answer for them.
 			if (in_body && clip_body && !_scroller.client_bounds().contains(loc)) continue;
-			auto controller = e->controller_from_location(shared_from_this(), loc, in_body ? offset : pointi{}, {});
+			auto controller = e->controller_from_location(shared_from_this(), loc, in_body ? offset : pointi{}, ctx);
 			if (controller) return controller;
 		}
 

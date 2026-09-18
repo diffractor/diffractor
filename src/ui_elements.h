@@ -410,7 +410,7 @@ public:
 	}
 
 	virtual view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                                     const std::vector<recti>& excluded_bounds);
+	                                                     hit_test_context& ctx);
 
 	bool is_style_bit_set(const view_element_style mask) const
 	{
@@ -595,7 +595,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override;
+	                                             hit_test_context& ctx) override;
 
 protected:
 	// Metrics such as a gap in device pixels are only known once there is a measure context, so a
@@ -882,7 +882,7 @@ public:
 	void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override;
+	                                             hit_test_context& ctx) override;
 };
 
 inline std::string icon_to_utf8(const icon_index i)

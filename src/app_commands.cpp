@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -1245,9 +1245,9 @@ class open_with_auto_complete final : public ui::complete_strategy_t,
 
 		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
+		                                             hit_test_context& ctx) override
 		{
-			return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+			return default_controller_from_location(*this, host, loc, element_offset, ctx);
 		}
 	};
 
@@ -2969,7 +2969,6 @@ static void settings_invoke(view_state& s, const ui::control_frame_ptr& parent)
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_show_help_tooltips, edited.show_help_tooltips));
 	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu, edited.use_gpu));
 	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_gpu_video, edited.use_d3d11va));
-	advanced->add(std::make_shared<ui::check_control>(dlg->_frame, tt.options_use_yuv_tex, edited.use_yuv));
 #ifndef WINSTORE
 	advanced->add(
 		std::make_shared<ui::check_control>(dlg->_frame, tt.options_send_crash_reports, edited.send_crash_dumps));
@@ -3063,9 +3062,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -3265,7 +3264,6 @@ static void index_settings_invoke(view_state& s, const ui::control_frame_ptr& pa
 static void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto dlg = make_dlg(parent);
-
 	// Edit copies so Cancel discards and OK commits, like every other dialog.
 	auto search = setting.search;
 	auto sidebar_settings = setting.sidebar;
@@ -3667,6 +3665,9 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::favorite, [this] { favorite_invoke(_state, _app_frame); });
 	add_command_invoke(commands::advanced_search, [this] { advanced_search_invoke(_state, _app_frame, _view_frame); });
 
+	add_command_invoke(commands::view_minimize, [this] { _pa->sys_command(ui::sys_command_type::MINIMIZE); });
+	add_command_invoke(commands::view_maximize, [this] { _pa->sys_command(ui::sys_command_type::MAXIMIZE); });
+	add_command_invoke(commands::view_restore, [this] { _pa->sys_command(ui::sys_command_type::RESTORE); });
 	add_command_invoke(commands::view_close, [this] { _view->exit(); });
 	add_command_invoke(commands::edit_item_save, [this]
 	{
@@ -3684,6 +3685,8 @@ void app_frame::initialise_commands()
 		else _view_edit->save_and_next(true);
 	});
 	add_command_invoke(commands::edit_item_save_as, [this] { _view_edit->save_as(); });
+	add_command_invoke(commands::edit_item_color_reset, [this] { _view_edit->color_reset(); });
+	add_command_invoke(commands::tool_rotate_reset, [this] { _view_edit->rotate_reset(); });
 	add_command_invoke(commands::edit_item_auto_color, [this] { _view_edit->auto_color(); });
 	add_command_invoke(commands::edit_item_auto_document, [this] { _view_edit->auto_document(); });
 	add_command_invoke(commands::edit_item_auto_straighten, [this] { _view_edit->auto_straighten(); });
@@ -3721,6 +3724,7 @@ void app_frame::initialise_commands()
 	                   [this] { file_properties_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::browse_search, [this] { _search_edit->focus(); });
 	add_command_invoke(commands::filter_items, [this] { _view_items->focus_rendered_filter(); });
+	add_command_invoke(commands::select_all, [this] { _state.select_all(_view_frame); });
 	add_command_invoke(commands::browse_recursive, [this] { show_flatten_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::view_fullscreen, [this] { toggle_full_screen(); });
 	add_command_invoke(commands::option_highlight_large_items, [this]
@@ -3757,8 +3761,6 @@ void app_frame::initialise_commands()
 			_state.view_mode(view_type::locate);
 		}
 	});
-	add_command_invoke(commands::view_maximize, [this] { _pa->sys_command(ui::sys_command_type::MAXIMIZE); });
-	add_command_invoke(commands::view_minimize, [this] { _pa->sys_command(ui::sys_command_type::MINIMIZE); });
 	add_command_invoke(commands::tool_move_to_folder,
 	                   [this] { copy_move_invoke(_state, _app_frame, _view_frame, true); });
 	add_command_invoke(commands::view_show_sidebar, [this]
@@ -3796,10 +3798,9 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::rate_5, [this] { rate_items_invoke(_state, _app_frame, _view_frame, 5); });
 	add_command_invoke(commands::rate_rejected, [this]
 	{
-		// Reject toggles like a flag; the stars keep 0 as their own clear.
 		const auto& items = _state.selected_items().items();
 		const auto all_rejected = !items.empty() &&
-			std::ranges::all_of(items, [](const df::item_element_ptr& i) { return i->rating() == -1; });
+			std::ranges::all_of(items, [](const df::item_element_ptr& item) { return item->rating() == -1; });
 		rate_items_invoke(_state, _app_frame, _view_frame, all_rejected ? 0 : -1);
 	});
 	add_command_invoke(commands::label_select, [this]
@@ -3828,7 +3829,6 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::search_related, [this] { related_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::tool_rename, [this] { rename_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::repeat_toggle, [this] { repeat_mode_toggle(_state, _app_frame); });
-	add_command_invoke(commands::view_restore, [this] { _pa->sys_command(ui::sys_command_type::RESTORE); });
 	add_command_invoke(commands::tool_rotate_anticlockwise, [this]
 	{
 		rotate_invoke(_state, _app_frame, _view_frame, simple_transform::rot_270);
@@ -3848,7 +3848,6 @@ void app_frame::initialise_commands()
 	});
 	add_command_invoke(commands::tool_scan, [this] { scan_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::options_sidebar, [this] { customise_invoke(_state, _app_frame); });
-	add_command_invoke(commands::select_all, [this] { _state.select_all(_view_frame); });
 	add_command_invoke(commands::select_invert, [this] { _state.select_inverse(_view_frame); });
 	add_command_invoke(commands::select_nothing, [this] { _state.select_nothing(_view_frame); });
 	add_command_invoke(commands::tool_email, [this] { email_invoke(_state, _app_frame, _view_frame); });

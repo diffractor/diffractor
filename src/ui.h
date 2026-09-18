@@ -404,14 +404,25 @@ namespace ui
 	sizei scale_dimensions(sizei dims, sizei limit, bool dont_scale_up = false) noexcept;
 	recti scale_dimensions(sizei dims, recti limit, bool dont_scale_up = false) noexcept;
 
-	// Area-average reduction between packed 32 bit surfaces, allocating dst. Answers false for
-	// anything that is not a pure reduction of a packed format, which is the caller's cue to keep
-	// using swscale.
+	// Area-average reduction, allocating dst. Handles the packed 32 bit formats and NV12, whose two
+	// planes reduce independently. Answers false for anything that is not a pure reduction of one of
+	// those, which is the caller's cue to keep using swscale.
 	bool area_downscale(const const_surface_ptr& src, surface_ptr& dst, sizei dst_extent);
 
 	// Same, pinned to the SSE2 baseline. Only a test uses this, to prove the wider path agrees on a
 	// machine that would otherwise exercise just one of the two.
 	bool area_downscale_baseline(const const_surface_ptr& src, surface_ptr& dst, sizei dst_extent);
+
+	// Area-average reduction of one 8-bit plane into a caller-owned buffer. An NV12 surface's first
+	// plane already is the luminance the face detector and the perceptual hash read, so this is what
+	// lets a planar decode reach them with no colour work and no intermediate surface.
+	bool area_downscale_luma(const uint8_t* src, size_t src_stride, sizei src_extent,
+	                         uint8_t* dst, size_t dst_stride, sizei dst_extent);
+
+	// Separable bilinear resize of a packed 32 bit surface, allocating dst. For the cases
+	// area_downscale refuses - an enlargement, or one axis growing while the other shrinks. A pure
+	// reduction belongs to area_downscale, which is both cheaper and correct for it.
+	bool bilinear_resize(const const_surface_ptr& src, surface_ptr& dst, sizei dst_extent);
 
 	////////////////////////////////////////////////////////////////////////////////////
 	// Pixels Conversions
@@ -2073,6 +2084,12 @@ namespace ui
 	// False when the CPU software renderer is active, or the system asks for no client-area
 	// animation. animate_alpha then jumps straight to its target instead of fading.
 	extern bool animations_enabled;
+
+	// Whether a decoder may hand this backend a planar YUV surface. False for the CPU renderer,
+	// which presents BGRA and would only convert it straight back, and false on a device whose
+	// driver cannot sample NV12 or has already faulted uploading one. Asked by whoever decodes for
+	// a texture; a decode read for its luma or its bytes does not consult it.
+	extern bool yuv_textures_enabled;
 
 	// Exponential decay rate for alpha fades, per second. Chosen as -ln(1 - 0.333) * 60 so that a
 	// 60Hz frame reproduces exactly the fixed 0.333 per frame this replaced.

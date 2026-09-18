@@ -23,8 +23,11 @@
 #include "libarchive/libarchive/archive.h"
 #include "libarchive/libarchive/archive_entry.h"
 
+// windows.h arrives through the vendored headers above and brings the min/max function macros with
+// it, which swallow the std:: calls further down this file. Both go, not just min.
 #undef GetObject
 #undef min
+#undef max
 
 
 df_assert_move_only(file_scan_result);
@@ -948,12 +951,6 @@ void log_file_op_summary()
 		return row_total(a.second) > row_total(b.second);
 	});
 
-	const auto format_row = [](const std::string_view name, const std::string_view caps, const file_op_row& r)
-	{
-		return std::format("{:<10} {:<9} reads={:<7} in-place={:<6} replace={:<6} sidecar={:<6} write-failed={}",
-		                   name, caps, r[0], r[1], r[2], r[3], r[4]);
-	};
-
 	// The first extension names the whole group, and the capability marker states what the traits
 	// table promises - so a row that patches when it claims it cannot, or replaces when it claims
 	// it can patch, is visible without cross-referencing the traits.
@@ -970,14 +967,21 @@ void log_file_op_summary()
 	};
 
 	file_op_row totals{};
+	std::string report =
+		"\n### Diffractor file operation results\n\n"
+		"| File type | In-place capability | Reads | In-place writes | Replacements | Sidecars | Write failures |\n"
+		"|---|---|---:|---:|---:|---:|---:|\n";
 
 	for (const auto& [ft, row] : rows)
 	{
 		for (auto i = 0_z; i < file_op_stat_count; ++i) totals[i] += row[i];
-		df::log("perf file types", format_row(group_name(ft->extension), capability(ft), row));
+		report += std::format("| {} | {} | {} | {} | {} | {} | {} |\n", group_name(ft->extension),
+		                      capability(ft), row[0], row[1], row[2], row[3], row[4]);
 	}
 
-	df::log("perf file types", format_row("(total)", ""sv, totals));
+	report += std::format("| **Total** | - | {} | {} | {} | {} | {} |\n", totals[0], totals[1], totals[2],
+	                      totals[3], totals[4]);
+	df::log("perf file types", report);
 }
 
 sizei file_load_result::dimensions() const
@@ -999,7 +1003,7 @@ ui::const_surface_ptr file_load_result::to_surface(const sizei scale_hint, const
 
 		if (is_valid(s))
 		{
-			return ff.scale_if_needed(s, scale_hint);
+			return ff.fit_within(s, scale_hint);
 		}
 
 		if (is_valid(i))
@@ -1433,7 +1437,9 @@ ui::const_image_ptr files::surface_to_image(const ui::const_surface_ptr& surface
 {
 	ui::const_image_ptr result;
 
-	if (is_valid(surface_in))
+	// save_png and the jpeg encoder both walk the surface as four-byte pixels, so a planar one would
+	// be written out as its luma plane read as BGRX - grey and tiled rather than a visible failure.
+	if (is_valid(surface_in) && ui::is_packed(surface_in->format()))
 	{
 		const auto dimensions = surface_in->dimensions();
 		const auto has_alpha = surface_in->format() == ui::texture_format::ARGB;
@@ -1475,8 +1481,24 @@ ui::const_image_ptr files::surface_to_thumbnail(const ui::const_surface_ptr& sur
 
 	ui::const_image_ptr result = save_webp(surface_in, {}, params);
 
-	// save_webp accepts only RGB and ARGB, so anything else falls back to what the thumbnail store
-	// held before WebP: PNG when the surface carries alpha, JPEG otherwise.
+	// The fallbacks below encode packed pixels only, so a planar surface the WebP encoder would not
+	// take - a video frame carrying a rec709 matrix, say - is converted rather than dropped.
+	if (!is_valid(result) && !ui::is_packed(surface_in->format()))
+	{
+		const auto packed = std::make_shared<ui::surface>();
+
+		if (scaler().convert_yuv_surface(*surface_in, packed) && ui::is_valid(packed))
+		{
+			result = save_webp(packed, {}, params);
+			if (!is_valid(result)) result = surface_to_image(packed, {}, params, ui::image_format::Unknown);
+		}
+
+		return result;
+	}
+
+	// save_webp accepts packed pixels and the NV12 planes VP8 encodes natively, so anything else
+	// falls back to what the thumbnail store held before WebP: PNG when the surface carries alpha,
+	// JPEG otherwise.
 	if (!is_valid(result)) result = surface_to_image(surface_in, {}, params, ui::image_format::Unknown);
 
 	return result;
@@ -1492,38 +1514,55 @@ av_scaler& files::scaler()
 	return *_scaler;
 }
 
+// A ceiling, not a size to fill. Every caller passes a limit - a thumbnail bound, a display scale
+// hint, a preview cap - so a picture already inside it is handed back untouched rather than
+// resampled up to fill it, which would cost a pass and an allocation to add no information.
 template <typename Ptr>
-static Ptr scale_surface_if_needed(av_scaler& scaler, Ptr surface_in, const sizei target_extent)
+Ptr files::fit_within_impl(Ptr surface_in, const sizei ceiling)
 {
-	Ptr result;
+	if (!is_valid(surface_in) || ceiling.is_empty()) return surface_in;
 
-	if (is_valid(surface_in))
+	const auto dimensions_out = [&]
 	{
-		const auto dimensions_out = ui::scale_dimensions(surface_in->dimensions(), target_extent);
+		auto fitted = ui::scale_dimensions(surface_in->dimensions(), ceiling, true);
 
-		if (surface_in->dimensions() == dimensions_out || target_extent.is_empty())
+		// NV12 carries one chroma pair per 2x2 luma block, so a fitted extent has to be even for the
+		// planar reduction to take it. Rounding down keeps it inside the ceiling.
+		if (surface_in->format() == ui::texture_format::NV12)
 		{
-			std::swap(surface_in, result);
+			fitted = {std::max(2, fitted.cx & ~1), std::max(2, fitted.cy & ~1)};
 		}
-		else
-		{
-			auto surface = std::make_shared<ui::surface>();
-			scaler.scale_surface(surface_in, surface, dimensions_out);
-			result = surface;
-		}
+
+		return fitted;
+	}();
+
+	if (dimensions_out == surface_in->dimensions()) return surface_in;
+
+	ui::surface_ptr reduced;
+
+	if (ui::area_downscale(surface_in, reduced, dimensions_out)) return reduced;
+
+	// What the area filter will not take - P010, or a planar surface whose fitted extent lands odd -
+	// still has to come back reduced, and swscale converts it to packed on the way.
+	ui::surface_ptr converted;
+
+	if (scaler().scale_surface(surface_in, converted, dimensions_out) && is_valid(converted))
+	{
+		return converted;
 	}
 
-	return result;
+	// A resampler that failed is not a reason to lose pixels already in hand.
+	return surface_in;
 }
 
-ui::surface_ptr files::scale_if_needed(ui::surface_ptr surface_in, const sizei target_extent)
+ui::surface_ptr files::fit_within(ui::surface_ptr surface_in, const sizei ceiling)
 {
-	return scale_surface_if_needed(scaler(), std::move(surface_in), target_extent);
+	return fit_within_impl(std::move(surface_in), ceiling);
 }
 
-ui::const_surface_ptr files::scale_if_needed(ui::const_surface_ptr surface_in, const sizei target_extent)
+ui::const_surface_ptr files::fit_within(ui::const_surface_ptr surface_in, const sizei ceiling)
 {
-	return scale_surface_if_needed(scaler(), std::move(surface_in), target_extent);
+	return fit_within_impl(std::move(surface_in), ceiling);
 }
 
 ui::pixel_difference_result files::pixel_difference(const ui::const_image_ptr& expected,
@@ -1548,6 +1587,26 @@ ui::pixel_difference_result files::pixel_difference(const ui::const_image_ptr& e
 // unscaled surface; NV12 results are flagged via is_yuv because the GPU sampler
 // resizes those at draw time. When orientation_override is empty the orientation
 // recovered from the embedded EXIF block is used.
+// An analysis decode is never drawn, so nothing scales it back up afterwards and it may be as small
+// as the analysis asked for. calc_scale_down_factor keeps BOTH axes at or above the target because a
+// sampler will enlarge the result; that rule fully decodes any 4:3 photograph whose short edge is
+// under the bound, which for face detection is most of a collection. Measured: a face vector moves
+// by under 0.02 across a twelve-fold range of decode sizes, so the long edge is the honest test.
+static int analysis_scale_down_factor(const sizei dims, const sizei target)
+{
+	const auto want = std::max(target.cx, target.cy);
+	const auto have = std::max(dims.cx, dims.cy);
+
+	if (want <= 0 || have <= 0) return 1;
+
+	for (const auto factor : {8, 4, 2})
+	{
+		if (have / factor >= want) return factor;
+	}
+
+	return 1;
+}
+
 ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_extent, const bool can_use_yuv,
                                    const std::optional<ui::orientation> orientation_override, bool& is_yuv,
                                    const df::cancel_token& token, const decode_intent intent)
@@ -1572,7 +1631,9 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// than what the file stores. Charging the full size would refuse a large stitch even as a
 		// thumbnail, which is the one request that was always affordable.
 		const auto source_dimensions = _jpeg_decoder.dimensions();
-		const auto scale_hint = ui::calc_scale_down_factor(source_dimensions, target_extent);
+		const auto scale_hint = intent == decode_intent::analysis
+			                            ? analysis_scale_down_factor(source_dimensions, target_extent)
+			                            : ui::calc_scale_down_factor(source_dimensions, target_extent);
 		const auto decode_bytes = (static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4) /
 			(static_cast<int64_t>(scale_hint) * scale_hint);
 
@@ -1591,10 +1652,16 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// YCbCr JPEGs can be uploaded as an NV12 texture and converted on the
 		// GPU (smaller uploads, no CPU colour conversion). JPEG/JFIF is full-range
 		// BT.601, which the shader applies via the rec601_full matrix.
-		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
-		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
-		const auto use_yuv = can_use_yuv && setting.use_yuv && _jpeg_decoder.can_render_nv12();
+		// Whether planar is wanted is the caller's decision - it knows whether these pixels are
+		// bound for a texture, for a luma plane, or for a packed reader.
+		const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_nv12();
 
+		// libjpeg also accepts any numerator over eight, which would land closer to the target than the
+		// power-of-two ladder. Measured against it and rejected: the odd-denominator scaled IDCTs are
+		// visibly softer, which moved a face vector on a degraded photograph below its threshold, and
+		// the path with the most to gain is the planar one - which cannot take it, because read_nv12
+		// relies on the output block size being a power of two for calc_stride's rounding to cover the
+		// samples libjpeg writes per row.
 		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
 			return {};
 
@@ -1724,8 +1791,10 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 
 				if (is_valid(decoded))
 				{
-					// NV12 is resized by the GPU sampler at draw time; RGB is resized to the target here.
-					surface_result = is_yuv ? std::move(decoded) : scale_if_needed(std::move(decoded), target_extent);
+					// As above: only a decode bound for a texture keeps its native planar size.
+					surface_result = is_yuv && intent != decode_intent::thumbnail
+						                 ? std::move(decoded)
+						                 : fit_within(std::move(decoded), target_extent);
 				}
 			}
 			else if (format == ui::image_format::PNG)
@@ -1736,7 +1805,7 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 
 					if (is_valid(loaded))
 					{
-						surface_result = scale_if_needed(std::move(loaded), target_extent);
+						surface_result = fit_within(std::move(loaded), target_extent);
 					}
 				}
 				catch (std::exception& e)
@@ -1748,11 +1817,11 @@ ui::surface_ptr files::image_to_surface(const ui::const_image_ptr& image, const 
 			{
 				try
 				{
-					auto loaded = load_webp(image->data(), can_use_yuv);
+					auto loaded = load_webp(image->data(), can_use_yuv, target_extent);
 
 					if (is_valid(loaded))
 					{
-						surface_result = scale_if_needed(std::move(loaded), target_extent);
+						surface_result = fit_within(std::move(loaded), target_extent);
 					}
 				}
 				catch (std::exception& e)
@@ -1784,11 +1853,16 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 			if (format == detected_format::JPEG)
 			{
 				bool is_yuv = false;
-				auto decoded = decode_jpeg(image_buffer_in, target_extent, false, {}, is_yuv, {}, intent);
+				auto decoded = decode_jpeg(image_buffer_in, target_extent, can_use_yuv, {}, is_yuv, {}, intent);
 
 				if (is_valid(decoded))
 				{
-					surface_result = scale_if_needed(std::move(decoded), target_extent);
+					// A display decode hands the planes straight to the sampler, which resizes at draw
+					// time. A thumbnail is about to be encoded, so it is reduced here - and stays planar,
+					// because that is the form VP8 wants.
+					surface_result = is_yuv && intent != decode_intent::thumbnail
+						                 ? std::move(decoded)
+						                 : fit_within(std::move(decoded), target_extent);
 				}
 			}
 			else if (format == detected_format::PSD)
@@ -1798,7 +1872,7 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 
 				if (is_valid(loaded))
 				{
-					surface_result = scale_if_needed(std::move(loaded), target_extent);
+					surface_result = fit_within(std::move(loaded), target_extent);
 				}
 			}
 			else if (format == detected_format::PNG)
@@ -1809,7 +1883,7 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 
 					if (is_valid(loaded))
 					{
-						surface_result = scale_if_needed(std::move(loaded), target_extent);
+						surface_result = fit_within(std::move(loaded), target_extent);
 					}
 				}
 				catch (std::exception& e)
@@ -1821,11 +1895,11 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 			{
 				try
 				{
-					auto loaded = load_webp(image_buffer_in, can_use_yuv);
+					auto loaded = load_webp(image_buffer_in, can_use_yuv, target_extent);
 
 					if (is_valid(loaded))
 					{
-						surface_result = scale_if_needed(std::move(loaded), target_extent);
+						surface_result = fit_within(std::move(loaded), target_extent);
 					}
 				}
 				catch (std::exception& e)
@@ -1842,7 +1916,7 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 
 					if (is_valid(loaded))
 					{
-						surface_result = scale_if_needed(std::move(loaded), target_extent);
+						surface_result = fit_within(std::move(loaded), target_extent);
 					}
 				}
 				catch (std::exception& e)
@@ -1859,7 +1933,7 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 
 					if (is_valid(loaded))
 					{
-						surface_result = scale_if_needed(std::move(loaded), target_extent);
+						surface_result = fit_within(std::move(loaded), target_extent);
 					}
 				}
 				catch (std::exception& e)
@@ -2235,7 +2309,9 @@ file_scan_result files::scan_file(platform::file_ptr f, const df::file_path path
 					{
 						if (load_thumb)
 						{
-							auto s = image_to_surface(data, max_thumb_size, false, decode_intent::thumbnail);
+							// Planar is allowed here: a JPEG or WebP thumbnail reaches the encoder as the
+							// planes VP8 wants, skipping the colour conversion in both directions.
+							auto s = image_to_surface(data, max_thumb_size, true, decode_intent::thumbnail);
 
 							if (is_valid(s))
 							{
@@ -3376,6 +3452,10 @@ static void decode_embedded_images(metadata_kv_list& kv)
 {
 	files ff;
 
+	// Bigger than the pane will ever draw. A ceiling only ever reduces, so a small payload still
+	// decodes at its own size.
+	constexpr sizei preview_limit{1024, 1024};
+
 	for (auto& row : kv)
 	{
 		auto* const binary = std::get_if<metadata_binary_detail>(&row.detail);
@@ -3394,21 +3474,7 @@ static void decode_embedded_images(metadata_kv_list& kv)
 
 		if (!scanned_dimensions.is_empty() && files::exceeds_decode_budget(scanned_dimensions)) continue;
 
-		// Decoded at its own size. A target extent would ENLARGE it: image_to_surface finishes with
-		// scale_if_needed, which scales up to fill whatever size it is given.
-		auto surface = ff.image_to_surface(bytes, {}, false, decode_intent::thumbnail);
-
-		if (ui::is_valid(surface))
-		{
-			// Only a payload bigger than the pane will ever draw is reduced, and only downwards.
-			constexpr sizei preview_limit{1024, 1024};
-			const auto dims = surface->dimensions();
-
-			if (dims.cx > preview_limit.cx || dims.cy > preview_limit.cy)
-			{
-				surface = ff.scale_if_needed(std::move(surface), preview_limit);
-			}
-		}
+		auto surface = ff.image_to_surface(bytes, preview_limit, false, decode_intent::thumbnail);
 
 		if (ui::is_valid(surface))
 		{

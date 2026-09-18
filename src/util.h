@@ -263,17 +263,33 @@ namespace df
 		}
 	}
 
+	struct latency_counters
+	{
+		std::atomic_uint64_t over_16ms = 0;
+		std::atomic_uint64_t over_50ms = 0;
+		std::atomic_uint64_t over_100ms = 0;
+	};
+
+	inline void record_latency(latency_counters& counters, const uint64_t elapsed_us)
+	{
+		if (elapsed_us >= 16'667) bump(counters.over_16ms);
+		if (elapsed_us >= 50'000) bump(counters.over_50ms);
+		if (elapsed_us >= 100'000) bump(counters.over_100ms);
+	}
+
 	// Totals answer "where did the session spend its time"; the paired maximum answers "did any
 	// single occurrence stall a thread", which an average hides.
 	class perf_timer
 	{
 		std::atomic_uint64_t& _total_us;
 		std::atomic_uint32_t* const _max_us;
+		latency_counters* const _latency;
 		const int64_t _start = now_us();
 
 	public:
-		explicit perf_timer(std::atomic_uint64_t& total_us, std::atomic_uint32_t* max_us = nullptr) noexcept
-			: _total_us(total_us), _max_us(max_us)
+		explicit perf_timer(std::atomic_uint64_t& total_us, std::atomic_uint32_t* max_us = nullptr,
+		                    latency_counters* latency = nullptr) noexcept
+			: _total_us(total_us), _max_us(max_us), _latency(latency)
 		{
 		}
 
@@ -282,6 +298,7 @@ namespace df
 			const auto elapsed = static_cast<uint64_t>(now_us() - _start);
 			bump(_total_us, elapsed);
 			if (_max_us) record_peak(*_max_us, static_cast<uint32_t>(std::min<uint64_t>(elapsed, UINT32_MAX)));
+			if (_latency) record_latency(*_latency, elapsed);
 		}
 
 		perf_timer(const perf_timer&) = delete;
@@ -319,15 +336,24 @@ namespace df
 		std::atomic_uint64_t idle_tasks = 0;
 		std::atomic_uint64_t idle_us = 0;
 		std::atomic_uint32_t idle_max_us = 0;
+		std::atomic_uint64_t idle_wait_us = 0;
+		std::atomic_uint32_t idle_wait_max_us = 0;
 		std::atomic_uint32_t idle_batch_peak = 0;
 		std::atomic_uint64_t paints = 0;
 		std::atomic_uint64_t paint_us = 0;
 		std::atomic_uint32_t paint_max_us = 0;
+		latency_counters paint_latency;
 		// on_render only: walking the view tree and issuing draw calls, with no GPU work in it. Paint
 		// time is this plus submit plus present, so measuring it directly says which of the three to
 		// attack rather than leaving it to subtraction.
 		std::atomic_uint64_t scene_build_us = 0;
 		std::atomic_uint32_t scene_build_max_us = 0;
+		latency_counters scene_build_latency;
+		// The backend half of a paint. D3D submits here; software rendering rasterises and presents
+		// here, so this is the backend-parity timing that paint minus scene-build could only imply.
+		std::atomic_uint64_t backend_render_us = 0;
+		std::atomic_uint32_t backend_render_max_us = 0;
+		latency_counters backend_render_latency;
 		std::atomic_uint64_t texture_uploads = 0;
 		// What asked for a frame. prepares is the display-frequency timer, invalidates is anything
 		// that dirtied a window and so will rebuild the scene, and redraws is the re-present path that
@@ -352,8 +378,10 @@ namespace df
 		std::atomic_uint64_t frames = 0; // draw_scene calls; a redraw replays a scene without a paint
 		std::atomic_uint64_t submit_us = 0;
 		std::atomic_uint32_t submit_max_us = 0;
+		latency_counters submit_latency;
 		std::atomic_uint64_t present_us = 0;
 		std::atomic_uint32_t present_max_us = 0;
+		latency_counters present_latency;
 
 		// draws vs merged is the batching ratio: every merge is a draw call and a state block that
 		// building the scene managed to avoid.
@@ -490,6 +518,8 @@ namespace df
 		std::atomic_uint64_t tasks = 0;
 		std::atomic_uint64_t busy_us = 0;
 		std::atomic_uint32_t task_max_us = 0;
+		std::atomic_uint64_t wait_us = 0;
+		std::atomic_uint32_t wait_max_us = 0;
 		std::atomic_uint32_t batches = 0;
 		std::atomic_uint32_t batch_peak = 0;
 	};

@@ -170,89 +170,69 @@ namespace
 		}
 	}
 
-	// One destination pixel from a run of source pixels. The four channels ride in one register, and
-	// two source pixels are folded per step, so no channel is ever touched on its own.
-	void reduce_pixel(uint8_t* dst, const uint8_t* src, const uint16_t* weights, const int count)
+	// One destination sample from a run of source samples. A packed pixel's four channels ride in one
+	// register, and two source pixels are folded per step, so no channel is ever touched on its own.
+	// The one- and two-channel forms are the planes of an NV12 surface - luma on its own, and the
+	// interleaved chroma pair - which are a quarter and an eighth of the data, so they read directly.
+	template <int channels>
+	void reduce_sample(uint8_t* dst, const uint8_t* src, const uint16_t* weights, const int count)
 	{
+		if constexpr (channels == 4)
+		{
 #ifdef DF_X86_SIMD
-		const auto zero = _mm_setzero_si128();
-		auto acc = _mm_setzero_si128();
-		auto k = 0;
+			const auto zero = _mm_setzero_si128();
+			auto acc = _mm_setzero_si128();
+			auto k = 0;
 
-		for (; k + 2 <= count; k += 2)
-		{
-			const auto s = _mm_loadl_epi64(std::bit_cast<const __m128i*>(src + k * 4));
-			const auto w0 = static_cast<short>(weights[k]);
-			const auto w1 = static_cast<short>(weights[k + 1]);
-			const auto wv = _mm_set_epi16(w1, w1, w1, w1, w0, w0, w0, w0);
-			acc = _mm_add_epi16(acc, _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv));
+			for (; k + 2 <= count; k += 2)
+			{
+				const auto s = _mm_loadl_epi64(std::bit_cast<const __m128i*>(src + k * 4));
+				const auto w0 = static_cast<short>(weights[k]);
+				const auto w1 = static_cast<short>(weights[k + 1]);
+				const auto wv = _mm_set_epi16(w1, w1, w1, w1, w0, w0, w0, w0);
+				acc = _mm_add_epi16(acc, _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv));
+			}
+
+			if (k < count)
+			{
+				const auto s = _mm_cvtsi32_si128(*std::bit_cast<const int32_t*>(src + k * 4));
+				const auto wv = _mm_set1_epi16(static_cast<short>(weights[k]));
+				acc = _mm_add_epi16(acc, _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv));
+			}
+
+			// The two pixel slots partition the run's 256 total, so folding them cannot overflow.
+			acc = _mm_add_epi16(acc, _mm_srli_si128(acc, 8));
+			acc = _mm_srli_epi16(_mm_add_epi16(acc, _mm_set1_epi16(128)), 8);
+			*std::bit_cast<int32_t*>(dst) = _mm_cvtsi128_si32(_mm_packus_epi16(acc, acc));
+			return;
+#endif
 		}
 
-		if (k < count)
-		{
-			const auto s = _mm_cvtsi32_si128(*std::bit_cast<const int32_t*>(src + k * 4));
-			const auto wv = _mm_set1_epi16(static_cast<short>(weights[k]));
-			acc = _mm_add_epi16(acc, _mm_mullo_epi16(_mm_unpacklo_epi8(s, zero), wv));
-		}
-
-		// The two pixel slots partition the run's 256 total, so folding them cannot overflow.
-		acc = _mm_add_epi16(acc, _mm_srli_si128(acc, 8));
-		acc = _mm_srli_epi16(_mm_add_epi16(acc, _mm_set1_epi16(128)), 8);
-		*std::bit_cast<int32_t*>(dst) = _mm_cvtsi128_si32(_mm_packus_epi16(acc, acc));
-#else
-		uint32_t acc[4] = {};
+		uint32_t acc[channels] = {};
 
 		for (auto k = 0; k < count; ++k)
 		{
 			const auto weight = weights[k];
-			for (auto c = 0; c < 4; ++c) acc[c] += src[k * 4 + c] * weight;
+			for (auto c = 0; c < channels; ++c) acc[c] += src[k * channels + c] * weight;
 		}
 
-		for (auto c = 0; c < 4; ++c) dst[c] = static_cast<uint8_t>((acc[c] + 128) >> 8);
-#endif
+		for (auto c = 0; c < channels; ++c) dst[c] = static_cast<uint8_t>((acc[c] + 128) >> 8);
 	}
 
-	bool area_downscale_impl(const ui::const_surface_ptr& src, ui::surface_ptr& dst, const sizei dst_extent,
-	                         const bool avx2)
+	// One 8-bit plane, area averaged. The passes are fused per destination row, so the only buffers
+	// are one accumulator row and one reduced row. A separate full intermediate image would be tens
+	// of megabytes when the display scaler shrinks a photo to a 4K window.
+	template <int channels>
+	void area_downscale_plane_impl(const uint8_t* const src_pixels, const size_t src_stride, const sizei src_extent,
+	                               uint8_t* const dst_pixels, const size_t dst_stride, const sizei dst_extent,
+	                               const bool avx2)
 	{
-		if (!is_valid(src)) return false;
-
-		const auto format = src->format();
-
-		// Packed 32 bit only. NV12 and P010 are planar and already reach a SIMD path inside swscale,
-		// because a subsampled source does not trigger the full-chroma output converter.
-		if (format != ui::texture_format::RGB && format != ui::texture_format::ARGB) return false;
-
-		const auto src_extent = src->dimensions();
-
-		// Reductions only: a box filter that enlarges is nearest neighbour.
-		if (dst_extent.cx < 1 || dst_extent.cy < 1 ||
-			dst_extent.cx > src_extent.cx || dst_extent.cy > src_extent.cy)
-		{
-			return false;
-		}
-
 		const auto horizontal = build_axis_weights(src_extent.cx, dst_extent.cx);
 		const auto vertical = build_axis_weights(src_extent.cy, dst_extent.cy);
 
-		auto result = std::make_shared<ui::surface>();
-
-		if (!result->alloc(dst_extent.cx, dst_extent.cy, format, src->orientation()))
-		{
-			return false;
-		}
-
-		result->color_space(src->color_space());
-
-		// The passes are fused per destination row, so the only buffers are one accumulator row and
-		// one reduced row. A separate full intermediate image would be tens of megabytes when the
-		// display scaler shrinks a photo to a 4K window.
-		const auto row_bytes = static_cast<size_t>(src_extent.cx) * 4u;
+		const auto row_bytes = static_cast<size_t>(src_extent.cx) * channels;
 		std::vector<uint16_t> acc(row_bytes);
 		std::vector<uint8_t> reduced(row_bytes);
-
-		const auto* const src_pixels = src->pixels();
-		const auto src_stride = src->stride();
 
 		for (auto y = 0; y < dst_extent.cy; ++y)
 		{
@@ -268,13 +248,74 @@ namespace
 
 			normalize_row(reduced.data(), acc.data(), row_bytes, avx2);
 
-			auto* const dst_row = result->pixels_line(y);
+			auto* const dst_row = dst_pixels + static_cast<size_t>(y) * dst_stride;
 
 			for (auto x = 0; x < dst_extent.cx; ++x)
 			{
-				reduce_pixel(dst_row + x * 4, reduced.data() + horizontal.first[x] * 4,
-				             horizontal.weights.data() + horizontal.offset[x], horizontal.count[x]);
+				reduce_sample<channels>(dst_row + x * channels, reduced.data() + horizontal.first[x] * channels,
+				                        horizontal.weights.data() + horizontal.offset[x], horizontal.count[x]);
 			}
+		}
+	}
+
+	bool is_reduction(const sizei src_extent, const sizei dst_extent)
+	{
+		// Reductions only: a box filter that enlarges is nearest neighbour.
+		return dst_extent.cx >= 1 && dst_extent.cy >= 1 &&
+			dst_extent.cx <= src_extent.cx && dst_extent.cy <= src_extent.cy;
+	}
+
+	bool area_downscale_impl(const ui::const_surface_ptr& src, ui::surface_ptr& dst, const sizei dst_extent,
+	                         const bool avx2)
+	{
+		if (!is_valid(src)) return false;
+
+		const auto format = src->format();
+		const auto packed = ui::is_packed(format);
+
+		// P010 is 16 bit, which the Q8 accumulators this is built on cannot hold, so it stays with
+		// swscale.
+		if (!packed && format != ui::texture_format::NV12) return false;
+
+		const auto src_extent = src->dimensions();
+
+		if (!is_reduction(src_extent, dst_extent)) return false;
+
+		// NV12 carries one chroma pair per 2x2 luma block, so both planes only divide cleanly when
+		// every axis is even.
+		if (!packed && ((src_extent.cx | src_extent.cy | dst_extent.cx | dst_extent.cy) & 1) != 0) return false;
+
+		auto result = std::make_shared<ui::surface>();
+
+		if (!result->alloc(dst_extent.cx, dst_extent.cy, format, src->orientation()))
+		{
+			return false;
+		}
+
+		result->color_space(src->color_space());
+
+		const auto* const src_pixels = src->pixels();
+		const auto src_stride = src->stride();
+		auto* const dst_pixels = result->pixels();
+		const auto dst_stride = result->stride();
+
+		if (packed)
+		{
+			area_downscale_plane_impl<4>(src_pixels, src_stride, src_extent, dst_pixels, dst_stride, dst_extent,
+			                             avx2);
+		}
+		else
+		{
+			area_downscale_plane_impl<1>(src_pixels, src_stride, src_extent, dst_pixels, dst_stride, dst_extent,
+			                             avx2);
+
+			// The chroma plane is U and V interleaved at half resolution, so it reduces as a
+			// two-channel plane of half the extent rather than needing a pass of its own.
+			const sizei src_chroma{src_extent.cx / 2, src_extent.cy / 2};
+			const sizei dst_chroma{dst_extent.cx / 2, dst_extent.cy / 2};
+
+			area_downscale_plane_impl<2>(src_pixels + src_stride * src_extent.cy, src_stride, src_chroma,
+			                             dst_pixels + dst_stride * dst_extent.cy, dst_stride, dst_chroma, avx2);
 		}
 
 		dst = std::move(result);
@@ -290,6 +331,107 @@ bool ui::area_downscale(const const_surface_ptr& src, surface_ptr& dst, const si
 bool ui::area_downscale_baseline(const const_surface_ptr& src, surface_ptr& dst, const sizei dst_extent)
 {
 	return area_downscale_impl(src, dst, dst_extent, false);
+}
+
+bool ui::area_downscale_luma(const uint8_t* const src, const size_t src_stride, const sizei src_extent,
+                             uint8_t* const dst, const size_t dst_stride, const sizei dst_extent)
+{
+	if (!src || !dst || src_extent.cx < 1 || src_extent.cy < 1 || !is_reduction(src_extent, dst_extent))
+	{
+		return false;
+	}
+
+	area_downscale_plane_impl<1>(src, src_stride, src_extent, dst, dst_stride, dst_extent, platform::has_avx2());
+	return true;
+}
+
+namespace
+{
+	struct lerp_axis
+	{
+		std::vector<int> first;
+		// Q8 share of the second sample. The first takes the remainder, so a pair always sums to 256.
+		std::vector<uint16_t> weight;
+	};
+
+	lerp_axis build_lerp_axis(const int src_n, const int dst_n)
+	{
+		lerp_axis result;
+		result.first.resize(dst_n);
+		result.weight.resize(dst_n);
+
+		for (auto i = 0; i < dst_n; ++i)
+		{
+			// Sample centres, not edges, so the outer half sample clamps to the border instead of
+			// extrapolating past it - which is what puts a dark fringe round an enlarged picture.
+			const auto pos = std::clamp(((i + 0.5) * src_n / dst_n) - 0.5, 0.0, static_cast<double>(src_n - 1));
+			const auto base = static_cast<int>(pos);
+
+			result.first[i] = base;
+			result.weight[i] = static_cast<uint16_t>(std::lround((pos - base) * 256.0));
+		}
+
+		return result;
+	}
+
+	// Separable bilinear, scalar. It exists for the case area_downscale refuses - an enlargement, or
+	// one axis growing while the other shrinks - which swscale answers with an RGB->YUV->RGB round
+	// trip through its scalar full-chroma converter, so even a scalar direct pass is well ahead.
+	bool bilinear_resize_impl(const ui::const_surface_ptr& src, ui::surface_ptr& dst, const sizei dst_extent)
+	{
+		if (!is_valid(src) || !ui::is_packed(src->format())) return false;
+
+		const auto src_extent = src->dimensions();
+
+		if (dst_extent.cx < 1 || dst_extent.cy < 1 || src_extent.cx < 1 || src_extent.cy < 1) return false;
+
+		const auto horizontal = build_lerp_axis(src_extent.cx, dst_extent.cx);
+		const auto vertical = build_lerp_axis(src_extent.cy, dst_extent.cy);
+
+		auto result = std::make_shared<ui::surface>();
+
+		if (!result->alloc(dst_extent.cx, dst_extent.cy, src->format(), src->orientation()))
+		{
+			return false;
+		}
+
+		result->color_space(src->color_space());
+
+		const auto* const src_pixels = src->pixels();
+		const auto src_stride = src->stride();
+
+		for (auto y = 0; y < dst_extent.cy; ++y)
+		{
+			const auto y0 = vertical.first[y];
+			const auto y1 = std::min(y0 + 1, src_extent.cy - 1);
+			const auto wy = static_cast<int>(vertical.weight[y]);
+			const auto* const row0 = src_pixels + src_stride * y0;
+			const auto* const row1 = src_pixels + src_stride * y1;
+			auto* const dst_row = result->pixels_line(y);
+
+			for (auto x = 0; x < dst_extent.cx; ++x)
+			{
+				const auto x0 = horizontal.first[x] * 4;
+				const auto x1 = std::min(horizontal.first[x] + 1, src_extent.cx - 1) * 4;
+				const auto wx = static_cast<int>(horizontal.weight[x]);
+
+				for (auto c = 0; c < 4; ++c)
+				{
+					const auto top = row0[x0 + c] * (256 - wx) + row0[x1 + c] * wx;
+					const auto bottom = row1[x0 + c] * (256 - wx) + row1[x1 + c] * wx;
+					dst_row[x * 4 + c] = static_cast<uint8_t>((top * (256 - wy) + bottom * wy + 32768) >> 16);
+				}
+			}
+		}
+
+		dst = std::move(result);
+		return true;
+	}
+}
+
+bool ui::bilinear_resize(const const_surface_ptr& src, surface_ptr& dst, const sizei dst_extent)
+{
+	return bilinear_resize_impl(src, dst, dst_extent);
 }
 
 namespace

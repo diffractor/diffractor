@@ -393,10 +393,10 @@ void selector_view::render(ui::draw_context& dc, const view_controller_ptr contr
 
 			_state._async.queue_async(async_queue::load,
 			                          [weak = weak_from_this(), &async = _state._async, item = entry.item, image,
-				                          extent = image_bounds.extent()]
+				                          extent = image_bounds.extent(), can_use_yuv = ui::yuv_textures_enabled]
 			                          {
 				                          files ff;
-				                          auto surface = ff.image_to_surface(image, extent, true);
+				                          auto surface = ff.image_to_surface(image, extent, can_use_yuv);
 
 				                          async.queue_ui([weak, item, image, surface = std::move(surface)]() mutable
 				                          {
@@ -467,9 +467,10 @@ bool selector_view::mouse_wheel(const pointi loc, const ui::wheel_notch notch)
 	return can_scroll();
 }
 
-view_controller_ptr selector_view::controller_from_location(const view_host_ptr& host, const pointi loc)
+view_controller_ptr selector_view::controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                           hit_test_context& ctx)
 {
-	if (can_scroll() && scrollbar_bounds().contains(loc))
+	if (can_scroll() && ctx.occluded(scrollbar_bounds()))
 	{
 		return std::make_shared<selector_scroll_controller>(host, *this, scrollbar_bounds());
 	}

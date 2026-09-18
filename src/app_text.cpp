@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -607,6 +607,7 @@ void app_text_t::calc_text_mapping()
 		movie_crossfade,
 		movie_cut,
 		movie_transition_length,
+		movie_fade_length,
 		movie_fade_in,
 		movie_fade_out,
 		movie_photo_duration,
@@ -623,6 +624,11 @@ void app_text_t::calc_text_mapping()
 		movie_video_files,
 		movie_rendering,
 		movie_render_failed_fmt,
+		movie_error_no_length,
+		movie_error_no_encoder,
+		movie_error_no_memory,
+		movie_error_undecodable,
+		movie_error_encoder_failed,
 		movie_rendered_fmt,
 		movie_render_cancelled,
 		movie_relink_none,
@@ -1355,7 +1361,6 @@ void app_text_t::calc_text_mapping()
 		options_updates,
 		options_use_gpu,
 		options_use_gpu_video,
-		options_use_yuv_tex,
 		options_show_shadow,
 		options_last_played_pos,
 		options_show_help_tooltips,
@@ -1500,6 +1505,7 @@ void app_text_t::calc_text_mapping()
 		query_related,
 		query_with,
 		query_without,
+
 		rate_title,
 		rating_keys,
 		rating_remove_fmt,

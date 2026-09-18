@@ -12,5 +12,6 @@
 # matching it is what "the same product from a different build" means.
 
 if (MSVC)
+    set_target_properties(diffractor_highway PROPERTIES DIFFRACTOR_DISABLE_RELEASE_OPTIMIZATION ON)
     target_compile_options(diffractor_highway PRIVATE $<$<CONFIG:Release>:/Od> $<$<CONFIG:Release>:/GL->)
 endif ()

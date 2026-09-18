@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -647,6 +647,7 @@ struct app_text_t
 	text_t query_duplicates = "duplicates";
 	text_t query_duplicates_alt1 = "dups";
 	text_t query_duplicates_alt2 = "duplicate";
+
 	text_t pixels_title = "Pixels";
 	text_t pixels_icon = "icon";
 	text_t pixels_small = "small";
@@ -880,8 +881,6 @@ struct app_text_t
 	text_t options_check_for_update = "Check for updates by connecting to the internet";
 	text_t options_use_gpu = "Use hardware acceleration to draw the Diffractor user interface (requires restart)";
 	text_t options_use_gpu_video = "Use hardware acceleration to decode video (when available)";
-	text_t options_use_yuv_tex =
-		"Use NV12 and P010 format textures (Automatically turned off if problems detected)";
 	text_t options_send_crash_reports =
 		"Help make Diffractor better. If Diffractor crashes send anonymous diagnostics to Diffractor HQ. No personal data is sent - just crash diagnostics.";
 	text_t options_show_debug_info = "Show application debugging information (for the programmers).";
@@ -1253,6 +1252,9 @@ struct app_text_t
 	text_t movie_crossfade = "Crossfade between clips";
 	text_t movie_cut = "Cut between clips";
 	text_t movie_transition_length = "Transition (tenths of a second)";
+	// The same number sets the crossfade and the fades at the movie's ends, so it is labelled for
+	// whichever of the two the current settings actually use.
+	text_t movie_fade_length = "Fade (tenths of a second)";
 	text_t movie_fade_in = "Fade in from black";
 	text_t movie_fade_out = "Fade out to black";
 	text_t movie_photo_duration = "Photo duration (tenths of a second)";
@@ -1269,6 +1271,11 @@ struct app_text_t
 	text_t movie_video_files = "Video";
 	text_t movie_rendering = "Rendering the movie";
 	text_t movie_render_failed_fmt = "The movie could not be rendered. {}";
+	text_t movie_error_no_length = "The movie has no length.";
+	text_t movie_error_no_encoder = "The encoder would not accept this movie.";
+	text_t movie_error_no_memory = "There was not enough memory for a movie frame.";
+	text_t movie_error_undecodable = "A clip could not be decoded.";
+	text_t movie_error_encoder_failed = "The encoder stopped before the movie was finished.";
 	text_t movie_rendered_fmt = "Rendered {}.";
 	text_t movie_render_cancelled = "Rendering was canceled. Nothing was written.";
 	text_t movie_relink_none = "No missing clip was found in that folder.";

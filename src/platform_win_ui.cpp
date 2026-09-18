@@ -3829,7 +3829,8 @@ void frame_base::present() const
 		// scene the GPU cannot keep up with shows here rather than in draw_scene.
 		HRESULT hr;
 		{
-			df::perf_timer timer(df::gpu_perf.present_us, &df::gpu_perf.present_max_us);
+			df::perf_timer timer(df::gpu_perf.present_us, &df::gpu_perf.present_max_us,
+			                     &df::gpu_perf.present_latency);
 			hr = _swap_chain->Present(0, 0);
 		}
 
@@ -3853,7 +3854,7 @@ void frame_base::present() const
 void frame_base::handle_render(const recti damage)
 {
 	df::bump(df::ui_perf.paints);
-	df::perf_timer timer(df::ui_perf.paint_us, &df::ui_perf.paint_max_us);
+	df::perf_timer timer(df::ui_perf.paint_us, &df::ui_perf.paint_max_us, &df::ui_perf.paint_latency);
 	const auto ctx = _draw_ctx;
 
 	if (ctx)
@@ -3861,11 +3862,17 @@ void frame_base::handle_render(const recti damage)
 		ctx->begin_draw(_extent, _gdi_ctx->calc_base_font_size(), damage);
 
 		{
-			df::perf_timer build(df::ui_perf.scene_build_us, &df::ui_perf.scene_build_max_us);
+			df::perf_timer build(df::ui_perf.scene_build_us, &df::ui_perf.scene_build_max_us,
+			                     &df::ui_perf.scene_build_latency);
 			on_render(ctx);
 		}
 
-		const auto presented = ctx->render();
+		const auto presented = [&ctx]
+		{
+			df::perf_timer backend(df::ui_perf.backend_render_us, &df::ui_perf.backend_render_max_us,
+			                       &df::ui_perf.backend_render_latency);
+			return ctx->render();
+		}();
 
 		if (presented.failed)
 		{
@@ -5979,13 +5986,12 @@ public:
 		return TRUE;
 	}
 
-	// Deliberately never calls can_exit(): a shutting-down application gets no opportunity to
-	// prompt, so refusing or blocking here would only earn the "this app is preventing shutdown"
-	// screen. State is persisted and the session is allowed to end.
 	LRESULT on_query_end_session(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/) const
 	{
 		const auto app = _app.lock();
-		if (app) app->system_event(ui::os_event_type::session_ending);
+		if (!app) return TRUE;
+		if (!app->can_exit()) return FALSE;
+		app->system_event(ui::os_event_type::session_ending);
 		return TRUE;
 	}
 

@@ -1365,29 +1365,30 @@ df::item_element_ptr edit_view::next_editable_item(const bool forward) const
 	return editable[(index + (forward ? 1 : count - 1)) % count];
 }
 
-view_controller_ptr edit_view::controller_from_location(const view_host_ptr& host, const pointi loc)
+view_controller_ptr edit_view::controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                       hit_test_context& ctx)
 {
 	if (is_photo() && !_edit_state._preview_mode)
 	{
-		if (_crop_handle_tl.round().inflate(8).contains(loc))
+		if (ctx.occluded(_crop_handle_tl.round().inflate(8)))
 		{
 			return std::make_shared<handle_move_controller<edit_view>>(host, *this, _crop_handle_tl, true, true, false,
 			                                                           false);
 		}
 
-		if (_crop_handle_tr.round().inflate(8).contains(loc))
+		if (ctx.occluded(_crop_handle_tr.round().inflate(8)))
 		{
 			return std::make_shared<handle_move_controller<edit_view>>(host, *this, _crop_handle_tr, false, true, true,
 			                                                           false);
 		}
 
-		if (_crop_handle_bl.round().inflate(8).contains(loc))
+		if (ctx.occluded(_crop_handle_bl.round().inflate(8)))
 		{
 			return std::make_shared<handle_move_controller<edit_view>>(host, *this, _crop_handle_bl, true, false, false,
 			                                                           true);
 		}
 
-		if (_crop_handle_br.round().inflate(8).contains(loc))
+		if (ctx.occluded(_crop_handle_br.round().inflate(8)))
 		{
 			return std::make_shared<handle_move_controller<edit_view>>(host, *this, _crop_handle_br, false, false, true,
 			                                                           true);
@@ -1395,29 +1396,22 @@ view_controller_ptr edit_view::controller_from_location(const view_host_ptr& hos
 
 		if (_crop_bounds.contains(loc))
 		{
-			auto crop_bounds = _crop_bounds.round();
-			const auto crop_center = _crop_bounds.center().round();
-
-			crop_bounds.exclude(crop_center, _crop_handle_tl.round());
-			crop_bounds.exclude(crop_center, _crop_handle_tr.round());
-			crop_bounds.exclude(crop_center, _crop_handle_bl.round());
-			crop_bounds.exclude(crop_center, _crop_handle_br.round());
-
-			return std::make_shared<selection_move_controller<edit_view>>(host, *this, crop_bounds);
+			return std::make_shared<selection_move_controller<edit_view>>(host, *this, _crop_bounds.round());
 		}
 	}
 	else if (_media_element)
 	{
 		constexpr pointi element_offset{};
-		const std::vector<recti> excluded_bounds;
 
-		if (const auto controller = _play_element->controller_from_location(host, loc, element_offset,
-		                                                                    excluded_bounds))
+		if (const auto controller = _play_element->controller_from_location(host, loc, element_offset, ctx))
 			return controller;
-		if (const auto controller = _scrubber_element->controller_from_location(host, loc, element_offset,
-			excluded_bounds))
+		ctx.passed_over(_play_element->bounds);
+
+		if (const auto controller = _scrubber_element->controller_from_location(host, loc, element_offset, ctx))
 			return controller;
-		return _media_element->controller_from_location(host, loc, element_offset, excluded_bounds);
+		ctx.passed_over(_scrubber_element->bounds);
+
+		return _media_element->controller_from_location(host, loc, element_offset, ctx);
 	}
 
 	return nullptr;
@@ -2309,7 +2303,7 @@ void edit_view_controls::create_controls()
 		                              [this] { _view->rotate_clockwise(); }),
 		std::make_shared<ui::command>(icon_index::lightbulb, commands::edit_item_auto_straighten,
 		                              [this] { _view->auto_straighten(); }),
-		std::make_shared<ui::command>(icon_index::scan, commands::edit_item_auto_document,
+		std::make_shared<ui::command>(icon_index::scan_text, commands::edit_item_auto_document,
 		                              [this] { _view->auto_document(); }),
 		std::make_shared<ui::command>(icon_index::undo, commands::tool_rotate_reset,
 		                              [this] { _view->rotate_reset(); }),

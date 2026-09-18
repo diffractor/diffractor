@@ -87,7 +87,7 @@ static ui::surface_ptr decode_webp_nv12(const df::cspan data, const int width, c
 	return result;
 }
 
-ui::surface_ptr load_webp(const df::cspan data, const bool can_use_yuv)
+ui::surface_ptr load_webp(const df::cspan data, const bool can_use_yuv, const sizei target_extent)
 {
 	ui::surface_ptr result;
 	WebPBitstreamFeatures features;
@@ -98,16 +98,40 @@ ui::surface_ptr load_webp(const df::cspan data, const bool can_use_yuv)
 		const auto height = features.height;
 
 		// The df::cspan decode path carries no budget gate of its own, and libwebp's 16383-pixel
-		// edge limit still permits a ~1 GB surface.
+		// edge limit still permits a ~1 GB surface. Measured against the SOURCE, because that is what
+		// a hostile file declares.
 		if (reject_over_budget_source(nullptr, {width, height}, "WEBP"))
 		{
 			return {};
 		}
 
-		// setting.use_yuv is the one switch behind the Advanced option, safe start and the
-		// D3D11 driver-fault fallback, so it has to be read where the format is chosen.
-		const auto use_yuv = can_use_yuv && setting.use_yuv && features.format == 1 && !features.has_alpha &&
-			!features.has_animation && width >= 2 && height >= 2;
+		// libwebp rescales inside the decoder, so the surface comes back at the size the caller asked
+		// for instead of at the file's size with a downscale still owed. Unlike JPEG's scale_denom
+		// this is not limited to power-of-two steps.
+		//
+		// The fitted size comes from ui::scale_dimensions, the same function files::fit_within
+		// uses, so a reduced decode is a drop-in for decode-then-scale. Computing the ratio here
+		// instead disagreed with it by a pixel on some sizes.
+		auto scaled_width = width;
+		auto scaled_height = height;
+
+		if (!target_extent.is_empty())
+		{
+			const auto fitted = ui::scale_dimensions(sizei{width, height}, target_extent);
+
+			if (fitted.cx < width || fitted.cy < height)
+			{
+				scaled_width = std::max(1, fitted.cx);
+				scaled_height = std::max(1, fitted.cy);
+			}
+		}
+
+		const auto is_scaled = scaled_width != width || scaled_height != height;
+
+		// Whether planar is wanted is the caller's decision. A reduced decode takes the packed path
+		// regardless: the NV12 route exists to hand the renderer native planes.
+		const auto use_yuv = can_use_yuv && features.format == 1 && !features.has_alpha &&
+			!features.has_animation && width >= 2 && height >= 2 && !is_scaled;
 
 		if (use_yuv)
 		{
@@ -118,14 +142,36 @@ ui::surface_ptr load_webp(const df::cspan data, const bool can_use_yuv)
 		{
 			result = std::make_shared<ui::surface>();
 			// Opaque images decode into the ignored X byte, so tag them RGB and let the renderer skip blending.
-			auto* const buffer = result->alloc(width, height,
+			auto* const buffer = result->alloc(scaled_width, scaled_height,
 			                                   features.has_alpha
 			                                   ? ui::texture_format::ARGB
 			                                   : ui::texture_format::RGB);
 
-			if (!buffer || !WebPDecodeBGRAInto(data.data, data.size, buffer,
-			                                      static_cast<int>(height * result->stride()),
-			                                      static_cast<int>(result->stride())))
+			if (!buffer) return {};
+
+			if (is_scaled)
+			{
+				WebPDecoderConfig config;
+
+				if (!WebPInitDecoderConfig(&config)) return {};
+
+				config.options.use_scaling = 1;
+				config.options.scaled_width = scaled_width;
+				config.options.scaled_height = scaled_height;
+				config.output.colorspace = MODE_BGRA;
+				config.output.is_external_memory = 1;
+				config.output.u.RGBA.rgba = buffer;
+				config.output.u.RGBA.stride = static_cast<int>(result->stride());
+				config.output.u.RGBA.size = result->stride() * scaled_height;
+
+				const auto status = WebPDecode(data.data, data.size, &config);
+				WebPFreeDecBuffer(&config.output);
+
+				if (status != VP8_STATUS_OK) return {};
+			}
+			else if (!WebPDecodeBGRAInto(data.data, data.size, buffer,
+			                             static_cast<int>(height * result->stride()),
+			                             static_cast<int>(result->stride())))
 			{
 				return {};
 			}
@@ -348,11 +394,104 @@ webp_parts scan_webp(df::cspan data, bool decode_surface)
 	return result;
 }
 
+namespace
+{
+	// VP8 encodes YCbCr 4:2:0, so libwebp converts any ARGB picture it is given back to planes before
+	// it starts. An NV12 surface already is those planes, and handing them over directly skips both
+	// that conversion and the one libjpeg did to produce the packed pixels in the first place.
+	//
+	// The one thing that does not carry over is range. libwebp's YUV is limited-range BT.601 and VP8
+	// signals no range at all, so every decoder applies the limited-range inverse - a full-range
+	// source handed over untouched comes back with crushed blacks and blown highlights.
+	bool is_encodable_nv12(const ui::const_surface_ptr& surface, const file_encode_params& params)
+	{
+		if (surface->format() != ui::texture_format::NV12) return false;
+
+		// Lossless is an ARGB codec; there is no planar form of it.
+		if (params.webp_lossless) return false;
+
+		// One chroma pair per 2x2 luma block. Every producer crops to even - an odd surface would not
+		// even have been allocated a whole chroma plane - so this states the assumption rather than
+		// leaving libwebp's last chroma column unwritten.
+		const auto dimensions = surface->dimensions();
+		if (((dimensions.cx | dimensions.cy) & 1) != 0) return false;
+
+		const auto cs = surface->color_space();
+		// Only the matrix VP8 assumes. A rec709 or rec2020 frame would be encoded as if it were 601.
+		return cs == ui::color_space::rec601_full || cs == ui::color_space::rec601_limited;
+	}
+
+	bool import_nv12(WebPPicture& picture, const ui::const_surface_ptr& surface)
+	{
+		const auto dimensions = surface->dimensions();
+
+		picture.use_argb = 0;
+		picture.colorspace = WEBP_YUV420;
+
+		if (!WebPPictureAlloc(&picture)) return false;
+
+		const auto full_range = surface->color_space() == ui::color_space::rec601_full;
+
+		// 219 of 256 luma codes and 224 chroma codes, offset to 16. Rounded in floating point because
+		// integer division truncates toward zero, which biases the whole lower half of the chroma range
+		// by a code. Built once rather than per sample - a thumbnail is far more pixels than entries.
+		std::array<uint8_t, 256> luma_map{};
+		std::array<uint8_t, 256> chroma_map{};
+
+		for (auto i = 0; i < 256; ++i)
+		{
+			luma_map[i] = full_range
+				              ? static_cast<uint8_t>(std::clamp(16 + std::lround(i * 219.0 / 255.0), 16L, 235L))
+				              : static_cast<uint8_t>(i);
+			chroma_map[i] = full_range
+				                ? static_cast<uint8_t>(std::clamp(128 + std::lround((i - 128) * 224.0 / 255.0), 16L,
+				                                                  240L))
+				                : static_cast<uint8_t>(i);
+		}
+
+		const auto src_stride = surface->stride();
+		const auto* const src_luma = surface->pixels();
+		const auto* const src_chroma = src_luma + src_stride * dimensions.cy;
+
+		for (auto y = 0; y < dimensions.cy; ++y)
+		{
+			const auto* const src = src_luma + src_stride * y;
+			auto* const dst = picture.y + static_cast<ptrdiff_t>(picture.y_stride) * y;
+
+			for (auto x = 0; x < dimensions.cx; ++x) dst[x] = luma_map[src[x]];
+		}
+
+		// NV12 interleaves U and V; libwebp wants them apart, so the de-interleave rides along with
+		// the range map rather than costing a pass of its own.
+		const auto chroma_width = dimensions.cx / 2;
+		const auto chroma_height = dimensions.cy / 2;
+
+		for (auto y = 0; y < chroma_height; ++y)
+		{
+			const auto* const src = src_chroma + src_stride * y;
+			auto* const dst_u = picture.u + static_cast<ptrdiff_t>(picture.uv_stride) * y;
+			auto* const dst_v = picture.v + static_cast<ptrdiff_t>(picture.uv_stride) * y;
+
+			for (auto x = 0; x < chroma_width; ++x)
+			{
+				dst_u[x] = chroma_map[src[x * 2]];
+				dst_v[x] = chroma_map[src[x * 2 + 1]];
+			}
+		}
+
+		return true;
+	}
+}
+
 ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata,
                         const file_encode_params& params)
 {
-	if (!is_valid(surface_in) ||
-		(surface_in->format() != ui::texture_format::RGB && surface_in->format() != ui::texture_format::ARGB))
+	if (!is_valid(surface_in)) return {};
+
+	const auto planar = is_encodable_nv12(surface_in, params);
+
+	if (!planar && surface_in->format() != ui::texture_format::RGB &&
+		surface_in->format() != ui::texture_format::ARGB)
 	{
 		return {};
 	}
@@ -374,13 +513,22 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 
 		picture.width = dimensions.cx;
 		picture.height = dimensions.cy;
-		picture.use_argb = true;
 
-		const auto ok = use_alpha
-			                ? WebPPictureImportBGRA(&picture, surface_in->pixels(),
-			                                        static_cast<int>(surface_in->stride()))
-			                : WebPPictureImportBGRX(&picture, surface_in->pixels(),
-			                                        static_cast<int>(surface_in->stride()));
+		bool ok;
+
+		if (planar)
+		{
+			ok = import_nv12(picture, surface_in);
+		}
+		else
+		{
+			picture.use_argb = true;
+			ok = use_alpha
+				     ? WebPPictureImportBGRA(&picture, surface_in->pixels(),
+				                             static_cast<int>(surface_in->stride())) != 0
+				     : WebPPictureImportBGRX(&picture, surface_in->pixels(),
+				                             static_cast<int>(surface_in->stride())) != 0;
+		}
 
 		if (ok)
 		{

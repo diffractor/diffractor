@@ -119,6 +119,7 @@ std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bo
 	top->enable = !at_top;
 	top->invoke = std::move(scroll_to_top);
 	result.emplace_back(std::move(top));
+
 	add_separator();
 
 	if (const auto group = state.find_command(commands::menu_group_toolbar); group && group->menu)
@@ -135,7 +136,6 @@ std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bo
 
 	add_separator();
 	add_command(commands::browse_recursive);
-
 	if (!result.empty() && result.back() == nullptr) result.pop_back();
 
 	return result;
@@ -242,10 +242,10 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
 		_device_bounds = column_bounds(element_offset);
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -315,9 +315,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return _child->controller_from_location(host, loc, element_offset, excluded_bounds);
+		return _child->controller_from_location(host, loc, element_offset, ctx);
 	}
 };
 
@@ -374,10 +374,10 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
 		_device_bounds = bounds.offset(element_offset);
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -406,21 +406,9 @@ protected:
 		{
 			_state.hover_item(_host, _hover_item, true);
 
-			// A hovered item paints an expanded caption that can overhang the grid. view_host keeps
-			// the active controller until the pointer leaves its bounds, so confining the controller
-			// to the item region is what keeps the status bar underneath it clickable.
-			_bounds = _scroller.logical_to_device(_hover_item->interactive_bounds())
-			                   .intersection(_parent.calc_items_bounds());
-
-			// The pin badge is drawn inside those same bounds, so a controller spanning them made the
-			// badge unreachable: the pointer never left the item, so the badge was never hit tested
-			// and clicking it re-selected the item instead of releasing the hold. Carving it out means
-			// moving onto the badge leaves the controller and forces the re-test.
-			if (_state._pin_item == _hover_item)
-			{
-				const auto badge = _hover_item->pin_badge_bounds();
-				if (!badge.is_empty()) _bounds.exclude(loc, _scroller.logical_to_device(badge));
-			}
+			// The item's own region, expanded caption and all. Keeping it inside the grid, and keeping
+			// the pin badge reachable, are the hit test's business rather than this constructor's.
+			_bounds = _scroller.logical_to_device(_hover_item->interactive_bounds());
 		}
 	}
 
@@ -1522,7 +1510,8 @@ void items_view::update_regions()
 	if (_media_scroller.can_scroll()) _regions.media_scroll = _media_scroller.scroll_bounds();
 }
 
-view_controller_ptr items_view::media_controller_from_location(const view_host_ptr& host, const pointi loc)
+view_controller_ptr items_view::media_controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                               hit_test_context& ctx)
 {
 	const auto media_offset = -_media_scroller.scroll_offset();
 
@@ -1530,12 +1519,12 @@ view_controller_ptr items_view::media_controller_from_location(const view_host_p
 	{
 		// Only the primary media element was laid out in this mode; the rest of the stack holds
 		// bounds from the previous layout and must not answer hit tests.
-		return _media_element ? _media_element->controller_from_location(host, loc, media_offset, {}) : nullptr;
+		return _media_element ? _media_element->controller_from_location(host, loc, media_offset, ctx) : nullptr;
 	}
 
 	for (const auto& e : _media_elements)
 	{
-		if (auto controller = e->controller_from_location(host, loc, media_offset, {}))
+		if (auto controller = e->controller_from_location(host, loc, media_offset, ctx))
 		{
 			return controller;
 		}
@@ -1544,13 +1533,14 @@ view_controller_ptr items_view::media_controller_from_location(const view_host_p
 	return nullptr;
 }
 
-view_controller_ptr items_view::items_controller_from_location(const view_host_ptr& host, const pointi loc)
+view_controller_ptr items_view::items_controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                               hit_test_context& ctx)
 {
 	const auto items_offset = -_items_scroller.scroll_offset();
 
 	for (const auto& e : _item_elements)
 	{
-		if (auto controller = e->controller_from_location(host, loc, items_offset, {}))
+		if (auto controller = e->controller_from_location(host, loc, items_offset, ctx))
 		{
 			return controller;
 		}
@@ -1561,9 +1551,7 @@ view_controller_ptr items_view::items_controller_from_location(const view_host_p
 	// The pin badge wins over selection: it is the only way to release the held item from the grid.
 	if (i && _state._pin_item == i)
 	{
-		const auto badge = i->pin_badge_bounds().offset(items_offset);
-
-		if (!badge.is_empty() && badge.contains(loc))
+		if (const auto badge = i->pin_badge_bounds().offset(items_offset); ctx.occluded(badge))
 		{
 			return std::make_shared<unpin_badge_controller>(host, _state, badge);
 		}
@@ -1594,29 +1582,52 @@ items_view::view_region items_view::region_at(const pointi loc) const
 	return view_region::none;
 }
 
-view_controller_ptr items_view::controller_from_location(const view_host_ptr& host, const pointi loc)
+recti items_view::region_bounds(const view_region region) const
 {
+	switch (region)
+	{
+	case view_region::sidebar_splitter: return _regions.sidebar_splitter;
+	case view_region::sidebar: return _regions.sidebar;
+	case view_region::splitter: return _regions.splitter;
+	case view_region::items_scroll: return _regions.items_scroll;
+	case view_region::items_scroll_top: return _regions.items_scroll_top;
+	case view_region::media_scroll: return _regions.media_scroll;
+	case view_region::media: return _regions.media;
+	case view_region::items: return _regions.items;
+	case view_region::none: break;
+	}
+
+	return {};
+}
+
+view_controller_ptr items_view::controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                         hit_test_context& ctx)
+{
+	const auto region = region_at(loc);
+
 	// Each controller is confined to the region that produced it: view_host caches the active
-	// controller's bounds and only re-tests once the pointer leaves them, so a controller that
-	// overhangs its region would make the neighbouring region unclickable.
-	switch (region_at(loc))
+	// controller and only re-tests once the pointer leaves it, so a controller that overhangs its
+	// region - a hovered item's expanded caption does - would make the neighbouring region unclickable.
+	ctx.confine(region_bounds(region));
+
+	switch (region)
 	{
 	case view_region::sidebar_splitter:
 		return std::make_shared<sidebar_splitter_controller>(host, *this, _regions.sidebar_splitter);
 	case view_region::sidebar:
-		return _sidebar->controller_from_location(loc);
+		return _sidebar->controller_from_location(loc, ctx);
 	case view_region::splitter:
 		return std::make_shared<splitter_controller>(host, *this, _regions.splitter);
 	case view_region::items_scroll:
 		return std::make_shared<scroll_controller>(host, _items_scroller, _regions.items_scroll);
 	case view_region::items_scroll_top:
-		return _items_scroll_top->controller_from_location(host, loc, {}, {});
+		return _items_scroll_top->controller_from_location(host, loc, {}, ctx);
 	case view_region::media_scroll:
 		return std::make_shared<scroll_controller>(host, _media_scroller, _regions.media_scroll);
 	case view_region::media:
-		return media_controller_from_location(host, loc);
+		return media_controller_from_location(host, loc, ctx);
 	case view_region::items:
-		return items_controller_from_location(host, loc);
+		return items_controller_from_location(host, loc, ctx);
 	case view_region::none:
 		break;
 	}
@@ -2543,9 +2554,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -2614,10 +2625,10 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
 		_device_bounds = bounds.offset(element_offset);
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -2799,9 +2810,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return _controls->controller_from_location(host, loc, element_offset, excluded_bounds);
+		return _controls->controller_from_location(host, loc, element_offset, ctx);
 	}
 };
 
@@ -3311,7 +3322,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override;
+	                                             hit_test_context& ctx) override;
 };
 
 // Hovering and clicking are resolved per row, so the whole listing latches one controller and
@@ -3368,15 +3379,12 @@ public:
 
 inline view_controller_ptr metadata_tree_control::controller_from_location(
 	const view_host_ptr& host, const pointi loc, const pointi element_offset,
-	const std::vector<recti>& excluded_bounds)
+	hit_test_context& ctx)
 {
 	if (!is_visible() || !bounds.contains(loc - element_offset)) return nullptr;
 
-	auto clipped = bounds;
-	for (const auto& ex : excluded_bounds) clipped.exclude(loc - element_offset, ex);
-
 	auto result = std::make_shared<metadata_tree_controller>(host, shared_from_this(), element_offset,
-	                                                         clipped.offset(element_offset));
+	                                                         bounds.offset(element_offset));
 	result->update_hot(loc);
 	return result;
 }

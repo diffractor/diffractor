@@ -431,6 +431,12 @@ void app_frame::update_button_state(const bool resize)
 	const auto is_media_or_items_view = df::command_active == 0 && (view_mode == view_type::items || view_mode ==
 		view_type::media);
 	const auto has_selection = is_media_or_items_view && _state.has_selection();
+	const auto has_movie_selection = is_media_or_items_view && std::any_of(
+		_state.selected_items().items().begin(), _state.selected_items().items().end(), [](const auto& item)
+		{
+			const auto* const type = item->file_type();
+			return type && (type->group == file_group::photo || type->group == file_group::video);
+		});
 	const auto is_single_media_selection = is_media_or_items_view && selection_status.has_single_media_selection;
 	const auto local_files_result = _state.selection_process_result(df::process_items_type::local_file);
 	const auto local_items_result = _state.selection_process_result(df::process_items_type::local_file_or_folder);
@@ -690,18 +696,19 @@ void app_frame::update_button_state(const bool resize)
 	// A timeline outlives the view, so clearing the selection must not lock the user out of the
 	// movie they are part way through building.
 	_commands[commands::tool_movie]->enable = is_media_or_items_view &&
-		(has_selection || (_view_movie && _view_movie->has_clips()));
-	_commands[commands::tool_movie_add]->enable = is_movie_view;
-	_commands[commands::tool_movie_open]->enable = is_movie_view;
-	_commands[commands::tool_movie_import]->enable = is_movie_view;
-	_commands[commands::tool_movie_save]->enable = is_movie_view && _view_movie->has_clips();
+		(has_movie_selection || (_view_movie && _view_movie->has_clips()));
+	const auto movie_project_busy = is_movie_view && _view_movie->project_io_active();
+	_commands[commands::tool_movie_add]->enable = is_movie_view && !movie_project_busy;
+	_commands[commands::tool_movie_open]->enable = is_movie_view && !movie_project_busy;
+	_commands[commands::tool_movie_import]->enable = is_movie_view && !movie_project_busy;
+	_commands[commands::tool_movie_save]->enable = is_movie_view && !movie_project_busy && _view_movie->has_clips();
 	_commands[commands::tool_movie_remove]->enable = is_movie_view && _view_movie->has_clips();
 	_commands[commands::tool_movie_send_to_end]->enable = is_movie_view && _view_movie->has_clips();
 	_commands[commands::tool_movie_select_all]->enable = is_movie_view && _view_movie->has_clips();
 	// Nothing to repair is not the same as a repair that is unavailable, so the offer appears only
 	// once the probe has found a clip that is gone.
 	_commands[commands::tool_movie_relink]->visible = is_movie_view && _view_movie->has_missing_clips();
-	_commands[commands::tool_movie_relink]->enable = is_movie_view && _view_movie->has_missing_clips();
+	_commands[commands::tool_movie_relink]->enable = is_movie_view && !movie_project_busy && _view_movie->has_missing_clips();
 	// A machine with no encoder cannot render at all, so Render is absent rather than dimmed, as
 	// Burn is on a machine with no writer.
 	_commands[commands::tool_movie_render]->visible = platform::can_write_movies();
@@ -1061,14 +1068,14 @@ void app_frame::update_command_text()
 	def_command(commands::browse_previous_item_extend, command_group::selection, icon_index::left,
 	            tt.command_browse_previous_item_extend);
 	def_command(commands::tool_burn, command_group::tools, icon_index::disk, tt.command_burn);
-	def_command(commands::tool_save_current_video_frame, command_group::tools, icon_index::none, tt.command_capture);
+	def_command(commands::tool_save_current_video_frame, command_group::tools, icon_index::photo, tt.command_capture);
 	def_command(commands::view_close, command_group::none, icon_index::close, tt.command_close);
 	def_command(commands::edit_item_color_reset, command_group::none, icon_index::undo, tt.command_color_reset,
 	            tt.tooltip_color_reset);
 	def_command(commands::tool_convert, command_group::tools, icon_index::convert, tt.command_convert_or_resize);
 	def_command(commands::tool_copy_to_folder, command_group::file_management, icon_index::copy_to_folder,
 	            tt.command_copy);
-	def_command(commands::tool_delete, command_group::file_management, icon_index::cancel, tt.command_delete);
+	def_command(commands::tool_delete, command_group::file_management, icon_index::del, tt.command_delete);
 	def_command(commands::tool_desktop_background, command_group::tools, icon_index::wallpaper,
 	            tt.command_desktop_background);
 	def_command(commands::menu_display_options, command_group::none, icon_index::none, tt.command_display_options);
@@ -1093,7 +1100,7 @@ void app_frame::update_command_text()
 	def_command(commands::edit_cut, command_group::file_management, icon_index::edit_cut, tt.command_edit_cut);
 	def_command(commands::edit_paste, command_group::file_management, icon_index::edit_paste, tt.command_edit_paste);
 	def_command(commands::tool_eject, command_group::file_management, icon_index::eject, tt.command_eject);
-	def_command(commands::tool_file_properties, command_group::file_management, icon_index::none,
+	def_command(commands::tool_file_properties, command_group::file_management, icon_index::document_information,
 	            tt.command_file_properties);
 	def_command(commands::browse_search, command_group::navigation, icon_index::search, tt.command_file_search);
 	def_command(commands::browse_recursive, command_group::navigation, icon_index::recursive, tt.command_flatten);
@@ -1173,7 +1180,7 @@ void app_frame::update_command_text()
 	def_command(commands::edit_item_save, command_group::edit_item, icon_index::save, tt.command_save);
 	def_command(commands::edit_item_auto_color, command_group::edit_item, icon_index::lightbulb, tt.command_auto_color,
 	            tt.tooltip_auto_color);
-	def_command(commands::edit_item_auto_document, command_group::edit_item, icon_index::scan, tt.command_auto_document,
+	def_command(commands::edit_item_auto_document, command_group::edit_item, icon_index::scan_text, tt.command_auto_document,
 	            tt.tooltip_auto_document);
 	def_command(commands::edit_item_auto_straighten, command_group::edit_item, icon_index::lightbulb,
 	            tt.command_auto_straighten, tt.tooltip_auto_straighten);
@@ -1186,7 +1193,7 @@ void app_frame::update_command_text()
 	def_command(commands::edit_item_save_as, command_group::edit_item, icon_index::save_copy, tt.command_save_as);
 	def_command(commands::option_scale_up, command_group::options, icon_index::fit, tt.command_scale_up,
 	            tt.tooltip_scale_up);
-	def_command(commands::tool_scan, command_group::tools, icon_index::scan, tt.command_scan);
+	def_command(commands::tool_scan, command_group::tools, icon_index::scanner, tt.command_scan);
 	def_command(commands::options_sidebar, command_group::options, icon_index::none, tt.command_customise);
 	def_command(commands::favorite_tags, command_group::options, icon_index::tag, tt.customise_tags_title);
 	def_command(commands::select_all, command_group::selection, icon_index::none, tt.command_select_all);
@@ -1239,7 +1246,7 @@ void app_frame::update_command_text()
 	def_command(commands::view_zoom_in, command_group::media_playback, icon_index::zoom_in, tt.command_zoom_in);
 	def_command(commands::view_zoom_pane_flip, command_group::media_playback, icon_index::swap, tt.command_zoom_flip);
 	def_command(commands::view_zoom_out, command_group::media_playback, icon_index::zoom_out, tt.command_zoom_out);
-	def_command(commands::view_zoom_100, command_group::media_playback, icon_index::zoom_in, tt.command_zoom_100);
+	def_command(commands::view_zoom_100, command_group::media_playback, icon_index::one_to_one, tt.command_zoom_100);
 	def_command(commands::menu_zoom, command_group::media_playback, icon_index::overview,
 	            tt.command_zoom_presets);
 	def_command(commands::menu_zoom_navigator, command_group::media_playback, icon_index::overview,

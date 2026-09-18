@@ -10,7 +10,6 @@
 // increasing list of document (item) ids as delta + variable-byte (VByte) bytes. The
 // trigram index built on top of it accelerates substring prediction in the address box;
 // the boolean set operations and the inverted index above them are implemented and tested
-// but not yet wired into query execution - see docs/v-next.md 4.6.
 
 #pragma once
 

@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -59,6 +59,7 @@ class db_statement
 {
 	sqlite3* _db;
 	sqlite3_stmt* _handle;
+	mutable int _last_step_result = SQLITE_OK;
 
 public:
 	db_statement(sqlite3* db, const std::string& sql) : _db(db), _handle(nullptr)
@@ -212,7 +213,7 @@ public:
 	{
 		if (_handle != nullptr)
 		{
-			const int result = sqlite3_step(_handle);
+			const int result = _last_step_result = sqlite3_step(_handle);
 
 			switch (result)
 			{
@@ -228,11 +229,25 @@ public:
 		return false;
 	}
 
+	bool read_complete() const
+	{
+		return _handle != nullptr && _last_step_result == SQLITE_DONE;
+	}
+
 	void exec() const
 	{
 		while (read())
 		{
 		}
+	}
+
+	bool exec_checked() const
+	{
+		if (_handle == nullptr) return false;
+		_last_step_result = sqlite3_step(_handle);
+		if (_last_step_result == SQLITE_DONE) return true;
+		db_trace_error(_db, "sqlite3_step");
+		return false;
 	}
 
 	int int32(const int i) const
@@ -251,6 +266,11 @@ public:
 			return sqlite3_column_int64(_handle, i);
 		}
 		return 0;
+	}
+
+	double double_value(const int i) const
+	{
+		return _handle != nullptr ? sqlite3_column_double(_handle, i) : 0.0;
 	}
 
 	std::string text(const int i) const
@@ -286,6 +306,13 @@ public:
 			r.size = sqlite3_column_bytes(_handle, i);
 		}
 		return r;
+	}
+
+	// Distinguishes a column an upgrade added but never filled from one holding zero, which the
+	// typed readers cannot: both answer 0.
+	bool is_null(const int i) const
+	{
+		return _handle == nullptr || sqlite3_column_type(_handle, i) == SQLITE_NULL;
 	}
 };
 
@@ -325,6 +352,34 @@ public:
 				}
 			}
 		}
+	}
+
+	bool acquired() const { return _acquired; }
+
+	bool commit()
+	{
+		if (!_acquired) return false;
+		const auto result = db_exec(_db, "COMMIT"s);
+		if (result == SQLITE_OK)
+		{
+			_acquired = false;
+			return true;
+		}
+		rollback();
+		return false;
+	}
+
+	void rollback() noexcept
+	{
+		if (!_acquired) return;
+		try
+		{
+			db_exec(_db, "ROLLBACK"s);
+		}
+		catch (...)
+		{
+		}
+		_acquired = false;
 	}
 };
 
@@ -671,6 +726,10 @@ bool database::prepare_database(const bool can_replace)
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash180 INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash270 INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
+	// Legacy face-search builds created these tables. Current builds do not use them, so dropping
+	// them here reclaims upgraded database space without changing any source-owned data.
+	sqlite3_exec(_db, "DROP TABLE IF EXISTS face_assignments;", nullptr, nullptr, nullptr);
+	sqlite3_exec(_db, "DROP TABLE IF EXISTS face_groups;", nullptr, nullptr, nullptr);
 
 	// Those upgrades report nothing when they fail, so the schema they were meant to reach is
 	// checked rather than assumed.
@@ -916,6 +975,8 @@ void database::clean(const std::vector<df::file_path>& indexed_items) const
 	db_exec(
 		_db,
 		"DELETE FROM item_thumbnails WHERE NOT EXISTS (SELECT 1 FROM item_properties WHERE item_properties.name = item_thumbnails.name AND item_properties.folder = item_thumbnails.folder);"s);
+
+	// Faces are derived from a file, so a row for a file that is gone is worth nothing.
 }
 
 void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)
@@ -1385,7 +1446,7 @@ void database::perform_writes()
 void database::perform_writes(std::deque<item_db_write> writes) const
 {
 	// The worker calls this on every pass, so most calls find nothing. Opening a transaction and
-	// compiling seven statements to write nothing is the idle cost of the whole database layer.
+	// compiling the write statements is the idle cost of the whole database layer.
 	if (!is_open() || writes.empty()) return;
 
 	const auto today = platform::now().to_days();
@@ -1420,7 +1481,6 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 	const db_statement insert_thumbnails(
 		_db,
 		"insert or replace into item_thumbnails (folder, name, bitmap, cover_art, last_scanned) values (?, ?, ?, ?, ?)"s);
-
 	metadata_packer packer;
 
 	for (auto&& write : writes)
@@ -1543,6 +1603,7 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 			df::bump(df::db_perf.thumbs_written);
 			++_state.stats.thumbs_saved;
 		}
+
 	}
 
 	_state.stats.database_size = platform::file_attributes(_db_path).size;

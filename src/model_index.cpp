@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -510,6 +510,7 @@ void index_state::query_items(const df::search_t& search,
 	df::scope_locked_inc l(searching);
 
 	_async.invalidate_view(view_invalid::view_layout);
+
 
 	if (search.has_related())
 	{
@@ -1128,6 +1129,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					if (content_changed)
 					{
+						changes_detected = true;
 						info.crc32c = 0;
 					}
 
@@ -2575,24 +2577,11 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 
 		if (load_thumb && is_valid(sr.thumbnail_surface))
 		{
-			const auto max_extent = setting.thumbnail_max_dimension;
-			const auto thumb_extent = sr.thumbnail_surface->dimensions();
-
-			if (max_extent.cx < thumb_extent.cx || max_extent.cy < thumb_extent.cy)
-			{
-				av_scaler scaler;
-				const auto dims = ui::scale_dimensions(thumb_extent, max_extent, true);
-				auto surf = std::make_shared<ui::surface>();
-				scaler.scale_surface(sr.thumbnail_surface, surf, dims);
-				thumbnail_image = ff.surface_to_thumbnail(surf);
-				thumbnail_surface = surf;
-			}
-			else
-			{
-				auto surf = sr.thumbnail_surface;
-				thumbnail_image = ff.surface_to_thumbnail(surf);
-				thumbnail_surface = surf;
-			}
+			// fit_within is the ceiling test: a surface already inside it comes back untouched, so
+			// there is nothing here to decide.
+			auto surf = ff.fit_within(sr.thumbnail_surface, setting.thumbnail_max_dimension);
+			thumbnail_image = ff.surface_to_thumbnail(surf);
+			thumbnail_surface = surf;
 
 			// Same ceiling as the two above, and a real gate for the same reason: assert_true evaluates
 			// nothing in Release, so an encode that came back over the ceiling would reach both the
@@ -3286,6 +3275,7 @@ void index_state::index_folders(df::cancel_token token)
 
 	index_histograms histograms;
 	int count = 0;
+	int picture_count = 0;
 	stats.index_folder_count = 0;
 	auto next_histogram_publish_ms = df::now_ms();
 
@@ -3319,6 +3309,7 @@ void index_state::index_folders(df::cancel_token token)
 				{
 					count += 1;
 				}
+				if (file.ft->has_trait(file_traits::bitmap)) ++picture_count;
 			}
 
 			// See the comment at the other folders_snapshot() call sites: the returned shared_ptr must
@@ -3360,6 +3351,7 @@ void index_state::index_folders(df::cancel_token token)
 	if (!token.is_cancelled())
 	{
 		stats.index_item_count = stats.media_item_count = count;
+		stats.picture_item_count = picture_count;
 
 		_async.queue_database([cached_items = all_indexed_items()](const database& db)
 		{
@@ -4701,18 +4693,18 @@ void index_state::queue_load_visible_thumbnails(const df::item_elements& visible
 	queue_sources(resolved);
 }
 
-void index_state::queue_load_thumbnail(df::item_element_ptr item)
+void index_state::queue_load_thumbnail(df::item_element_ptr item, const view_invalid invalid)
 {
 	if (!item || item->has_thumb()) return;
 
 	// The database hop copies this lambda, so the item crosses a worker queue: ui_owned_ptr hands
 	// the final reference back to the UI thread if a truncated queue drops it there.
-	auto load_from_source = [this, item = ui_owned(_async, item)]
+	auto load_from_source = [this, item = ui_owned(_async, item), invalid]
 	{
 		if (item->has_thumb())
 		{
 			queue_stage_thumbnails({item.shared()});
-			_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
+			_async.invalidate_view(invalid);
 			return;
 		}
 
@@ -4721,16 +4713,16 @@ void index_state::queue_load_thumbnail(df::item_element_ptr item)
 
 		if (item->online_status() == df::item_online_status::offline)
 		{
-			queue_scan_offline_thumbnails(std::move(items), false);
+			queue_scan_offline_thumbnails(std::move(items), false, invalid);
 		}
 		else if (item->should_load_thumbnail())
 		{
 			auto requests = make_scan_requests(items, true);
-			_async.queue_async(async_queue::scan_folder, [this, requests = std::move(requests)]
+			_async.queue_async(async_queue::scan_folder, [this, requests = std::move(requests), invalid]
 			{
 				df::scope_locked_inc thumbnailing(thumbnailing_items);
 				scan_items(requests, false, true, false, {});
-				_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw);
+				_async.invalidate_view(invalid);
 			});
 		}
 	};
@@ -4752,7 +4744,8 @@ void index_state::queue_load_thumbnail(df::item_element_ptr item)
 	}
 }
 
-void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const bool visible_only)
+void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const bool visible_only,
+	                                             const view_invalid invalid)
 {
 	// Cloud (OneDrive) thumbnail fetch for VISIBLE offline placeholders. Unlike the local
 	// displayed-items path (queue_scan_displayed_items), this does NOT use a cancel token: it is
@@ -4799,7 +4792,8 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 	// The single-item hover path does not supersede a visible batch.
 	const auto batch = visible_only ? ++_offline_thumbnail_batch : _offline_thumbnail_batch.load();
 
-	_async.queue_async(async_queue::cloud, [this, requests = std::move(requests), visible_only, batch]() mutable
+	_async.queue_async(async_queue::cloud,
+	                  [this, requests = std::move(requests), visible_only, batch, invalid]() mutable
 	{
 		df::scope_locked_inc thumbnailing(thumbnailing_items);
 		std::vector<result> results;
@@ -4856,7 +4850,7 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 			results.emplace_back(std::move(completed));
 		}
 
-		_async.queue_ui([this, results = std::move(results), visible_only]() mutable
+		_async.queue_ui([this, results = std::move(results), visible_only, invalid]() mutable
 		{
 			auto geometry_changed = false;
 			for (auto& completed : results)
@@ -4901,7 +4895,7 @@ void index_state::queue_scan_offline_thumbnails(const df::item_set& items, const
 				}
 			}
 
-			_async.invalidate_view(view_invalid::tooltip | view_invalid::view_redraw |
+			_async.invalidate_view(invalid |
 				(geometry_changed ? view_invalid::view_layout : view_invalid::none));
 		});
 	});

@@ -1154,6 +1154,21 @@ static void should_decode_audio_into_a_buffer()
 	const auto loudest = std::ranges::max(samples, {}, [](const int16_t v) { return std::abs(v); });
 	assert_equal(true, std::abs(loudest) > 0, "the buffer carries signal rather than silence");
 
+	av_format_decoder range_dec;
+	assert_equal(true, range_dec.open(voiced_path, media_intent::playback), "decoder reopened for a retained range");
+	range_dec.init_streams(-1, -1, false, false, false);
+	const auto loudest_at = static_cast<double>(
+		std::distance(samples.begin(), std::ranges::max_element(samples, {},
+			[](const int16_t v) { return std::abs(v); }))) / 2.0 / rate;
+	const auto range_start = std::max(0.0, loudest_at - 0.25);
+	const auto range = range_dec.extract_audio_pcm_range(rate, range_start, 0.5);
+	assert_equal(static_cast<size_t>(0.5 * rate) * 2, range.size(),
+	             "a retained range has its complete requested duration");
+	const auto range_loudest = std::ranges::max(range, {}, [](const int16_t v) { return std::abs(v); });
+	assert_equal(true, std::abs(range_loudest) > 0, "and carries decoded signal rather than padded silence");
+	assert_equal(true, range_dec.extract_audio_pcm_range(rate, 0, 61.0).empty(),
+	             "one extraction cannot allocate an unbounded clip");
+
 	av_format_decoder video_only;
 	assert_equal(true, video_only.open(voiced_path, media_intent::playback), "decoder reopened");
 	video_only.init_streams(-1, -1, false, true, false);

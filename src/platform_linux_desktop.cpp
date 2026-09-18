@@ -110,7 +110,7 @@ bool platform::eject(df::folder_path)
 // There is no system encoder to hand the job to here, and Diffractor ships none: the FFmpeg build
 // is configured without encoders on both platforms. Answering false is what makes Render absent
 // rather than dimmed, so the Movie view builds and runs with everything except the render.
-// docs/movie.md#94-the-platform-boundary and docs/linux.md record this as debt.
+// docs/movie.md#8-ownership-and-limits and docs/linux.md record this as debt.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 bool platform::can_write_movies()

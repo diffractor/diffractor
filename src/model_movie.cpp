@@ -70,10 +70,15 @@ movie_timing calc_movie_timing(const std::vector<movie_clip>& clips, const movie
 movie_frame calc_movie_frame(const std::vector<movie_clip>& clips, const movie_settings& settings,
                              const double time)
 {
+	return calc_movie_frame(clips, settings, calc_movie_timing(clips, settings), time);
+}
+
+movie_frame calc_movie_frame(const std::vector<movie_clip>& clips, const movie_settings& settings,
+	const movie_timing& timing, const double time)
+{
 	movie_frame result;
 	if (clips.empty()) return result;
 
-	const auto timing = calc_movie_timing(clips, settings);
 	const auto at = std::clamp(time, 0.0, timing.duration);
 
 	const auto contribute = [&](const size_t i, const double weight)
@@ -230,51 +235,98 @@ movie_clip make_movie_clip(df::file_path path, const movie_settings& settings)
 // between the file this platform writes and the one the other reads.
 static std::string to_url(const df::file_path path, const df::folder_path project_folder)
 {
-	const auto folder = path.folder().text().sv();
-	const auto root = project_folder.text().sv();
-
-	// The prefix has to end on a component boundary, or "c:\pics" would claim a file in "c:\pics2".
-	const auto shares_root = !root.empty() && df::path_text_starts(folder, root) &&
-		(folder.size() == root.size() || df::is_path_sep(root.back()) || df::is_path_sep(folder[root.size()]));
-
-	std::string url;
-
-	if (shares_root)
+	if (!project_folder.is_empty())
 	{
-		auto rest = folder.substr(root.size());
-		while (!rest.empty() && df::is_path_sep(rest.front())) rest.remove_prefix(1);
-
-		url = std::string(rest);
-		if (!url.empty()) url += '/';
-		url += path.name().sv();
-	}
-	else
-	{
-		url = path.pack();
+		const auto relative = std::filesystem::path(path.pack()).lexically_relative(
+			std::filesystem::path(project_folder.text().sv()));
+		if (!relative.empty()) return relative.generic_string();
 	}
 
-	for (auto&& c : url) if (c == '\\') c = '/';
-	return url;
+	auto result = path.pack();
+	for (auto&& c : result) if (c == '\\') c = '/';
+	return result;
+}
+
+static int hex_digit(const char c)
+{
+	if (c >= '0' && c <= '9') return c - '0';
+	if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return -1;
+}
+
+static std::optional<std::string> decode_url_path(const std::string_view url)
+{
+	std::string result;
+	result.reserve(url.size());
+
+	for (size_t i = 0; i < url.size(); ++i)
+	{
+		if (url[i] != '%')
+		{
+			result += url[i];
+			continue;
+		}
+
+		if (i + 2 >= url.size()) return {};
+		const auto high = hex_digit(url[i + 1]);
+		const auto low = hex_digit(url[i + 2]);
+		if (high < 0 || low < 0) return {};
+		const auto decoded = static_cast<char>((high << 4) | low);
+		if (decoded == '\0') return {};
+		result += decoded;
+		i += 2;
+	}
+
+	return result;
 }
 
 static df::file_path from_url(const std::string_view url, const df::folder_path project_folder)
 {
 	if (url.empty()) return {};
-	if (is_qualified_path(url)) return df::file_path(url);
-	if (project_folder.is_empty()) return {};
 
-	auto native = std::string(url);
-	for (auto&& c : native) if (c == '/') c = df::preferred_path_sep;
+	auto encoded = url;
+	auto file_uri = false;
 
-	const auto slash = df::find_last_slash(native);
-
-	if (slash == std::string::npos)
+	if (url.size() >= 5 && str::icmp(url.substr(0, 5), "file:") == 0)
 	{
-		return project_folder.combine_file(native);
+		file_uri = true;
+		encoded.remove_prefix(5);
+	}
+	else if (url.find("://") != std::string_view::npos)
+	{
+		return {};
 	}
 
-	return project_folder.combine(std::string_view(native).substr(0, slash))
-	                     .combine_file(std::string_view(native).substr(slash + 1));
+	auto decoded = decode_url_path(encoded);
+	if (!decoded) return {};
+	auto native = std::move(*decoded);
+
+	if (file_uri && native.starts_with("//"))
+	{
+		native.erase(0, 2);
+		const auto slash = native.find('/');
+		const auto authority = native.substr(0, slash);
+		native = slash == std::string::npos ? std::string{} : native.substr(slash);
+
+		if (!authority.empty() && str::icmp(authority, "localhost") != 0)
+		{
+			native = "//" + authority + native;
+		}
+	}
+
+	if constexpr (df::windows_path_semantics)
+	{
+		if (file_uri && native.size() >= 3 && native[0] == '/' && native[2] == ':') native.erase(0, 1);
+	}
+
+	if (is_qualified_path(native)) return df::file_path(native);
+	if (project_folder.is_empty()) return {};
+
+	for (auto&& c : native) if (c == '/') c = df::preferred_path_sep;
+	const auto resolved = (std::filesystem::path(project_folder.text().sv()) / std::filesystem::path(native))
+		.lexically_normal();
+	return df::file_path(resolved.string());
 }
 
 using json_writer = rapidjson::Writer<rapidjson::StringBuffer>;
@@ -449,7 +501,8 @@ static double read_rational_time(const json_value& v)
 	const auto r = rate != v.MemberEnd() && rate->value.IsNumber() ? rate->value.GetDouble() : 0.0;
 	if (r <= 0) return 0;
 
-	return value->value.GetDouble() / r;
+	const auto result = value->value.GetDouble() / r;
+	return std::isfinite(result) ? result : 0.0;
 }
 
 static bool read_bool(const json_value& v, const char* name, const bool fallback)
@@ -463,7 +516,9 @@ static double read_double(const json_value& v, const char* name, const double fa
 {
 	if (!v.IsObject()) return fallback;
 	const auto found = v.FindMember(name);
-	return found != v.MemberEnd() && found->value.IsNumber() ? found->value.GetDouble() : fallback;
+	if (found == v.MemberEnd() || !found->value.IsNumber()) return fallback;
+	const auto result = found->value.GetDouble();
+	return std::isfinite(result) ? result : fallback;
 }
 
 static bool is_schema(const json_value& v, const std::string_view prefix)
@@ -520,14 +575,18 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		return result;
 	}
 
-	const auto& doc_meta = df::util::json::safe_object(df::util::json::safe_object(doc, "metadata"), "diffractor");
+	const auto& metadata = df::util::json::safe_object(doc, "metadata");
+	const auto& doc_meta = df::util::json::safe_object(metadata, "diffractor");
 
-	result.settings.transition = str::icmp(df::util::json::safe_string(doc_meta, "transition"), "cut") == 0
-		                             ? movie_transition::cut
-		                             : movie_transition::crossfade;
+	const auto has_diffractor_settings = metadata.IsObject() && metadata.HasMember("diffractor") &&
+		metadata["diffractor"].IsObject();
+	result.settings.transition = has_diffractor_settings &&
+		str::icmp(df::util::json::safe_string(doc_meta, "transition"), "crossfade") == 0
+		                             ? movie_transition::crossfade
+		                             : movie_transition::cut;
 	result.settings.transition_seconds = read_double(doc_meta, "transition_seconds", 1.0);
-	result.settings.fade_in = read_bool(doc_meta, "fade_in", true);
-	result.settings.fade_out = read_bool(doc_meta, "fade_out", true);
+	result.settings.fade_in = read_bool(doc_meta, "fade_in", false);
+	result.settings.fade_out = read_bool(doc_meta, "fade_out", false);
 	result.settings.photo_seconds = read_double(doc_meta, "photo_seconds", 4.0);
 
 	const auto track_children = track->FindMember("children");
@@ -538,34 +597,53 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		return result;
 	}
 
-	// A transition written by another tool still tells us the crossfade length even though our
-	// model holds one length for the whole movie, so the first one seen supplies it.
-	auto have_transition_length = doc_meta.IsObject() && doc_meta.HasMember("transition_seconds");
+	struct foreign_transition
+	{
+		size_t boundary = 0;
+		double length = 0;
+	};
+
+	std::vector<foreign_transition> foreign_transitions;
+	std::optional<double> pending_transition;
+	auto foreign_transition_count = 0;
+	auto foreign_transition_positions_valid = true;
 
 	for (const auto& child : track_children->value.GetArray())
 	{
 		if (is_schema(child, "Transition"))
 		{
-			if (!have_transition_length)
+			if (has_diffractor_settings) continue;
+			++foreign_transition_count;
+
+			if (str::icmp(df::util::json::safe_string(child, "transition_type"), "SMPTE_Dissolve") == 0)
 			{
 				const auto in = child.FindMember("in_offset");
 				const auto out = child.FindMember("out_offset");
-				const auto length = (in != child.MemberEnd() ? read_rational_time(in->value) : 0.0) +
-					(out != child.MemberEnd() ? read_rational_time(out->value) : 0.0);
+				const auto in_length = in != child.MemberEnd() ? read_rational_time(in->value) : 0.0;
+				const auto out_length = out != child.MemberEnd() ? read_rational_time(out->value) : 0.0;
+				const auto length = in_length + out_length;
 
-				if (length > 0)
+				if (in_length > 0 && out_length > 0 && std::abs(in_length - out_length) < 0.0001)
 				{
-					result.settings.transition = movie_transition::crossfade;
-					result.settings.transition_seconds = length;
-					have_transition_length = true;
+					if (result.clips.empty() || pending_transition)
+					{
+						foreign_transition_positions_valid = false;
+					}
+					else
+					{
+						pending_transition = length;
+					}
+					continue;
 				}
 			}
 
+			foreign_transition_positions_valid = false;
 			continue;
 		}
 
 		if (!is_schema(child, "Clip"))
 		{
+			if (pending_transition) foreign_transition_positions_valid = false;
 			++result.ignored_elements;
 			continue;
 		}
@@ -576,6 +654,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 
 		if (path.is_empty())
 		{
+			if (pending_transition) foreign_transition_positions_valid = false;
 			++result.ignored_elements;
 			continue;
 		}
@@ -588,7 +667,15 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		const auto duration = range.FindMember("duration");
 
 		clip.start = start != range.MemberEnd() ? read_rational_time(start->value) : 0.0;
-		clip.end = clip.start + (duration != range.MemberEnd() ? read_rational_time(duration->value) : 0.0);
+		const auto clip_duration = duration != range.MemberEnd() ? read_rational_time(duration->value) : 0.0;
+		clip.end = clip.start + clip_duration;
+
+		if (!std::isfinite(clip.start) || !std::isfinite(clip.end) || clip.start < 0 || clip_duration <= 0)
+		{
+			if (pending_transition) foreign_transition_positions_valid = false;
+			++result.ignored_elements;
+			continue;
+		}
 
 		const auto& clip_meta = df::util::json::safe_object(df::util::json::safe_object(child, "metadata"),
 		                                                   "diffractor");
@@ -598,7 +685,54 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		clip.photo_duration_is_default = read_bool(clip_meta, "photo_duration_is_default", false);
 		clip.source_duration = read_double(clip_meta, "source_duration", clip.end);
 
+		if (pending_transition)
+		{
+			foreign_transitions.emplace_back(foreign_transition{result.clips.size(), *pending_transition});
+			pending_transition.reset();
+		}
+
 		result.clips.emplace_back(clip);
+	}
+
+	if (pending_transition) foreign_transition_positions_valid = false;
+
+	if (!has_diffractor_settings && foreign_transition_positions_valid && result.clips.size() > 1 &&
+		foreign_transitions.size() == result.clips.size() - 1)
+	{
+		const auto length = foreign_transitions.front().length;
+		const auto uniform = std::all_of(foreign_transitions.begin(), foreign_transitions.end(),
+			[length](const foreign_transition& transition)
+			{
+				return std::abs(transition.length - length) < 0.0001;
+			});
+		auto complete = true;
+		for (size_t i = 0; i < foreign_transitions.size(); ++i)
+		{
+			const auto boundary = foreign_transitions[i].boundary;
+			if (boundary != i + 1 || boundary >= result.clips.size())
+			{
+				complete = false;
+				continue;
+			}
+
+			const auto representable = std::min(result.clips[boundary - 1].duration() / 2,
+			                                    result.clips[boundary].duration() / 2);
+			if (foreign_transitions[i].length > representable + 0.0001) complete = false;
+		}
+
+		if (uniform && complete)
+		{
+			result.settings.transition = movie_transition::crossfade;
+			result.settings.transition_seconds = length;
+		}
+		else
+		{
+			result.ignored_elements += foreign_transition_count;
+		}
+	}
+	else if (!has_diffractor_settings)
+	{
+		result.ignored_elements += foreign_transition_count;
 	}
 
 	result.status = result.clips.empty() ? movie_load_status::empty : movie_load_status::ok;
@@ -767,7 +901,8 @@ namespace
 	bool is_ignored_extent(const std::string_view name)
 	{
 		static constexpr std::string_view ignored[] = {
-			"audio", "title", "caption", "credit", "narration", "music", "text", "bounded", "sound"
+			"audio", "title", "caption", "credit", "narration", "music", "text", "bounded", "sound",
+			"effect", "animation"
 		};
 
 		for (const auto prefix : ignored)
@@ -788,6 +923,14 @@ movie_load_result read_wlmp(const std::string_view xml)
 
 	df::hash_map<std::string, df::file_path, df::ihash, df::ieq> media;
 
+	struct positioned_clip
+	{
+		movie_clip clip;
+		double position = -1;
+	};
+
+	std::vector<positioned_clip> clips;
+
 	for (const auto& element : elements)
 	{
 		const auto id = element.find("id");
@@ -802,14 +945,14 @@ movie_load_result read_wlmp(const std::string_view xml)
 
 	for (const auto& element : elements)
 	{
-		const auto reference = element.find("mediaItemID");
-		if (!reference) continue;
-
 		if (is_ignored_extent(element.name))
 		{
 			++result.ignored_elements;
 			continue;
 		}
+
+		const auto reference = element.find("mediaItemID");
+		if (!reference) continue;
 
 		const auto found = media.find(*reference);
 
@@ -849,8 +992,20 @@ movie_load_result read_wlmp(const std::string_view xml)
 		}
 
 		clip.source_duration = clip.end;
-		result.clips.emplace_back(clip);
+		clips.emplace_back(positioned_clip{std::move(clip), parse_seconds(element.find("position"))});
 	}
+
+	if (std::any_of(clips.begin(), clips.end(), [](const positioned_clip& clip) { return clip.position >= 0; }))
+	{
+		std::stable_sort(clips.begin(), clips.end(), [](const positioned_clip& left, const positioned_clip& right)
+		{
+			if (left.position < 0) return false;
+			if (right.position < 0) return true;
+			return left.position < right.position;
+		});
+	}
+
+	for (auto&& clip : clips) result.clips.emplace_back(std::move(clip.clip));
 
 	result.status = result.clips.empty() ? movie_load_status::empty : movie_load_status::ok;
 	return result;
@@ -865,6 +1020,7 @@ void movie_project::push_undo()
 	_undo.emplace_back(undo_entry{_clips, _settings, _selected, _current, _anchor});
 	if (_undo.size() > max_undo) _undo.erase(_undo.begin());
 	_modified = true;
+	++_revision;
 }
 
 void movie_project::select_only(const size_t index)
@@ -932,6 +1088,11 @@ void movie_project::select(const size_t index, const bool extend, const bool tog
 	_current = index;
 }
 
+void movie_project::focus(const size_t index)
+{
+	if (index < _clips.size()) _current = index;
+}
+
 void movie_project::select_all()
 {
 	_selected.clear();
@@ -942,6 +1103,15 @@ void movie_project::select_all()
 const movie_clip* movie_project::current_clip() const
 {
 	return _current < _clips.size() ? &_clips[_current] : nullptr;
+}
+
+bool movie_project::is_ready_to_render() const
+{
+	return !_clips.empty() && std::all_of(_clips.begin(), _clips.end(), [](const movie_clip& clip)
+	{
+		return clip.is_probed && !clip.is_missing && clip.duration() > 0 &&
+			clip.extent.cx > 0 && clip.extent.cy > 0;
+	});
 }
 
 void movie_project::append(const movie_clip& clip)
@@ -1047,11 +1217,28 @@ void movie_project::replace(const size_t at, const movie_clip& clip)
 	_clips[at] = clip;
 }
 
+void movie_project::replace_many(const std::vector<std::pair<size_t, movie_clip>>& replacements)
+{
+	if (replacements.empty()) return;
+	if (std::none_of(replacements.begin(), replacements.end(), [this](const auto& replacement)
+	{
+		return replacement.first < _clips.size();
+	})) return;
+
+	push_undo();
+
+	for (const auto& [at, clip] : replacements)
+	{
+		if (at < _clips.size()) _clips[at] = clip;
+	}
+}
+
 void movie_project::replace_quietly(const size_t at, const movie_clip& clip)
 {
 	if (at >= _clips.size()) return;
 
 	_clips[at] = clip;
+	++_revision;
 }
 
 void movie_project::settings(const movie_settings& s)
@@ -1100,13 +1287,14 @@ void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s
 	_seed.clear();
 	_undo.clear();
 	_modified = false;
+	++_revision;
 	select_only(0);
 }
 
-void movie_project::mark_saved(const df::file_path path)
+void movie_project::mark_saved(const df::file_path path, const uint64_t revision)
 {
 	_path = path;
-	_modified = false;
+	if (_revision == revision) _modified = false;
 }
 
 void movie_project::mark_seeded(std::vector<df::file_path> seed)
@@ -1131,6 +1319,7 @@ void movie_project::undo()
 	_current = entry.current;
 	_anchor = entry.anchor;
 	_modified = true;
+	++_revision;
 
 	// The stored selection came from a list that may have been longer than this one.
 	std::erase_if(_selected, [this](const size_t i) { return i >= _clips.size(); });

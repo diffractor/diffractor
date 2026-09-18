@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -266,9 +266,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
@@ -417,9 +417,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	void tooltip(view_hover_element& result, const pointi loc, const pointi element_offset) const override
@@ -770,9 +770,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 };
 
@@ -1192,9 +1192,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
@@ -1677,9 +1677,9 @@ struct sidebar_history_element final : view_element, std::enable_shared_from_thi
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	bool hover_month_is_valid() const
@@ -2368,7 +2368,7 @@ public:
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override;
+	                                             hit_test_context& ctx) override;
 
 	void hover(interaction_context& ic) override
 	{
@@ -2629,15 +2629,12 @@ private:
 
 inline view_controller_ptr sidebar_map_element::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                                         const pointi element_offset,
-                                                                        const std::vector<recti>& excluded_bounds)
+                                                                        hit_test_context& ctx)
 {
 	if (!is_visible() || !bounds.contains(loc - element_offset)) return nullptr;
 
-	auto controller_bounds = bounds;
-	for (const auto& excluded : excluded_bounds) controller_bounds.exclude(loc - element_offset, excluded);
-
 	return std::make_shared<globe_rotate_controller>(host, shared_from_this(), element_offset,
-	                                                 controller_bounds.offset(element_offset));
+	                                                 bounds.offset(element_offset));
 }
 
 class app_logo_element final : public std::enable_shared_from_this<app_logo_element>, public view_element
@@ -2752,7 +2749,7 @@ public:
 		{
 			// app_frame calls this directly on the copy it owns. The About dialog's second instance
 			// lives in a dialog's control list, which no broadcast walks, so this arm is what a route
-			// to it would need rather than proof that one exists; v-next.md records the gap.
+			// to that instance would need rather than proof that one currently exists.
 			free_graphics_resources();
 		}
 	}
@@ -2761,10 +2758,10 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
 		if (!_interactive) return {};
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	bool step_plasma(const double time_now) const
@@ -2951,6 +2948,7 @@ public:
 		if (setting.sidebar.show_total_items) _elements.emplace_back(_type_chart);
 		if (setting.sidebar.show_world_map) _elements.emplace_back(_map);
 		if (setting.sidebar.show_history) _elements.emplace_back(_history_chart);
+
 		_elements.insert(_elements.end(), _item_elements.begin(), _item_elements.end());
 	}
 
@@ -3224,11 +3222,11 @@ public:
 		});
 	}
 
-	view_controller_ptr controller_from_location(const pointi loc) override
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 	{
 		df::assert_true(ui::is_ui_thread());
 
-		if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
+		if (_scroller.can_scroll() && ctx.occluded(_scroller.scroll_bounds()))
 		{
 			return std::make_shared<scroll_controller>(shared_from_this(), _scroller, _scroller.scroll_bounds());
 		}
@@ -3237,7 +3235,7 @@ public:
 
 		for (const auto& e : _elements)
 		{
-			auto controller = e->controller_from_location(shared_from_this(), loc, offset, {});
+			auto controller = e->controller_from_location(shared_from_this(), loc, offset, ctx);
 			if (controller) return controller;
 		}
 

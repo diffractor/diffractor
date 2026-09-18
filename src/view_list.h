@@ -202,9 +202,9 @@ public:
 
 		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 		                                             const pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override
+		                                             hit_test_context& ctx) override
 		{
-			return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+			return default_controller_from_location(*this, host, loc, element_offset, ctx);
 		}
 	};
 
@@ -591,7 +591,7 @@ public:
 	{
 	}
 
-	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
+	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx) override;
 
 	view_element_ptr element_from_location(const int y) const
 	{
@@ -970,9 +970,9 @@ public:
 		frame()->invalidate();
 	}
 
-	view_controller_ptr controller_from_location(const pointi loc) override
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 	{
-		if (_scroller.can_scroll() && _scroller.scroll_bounds().contains(loc))
+		if (_scroller.can_scroll() && ctx.occluded(_scroller.scroll_bounds()))
 		{
 			return std::make_shared<scroll_controller>(shared_from_this(), _scroller, _scroller.scroll_bounds());
 		}
@@ -981,7 +981,7 @@ public:
 
 		for (const auto& e : _controls)
 		{
-			auto controller = e->controller_from_location(shared_from_this(), loc, offset, {});
+			auto controller = e->controller_from_location(shared_from_this(), loc, offset, ctx);
 			if (controller) return controller;
 		}
 
@@ -1113,19 +1113,20 @@ public:
 	}
 };
 
-inline view_controller_ptr list_view::controller_from_location(const view_host_ptr& host, const pointi loc)
+inline view_controller_ptr list_view::controller_from_location(const view_host_ptr& host, const pointi loc,
+                                                              hit_test_context& ctx)
 {
 	if (_progress.active) return nullptr;
 
 	for (int i = 0; i < col_count; ++i)
 	{
-		if (_col_header_bounds[i].contains(loc))
+		if (ctx.occluded(_col_header_bounds[i]))
 		{
 			return std::make_shared<header_controller>(host, *this, _col_header_bounds[i], i);
 		}
 	}
 
-	if (_scroller.scroll_bounds().contains(loc))
+	if (ctx.occluded(_scroller.scroll_bounds()))
 	{
 		return std::make_shared<scroll_controller>(host, _scroller, _scroller.scroll_bounds());
 	}

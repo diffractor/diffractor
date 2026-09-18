@@ -595,6 +595,10 @@ public:
 	// bought with: 48 kHz stereo costs 192 KB a second, so the read stops at `max_seconds`.
 	// Empty when the file carries no audio. Decodes the whole stream, so it belongs on a worker.
 	std::vector<int16_t> extract_audio_pcm(int sample_rate, double max_seconds, df::cancel_token abandon = {});
+	// Decodes only the retained presentation interval. Samples are placed by timestamp, so a stream
+	// offset becomes silence rather than shifting the soundtrack against the picture.
+	std::vector<int16_t> extract_audio_pcm_range(int sample_rate, double start_seconds, double duration_seconds,
+	                                           df::cancel_token abandon = {});
 	file_load_result render_frame(const av_frame_ptr& frame_in) const;
 	void receive_frames(av_packet_queue& packets, av_frame_queue& frames);
 

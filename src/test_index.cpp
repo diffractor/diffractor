@@ -68,13 +68,16 @@ static void should_create_database_schema()
 
 	assert_equal("wal", query_text("PRAGMA journal_mode"), "schema journal mode");
 	assert_equal("1", query_text("PRAGMA synchronous"), "schema synchronous mode");
-	assert_equal("item_imports,item_properties,item_thumbnails,web_service_cache",
+	assert_equal("item_faces,item_imports,item_properties,item_thumbnails,web_service_cache",
 	             query_text("SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_schema "
 		             "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name)"),
 	             "schema tables");
 	assert_equal("folder,name,properties,hash,media_position,flag,crc,last_scanned,last_indexed",
 	             query_text("SELECT group_concat(name, ',') FROM pragma_table_info('item_properties')"),
 	             "item_properties columns");
+	assert_equal("folder,name,model_version,scanned,faces",
+	             query_text("SELECT group_concat(name, ',') FROM pragma_table_info('item_faces')"),
+	             "item_faces columns");
 	assert_equal("folder,name,bitmap,cover_art,last_scanned",
 	             query_text("SELECT group_concat(name, ',') FROM pragma_table_info('item_thumbnails')"),
 	             "item_thumbnails columns");
@@ -101,6 +104,65 @@ static void should_create_database_schema()
 		             "(SELECT name FROM pragma_table_info('item_imports') WHERE pk > 0 ORDER BY pk)"),
 	             "item_imports primary key");
 	assert_equal("ok", query_text("PRAGMA integrity_check"), "schema integrity");
+}
+
+// Legacy tables from a much older build, which no shipping version creates. Opening a database that
+// still has them must remove them rather than carry rows nothing reads.
+static void should_drop_legacy_face_assignments()
+{
+	const auto index_path = _temps.next_path();
+	const auto db_path = df::file_path(index_path.folder(), index_path.file_name_without_extension(), ".db");
+	null_async_strategy async;
+	const location_cache locations;
+
+	{
+		index_state index(async, locations);
+		database db(index);
+		db.open(index_path.folder(), index_path.file_name_without_extension());
+		db.close();
+	}
+
+	sqlite3* handle = nullptr;
+	if (sqlite3_open(db_path.str().c_str(), &handle) != SQLITE_OK)
+		throw test_assert_exception("Failed to open legacy face database"s);
+	{
+		const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> raw(handle, sqlite3_close);
+		const auto sql = "CREATE TABLE face_assignments (group_id INTEGER NOT NULL, folder TEXT NOT NULL, "
+		                 "name TEXT NOT NULL, face INTEGER NOT NULL, "
+		                 "PRIMARY KEY (group_id, folder, name, face)); "
+		                 "INSERT INTO face_assignments VALUES (1, 'c:\\pics', 'a.jpg', 0); "
+		                 "CREATE TABLE face_groups (id INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL, "
+		                 "created INTEGER64 NOT NULL, anchor BLOB NULL, user_named INTEGER NULL); "
+		                 "INSERT INTO face_groups VALUES (1, 'Alice', 0, NULL, 1);";
+		if (sqlite3_exec(raw.get(), sql, nullptr, nullptr, nullptr) != SQLITE_OK)
+			throw test_assert_exception("Failed to create legacy face tables"s);
+	}
+
+	{
+		index_state index(async, locations);
+		database db(index);
+		db.open(index_path.folder(), index_path.file_name_without_extension());
+		db.close();
+	}
+
+	handle = nullptr;
+	if (sqlite3_open(db_path.str().c_str(), &handle) != SQLITE_OK)
+		throw test_assert_exception("Failed to reopen upgraded face database"s);
+	const std::unique_ptr<sqlite3, decltype(&sqlite3_close)> raw(handle, sqlite3_close);
+
+	const auto missing = [&raw](const std::string_view sql)
+	{
+		sqlite3_stmt* statement_handle = nullptr;
+		const auto prepare = sqlite3_prepare_v2(raw.get(), sql.data(), static_cast<int>(sql.size()),
+		                                        &statement_handle, nullptr);
+		if (statement_handle) sqlite3_finalize(statement_handle);
+		return prepare != SQLITE_OK;
+	};
+
+	assert_equal(true, missing("select group_id from face_assignments"sv),
+	             "a legacy face assignment table is dropped on open"sv);
+	assert_equal(true, missing("select id from face_groups"sv),
+	             "and so is the named-group table, now that a group is a resemblance and not a label"sv);
 }
 
 static void should_store_thumbnails()
@@ -2607,6 +2669,7 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should reuse cached thumbnail surface"s, should_reuse_cached_thumbnail_surface);
 	tests.add("Should index"s, should_index);
 	tests.add("Should create database schema"s, should_create_database_schema);
+	tests.add("Should drop legacy face assignments"s, should_drop_legacy_face_assignments);
 	tests.add("Should store thumbnails"s, should_store_thumbnails);
 	tests.add("Should store cover art"s, should_store_cover_art);
 	tests.add("Should store item properties"s, should_store_item_properties);

@@ -79,7 +79,7 @@ class search_tokenizer
 		return !s.empty();
 	}
 
-	void append_current_term()
+	void append_current_term(const bool finish = false)
 	{
 		if (!current_text.empty())
 		{
@@ -103,7 +103,7 @@ class search_tokenizer
 			current_text.clear();
 		}
 
-		if (!current_term.term.empty())
+		if (!current_term.term.empty() || (finish && !current_term.scope.empty()))
 		{
 			current_term.after_comma = pending_comma;
 			pending_comma = false;
@@ -277,7 +277,7 @@ public:
 			}
 		}
 
-		append_current_term();
+		append_current_term(true);
 
 		return results;
 	}

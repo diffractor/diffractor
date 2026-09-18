@@ -187,7 +187,7 @@ public:
 	void auto_document();
 	void toggle_preview();
 
-	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
+	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx) override;
 
 	void device_selection2(const rectd& sel_bounds_in, const int active_point)
 	{

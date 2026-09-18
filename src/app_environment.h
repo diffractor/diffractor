@@ -6,10 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: The packed platform identity reported by the daily ping. Encoder and decoder live
-// together so a round-trip test can cover every field at its extremes; the layout is described in
-// docs/v-1.27.2.md. The store keeps daily aggregates, so a field misread is a day that cannot be
-// re-read: nothing here may guess.
+// Purpose: The packed platform identity reported by the daily ping. Encoder, decoder, field
+// meanings, and layout live together so a round-trip test can cover every field at its extremes.
+// The store keeps daily aggregates, so a field misread is a day that cannot be re-read.
 
 #pragma once
 

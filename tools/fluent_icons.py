@@ -105,7 +105,11 @@ ICONS: dict[str, tuple[str, bool]] = {
     "save": ("save", False),
     "save_copy": ("save_copy", False),
     "scan": ("scan", False),
+    "scan_text": ("scan_text", False),
+    # Fluent UI has no flatbed scanner; fax is its closest physical scanner silhouette.
+    "scanner": ("fax", False),
     "fit": ("arrow_fit", False),
+    "one_to_one": ("ratio_one_to_one", False),
     "search": ("search", False),
     "shuffle": ("arrow_shuffle", False),
     "slideshow": ("slide_play", False),
@@ -182,6 +186,7 @@ ICONS: dict[str, tuple[str, bool]] = {
     "language": ("local_language", False),
     "edit_metadata": ("document_edit", False),
     "verbose_metadata": ("text_description", False),
+    "document_information": ("info", False),
     "edit_cut": ("cut", False),
     # MDL2 gave cut and copy the same code point, so they drew identically.
     "edit_copy": ("copy", False),

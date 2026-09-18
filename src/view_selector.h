@@ -72,7 +72,7 @@ public:
 	void layout(ui::measure_context& mc, sizei extent) override;
 	void render(ui::draw_context& dc, view_controller_ptr controller) override;
 	bool mouse_wheel(pointi loc, ui::wheel_notch notch) override;
-	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc) override;
+	view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, hit_test_context& ctx) override;
 	void broadcast_event(const view_element_event& event) const override;
 
 	void make_visible(const df::item_element_ptr& item);

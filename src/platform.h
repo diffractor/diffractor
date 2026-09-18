@@ -64,7 +64,7 @@ namespace platform
 
 	// The platform identity the daily ping reports, packed by df::pack_environment. Every value is
 	// read fresh: a system fact means "right now", unlike a feature bit, which means "at least once
-	// since the last report". docs/v-1.27.2.md owns what each value means.
+	// since the last report". app_environment.h owns each value's meaning and packed layout.
 	df::environment_facts environment();
 
 	extern bool sse2_supported;
@@ -311,7 +311,7 @@ namespace platform
 	//
 	// The intention is "take these finished frames and samples and leave one playable video file at
 	// this path". Diffractor composites and decodes; the platform owns the codec, the container and
-	// whatever hardware is behind them. docs/movie.md#93-the-encoder-and-the-licensing-problem
+	// whatever hardware is behind them. docs/movie.md#7-rendering
 	// explains why the codec is the system's to supply rather than ours to ship.
 	///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -348,8 +348,8 @@ namespace platform
 	using movie_writer_ptr = std::shared_ptr<movie_writer>;
 
 	// Asked of the running system rather than fixed at build time: the same build offers Render on
-	// a machine with an encoder and does not offer it on one without. The answer is cached after
-	// the first probe, which does build and discard a writer.
+	// a machine with the required encoders and does not offer it on one without. The answer is
+	// cached after the first probe.
 	bool can_write_movies();
 	movie_writer_ptr create_movie_writer(const movie_writer_request& request);
 
@@ -938,7 +938,47 @@ namespace platform
 	class task_queue
 	{
 	public:
-		using task_t = std::function<void()>;
+		class task_t
+		{
+			std::function<void()> _task;
+			int64_t _queued_us = 0;
+			int64_t _ready_us = 0;
+
+		public:
+			task_t() = default;
+
+			template <class F>
+				requires (!std::same_as<std::remove_cvref_t<F>, task_t>)
+			task_t(F&& task) : _task(std::forward<F>(task)), _queued_us(df::now_us()), _ready_us(_queued_us)
+			{
+			}
+
+			void ready_after(const uint32_t delay_ms)
+			{
+				_ready_us = _queued_us + static_cast<int64_t>(delay_ms) * 1000;
+			}
+
+			int64_t queued_at_us() const
+			{
+				return _queued_us;
+			}
+
+			int64_t ready_at_us() const
+			{
+				return _ready_us;
+			}
+
+			uint64_t wait_us(const int64_t start_us = df::now_us()) const
+			{
+				return start_us > _ready_us ? static_cast<uint64_t>(start_us - _ready_us) : 0;
+			}
+
+			void operator()() const
+			{
+				_task();
+			}
+		};
+
 		queue<task_t> _q;
 		thread_event _event;
 
@@ -983,6 +1023,7 @@ namespace platform
 		void enqueue_after(const uint32_t delay_ms, task_t f)
 		{
 			_run_after_ms.store(df::now_ms() + delay_ms, std::memory_order_relaxed);
+			f.ready_after(delay_ms);
 			_q.reset_and_enqueue(std::move(f));
 			_event.set();
 		}

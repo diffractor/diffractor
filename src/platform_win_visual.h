@@ -235,6 +235,11 @@ struct factories
 	// with the CPU software rendering backend.
 	bool software_mode = false;
 
+	// What the device says it can sample. Read once at init; ui::yuv_textures_enabled carries the
+	// answer to the decoders, because it also folds in the software backend and the driver-fault latch.
+	bool supports_nv12 = false;
+	bool supports_p010 = false;
+
 	ComPtr<ID3D11Device> d3d_device;
 	ComPtr<ID3D11DeviceContext> d3d_context;
 	ComPtr<IDXGIDevice> dxgi_device;

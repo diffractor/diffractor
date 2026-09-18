@@ -16,9 +16,11 @@
 #include "files.h"
 #include "model_zoom.h"
 #include "ui_elements.h"
+#include "ui_dialog.h"
 #include "ui_panorama.h"
 #include "ui_text_edit.h"
 #include "ui_date_edit.h"
+#include "app_sidebar.h"
 #include "view_items.h"
 #include "view_list.h"
 #include "view_media.h"
@@ -1406,7 +1408,7 @@ public:
 	void invalidate_element(const view_element_ptr& e) override { ++invalidations; }
 	void invalidate_view(const view_invalid invalid) override { ++invalidations; }
 
-	view_controller_ptr controller_from_location(const pointi loc) override
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 	{
 		++controller_requests;
 		return nullptr;
@@ -1496,7 +1498,7 @@ public:
 	void invalidate_element(const view_element_ptr& e) override {}
 	void invalidate_view(const view_invalid invalid) override {}
 
-	view_controller_ptr controller_from_location(const pointi loc) override
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 	{
 		auto controller = std::make_shared<cancellable_test_controller>(shared_from_this(), recti(0, 0, 200, 400));
 		built.emplace_back(controller);
@@ -1524,6 +1526,144 @@ static void should_not_perform_a_cancelled_gesture_on_release()
 	assert_equal(0, host->built.front()->performed, "the release did not perform the cancelled gesture");
 }
 
+// Answers one controller over a fixed region, having first recorded an occluder, so what the host
+// caches can be told apart from what the controller itself claims.
+class stability_test_host final : public std::enable_shared_from_this<stability_test_host>, public view_host
+{
+public:
+	recti answer_bounds{0, 0, 200, 400};
+	recti occluder;
+	int builds = 0;
+
+	const ui::frame_ptr frame() const override { return ui::no_frame(); }
+	const ui::control_frame_ptr owner() override { return nullptr; }
+
+	void on_window_layout(ui::measure_context& mc, const sizei extent, bool is_minimized) override {}
+	void on_window_paint(ui::draw_context& dc) override {}
+	void tick() override {}
+	void activate(bool is_active) override {}
+	bool key_down(const int c, const ui::key_state keys) override { return false; }
+	void invoke(const commands cmd) override {}
+	bool is_command_checked(const commands cmd) override { return false; }
+	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override {}
+	void controller_changed() override {}
+	void invalidate_element(const view_element_ptr& e) override {}
+	void invalidate_view(const view_invalid invalid) override {}
+
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
+	{
+		++builds;
+		ctx.occluded(occluder);
+		return std::make_shared<cancellable_test_controller>(shared_from_this(), answer_bounds);
+	}
+};
+
+// A controller is cached for its own region narrowed by everything the hit test passed over on the
+// way to it. Neither half of that is the controller's to decide, and a tool the walk stepped over
+// stays reachable only because the pointer reaching it forces a fresh test.
+static void should_bound_a_reused_controller_by_what_it_passed_over()
+{
+	const auto host = std::make_shared<stability_test_host>();
+	host->_extent = {200, 400};
+	host->occluder = recti(120, 0, 160, 400);
+
+	host->on_mouse_move({40, 40}, false);
+	assert_equal(1, host->builds, "the first move ran one hit test");
+	assert_equal(true, host->_controller_bounds.contains(pointi(40, 40)), "the cached region covers the pointer");
+	assert_equal(120, host->_controller_bounds.right, "the cached region stops at what was passed over");
+
+	host->on_mouse_move({60, 60}, false);
+	assert_equal(1, host->builds, "moving inside the cached region reused the controller");
+
+	host->on_mouse_move({130, 60}, false);
+	assert_equal(2, host->builds, "moving onto the passed-over region forced a fresh test");
+}
+
+// The controller's own region is never narrowed to describe what covers it: an element wider than
+// the answer it is cached for still owns all of itself.
+static void should_not_clip_a_controller_to_what_covers_it()
+{
+	const auto host = std::make_shared<stability_test_host>();
+	host->_extent = {200, 400};
+	host->answer_bounds = recti(0, 0, 200, 400);
+	host->occluder = recti(120, 0, 160, 400);
+
+	host->on_mouse_move({40, 40}, false);
+
+	assert_equal(200, host->_active_controller->bounds().right, "the controller kept its own region");
+	assert_equal(120, host->_controller_bounds.right, "only the cached region was narrowed");
+}
+
+// An element that answers for part of itself. can_invoke is a style bit rather than a virtual, so
+// the bits are set rather than overridden.
+class invoke_counting_element final : public std::enable_shared_from_this<invoke_counting_element>,
+                                      public view_element
+{
+public:
+	int invokes = 0;
+
+	invoke_counting_element()
+	{
+		bounds = recti(0, 0, 100, 100);
+		is_visible(true);
+		set_style_bit(view_element_style::can_invoke, true);
+	}
+
+	void dispatch_event(const view_element_event& event) override
+	{
+		if (event.type == view_element_event_type::invoke) ++invokes;
+	}
+
+	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+	                                             const pointi element_offset, hit_test_context& ctx) override
+	{
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
+	}
+};
+
+// The regression the hit-test split fixes: the covering rect used to be subtracted from the
+// control's own bounds, and a release is only a click when it lands inside those. Clicking the
+// covered half of a control therefore did nothing at all.
+static void should_keep_a_partly_covered_control_clickable()
+{
+	const auto host = std::make_shared<detached_test_host>();
+	host->_extent = {200, 400};
+
+	const auto element = std::make_shared<invoke_counting_element>();
+
+	hit_test_context ctx{{20, 20}, recti(0, 0, 200, 400)};
+	ctx.occluded(recti(60, 0, 100, 100));
+
+	const auto controller = element->controller_from_location(host, {20, 20}, {}, ctx);
+	assert_equal(true, controller != nullptr, "the control answered");
+	assert_equal(100, controller->bounds().right, "the controller kept the whole control");
+	assert_equal(60, ctx.stability().right, "the cover narrowed only what the answer is reused for");
+
+	controller->on_mouse_left_button_down({70, 50}, {});
+	controller->on_mouse_left_button_up({70, 50}, {});
+	assert_equal(1, element->invokes, "a click on the covered half still invoked");
+}
+
+// A region containing the pointer stops the walk; one that does not is cut away instead. Confining
+// is neither: it narrows to a region already chosen, whichever side of the pointer it lies.
+static void should_separate_occlusion_from_exclusion()
+{
+	hit_test_context ctx{{50, 50}, recti(0, 0, 200, 400)};
+
+	assert_equal(false, ctx.occluded(recti{}), "an empty region is not in the way");
+	assert_equal(200, ctx.stability().right, "an empty region cuts nothing");
+
+	assert_equal(false, ctx.occluded(recti(120, 0, 160, 400)), "a region beside the pointer is not in the way");
+	assert_equal(120, ctx.stability().right, "a region beside the pointer is cut away");
+
+	assert_equal(true, ctx.occluded(recti(40, 40, 60, 60)), "a region under the pointer is in the way");
+	assert_equal(120, ctx.stability().right, "a region under the pointer cuts nothing, having stopped the walk");
+
+	ctx.confine(recti(0, 0, 80, 400));
+	assert_equal(80, ctx.stability().right, "confining narrows to the chosen region");
+	assert_equal(true, ctx.stability().contains(pointi(50, 50)), "and never cuts the pointer out");
+}
+
 // The list view's chrome is measured in text lines, so unlike the flex stub this one has to report a
 // height. Only the vertical arrangement is under test, so the column widths are nominal.
 class list_test_measure_context final : public ui::measure_context
@@ -1541,10 +1681,10 @@ public:
 	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override { return {}; }
 };
 
+
 class processing_test_view final : public list_view
 {
-public:
-	std::string _text;
+public:	std::string _text;
 
 	processing_test_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
 	{
@@ -2392,6 +2532,12 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should survive a host with no window"s, should_survive_a_host_with_no_window);
 	tests.add("Should not perform a cancelled gesture on release"s,
 	          should_not_perform_a_cancelled_gesture_on_release);
+	tests.add("Should bound a reused hit test controller by what it passed over"s,
+	          should_bound_a_reused_controller_by_what_it_passed_over);
+	tests.add("Should not clip a hit test controller to what covers it"s,
+	          should_not_clip_a_controller_to_what_covers_it);
+	tests.add("Should keep a partly covered control clickable"s, should_keep_a_partly_covered_control_clickable);
+	tests.add("Should separate hit test occlusion from exclusion"s, should_separate_occlusion_from_exclusion);
 	tests.add("Should keep the processing row clear of the view chrome"s,
 	          should_keep_the_processing_row_clear_of_the_view_chrome);
 	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);

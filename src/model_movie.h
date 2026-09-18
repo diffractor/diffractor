@@ -66,8 +66,8 @@ struct movie_settings
 	double photo_seconds = 4.0;
 };
 
-// Everything the render is told, all of it derived. docs/movie.md#91-what-the-output-is-and-why-it-is-not-asked
-// states the rules; this is only their result, and the view displays it rather than offering it.
+// Everything the render is told, all of it derived. docs/movie.md#7-rendering states the rules; this
+// is only their result, and the view displays it rather than offering it.
 struct movie_output
 {
 	sizei extent;
@@ -135,6 +135,8 @@ struct movie_frame
 };
 
 movie_frame calc_movie_frame(const std::vector<movie_clip>& clips, const movie_settings& settings, double time);
+movie_frame calc_movie_frame(const std::vector<movie_clip>& clips, const movie_settings& settings,
+	const movie_timing& timing, double time);
 
 // Builds a clip from a path. The duration and extent come from the caller because probing is I/O;
 // a photo is given the settings' default hold.
@@ -153,7 +155,7 @@ struct movie_load_result
 	std::vector<movie_clip> clips;
 	movie_settings settings;
 	// Named for the report, not for a dialog: the count of elements the file carried that Movie
-	// has no answer for. docs/movie.md#12-open-decisions owns whether this is shown.
+	// has no answer for. docs/movie.md#6-project-files owns what becomes of them.
 	int ignored_elements = 0;
 
 	explicit operator bool() const { return status == movie_load_status::ok; }
@@ -182,8 +184,10 @@ public:
 	const movie_settings& settings() const { return _settings; }
 	df::file_path path() const { return _path; }
 	bool is_modified() const { return _modified; }
+	uint64_t revision() const { return _revision; }
 	size_t size() const { return _clips.size(); }
 	bool is_empty() const { return _clips.empty(); }
+	bool is_ready_to_render() const;
 
 	// Index of the clip the controls panel describes and the strip marks. Always in range while the
 	// timeline is not empty, so the panel never has to test it. Focus is one clip; the selection is
@@ -198,6 +202,9 @@ public:
 	// One click's worth of selection: plain replaces, `extend` runs from the anchor, `toggle` adds
 	// or removes one. Focus always lands on `index` whichever it was.
 	void select(size_t index, bool extend, bool toggle);
+	// Moves focus without changing the selected set. Used while a press inside an existing
+	// multi-selection may become a block drag.
+	void focus(size_t index);
 	void select_all();
 
 	void append(const movie_clip& clip);
@@ -209,6 +216,8 @@ public:
 	void move_selection(size_t to);
 	void remove_selection();
 	void replace(size_t at, const movie_clip& clip);
+	// Replaces several clips as one document edit and therefore one undo step.
+	void replace_many(const std::vector<std::pair<size_t, movie_clip>>& replacements);
 	// For a change the user did not make and cannot want to undo: the probe filling in a clip's
 	// duration and extent. An undo entry here would make Ctrl+Z appear to do nothing.
 	void replace_quietly(size_t at, const movie_clip& clip);
@@ -221,7 +230,7 @@ public:
 	void trim(size_t at, double start, double end);
 
 	void reset(std::vector<movie_clip> clips, const movie_settings& s, df::file_path path);
-	void mark_saved(df::file_path path);
+	void mark_saved(df::file_path path, uint64_t revision);
 
 	// The selection a timeline was built from, and empty when it came from a project file or has
 	// been edited since. Re-entering Movie with a different selection replaces a timeline that is
@@ -258,4 +267,5 @@ private:
 	size_t _current = 0;
 	size_t _anchor = 0;
 	bool _modified = false;
+	uint64_t _revision = 0;
 };

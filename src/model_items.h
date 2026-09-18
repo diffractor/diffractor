@@ -443,8 +443,8 @@ namespace df
 
 	struct index_file_item
 	{
-		// Declared widest-first. MSVC aligns atomic<shared_ptr> to 16 bytes, so leading with the two
-		// published pointers and trailing with the 32-bit members keeps the record at 96 rather than 112.
+		// Declared widest-first. MSVC aligns atomic<shared_ptr> to 16 bytes, so leading with the
+		// published pointers and trailing with the 32-bit members keeps the record compact.
 		//
 		// Published exactly like metadata: an immutable set replaced whole, never edited in place, so a
 		// reader that holds the pointer holds four orientations of one picture. Null means not computed;
@@ -1351,7 +1351,7 @@ namespace df
 		sizei measure(ui::measure_context& mc, int width_limit) const override;
 		void layout(ui::measure_context& mc, recti bounds_in, ui::control_layouts& positions) override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override;
+		                                             hit_test_context& ctx) override;
 
 		platform::file_op_result rename(index_state& index, std::string_view name);
 
@@ -2318,7 +2318,7 @@ namespace df
 		void scroll_tooltip(const ui::const_image_ptr& thumbnail, const view_elements_ptr& elements) const;
 		void tooltip(view_hover_element& hover, pointi loc, pointi element_offset) const override;
 		view_controller_ptr controller_from_location(const view_host_ptr& host, pointi loc, pointi element_offset,
-		                                             const std::vector<recti>& excluded_bounds) override;
+		                                             hit_test_context& ctx) override;
 
 		item_element_ptr drawable_from_layout_location(pointi loc) const;
 		void update_scroll_info(group_by gb);

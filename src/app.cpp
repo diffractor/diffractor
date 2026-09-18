@@ -49,7 +49,7 @@
 
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1307";
+const std::string_view g_app_build = "1308";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -964,7 +964,7 @@ void app_frame::tick_screenshot()
 			                    : df::file_path(command_line.screenshot_output);
 		files ff;
 		const auto captured = platform::capture_window_surface(_app_frame->handle());
-		const auto surface = captured ? ff.scale_if_needed(captured, {800, 500}) : ui::surface_ptr{};
+		const auto surface = captured ? ff.fit_within(captured, {800, 500}) : ui::surface_ptr{};
 		const auto format = extension_to_format(output.extension());
 		const auto image = surface
 			                   ? ff.surface_to_image(surface, metadata_parts{}, file_encode_params{}, format)
@@ -1500,6 +1500,10 @@ void app_frame::complete_pending_events()
 			{
 				try
 				{
+					const auto wait_us = t.wait_us();
+					df::bump(df::ui_perf.idle_wait_us, wait_us);
+					df::record_peak(df::ui_perf.idle_wait_max_us,
+					                static_cast<uint32_t>(std::min<uint64_t>(wait_us, UINT32_MAX)));
 					t();
 				}
 				catch (const std::exception& e)
@@ -2436,6 +2440,7 @@ void app_frame::view_changed(const view_type m)
 	case view_type::tags: v = _view_tags;
 		vc = _view_tags->controls(_app_frame);
 		break;
+		break;
 	default:
 		break;
 	}
@@ -2938,7 +2943,8 @@ bool app_frame::can_exit()
 {
 	// Closing the application while a task is running is a decision for the user to make,
 	// not something to silently refuse.
-	return _view->confirm_exit();
+	if (!_view->confirm_exit()) return false;
+	return !_view_movie || _view == _view_movie || _view_movie->confirm_exit();
 }
 
 bool app_frame::edit_has_changes() const

@@ -40,7 +40,9 @@ if (MSVC)
             $<$<COMPILE_LANGUAGE:C,CXX>:/Zi>         # DebugInformationFormat, in Release too
             $<$<COMPILE_LANGUAGE:CXX>:/EHsc>         # ExceptionHandling Sync
             $<$<COMPILE_LANGUAGE:CXX>:/GR>           # RuntimeTypeInfo
-            $<$<COMPILE_LANGUAGE:C,CXX>:/fp:fast>    # changes results, not just speed
+            $<$<COMPILE_LANGUAGE:C,CXX>:/fp:precise> # preserve floating-point semantics
+                $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>,$<NOT:$<BOOL:$<TARGET_PROPERTY:DIFFRACTOR_DISABLE_RELEASE_OPTIMIZATION>>>>:/O2>
+                $<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>,$<NOT:$<BOOL:$<TARGET_PROPERTY:DIFFRACTOR_DISABLE_RELEASE_OPTIMIZATION>>>>:/GL>
     )
 
     # EnableEnhancedInstructionSet StreamingSIMDExtensions2. SSE2 is unconditional on x64, where
@@ -63,7 +65,7 @@ if (MSVC)
 
     # Optimization MaxSpeed, InlineFunctionExpansion AnySuitable, FavorSizeOrSpeed Size,
     # OmitFramePointers, WholeProgramOptimization, SupportJustMyCode false.
-    set(CMAKE_C_FLAGS_RELEASE "/O2 /Ob2 /Os /Oy /GL /JMC- /DNDEBUG")
+    set(CMAKE_C_FLAGS_RELEASE "/Ob2 /Os /Oy /JMC- /DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
 
     # GenerateDebugInformation is true in both configurations: a release build without symbols

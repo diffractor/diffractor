@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -418,9 +418,9 @@ public:
 			                          });
 
 			                          if (found.size() > max_predictions) found.resize(max_predictions);
-			                          _state.queue_ui([this, complete, found, search_generation]
+			                          _state.queue_ui([keep_alive, complete, found, search_generation]
 			                          {
-				                          if (_search_generation == search_generation) complete(found);
+				                          if (keep_alive->_search_generation == search_generation) complete(found);
 			                          });
 		                          });
 	}

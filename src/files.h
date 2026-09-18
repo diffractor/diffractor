@@ -465,7 +465,10 @@ public:
 enum class decode_intent : uint8_t
 {
 	display,
-	thumbnail
+	thumbnail,
+	// Read by code and never drawn, so it takes the planar path on its own terms rather than through
+	// the display's YUV switch.
+	analysis
 };
 
 struct file_load_result
@@ -654,7 +657,7 @@ bool reject_over_budget_source(load_diagnostic* diagnostic, sizei source_dimensi
 ui::surface_ptr load_psd(read_stream& s, load_diagnostic* diagnostic = nullptr);
 file_load_result load_raw(df::file_path path, bool can_load_preview);
 ui::surface_ptr load_png(df::cspan data);
-ui::surface_ptr load_webp(df::cspan data, bool can_use_yuv = false);
+ui::surface_ptr load_webp(df::cspan data, bool can_use_yuv = false, sizei target_extent = {});
 ui::surface_ptr load_heif(read_stream& s, load_diagnostic* diagnostic = nullptr);
 ui::surface_ptr load_jxl(read_stream& s, load_diagnostic* diagnostic = nullptr);
 
@@ -1291,6 +1294,10 @@ class files final : df::no_copy
 	                            std::optional<ui::orientation> orientation_override, bool& is_yuv,
 	                            const df::cancel_token& token, decode_intent intent);
 
+	// Shared by the two fit_within overloads; defined in files_core.cpp, where both instantiate it.
+	template <typename Ptr>
+	Ptr fit_within_impl(Ptr surface_in, sizei ceiling);
+
 public:
 	files();
 	~files() override;
@@ -1303,8 +1310,12 @@ public:
 	                                 decode_intent intent = decode_intent::display);
 	ui::surface_ptr image_to_surface(df::cspan data, sizei scale_hint = {}, bool can_use_yuv = false,
 	                                 decode_intent intent = decode_intent::display);
-	ui::surface_ptr scale_if_needed(ui::surface_ptr surface_in, sizei target_extent);
-	ui::const_surface_ptr scale_if_needed(ui::const_surface_ptr surface_in, sizei target_extent);
+
+	// Reduces a surface to fit within a ceiling, never enlarging: a picture already inside it comes
+	// back untouched, and so does one no resampler would take. Whoever asks for a ceiling wants a
+	// bound on the pixels it will hold, not a size to fill.
+	ui::surface_ptr fit_within(ui::surface_ptr surface_in, sizei ceiling);
+	ui::const_surface_ptr fit_within(ui::const_surface_ptr surface_in, sizei ceiling);
 
 	// A 64-bit perceptual hash of the picture, or 0 when it has too little detail to identify.
 	// Reads the stored pixels, not the oriented ones, so a file whose only change is an orientation

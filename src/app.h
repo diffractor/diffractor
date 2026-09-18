@@ -323,9 +323,9 @@ public:
 		_state.invalidate_view(view_invalid::tooltip);
 	}
 
-	view_controller_ptr controller_from_location(const pointi loc) override
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
 	{
-		return _view->controller_from_location(shared_from_this(), loc);
+		return _view->controller_from_location(shared_from_this(), loc, ctx);
 	}
 
 	void invoke(const commands cmd) override
@@ -545,7 +545,7 @@ public:
 	const ui::plat_app_ptr _pa;
 	platform::setting_file_ptr _settings;
 
-	platform::queue<std::function<void()>> _ui_queue;
+	platform::queue<platform::task_queue::task_t> _ui_queue;
 	platform::task_queue cloud_task_queue;
 	platform::task_queue database_task_queue;
 	platform::task_queue index_task_queue;

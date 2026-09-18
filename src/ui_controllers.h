@@ -30,6 +30,8 @@ public:
 		update_highlight();
 	}
 
+	// For an element the controller owns only part of, such as one tile of a grid. The bounds are
+	// the part, not the element clipped by what covers it -- clipping here drops the click.
 	clickable_controller(const view_host_ptr& host, view_element_ptr e, const pointi element_offset,
 	                     const recti bounds) : view_controller(host, bounds), _element(std::move(e)),
 	                                           _element_offset(element_offset), _can_click(_element->can_invoke())
@@ -146,15 +148,12 @@ public:
 template <class T>
 static view_controller_ptr default_controller_from_location(T& this_element, const view_host_ptr& host,
                                                             const pointi loc, const pointi element_offset,
-                                                            const std::vector<recti>& excluded_bounds)
+                                                            hit_test_context& ctx)
 {
 	if (this_element.is_visible() && (this_element.can_invoke() || this_element.has_tooltip()) &&
 		this_element.bounds.contains(loc - element_offset))
 	{
-		auto e = this_element.shared_from_this();
-		auto bounds = e->bounds;
-		for (const auto& ex : excluded_bounds) bounds.exclude(loc - element_offset, ex);
-		return std::make_shared<clickable_controller>(host, e, element_offset, bounds.offset(element_offset));
+		return std::make_shared<clickable_controller>(host, this_element.shared_from_this(), element_offset);
 	}
 
 	return nullptr;

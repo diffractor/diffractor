@@ -491,9 +491,9 @@ public:
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
 	                                             const pointi element_offset,
-	                                             const std::vector<recti>& excluded_bounds) override
+	                                             hit_test_context& ctx) override
 	{
-		return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+		return default_controller_from_location(*this, host, loc, element_offset, ctx);
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -2148,7 +2148,7 @@ void df::item_group::tooltip(view_hover_element& hover, const pointi loc, const 
 
 view_controller_ptr df::item_group::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                              const pointi element_offset,
-                                                             const std::vector<recti>& excluded_bounds)
+                                                             hit_test_context& ctx)
 {
 	if (!bounds.offset(element_offset).contains(loc)) return nullptr;
 
@@ -2160,7 +2160,7 @@ view_controller_ptr df::item_group::controller_from_location(const view_host_ptr
 
 		if (i->bounds.offset(element_offset).contains(loc))
 		{
-			auto result = i->controller_from_location(host, loc, element_offset, {});
+			auto result = i->controller_from_location(host, loc, element_offset, ctx);
 			if (result) return result;
 		}
 	}
@@ -2946,16 +2946,18 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 	const auto generation = _thumbnail_surface_generation;
 	const auto thumbnail = _thumbnail;
 	const auto cover_art = _cover_art;
+	// Read here rather than on the worker: the backend owns it and only changes it on this thread.
+	const auto can_use_yuv = ui::yuv_textures_enabled;
 
 	async.queue_async(async_queue::render,
-	                  [weak, generation, thumbnail, cover_art, &async]() mutable
+	                  [weak, generation, thumbnail, cover_art, can_use_yuv, &async]() mutable
 	                  {
 		                  files ff;
 		                  auto thumbnail_surface = ui::is_valid(thumbnail)
-			                                           ? ff.image_to_surface(thumbnail, {}, true)
+			                                           ? ff.image_to_surface(thumbnail, {}, can_use_yuv)
 			                                           : nullptr;
 		                  auto cover_art_surface = ui::is_valid(cover_art)
-			                                           ? ff.image_to_surface(cover_art, {}, true)
+			                                           ? ff.image_to_surface(cover_art, {}, can_use_yuv)
 			                                           : nullptr;
 
 		                  async.queue_ui(
@@ -3045,7 +3047,7 @@ void df::item_element::layout(ui::measure_context& mc, const recti bounds_in, ui
 
 view_controller_ptr df::item_element::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                                const pointi element_offset,
-                                                               const std::vector<recti>& excluded_bounds)
+                                                               hit_test_context& ctx)
 {
 	return nullptr;
 }

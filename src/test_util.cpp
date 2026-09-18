@@ -1247,6 +1247,30 @@ static void should_signal_and_replace_pending_queue_work()
 	tasks.reset_and_enqueue([&executed] { executed = 2; });
 	for (const auto& task : tasks.dequeue_all()) task();
 	assert_equal(2, executed, "reset_and_enqueue retains only the latest pending task");
+
+	tasks.enqueue_after(1000, [] {});
+	const auto delayed = tasks.dequeue_all();
+	assert_equal(1, static_cast<int>(delayed.size()), "delayed work remains queued");
+	const auto ready_at = delayed.front().ready_at_us();
+	assert_equal(1'000'000, static_cast<int>(ready_at - delayed.front().queued_at_us()),
+	             "enqueue_after moves readiness by the requested delay");
+	assert_equal(0, static_cast<int>(delayed.front().wait_us(ready_at - 1)),
+	             "the intentional delay is not queue wait");
+	assert_equal(250, static_cast<int>(delayed.front().wait_us(ready_at + 250)),
+	             "time after the deadline is queue wait");
+}
+
+static void should_bucket_performance_latency()
+{
+	df::latency_counters counters;
+	df::record_latency(counters, 16'666);
+	df::record_latency(counters, 16'667);
+	df::record_latency(counters, 50'000);
+	df::record_latency(counters, 100'000);
+
+	assert_equal(3, static_cast<int>(counters.over_16ms.load()), "the frame-budget boundary is inclusive");
+	assert_equal(2, static_cast<int>(counters.over_50ms.load()), "fifty millisecond stalls are counted");
+	assert_equal(1, static_cast<int>(counters.over_100ms.load()), "hundred millisecond stalls are counted");
 }
 
 // Base64 carries the saved password and the web service payloads, so a padding or alphabet slip
@@ -1360,4 +1384,5 @@ void register_util_tests(view_state& state, test_registry& tests)
 	// Platform queue
 	//
 	tests.add("Should signal and replace pending queue work"s, should_signal_and_replace_pending_queue_work);
+	tests.add("Should bucket performance latency"s, should_bucket_performance_latency);
 }

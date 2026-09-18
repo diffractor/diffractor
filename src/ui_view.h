@@ -7,7 +7,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: View framework and element hosting. Defines view_element base class,
-// view_controller for interactions, and view hosting infrastructure.
+// view_controller for interactions, hit_test_context, and view hosting infrastructure.
 
 #pragma once
 
@@ -18,6 +18,7 @@ class view_host;
 class view_host_base;
 class view_state;
 enum class render_valid;
+struct hit_test_context;
 struct view_hover_element;
 
 using view_host_ptr = std::shared_ptr<view_host>;
@@ -146,6 +147,53 @@ struct interaction_context
 	bool invalidate_view = false;
 };
 
+// Threaded through one hit test. It accumulates the region within which view_host may reuse the
+// controller the test produces: anything tested at higher precedence and passed over is cut out of
+// it, so moving the pointer onto that region forces a fresh test. Recording is a side effect of
+// testing, which is what stops a new tool from being hit tested but forgotten here.
+//
+// Every rect is device space, the space _loc is in.
+struct hit_test_context
+{
+	hit_test_context(const pointi loc, const recti extent) : _loc(loc), _stability(extent)
+	{
+	}
+
+	// The region a controller found at this location remains the right answer for.
+	recti stability() const
+	{
+		return _stability;
+	}
+
+	// Answers whether the pointer is inside a region that takes precedence, so nothing beneath it
+	// may claim the pointer. When it is not, the region is cut away instead.
+	bool occluded(const recti bounds)
+	{
+		if (bounds.is_empty()) return false;
+		if (bounds.contains(_loc)) return true;
+		_stability.exclude(_loc, bounds);
+		return false;
+	}
+
+	// For a region that was tested and missed by some other means, so it still has to be cut away.
+	// Prefer occluded(): a caller that tests one way and records another can disagree with itself.
+	void passed_over(const recti bounds)
+	{
+		if (!bounds.is_empty()) _stability.exclude(_loc, bounds);
+	}
+
+	// Narrows the region to one the answer provably cannot travel outside of, for a caller that has
+	// already chosen between panes or regions rather than between overlapping targets.
+	void confine(const recti bounds)
+	{
+		if (!bounds.is_empty()) _stability = _stability.intersection(bounds);
+	}
+
+private:
+	pointi _loc;
+	recti _stability;
+};
+
 constexpr ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
                                       const bool view_has_focus, const bool text_over,
                                       const ui::color bg_clr = ui::color(ui::style::color::group_background))
@@ -215,6 +263,9 @@ public:
 	virtual ~view_controller() = default;
 
 	view_host_ptr _host;
+	// The controller's own region: what it paints over, and what a release has to land in for the
+	// gesture to count. Never the region the host caches it for -- that is hit_test_context's job,
+	// and clipping this to it silently drops clicks and hover highlights on a partly covered target.
 	recti _bounds;
 	pointi _last_loc;
 	pointi _start_loc;
@@ -318,7 +369,7 @@ public:
 	// below dereferences this without checking, and so may every caller.
 	virtual const ui::frame_ptr frame() const = 0;
 	virtual const ui::control_frame_ptr owner() = 0;
-	virtual view_controller_ptr controller_from_location(pointi loc) = 0;
+	virtual view_controller_ptr controller_from_location(pointi loc, hit_test_context& ctx) = 0;
 
 	virtual void scroll_controls()
 	{
@@ -340,7 +391,9 @@ public:
 		if (!_tracking && (_controller_invalid || !_controller_bounds.contains(loc)))
 		{
 			_active_controller.reset();
-			_active_controller = controller_from_location(loc);
+
+			hit_test_context ctx{loc, recti(_extent)};
+			_active_controller = controller_from_location(loc, ctx);
 
 			auto cursor = ui::style::cursor::normal;
 
@@ -351,7 +404,12 @@ public:
 			}
 
 			_cursor = cursor;
-			_controller_bounds = _active_controller ? _active_controller->bounds() : recti{};
+			// The controller answers for its own region; the hit test answers for how far that answer
+			// travels. An empty rect here is the idiom for re-testing on every move, which is what a
+			// controller standing in for whatever happens to be under the pointer wants.
+			_controller_bounds = _active_controller
+				                     ? _active_controller->bounds().intersection(ctx.stability())
+				                     : recti{};
 			_controller_invalid = false;
 
 			controller_changed();
@@ -514,7 +572,8 @@ public:
 	{
 	}
 
-	virtual view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc)
+	virtual view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+	                                                     hit_test_context& ctx)
 	{
 		return nullptr;
 	}

@@ -1,4 +1,4 @@
-﻿// This file is part of the Diffractor photo and video organizer
+// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 // 
 // This program is free software; you can redistribute it and / or modify it
@@ -25,6 +25,8 @@
 
 std::unordered_map<void*, std::function<bool()>> ui::animations;
 bool ui::animations_enabled = true;
+// Off until a backend that can sample them says otherwise.
+bool ui::yuv_textures_enabled = false;
 // Matches alpha_fade_rate at 60Hz until the first frame recomputes it.
 float ui::animation_step_factor = 0.333f;
 
@@ -786,8 +788,6 @@ class comparison_zoom_controller final : public view_controller
 {
 	display_state_ptr _display;
 	df::zoom_pane _pane;
-	// Hit bounds are clipped away from the overlays; the pane frame stays whole so zoom positions map correctly.
-	recti _view_bounds;
 	df::zoom_view_state _start_zoom_state;
 	bool _tracking = false;
 	bool _region_select = false;
@@ -797,9 +797,8 @@ class comparison_zoom_controller final : public view_controller
 
 public:
 	comparison_zoom_controller(const view_host_ptr& host, display_state_ptr display, const df::zoom_pane pane,
-	                           const recti interaction_bounds, const recti view_bounds) :
-		view_controller(host, interaction_bounds), _display(std::move(display)), _pane(pane),
-		_view_bounds(view_bounds)
+	                           const recti pane_bounds) :
+		view_controller(host, pane_bounds), _display(std::move(display)), _pane(pane)
 	{
 		_display->active_zoom_pane(_pane);
 		_start_zoom_state = _display->zoom_state();
@@ -821,7 +820,7 @@ public:
 	{
 		if (_region_select && _tracking)
 		{
-			const auto selection = recti(_start_loc, _last_loc).normalise().crop(_view_bounds);
+			const auto selection = recti(_start_loc, _last_loc).normalise().crop(_bounds);
 			dc.draw_rect(selection, ui::color(ui::style::color::dialog_selected_background, 0.5));
 		}
 	}
@@ -843,7 +842,7 @@ public:
 		}
 		else
 		{
-			_display->inspect_at_100(pointd(loc - _view_bounds.top_left()));
+			_display->inspect_at_100(pointd(loc - _bounds.top_left()));
 			_inspect_active = true;
 		}
 	}
@@ -861,8 +860,8 @@ public:
 		}
 		else if (_inspect_active)
 		{
-			const auto local = loc - _view_bounds.top_left();
-			const auto extent = _view_bounds.extent();
+			const auto local = loc - _bounds.top_left();
+			const auto extent = _bounds.extent();
 			_display->zoom_center({
 				std::clamp(local.x / static_cast<double>(std::max(1, extent.cx)), 0.0, 1.0),
 				std::clamp(local.y / static_cast<double>(std::max(1, extent.cy)), 0.0, 1.0)
@@ -875,10 +874,10 @@ public:
 		_tracking = false;
 		if (_region_select)
 		{
-			const auto selection = recti(_start_loc, loc).normalise().crop(_view_bounds);
+			const auto selection = recti(_start_loc, loc).normalise().crop(_bounds);
 			_region_select = false;
 			if (selection.width() >= 8 && selection.height() >= 8)
-				_display->zoom_region(rectd(selection.offset(-_view_bounds.top_left())));
+				_display->zoom_region(rectd(selection.offset(-_bounds.top_left())));
 		}
 		else if (_inspect_active && !_committed)
 		{
@@ -1230,9 +1229,7 @@ public:
 		}
 
 		// zoom.md: looking around a panorama. No button is held, so this neither begins nor ends a
-		// drag, and press-and-hold inspect zoom is untouched. The origin is the element's own bounds:
-		// _bounds has had the zoom tools and the navigator carved out of it, and mapping the pointer
-		// through a shrunken rectangle would leave one end of the picture unreachable.
+		// drag, and press-and-hold inspect zoom is untouched.
 		if (_parent->_display->is_looking_around())
 		{
 			_parent->_display->look_around_at(pointd(loc - _parent->bounds.offset(_element_offset).top_left()));
@@ -1336,7 +1333,7 @@ public:
 
 view_controller_ptr view_elements::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                             const pointi element_offset,
-                                                            const std::vector<recti>& excluded_bounds)
+                                                            hit_test_context& ctx)
 {
 	view_controller_ptr result;
 
@@ -1345,7 +1342,7 @@ view_controller_ptr view_elements::controller_from_location(const view_host_ptr&
 		for (const auto& c : _children)
 		{
 			if (!c->is_visible()) continue;
-			result = c->controller_from_location(host, loc, element_offset, excluded_bounds);
+			result = c->controller_from_location(host, loc, element_offset, ctx);
 			if (result) break;
 		}
 	}
@@ -1356,9 +1353,8 @@ view_controller_ptr view_elements::controller_from_location(const view_host_ptr&
 
 view_controller_ptr photo_control::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                             const pointi element_offset,
-                                                            const std::vector<recti>& excluded_bounds)
+                                                            hit_test_context& ctx)
 {
-	view_controller_ptr controller;
 	const auto logical_loc = loc + element_offset;
 	const auto image_bounds = _display->_selected_texture1
 		                          ? _display->_selected_texture1->display_bounds().offset(element_offset)
@@ -1368,204 +1364,92 @@ view_controller_ptr photo_control::controller_from_location(const view_host_ptr&
 	// design.md: the region is a layer over the picture, not over the window. The zoom chrome keeps
 	// its precedence over all of it - including the region's own buttons, which are clamped into the
 	// element and so can land on the navigator - because a rectangle a user happened to draw must not
-	// make the tools it covers unclickable.
-	const auto over_reserved = [this, loc, element_offset, durable_zoom](const std::vector<recti>& excluded)
-	{
-		for (const auto& excluded_logical : excluded)
-		{
-			if (!excluded_logical.is_empty() && excluded_logical.offset(element_offset).contains(loc)) return true;
-		}
-
-		if (!durable_zoom) return false;
-
-		const std::array chrome{
-			_zoom_fit_bounds, _zoom_out_bounds, _zoom_100_bounds, _zoom_in_bounds, _zoom_options_bounds,
-			_zoom_projection_bounds, _zoom_navigator_bounds,
-			_zoom_grading_element ? _zoom_grading_element->bounds.offset(element_offset) : recti{}
-		};
-
-		for (const auto& chrome_bounds : chrome)
-		{
-			if (!chrome_bounds.is_empty() && chrome_bounds.contains(loc)) return true;
-		}
-
-		return false;
-	};
-
-	const auto region_available = has_region() && !over_reserved(excluded_bounds);
-
-	// The host keeps a controller until the pointer leaves its bounds, so everything that answers
-	// ahead of one has to be cut out of it. Without this a rectangle re-entered from the picture
-	// keeps the zoom or pan tool, and a button approached from inside the rectangle it belongs to is
-	// never reached - the pointer is still where the outgoing controller was told it could be.
-	const auto exclude_region_layer = [this, loc, element_offset](recti& interaction_bounds, const bool exclude_body)
-	{
-		if (!has_region()) return;
-
-		if (exclude_body)
-		{
-			const auto region = region_bounds(element_offset);
-			if (!region.is_empty()) interaction_bounds.exclude(loc, region);
-		}
-
-		const std::array command_bounds{_region_close_bounds, _region_zoom_bounds, _region_crop_bounds};
-
-		for (const auto& command : command_bounds)
-		{
-			if (!command.is_empty()) interaction_bounds.exclude(loc, command);
-		}
-	};
-
-	if (region_available)
-	{
-		const std::array region_commands{
-			std::pair{_region_close_bounds, commands::none},
-			std::pair{_region_zoom_bounds, commands::view_zoom},
-			std::pair{_region_crop_bounds, commands::tool_edit}
-		};
-		for (const auto& [command_bounds, command] : region_commands)
-		{
-			if (!command_bounds.is_empty() && command_bounds.contains(loc))
-			{
-				return std::make_shared<region_command_controller>(host, shared_from_this(), _state, command_bounds,
-				                                                   element_offset, command);
-			}
-		}
-	}
-
-	if (durable_zoom && _zoom_grading_element && !_zoom_grading_element->bounds.is_empty() &&
-		_zoom_grading_element->bounds.offset(element_offset).contains(loc))
-	{
-		return _zoom_grading_element->controller_from_location(host, loc, element_offset, {});
-	}
-
+	// make the tools it covers unclickable. Testing the chrome first is what states that precedence,
+	// and recording each rect in the same breath is what keeps a tool reachable from inside the
+	// rectangle or the picture that covers it.
 	if (durable_zoom)
 	{
-		if (!_zoom_options_bounds.is_empty() && _zoom_options_bounds.contains(loc))
+		if (_zoom_grading_element && ctx.occluded(_zoom_grading_element->bounds.offset(element_offset)))
+		{
+			return _zoom_grading_element->controller_from_location(host, loc, element_offset, ctx);
+		}
+
+		if (ctx.occluded(_zoom_options_bounds))
 		{
 			return std::make_shared<zoom_options_controller>(host, _state, _zoom_options_bounds);
 		}
-		if (!_zoom_projection_bounds.is_empty() && _zoom_projection_bounds.contains(loc))
+
+		if (ctx.occluded(_zoom_projection_bounds))
 		{
 			return std::make_shared<panorama_projection_controller>(host, _display, _zoom_projection_bounds);
 		}
+
 		const std::array zoom_commands{
 			std::pair{_zoom_fit_bounds, commands::view_zoom_fit},
 			std::pair{_zoom_out_bounds, commands::view_zoom_out},
 			std::pair{_zoom_100_bounds, commands::view_zoom_100},
 			std::pair{_zoom_in_bounds, commands::view_zoom_in}
 		};
+
 		for (const auto& [command_bounds, command] : zoom_commands)
 		{
-			if (!command_bounds.is_empty() && command_bounds.contains(loc))
+			if (ctx.occluded(command_bounds))
 			{
 				return std::make_shared<zoom_command_controller>(host, command_bounds, command);
 			}
 		}
-	}
 
-	if (durable_zoom && !_zoom_navigator_bounds.is_empty() &&
-		_zoom_navigator_bounds.contains(loc))
-	{
-		return std::make_shared<zoom_navigator_controller>(host, _display, _zoom_navigator_bounds);
-	}
-
-	// Dragging inside the rectangle moves it. Drawing a new one is Ctrl at the moment of the press,
-	// which region_controller reads for itself.
-	if (region_available)
-	{
-		if (const auto region = region_bounds(element_offset); !region.is_empty() && region.contains(loc))
+		if (ctx.occluded(_zoom_navigator_bounds))
 		{
-			// The host caches a controller until the pointer leaves its bounds, so handing the whole
-			// rectangle over would let it shadow the chrome it covers until the pointer left the
-			// rectangle entirely. The excluded rects are cut out of the interaction bounds instead,
-			// exactly as pan_controller does, so moving onto a tool re-runs this test.
-			auto interaction_bounds = region;
+			return std::make_shared<zoom_navigator_controller>(host, _display, _zoom_navigator_bounds);
+		}
+	}
 
-			if (durable_zoom)
+	if (has_region())
+	{
+		const std::array region_commands{
+			std::pair{_region_close_bounds, commands::none},
+			std::pair{_region_zoom_bounds, commands::view_zoom},
+			std::pair{_region_crop_bounds, commands::tool_edit}
+		};
+
+		for (const auto& [command_bounds, command] : region_commands)
+		{
+			if (ctx.occluded(command_bounds))
 			{
-				const std::array chrome{
-					_zoom_fit_bounds, _zoom_out_bounds, _zoom_100_bounds, _zoom_in_bounds, _zoom_options_bounds,
-					_zoom_projection_bounds, _zoom_navigator_bounds,
-					_zoom_grading_element ? _zoom_grading_element->bounds.offset(element_offset) : recti{}
-				};
-
-				for (const auto& chrome_bounds : chrome)
-				{
-					if (!chrome_bounds.is_empty()) interaction_bounds.exclude(loc, chrome_bounds);
-				}
+				return std::make_shared<region_command_controller>(host, shared_from_this(), _state, command_bounds,
+				                                                   element_offset, command);
 			}
+		}
 
-			for (const auto& excluded_logical : excluded_bounds)
-			{
-				if (!excluded_logical.is_empty()) interaction_bounds.exclude(loc, excluded_logical.offset(element_offset));
-			}
-
-			// The rectangle's own buttons sit inside it whenever it is large enough to hold them.
-			exclude_region_layer(interaction_bounds, false);
-
-			return std::make_shared<region_controller>(host, shared_from_this(), interaction_bounds, element_offset,
-			                                          true);
+		// Dragging inside the rectangle moves it. Drawing a new one is Ctrl at the moment of the press,
+		// which region_controller reads for itself.
+		if (const auto region = region_bounds(element_offset); ctx.occluded(region))
+		{
+			return std::make_shared<region_controller>(host, shared_from_this(), region, element_offset, true);
 		}
 	}
 
 	if (!_display->zoom() && !image_bounds.is_empty() && image_bounds.contains(loc) &&
 		_display->can_zoom())
 	{
-		auto interaction_bounds = image_bounds;
-		for (const auto& excluded_logical : excluded_bounds)
-		{
-			if (excluded_logical.is_empty()) continue;
-			const auto excluded = excluded_logical.offset(element_offset);
-			if (excluded.contains(loc)) return nullptr;
-			if (!interaction_bounds.intersects(excluded)) continue;
-
-			if (excluded.right < loc.x) interaction_bounds.left = std::max(interaction_bounds.left, excluded.right + 1);
-			if (excluded.left > loc.x) interaction_bounds.right = std::min(interaction_bounds.right, excluded.left - 1);
-			if (excluded.bottom < loc.y) interaction_bounds.top = std::max(interaction_bounds.top, excluded.bottom + 1);
-			if (excluded.top > loc.y) interaction_bounds.bottom = std::min(interaction_bounds.bottom, excluded.top - 1);
-		}
-		exclude_region_layer(interaction_bounds, true);
 		const auto view_bounds = bounds.offset(element_offset);
-		return std::make_shared<zoom_controller>(host, shared_from_this(), _state, interaction_bounds, view_bounds,
+		return std::make_shared<zoom_controller>(host, shared_from_this(), _state, image_bounds, view_bounds,
 		                                         element_offset);
 	}
 
 	if (bounds.contains(logical_loc) && _can_pan && _display->zoom())
 	{
-		auto interaction_bounds = bounds.offset(element_offset);
-		if (durable_zoom)
-		{
-			const std::array tool_bounds{
-				_zoom_fit_bounds,
-				_zoom_out_bounds,
-				_zoom_100_bounds,
-				_zoom_in_bounds,
-				_zoom_options_bounds,
-				_zoom_projection_bounds,
-				_zoom_navigator_bounds,
-				_zoom_grading_element ? _zoom_grading_element->bounds.offset(element_offset) : recti{}
-			};
-			for (const auto tool_bounds_item : tool_bounds)
-			{
-				if (!tool_bounds_item.is_empty()) interaction_bounds.exclude(loc, tool_bounds_item);
-			}
-		}
-		for (const auto excluded_logical : excluded_bounds)
-		{
-			if (!excluded_logical.is_empty()) interaction_bounds.exclude(loc, excluded_logical.offset(element_offset));
-		}
-		exclude_region_layer(interaction_bounds, true);
-		controller = std::make_shared<pan_controller>(host, shared_from_this(), _state, interaction_bounds,
-		                                              element_offset);
+		return std::make_shared<pan_controller>(host, shared_from_this(), _state, bounds.offset(element_offset),
+		                                        element_offset);
 	}
 
-	return controller;
+	return nullptr;
 }
 
 view_controller_ptr view_element::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                            const pointi element_offset,
-                                                           const std::vector<recti>& excluded_bounds)
+                                                           hit_test_context& ctx)
 {
 	return nullptr;
 }
@@ -1707,21 +1591,21 @@ void view_element::set_style_bit(const view_element_style mask, const bool state
 
 view_controller_ptr video_control::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                             const pointi element_offset,
-                                                            const std::vector<recti>& excluded_bounds)
+                                                            hit_test_context& ctx)
 {
-	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+	return default_controller_from_location(*this, host, loc, element_offset, ctx);
 }
 
 view_controller_ptr audio_control::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                             const pointi element_offset,
-                                                            const std::vector<recti>& excluded_bounds)
+                                                            hit_test_context& ctx)
 {
-	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+	return default_controller_from_location(*this, host, loc, element_offset, ctx);
 }
 
 view_controller_ptr side_by_side_control::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                                    const pointi element_offset,
-                                                                   const std::vector<recti>& excluded_bounds)
+                                                                   hit_test_context& ctx)
 {
 	const auto logical_loc = loc + element_offset;
 	const auto durable_zoom = _display->zoom() && !_display->is_temporary_zoom();
@@ -1729,11 +1613,11 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
 	{
 		const auto index = _display->active_zoom_pane() == df::zoom_pane::primary ? 0u : 1u;
 		const auto& grading = _zoom_grading_elements[index];
-		if (grading && !grading->bounds.is_empty() && grading->bounds.offset(element_offset).contains(loc))
+		if (grading && ctx.occluded(grading->bounds.offset(element_offset)))
 		{
-			return grading->controller_from_location(host, loc, element_offset, {});
+			return grading->controller_from_location(host, loc, element_offset, ctx);
 		}
-		if (!_zoom_options_bounds.is_empty() && _zoom_options_bounds.contains(loc))
+		if (ctx.occluded(_zoom_options_bounds))
 		{
 			return std::make_shared<zoom_options_controller>(host, _state, _zoom_options_bounds);
 		}
@@ -1745,19 +1629,19 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
 		};
 		for (const auto& [command_bounds, command] : zoom_commands)
 		{
-			if (!command_bounds.is_empty() && command_bounds.contains(loc))
+			if (ctx.occluded(command_bounds))
 			{
 				return std::make_shared<zoom_command_controller>(host, command_bounds, command);
 			}
 		}
-		if (!_zoom_navigator_bounds.is_empty() && _zoom_navigator_bounds.contains(loc))
+		if (ctx.occluded(_zoom_navigator_bounds))
 		{
 			return std::make_shared<zoom_navigator_controller>(host, _display, _zoom_navigator_bounds);
 		}
 	}
 
 	const auto video_control_bounds = _display->_compare_video_control_bounds.offset(element_offset);
-	if (_display->_is_compare_video && video_control_bounds.contains(loc))
+	if (_display->_is_compare_video && ctx.occluded(video_control_bounds))
 	{
 		return std::make_shared<preview_controller>(host, shared_from_this(), video_control_bounds,
 		                                            _display->_compare_video_scrubber_bounds.offset(element_offset));
@@ -1766,7 +1650,7 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
 	for (auto i = 0u; i < _display->_pane_marker_bounds.size(); ++i)
 	{
 		const auto marker = _display->_pane_marker_bounds[i];
-		if (marker.is_empty() || !marker.contains(loc)) continue;
+		if (!ctx.occluded(marker)) continue;
 
 		// Magnified there is only one marker and it names the pane you are already in, so it flips.
 		const auto pane = _display->is_zoom_mode()
@@ -1798,47 +1682,12 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
 		}
 		if (pane_bounds.contains(loc))
 		{
-			// The pane covers every overlay tested above and view_host will not rebuild the controller
-			// while the pointer stays inside its bounds, so the hit bounds are clipped away from them.
-			auto interaction_bounds = pane_bounds;
-
-			for (const auto& marker : _display->_pane_marker_bounds)
-			{
-				if (!marker.is_empty()) interaction_bounds.exclude(loc, marker);
-			}
-
-			if (durable_zoom)
-			{
-				const auto index = _display->active_zoom_pane() == df::zoom_pane::primary ? 0u : 1u;
-				const auto& grading = _zoom_grading_elements[index];
-				const std::array tool_bounds{
-					_zoom_fit_bounds,
-					_zoom_out_bounds,
-					_zoom_100_bounds,
-					_zoom_in_bounds,
-					_zoom_options_bounds,
-					_zoom_navigator_bounds,
-					grading && !grading->bounds.is_empty() ? grading->bounds.offset(element_offset) : recti{}
-				};
-
-				for (const auto tool : tool_bounds)
-				{
-					if (!tool.is_empty()) interaction_bounds.exclude(loc, tool);
-				}
-			}
-
-			if (_display->_is_compare_video && !video_control_bounds.is_empty())
-			{
-				interaction_bounds.exclude(loc, video_control_bounds);
-			}
-
-			return std::make_shared<comparison_zoom_controller>(host, _display, pane, interaction_bounds, pane_bounds);
+			return std::make_shared<comparison_zoom_controller>(host, _display, pane, pane_bounds);
 		}
 	}
 
-	auto excluded_bounds2 = excluded_bounds;
-	excluded_bounds2.emplace_back(_display->_compare_bounds);
-	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds2);
+	ctx.passed_over(_display->_compare_bounds.offset(element_offset));
+	return default_controller_from_location(*this, host, loc, element_offset, ctx);
 }
 
 
@@ -1899,9 +1748,9 @@ void link_element::tooltip(view_hover_element& hover, const pointi loc, const po
 
 view_controller_ptr link_element::controller_from_location(const view_host_ptr& host, const pointi loc,
                                                            const pointi element_offset,
-                                                           const std::vector<recti>& excluded_bounds)
+                                                           hit_test_context& ctx)
 {
-	return default_controller_from_location(*this, host, loc, element_offset, excluded_bounds);
+	return default_controller_from_location(*this, host, loc, element_offset, ctx);
 }
 
 namespace

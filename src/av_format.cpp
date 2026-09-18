@@ -2270,7 +2270,20 @@ static constexpr int pcm_channels = 2;
 std::vector<int16_t> av_format_decoder::extract_audio_pcm(const int sample_rate, const double max_seconds,
                                                           df::cancel_token abandon)
 {
-	if (!_has_audio || !_audio_context || sample_rate <= 0 || max_seconds <= 0)
+	return extract_audio_pcm_range(sample_rate, 0, max_seconds, std::move(abandon));
+}
+
+std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample_rate, const double start_seconds,
+	const double duration_seconds, df::cancel_token abandon)
+{
+	constexpr double max_range_seconds = 60.0;
+	constexpr int max_sample_rate = 384000;
+	const auto max_timestamp_seconds = static_cast<double>(std::numeric_limits<int64_t>::max()) / AV_TIME_BASE;
+
+	if (!_has_audio || !_audio_context || sample_rate <= 0 || sample_rate > max_sample_rate ||
+		!std::isfinite(start_seconds) || !std::isfinite(duration_seconds) || start_seconds < 0 ||
+		duration_seconds <= 0 || duration_seconds > max_range_seconds ||
+		start_seconds > max_timestamp_seconds - duration_seconds)
 	{
 		return {};
 	}
@@ -2294,15 +2307,25 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm(const int sample_rate,
 		return {};
 	}
 
-	const auto max_values = static_cast<size_t>(max_seconds * sample_rate) * pcm_channels;
+	const auto wanted_start = std::max(0.0, start_seconds);
+	const auto wanted_frames_double = std::ceil(duration_seconds * sample_rate);
+	if (wanted_frames_double > static_cast<double>(std::numeric_limits<size_t>::max() / pcm_channels))
+	{
+		swr_free(&swr);
+		return {};
+	}
 
-	std::vector<int16_t> result;
+	const auto wanted_frames = static_cast<size_t>(wanted_frames_double);
+	std::vector<int16_t> result(wanted_frames * pcm_channels, 0);
 	std::vector<int16_t> converted;
-	auto stopped = false;
+	auto finished = false;
+	std::optional<int64_t> next_destination_frame;
+
+	seek(wanted_start);
 
 	// Shared by the decode loop and the flush that follows it, so the tail swr is holding is not
 	// left behind - a dropped tail is a click at the end of every clip.
-	const auto drain = [&](const AVFrame* frame)
+	const auto drain = [&](const AVFrame* frame, const double frame_time)
 	{
 		const auto capacity = swr_get_out_samples(swr, frame ? frame->nb_samples : 0);
 		if (capacity <= 0) return;
@@ -2315,15 +2338,48 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm(const int sample_rate,
 
 		if (produced <= 0) return;
 
-		const auto values = static_cast<size_t>(produced) * pcm_channels;
-		const auto room = max_values > result.size() ? max_values - result.size() : 0u;
-		const auto take = std::min(values, room);
+		const auto source_frames = static_cast<int64_t>(produced);
+		const auto timestamp_frame = static_cast<int64_t>(std::llround((frame_time - wanted_start) * sample_rate));
+		auto destination_frame = next_destination_frame
+			                         ? std::max(timestamp_frame, *next_destination_frame)
+			                         : timestamp_frame;
+		const auto output_end = destination_frame + source_frames;
+		auto source_frame = int64_t{0};
 
-		result.insert(result.end(), converted.begin(), converted.begin() + take);
-		if (take < values) stopped = true;
+		if (destination_frame < 0)
+		{
+			source_frame = std::min(source_frames, -destination_frame);
+			destination_frame = 0;
+		}
+
+		const auto room = std::max<int64_t>(0, static_cast<int64_t>(wanted_frames) - destination_frame);
+		const auto take = std::min(source_frames - source_frame, room);
+		if (take > 0)
+		{
+			std::copy_n(converted.begin() + source_frame * pcm_channels, take * pcm_channels,
+			            result.begin() + destination_frame * pcm_channels);
+		}
+
+		next_destination_frame = output_end;
+		if (destination_frame >= static_cast<int64_t>(wanted_frames) ||
+			destination_frame + take >= static_cast<int64_t>(wanted_frames)) finished = true;
 	};
 
-	while (!stopped)
+	const auto receive = [&]
+	{
+		av_frame frame;
+
+		while (!finished && avcodec_receive_frame(_audio_context, &frame.frm) == 0)
+		{
+			const auto pts = _pts_aud.guess(frame.frm.best_effort_timestamp, frame.frm.pts,
+			                                frame.frm.pkt_dts, frame.frm.duration);
+			const auto frame_time = calc_duration(pts, {_audio_base.num, _audio_base.den}, _audio_start_time);
+			drain(&frame.frm, frame_time);
+			av_frame_unref(&frame.frm);
+		}
+	};
+
+	while (!finished)
 	{
 		if (df::is_closing || abandon.is_cancelled())
 		{
@@ -2348,16 +2404,20 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm(const int sample_rate,
 			continue;
 		}
 
-		av_frame frame;
-
-		while (!stopped && avcodec_receive_frame(_audio_context, &frame.frm) == 0)
-		{
-			drain(&frame.frm);
-			av_frame_unref(&frame.frm);
-		}
+		receive();
 	}
 
-	if (!stopped) drain(nullptr);
+	if (!finished)
+	{
+		avcodec_send_packet(_audio_context, nullptr);
+		receive();
+		if (!finished)
+		{
+			const auto next_time = wanted_start +
+				static_cast<double>(next_destination_frame.value_or(0)) / sample_rate;
+			drain(nullptr, next_time);
+		}
+	}
 
 	swr_free(&swr);
 	return result;
@@ -2873,10 +2933,12 @@ bool av_scaler::scale_surface(const ui::const_surface_ptr& surface_in, ui::surfa
 
 	// swscale has no RGB->RGB scaler: it converts to planar YUV and back, and a BGRA source carries
 	// no chroma subsampling, so libswscale forces SWS_FULL_CHR_H_INT and the scalar
-	// yuv2bgra32_full_X_c output converter. Reducing a packed surface is answered directly instead.
-	if (source_fmt == AV_PIX_FMT_BGRA && ui::area_downscale(surface_in, surface_out, dimensions_out))
+	// yuv2bgra32_full_X_c output converter. Packed surfaces are answered directly instead - by the
+	// area filter when this is a reduction, and bilinear when an axis grows.
+	if (source_fmt == AV_PIX_FMT_BGRA)
 	{
-		return true;
+		if (ui::area_downscale(surface_in, surface_out, dimensions_out)) return true;
+		if (ui::bilinear_resize(surface_in, surface_out, dimensions_out)) return true;
 	}
 
 	constexpr auto output_fmt = AV_PIX_FMT_BGRA;

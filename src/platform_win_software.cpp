@@ -145,6 +145,8 @@ public:
 
 	// Convert an NV12/P010 (YUV 4:2:0) source into the stored BGRA surface. The CPU canvas can only
 	// present BGRA, so YUV frames/images that would be colour-converted on the GPU are converted here.
+	// ui::yuv_textures_enabled is false while this backend is active, so an image decoder never asks
+	// for planes; what still arrives is a video frame, or a surface decoded before the device was lost.
 	ui::texture_update_result update_yuv(const ui::surface& src)
 	{
 		_display_valid = false; // source changed - drop the display-scaled cache

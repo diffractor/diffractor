@@ -8,7 +8,7 @@
 
 // Purpose: Windows movie writing through the Media Foundation sink writer -- H.264 video and AAC
 // audio in MP4, using whatever hardware encoder the machine has. Diffractor ships no video encoder
-// of its own; docs/movie.md#93-the-encoder-and-the-licensing-problem says why.
+// of its own; docs/movie.md#7-rendering says why.
 
 #include "pch.h"
 #include "platform_win.h"
@@ -240,7 +240,6 @@ namespace
 			out->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
 			out->SetUINT32(MF_MT_AVG_BITRATE, static_cast<UINT32>(std::max(1, _request.video_bitrate)));
 			out->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-			out->SetUINT32(MF_MT_MPEG2_PROFILE, eAVEncH264VProfile_High);
 			MFSetAttributeSize(out.Get(), MF_MT_FRAME_SIZE, _request.extent.cx, _request.extent.cy);
 			MFSetAttributeRatio(out.Get(), MF_MT_FRAME_RATE, _request.frame_rate, 1);
 			MFSetAttributeRatio(out.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
@@ -362,43 +361,39 @@ platform::movie_writer_ptr platform::create_movie_writer(const movie_writer_requ
 
 bool platform::can_write_movies()
 {
-	// Probed rather than assumed: the H.264 encoder is a Windows component that an N edition or a
-	// stripped image can be missing, and the answer belongs to the machine, not to the build.
-	// Cached because the probe builds and discards a real sink writer.
+	// Probed rather than assumed: the H.264 and AAC encoders are Windows components that an N
+	// edition or a stripped image can be missing, and the answer belongs to the machine, not the
+	// build. Enumeration avoids opening a destination file on the UI thread.
 	static const auto answer = []
 	{
 		if (!mf_session::acquire()) return false;
 
-		ComPtr<IMFMediaType> type;
-		auto ok = SUCCEEDED(MFCreateMediaType(&type));
-
-		if (ok)
+		const auto has_encoder = [](const GUID category, const GUID major, const GUID subtype)
 		{
-			type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-			type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
-			type->SetUINT32(MF_MT_AVG_BITRATE, 6000000);
-			type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-			MFSetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, 1920, 1080);
-			MFSetAttributeRatio(type.Get(), MF_MT_FRAME_RATE, 30, 1);
-
 			IMFActivate** activates = nullptr;
 			UINT32 count = 0;
-
-			MFT_REGISTER_TYPE_INFO output{MFMediaType_Video, MFVideoFormat_H264};
-
-			ok = SUCCEEDED(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER,
-			                         MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SYNCMFT |
-			                         MFT_ENUM_FLAG_ASYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER,
-			                         nullptr, &output, &activates, &count)) && count > 0;
+			MFT_REGISTER_TYPE_INFO output{major, subtype};
+			const auto found = SUCCEEDED(MFTEnumEx(category,
+				MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT |
+				MFT_ENUM_FLAG_SORTANDFILTER,
+				nullptr, &output, &activates, &count)) && count > 0;
 
 			for (UINT32 i = 0; i < count; ++i) activates[i]->Release();
 			CoTaskMemFree(activates);
-		}
+			return found;
+		};
+
+		const auto has_h264 = has_encoder(MFT_CATEGORY_VIDEO_ENCODER, MFMediaType_Video, MFVideoFormat_H264);
+		const auto has_aac = has_encoder(MFT_CATEGORY_AUDIO_ENCODER, MFMediaType_Audio, MFAudioFormat_AAC);
 
 		mf_session::release();
 
-		if (!ok) df::log(__FUNCTION__, "no H.264 encoder on this system; Render is not offered");
-		return ok;
+		if (!has_h264 || !has_aac)
+		{
+			df::log(__FUNCTION__, std::format("required movie encoders unavailable (H.264: {}, AAC: {})",
+			                                    has_h264, has_aac));
+		}
+		return has_h264 && has_aac;
 	}();
 
 	return answer;

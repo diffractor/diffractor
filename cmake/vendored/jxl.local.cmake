@@ -6,5 +6,6 @@
 # image. "Should scan jxl metadata" is the check.
 
 if (MSVC)
+    set_target_properties(diffractor_jxl PROPERTIES DIFFRACTOR_DISABLE_RELEASE_OPTIMIZATION ON)
     target_compile_options(diffractor_jxl PRIVATE $<$<CONFIG:Release>:/Od> $<$<CONFIG:Release>:/GL->)
 endif ()
