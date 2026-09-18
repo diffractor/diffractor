@@ -7,7 +7,6 @@ This document owns the test taxonomy: which subject owns which test, where a new
 Tests are compiled into the application and run from the command line. There is no separate test binary and no external framework.
 
 ```powershell
-.\dd.ps1 test                              # unit tests + .po validation + translation check
 .\exe\diffractor64-d.exe /test             # x64 Debug, everything
 .\exe\diffractor64-d.exe /test:*search*    # one subject
 .\exe\diffractor64-d.exe "/test:Should rename file case"
@@ -15,7 +14,7 @@ Tests are compiled into the application and run from the command line. There is 
 
 `/test:` takes a wildcard matched against the test name, case-insensitively. A filter that matches nothing is a failure, not a silent pass.
 
-Release registers exactly six more tests than Debug: five decoder fuzz sweeps and the closest-location lookup are `#ifndef _DEBUG`. Debug `N` and Release `N + 6` is correct; any other gap means something was skipped.
+Release registers exactly seven more tests than Debug: five decoder fuzz sweeps, the closest-location lookup, and the degraded-face sweep are `#ifndef _DEBUG`. Debug `N` and Release `N + 7` is correct; any other gap means something was skipped.
 
 ## Taxonomy
 
@@ -31,6 +30,7 @@ One file per subject, matching the `src/` prefixes in [implementation](implement
 | [test_media_edit.cpp](../src/test_media_edit.cpp) | `register_media_edit_tests` | The metadata write path and the image editing model: in-place and staged edits, Windows shell tags, orientation, crop, perspective, temperature |
 | [test_av.cpp](../src/test_av.cpp) | `register_av_tests` | `av*`: probing, seeking, read-ahead bounds, hover preview, audio buffers, the visualizer, session lifetime |
 | [test_index.cpp](../src/test_index.cpp) | `register_index_tests` | `model_index`, `model_db`, `model_postings`: indexing, the inverted and trigram indexes, the database, the thumbnail pipeline, duplicates and presence, stale-result discarding, hydration |
+| [test_faces.cpp](../src/test_faces.cpp) | `register_faces_tests` | `model_faces`: alignment, the face vector, similarity, grouping around a sample face, sample selection, the face token and the stored form. Headless and photograph-free: the detector, the embedding model and the feature that uses them live on the `face-search` branch. See [faces](faces.md) |
 | [test_search.cpp](../src/test_search.cpp) | `register_search_tests` | `model_search`, `model_related`, `app_match`: query parsing, term matching, scopes, negation, exclusion, related items, prediction |
 | [test_locations.cpp](../src/test_locations.cpp) | `register_location_tests` | `model_locations`, `model_visits`, `ui_map*`, `ui_globe`, `model_tile_cache`: the gazetteer, place naming, map areas and geometry, the globe's projection and framing, visits, the timeline, the map tile cache. See [locations](locations.md) |
 | [test_movie.cpp](../src/test_movie.cpp) | `register_movie_tests` | `model_movie`: the Movie document -- derived output geometry, transition and duration arithmetic, timeline edits and undo, the OpenTimelineIO project file, the Movie Maker reader. See [movie](movie.md) |
@@ -44,7 +44,7 @@ One file per subject, matching the `src/` prefixes in [implementation](implement
 
 Ask what the test constrains, not what prompted it.
 
-- A regression goes in the file that owns the behavior, with the issue recorded as a comment above its registration: `// Issue #177 - search term negation`. There is no regressions file. Organizing by provenance means a subject-scoped run silently misses coverage, which is exactly what happened before 2026-08.
+- A regression goes in the file that owns the behavior, with the issue recorded as a comment above its registration. There is no separate regressions file.
 - A test that needs two subjects belongs to the one whose contract it would falsify. A metadata value read through the AV probe is a metadata test; the probe's byte budget is an AV test.
 - A helper used by tests in one file stays `static` in that file. A helper used from two files moves to `test_fixtures.h` as `inline`.
 
@@ -64,9 +64,8 @@ Ask what the test constrains, not what prompted it.
 
 ## Proving a test is worth having
 
-A test that cannot fail is worse than no test, because it reports coverage that does not exist. Before adding one, break the behavior it targets, confirm the test fails, then restore. Record the negative case in the test's comment where it is not obvious.
-
-Two current examples: `Should leave colour unchanged when neutral` asserts the residual is *unbiased*, not merely bounded, because a bound alone cannot see truncation — truncating in `adjust_color` costs at most one level but costs it in the same direction on every pixel. `Should area downscale packed surfaces` compares the AVX2 and SSE2 paths byte for byte, which is what proves the AVX2 path is live at all.
+A test must be able to fail for the defect it claims to cover. Break the targeted behavior, confirm the
+test fails, then restore it. Record a non-obvious discriminating case beside the test.
 
 ## Fixtures
 
@@ -90,19 +89,6 @@ Where a decision is trapped inside a method that also performs it, extract the d
 
 A test that drives the completion strategy must run the pass on a real worker thread: `index_state::auto_complete_words` asserts it is not on the UI thread, which is the contract the shipped code keeps. `run_completion_worker` in [test_app.cpp](../src/test_app.cpp) models the hop with a `deferred_async_strategy`; running it inline trips the assertion rather than passing. That is also what makes the latest-wins test possible, because it can publish two passes out of order.
 
-## Known gaps
-
-Recorded so they are not rediscovered as surprises:
-
-- `app_dup_report.cpp` is a read-only diagnostic whose logic lives entirely in an anonymous namespace; it mirrors the index's union-find rather than owning behavior.
-- `ui_dialog.h` and `ui_plasma.h` have no coverage. The suite has no `ui::draw_context`, so anything whose only output is pixels on a real device is verified by eye.
-- View-level behavior for `view_locate`, `view_tags`, `view_batch`, `view_items` and `view_media` is covered only through their planning helpers.
-- Nothing drives `view_state::tick` end to end; `calc_playback_advance` covers the decision, not the player calls around it.
-- Maker note decoding is exercised only on Canon. The other makes libexif handles reach the same call, but no fixture carries one.
-- No fixture holds an embedded image that fails to decode, so the pane's fall back from a picture to a hex dump is proven by construction rather than end to end.
-- `parse_mpf_index` in [files_jpeg.cpp](../src/files_jpeg.cpp) is file-static, so its bounds guard against a malformed Multi-Picture index has no test. It parses untrusted file offsets, which is exactly where a silent regression would matter.
-- `metadata_tree_control` in [view_items.cpp](../src/view_items.cpp) is file-static and lays out its own detail rows, so nothing covers the box each detail control is given. A control that fills its bounds was once stretched by this and would be again without notice.
-
 ## Where this lives
 
 The taxonomy table above is the routing for tests. The runner and its supporting pieces are:
@@ -114,9 +100,5 @@ The taxonomy table above is the routing for tests. The runner and its supporting
 | Registration and the console runner | [test_runner.h](../src/test_runner.h), [test_runner.cpp](../src/test_runner.cpp) |
 | The `/test`, `/test-temp:` and `/validate-po` entry points | [app_command_line.h](../src/app_command_line.h), [app_validate_po.cpp](../src/app_validate_po.cpp) |
 
-Beyond the suite, `.\dd.ps1 test` also runs `tools/lint_repo.ps1`, which enforces the mechanically
-checkable subset of [AGENTS.md](../AGENTS.md) — platform containment, SQLite ownership, application
-threads, frame accessors, and the integrity of every link and `src/` anchor in this documentation
-set. `tools/lint_repo_selftest.ps1` applies this document's own standard to that lint: it breaks each
-rule in turn and asserts the rule fires, so a lint rule cannot quietly stop matching and report PASS
-forever.
+Build orchestration and the repository-wide validation command are owned by
+[implementation.md](implementation.md#build-and-validation).

@@ -538,10 +538,17 @@ function Build-Desktop {
         exit 1
     }
     
+    # The LGPL requires the licence to travel with the binary, so it is staged into exe\ for the zip
+    # rather than left at the repo root. Both texts go: LGPL-3.0 incorporates GPL-3.0 by reference.
+    Copy-Item (Join-Path $ScriptDir "LICENSE") (Join-Path $SourceFilesDir "LICENSE.txt") -Force
+    Copy-Item (Join-Path $ScriptDir "COPYING.GPLv3") (Join-Path $SourceFilesDir "COPYING.GPLv3.txt") -Force
+
     $zipFiles = @(
         "diffractor32.exe",
         "diffractor64.exe",
         "diffractor-tools.json",
+        "LICENSE.txt",
+        "COPYING.GPLv3.txt",
         "location-countries.txt",
         "location-places.txt",
         "location-states.txt",

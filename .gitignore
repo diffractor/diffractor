@@ -29,6 +29,9 @@ intermediate/
 /exe/*.cso
 /exe/dictionaries/en_GB.aff
 /exe/dictionaries/en_GB.dic
+# Licence texts staged into exe/ by `dd.ps1 desktop` so they ship inside diffractor.zip.
+/exe/LICENSE.txt
+/exe/COPYING.GPLv3.txt
 /.vs
 /src/secrets.h
 /diffractor.zip

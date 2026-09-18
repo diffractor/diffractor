@@ -11,13 +11,15 @@ Both are product requirements. Make tradeoffs explicit and validate behavior and
 
 ## Start here: route the task before reading anything
 
-Find the row matching the concrete failing behavior, symbol, or file. Read that document's named section, open the listed source, run the listed check. Do not read documents outside the matched row to build general context: the set is ~600 KB, and reading broadly costs more than it returns.
+Find the row matching the concrete behavior, symbol, or file. Read that document's named section,
+open the listed source, and run the listed check. Do not read unrelated documents for context.
 
 | If the task is about | Read | Code | Narrowest check |
 |---|---|---|---|
 | Query parsing, results, address box, autocomplete | [design](docs/design.md#navigation-and-search) | [model_search.cpp](src/model_search.cpp), [model_tokenizer.h](src/model_tokenizer.h), [app_search.h](src/app_search.h) | `/test:*search*` |
 | Indexing, the database, thumbnails, hydration | [implementation](docs/implementation.md#index-search-and-database) | [model_index.cpp](src/model_index.cpp), [model_db.cpp](src/model_db.cpp), [model_postings.h](src/model_postings.h) | `/test:*index*`, `/test:*thumbnail*` |
 | Collection membership, duplicates, presence | [collections](docs/collections.md) | [model_index.cpp](src/model_index.cpp), [app_settings.cpp](src/app_settings.cpp), [model_related.h](src/model_related.h) | `/test:*duplicate*`, `/test:*presence*` |
+| Faces: the face vector, alignment, resemblance grouping, sample faces (headless foundation only) | [faces](docs/faces.md) | [model_faces.cpp](src/model_faces.cpp), [model_faces.h](src/model_faces.h) | `/test:*face*` |
 | Zoom, pan, the navigator, panorama projection | [zoom](docs/zoom.md) | [model_zoom.h](src/model_zoom.h), [view_media.h](src/view_media.h), [ui_panorama.h](src/ui_panorama.h) | `/test:*zoom*`, `/test:*panorama*` |
 | Places, distance, map, visits, tiles | [locations](docs/locations.md) | [model_locations.cpp](src/model_locations.cpp), [model_visits.cpp](src/model_visits.cpp), [ui_map_common.h](src/ui_map_common.h), [ui_globe.h](src/ui_globe.h), [model_tile_cache.cpp](src/model_tile_cache.cpp) | `/test:*location*`, `/test:*visit*`, `/test:*globe*` |
 | Reading or writing a media file, staging, sidecars, rollback | [file I/O](docs/file-io.md) | [files_core.cpp](src/files_core.cpp), [app_util.cpp](src/app_util.cpp) | `/test:*sidecar*`, `/test:*collision*` |
@@ -37,34 +39,29 @@ Find the row matching the concrete failing behavior, symbol, or file. Read that 
 
 ## Information ownership
 
-GitHub issues own work, status, discussion, and follow-up. Source owns exact APIs, enums, and file lists. Every other subject has exactly one owning document:
+GitHub issues and releases own work, status, discussion, follow-up, and release history. Source owns exact APIs, enums, and file lists. Every other subject has exactly one owning document:
 
 | Document | Owns |
 |---|---|
 | [design](docs/design.md) | Durable user concepts and behavior; the scope/contents/target/effect ontology; view, mode, and presentation naming |
 | [implementation](docs/implementation.md) | Architecture, data flow, threading, ownership, invalidation, index/search internals |
 | [crash investigation](docs/crash.md) | Crash report contents, symbol store and debugger setup, dump symbolization, attributing a fault to a cause |
-| [testing](docs/testing.md) | The test taxonomy: which subject file owns which test, what the runner enforces, what a test must not do, fixtures and known gaps |
+| [testing](docs/testing.md) | The test taxonomy: which subject file owns which test, what the runner enforces, fixtures, and headless test boundaries |
 | [collections](docs/collections.md) | The collection: membership, what it earns, and its edge |
+| [faces](docs/faces.md) | The face foundation: alignment, the face vector, resemblance grouping, the sample face that identifies a group, and the face token. Headless; the feature is on the `face-search` branch |
 | [locations](docs/locations.md) | Places, location search, distance, map-driven queries, visits |
 | [metadata](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
 | [file I/O](docs/file-io.md) | Read and write paths: decode ladder, staging, patching, sidecars, backups, rollback, failure contract |
 | [rendering](docs/rendering.md) | Backends and parity, device/swap-chain, frame and resize lifecycle, batching, text, video pipeline |
-| [zoom](docs/zoom.md) | The zoom model, laws, rendering tiers, and how zoom is judged |
+| [zoom](docs/zoom.md) | The zoom model, laws, rendering tiers, input, and navigator |
 | [selection controls](docs/selection-controls.md) | The selection panel: form classification, content, ordering, density, responsive behavior |
 | [movie](docs/movie.md) | Assembling photos and videos into one video: the timeline document, trims and transitions, the project file, and video encoding |
-| [third-party](docs/third-party.md) | Vendored dependencies, upgrade procedure, integration patches |
-| [Linux port](docs/linux.md) | Portability assessment, platform-boundary debt, staging and open decisions for a Linux build |
-| [README](README.md) | Product overview, build prerequisites, command line |
-| [release notes](docs/v-1.27.2.md) | What the current release changed, as user-facing features and fixed issues, plus its verification record |
-| [next release](docs/v-1.27.3.md) | What the next release intends, and the design answers each subject owes before code |
-| [post-release context](docs/v-next.md) | Deferred work and why, validation not run, open issues, and invariants that must survive a re-sync or refactor |
-
+| [third-party](docs/third-party.md) | Vendored dependencies, the outbound licence they constrain, upgrade procedure, integration patches |
+| [Linux port](docs/linux.md) | Current Linux support, the platform boundary, unsupported surfaces, and build behavior |
+| [README](README.md) | Product overview, build prerequisites, command line, and the licence Diffractor is released under |
 Move information to its owner; link rather than duplicate volatile detail. `tools/lint_repo.ps1` fails when a document has no owner row, when a link does not resolve, or when a `src/` path a document names no longer exists.
 
 Each document carries a **Where this lives** section naming the source that implements it. Those anchors are routing, not API documentation: they name files and stable symbols, never signatures or enumerations, which remain owned by the source.
-
-The three version documents are not work logs. The release notes state what a user can now do and which reported issues are closed. The next-release document holds subjects that are committed to but still owe a design answer, and a subject leaves it for the release notes only once it has shipped. Anything scoped out, unfinished, unvalidated, or attached to no release belongs in post-release context. None of them records the sequence of attempts that produced a change.
 
 ## Source directory map
 
@@ -118,34 +115,6 @@ Before generating or modifying C++ code, an AI agent MUST declare a change class
 
 If an `Internal` change turns out to shift observable behavior, stop and restate it as `User-visible behavior` before continuing.
 
-### Worked examples
-
-Filling the schema at the right level of specificity is the point; these show it.
-
-Adding a "clear filters" action to the empty-results surface:
-
-```json
-{
-	"Change class": "User-visible behavior",
-	"Scope": "Search",
-	"Contents": "The visible and hidden counts already computed for the active query; the action appears only while a media-type or rating filter hides at least one result.",
-	"Target": "Visible items",
-	"Effect": "Clears the media-type and rating filters for the current search only, restoring the hidden items to the listing. Selection and focus are unchanged, no file is touched, and the user restores the filters from the same control."
-}
-```
-
-Replacing the thumbnail decode queue's per-item mutex with a single owning worker:
-
-```json
-{
-	"Change class": "Internal",
-	"Component": "model* -- the model_index.cpp thumbnail pipeline and model_db.cpp staging writes",
-	"Invariant": "A published thumbnail is complete and keyed on source path plus modified timestamp; a superseded decode never overwrites a newer one.",
-	"Effect": "One owning worker consumes detached decode requests and publishes finished surfaces through queue_ui; the per-item mutex and its lock-ordering constraint are removed. Blast radius is the thumbnail pipeline and its callers in view_items.cpp.",
-	"Observable behavior": "Unchanged, proven by /test:*thumbnail* and /test:*index*, plus a scroll through the fixture collection with no missing or stale tiles."
-}
-```
-
 The most common misclassification is calling a rendering or performance change `Internal` when it alters what the user sees. If the pixels, the timing, or a command's availability differ, it is `User-visible behavior` regardless of which layer changed.
 
 Before editing, explicitly confirm both [implementation boundaries](docs/implementation.md):
@@ -175,21 +144,15 @@ Rules marked **[lint]** are enforced by `tools/lint_repo.ps1` and fail `.\dd.ps1
 - **Vendors:** never edit `third-party/`; use owned wrappers or build configuration.
 - **Cache keys:** a key must carry every input the cached value depends on. Invalidation is only as good as the identity it is keyed on, and a key that omits an input silently serves one caller's value to another.
 - **Absent handles: [lint]** a `ui::frame_ptr` member that can be unset is reached only through an accessor that never returns null, and callers do not test it. `view_host::frame()`, and the `frame()` accessor on any `ui::frame_host`, answer `ui::no_frame()` when there is no window; a raw `_frame->` on such a member outside that accessor is the defect. `ui::control_frame_ptr` has no stand-in, so those members are instead either guarded at every use or safe by construction — text alone cannot tell the two apart in a file holding both, so `ui_dialog.h` is reviewed rather than linted. Either way, a member guarded at some call sites and dereferenced at others is this bug already, whether or not it has crashed yet.
-- **Existence is not visibility:** never bind a handle's lifetime to whether the thing is on screen. A hidden panel still populates, counts, ticks and invalidates, so attach it unconditionally and gate only the repaint. Diffractor 1.27.0 shipped a startup crash that was exactly this conflation.
+- **Existence is not visibility:** never bind a handle's lifetime to whether the thing is on screen. A hidden panel still populates, counts, ticks and invalidates, so attach it unconditionally and gate only the repaint.
 - **Animation:** alpha fades are disabled in CPU software rendering mode (`ui::animations_enabled`, mirroring `setting.can_animate`); never bypass the gate or animate alpha outside `ui::animate_alpha`.
 - **Exceptions:** every `catch` propagates, logs, returns a bounded error, or implements a documented bounded fallback; no unexplained swallowing.
 
-## Thread ownership and result publication
+## Detailed rules
 
-- Every mutable object has one owning execution context unless its qualified type is documented as a synchronized type in [implementation](docs/implementation.md).
-- Views, controls, hosts, controllers, and `view_element` instances are UI-thread-owned. Their mutable state is read and written only on the UI thread.
-- Background callbacks must not capture `this`, raw pointers, references, or owning `shared_ptr`s to UI-owned objects. A `weak_ptr` may cross a worker queue only as an opaque lifetime token: do not lock or dereference it until execution has returned to `queue_ui`.
-- Workers consume moved values or immutable snapshots and produce detached result values. Apply results on the owning context in one bounded batch; do not publish partially initialized objects.
-- UI publication checks both lifetime and currency. A successful `weak_ptr::lock()` does not replace a generation, request-ID, scope, path, or current-identity check.
-- Do not use `const_pointer_cast` to publish worker results or make a mutable object appear safe to share. **[lint]**
-- `df::item_element` is entirely UI-owned, including its immutable metadata snapshot and playback position. Never read or mutate an item on a worker. Queue detached values or immutable requests, then publish through path/generation-checked UI results; do not reintroduce per-field atomics.
-- `df::index_file_item` remains a synchronized index record. Its atomic metadata pointer publishes complete snapshots only: clone an existing payload when needed, finish every mutation, then replace the pointer. Never mutate a published metadata payload in place or publish a new payload before initialization is complete.
-- Do not add an atomic, mutex, event, lock, or synchronized mutable field to a new type unless the implementation documentation names the owning threads, protected invariant, and reason single-context ownership is insufficient.
+Path-scoped rules live in [.github/instructions](.github/instructions): threading, views,
+rendering, platform boundaries, tests, and documentation. [Implementation](docs/implementation.md)
+owns architecture and synchronized types; source owns exact APIs and enums.
 
 ## Post-flight checklist
 
