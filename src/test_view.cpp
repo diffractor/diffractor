@@ -2473,8 +2473,55 @@ static void should_track_the_active_row_across_a_reorder()
 	assert_equal(0, static_cast<int>(highlighted()), "no row stays marked once the run ends");
 }
 
+// A 1.27.2 crash report faulted in metadata_tree_control::copy_text with a null `this`, reached
+// from a click on a metadata section's copy button.
+//
+// The section was built by one call that both captured the tree by value, for the copy callback,
+// and moved it into the section. Function arguments are indeterminately sequenced and MSVC
+// evaluates them right to left, so the move emptied the pointer before the capture copied it. The
+// discriminating case is that nothing looked wrong until the button was pressed: the section owns
+// the tree either way, so the listing measured, laid out and drew correctly, and only the callback
+// held nothing. A test that merely builds the elements passes on the broken code - the callback has
+// to be run.
+static void should_copy_a_metadata_block_from_its_section()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	items_view view(s, {});
+
+	metadata_kv_list values;
+	values.emplace_back("Make"sv, "Canon"sv);
+	values.emplace_back("Model"sv, "EOS 5D"sv);
+
+	const metadata_block block(metadata_standard::exif, values);
+
+	std::vector<view_element_ptr> elements;
+	view.add_metadata_elements(elements, block);
+
+	assert_equal(1_z, elements.size(), "a metadata block becomes one section"sv);
+
+	const auto restore = platform::clipboard_text();
+	platform::set_clipboard(std::string_view{});
+
+	const view_element_event invoke{view_element_event_type::invoke, {}};
+	elements.front()->dispatch_event(invoke);
+
+	const auto copied = platform::clipboard_text();
+	platform::set_clipboard(restore);
+
+	assert_equal(true, copied.find("Make") != std::string::npos,
+	             "the copy button reproduces the block's keys"sv);
+	assert_equal(true, copied.find("Canon") != std::string::npos,
+	             "and their values"sv);
+}
+
 void register_view_tests(view_state& state, test_registry& tests)
 {
+	tests.add("Should copy a metadata block from its section"s, should_copy_a_metadata_block_from_its_section);
 	tests.add("Should track the active row across a reorder"s, should_track_the_active_row_across_a_reorder);
 	tests.add("Should resolve list rows by work index"s, should_resolve_list_rows_by_work_index);
 	tests.add("Should select settled zoom sampler"s, should_select_settled_zoom_sampler);

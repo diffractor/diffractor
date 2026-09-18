@@ -3425,12 +3425,16 @@ void items_view::add_metadata_elements(std::vector<view_element_ptr>& elements, 
 
 	auto tree = std::make_shared<metadata_tree_control>(block, _metadata_tree, flex_item::stretch);
 
-	elements.emplace_back(make_section(
-		std::make_shared<group_title_control>(title, std::vector<view_element_ptr>{
-			                                      std::make_shared<copy_clip_element>(
-				                                      [tree, title] { return tree->copy_text(title); })
-		                                      }),
-		std::move(tree)));
+	// The copy button reproduces the tree, so it holds the tree alive itself. Built in its own
+	// statement because the section below moves `tree`: function arguments are indeterminately
+	// sequenced, MSVC evaluates them right to left, and capturing in one argument while moving in
+	// another left the lambda holding an emptied pointer. The listing still drew, because the
+	// section owns the tree either way - only pressing copy dereferenced null.
+	auto section_title = std::make_shared<group_title_control>(title, std::vector<view_element_ptr>{
+		std::make_shared<copy_clip_element>([tree, title] { return tree->copy_text(title); })
+	});
+
+	elements.emplace_back(make_section(std::move(section_title), std::move(tree)));
 }
 
 // Every prose field the item carries reads as one section. A lone field is just its text; a list
