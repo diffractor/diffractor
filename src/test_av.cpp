@@ -465,6 +465,53 @@ static void should_flush_decoder_on_thumbnail_seek()
 	assert_equal(false, identical, "late thumbnail differs from early (decoder flushed after seek)");
 }
 
+// Issue #78 - the aspect ratio a video plays at. should_apply_container_aspect_ratio_to_decoded_frames
+// covers the thumbnail and scrubber-preview half of that report; this holds the player to the same
+// answer, because the session's display dimensions are what the media view sizes its box from. The
+// two have to agree or the same file is correct as a tile and wrong as a video.
+static void should_report_container_aspect_ratio_to_the_player()
+{
+	const auto load_path = test_files_folder.combine_file("anamorphic-pasp.mp4");
+
+	files ff;
+	const auto scanned = ff_scan_file(ff, load_path).to_props();
+
+	const auto ses = make_test_session();
+	assert_equal(true, ses->open(load_path, files::file_type_from_name(load_path), 0.0, true, -1, -1, false,
+	                             false, false), "session opened");
+
+	const auto info = ses->info();
+
+	// 640x480 stored, 4:3 pasp, so 16:9 displayed.
+	assert_equal(640, info.display_dimensions.cx, "player display width");
+	assert_equal(360, info.display_dimensions.cy, "player display height");
+	assert_equal(static_cast<int>(scanned->width), info.display_dimensions.cx, "player agrees with the scan on width");
+	assert_equal(static_cast<int>(scanned->height), info.display_dimensions.cy,
+	             "player agrees with the scan on height");
+
+	ses->close(false);
+}
+
+// Issue #252 - a rotated video. The scan reads the rotation from the container display matrix and
+// the player reads it again once it decodes, so the two have to agree: a disagreement is what made
+// a portrait video draw a portrait tile and then play back landscape, or the reverse.
+static void should_report_container_rotation_to_the_player()
+{
+	const auto load_path = test_files_folder.combine("excluded1").combine_file("rotated90.mp4");
+
+	files ff;
+	const auto scanned = ff_scan_file(ff, load_path).to_props();
+	assert_equal(ui::orientation::right_top, scanned->orientation, "scan reads the display matrix");
+
+	const auto ses = make_test_session();
+	assert_equal(true, ses->open(load_path, files::file_type_from_name(load_path), 0.0, true, -1, -1, false,
+	                             false, false), "session opened");
+
+	assert_equal(ui::orientation::right_top, ses->info().display_orientation, "player agrees with the scan");
+
+	ses->close(false);
+}
+
 // A media seek can only land on a key frame, so the caller has to say which side of the
 // requested time it may land on. avformat_seek_file clears AVSEEK_FLAG_BACKWARD and instead
 // derives the direction from the min/max window, so the window centred on the target that
@@ -1214,6 +1261,11 @@ void register_av_tests(view_state& state, test_registry& tests)
 	// Seeking
 	//
 	tests.add("Should flush decoder on thumbnail seek"s, should_flush_decoder_on_thumbnail_seek);
+	// Issue #78 - the player reports the same aspect ratio the scan does
+	tests.add("Should report container aspect ratio to the player"s,
+	          should_report_container_aspect_ratio_to_the_player);
+	// Issue #252 - the player reports the same rotation the scan does
+	tests.add("Should report container rotation to the player"s, should_report_container_rotation_to_the_player);
 	tests.add("Should seek to the frame at the requested time"s, should_seek_to_the_frame_at_the_requested_time);
 	tests.add("Should seek short video thumbnails"s, should_seek_short_video_thumbnails);
 

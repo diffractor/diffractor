@@ -4549,9 +4549,12 @@ void texture_state::draw(ui::draw_context& rc, const pointi offset, const int co
 		// rendering.md: the destination is shaped by what the item is, not by what has arrived to
 		// draw into it, and a stand-in staged before the decode need not be that shape. Fitting it
 		// keeps the subject's shape; stretching it distorted the picture until the decode landed,
-		// which is what read as a compare-mode defect.
-		const auto image_bounds = df::fit_preserving_aspect(rectd(media_bounds), sized(oriented_extent(
-			                                                    tex_dims, orientation)));
+		// which is what read as a compare-mode defect. Video is the exception: its frame can carry
+		// non-square pixels, so the stored frame is not the shape to fill and the container's
+		// display dimensions are what the item actually is (#78).
+		const auto image_bounds = df::fit_preserving_aspect(
+			rectd(media_bounds), sized(calc_draw_shape(oriented_extent(tex_dims, orientation),
+			                                           calc_display_dimensions(), tex == _vid_tex)));
 		auto draw_bounds = image_bounds;
 		auto tex_bounds = rectd(tex_dims);
 
@@ -5138,6 +5141,17 @@ ui::texture_sampler calc_sampler(const sizei draw_extent, const sizei texture_ex
 	// Minification never exceeds ~2x because calc_scale_hint() already pre-scales the
 	// decoded surface, so the 4x4 footprint stays well sampled.
 	return ui::texture_sampler::bicubic;
+}
+
+sizei calc_draw_shape(const sizei oriented_texture_extent, const sizei display_dimensions, const bool is_video)
+{
+	// Only video can present non-square pixels, and only once the container's dimensions are known.
+	if (!is_video || display_dimensions.is_empty() || oriented_texture_extent.is_empty())
+	{
+		return oriented_texture_extent;
+	}
+
+	return display_dimensions;
 }
 
 sizei texture_state::calc_display_dimensions() const

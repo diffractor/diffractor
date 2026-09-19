@@ -1081,7 +1081,16 @@ void av_format_decoder::extract_metadata(file_scan_result& sr) const
 			sr.duration = df::round(calc_duration(fc->duration, AV_NOPTS_VALUE));
 		}
 
-		sr.orientation = calc_orientation();
+		// _rotation is only established by init_streams, and a decoded frame may then correct it.
+		// Until then it holds its default, which means "not yet known" rather than "upright", so
+		// letting it through erased the container rotation populate_video_properties had just read
+		// from the display matrix. Every scan that does not decode a frame - indexing, and the
+		// rescan that follows a rating, label or tag write - therefore recorded a rotated video as
+		// upright, and the item's tile flipped from portrait to landscape after the first write (#252).
+		if (_video_context)
+		{
+			sr.orientation = calc_orientation();
+		}
 	}
 }
 

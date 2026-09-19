@@ -1594,6 +1594,16 @@ static void should_match_korean_nfc_nfd()
 	// A tag stored in either form is found by a search in the other form.
 	prop_test().tag(nfd).is_match(std::string(nfc));
 	prop_test().tag(nfc).is_match(std::string(nfd));
+
+	// Clicking a tag does not run a bare text search: it builds search_t().with(prop::tag, ...),
+	// which reaches the query as the qualified `tag:` form. That is the path the report describes,
+	// so it has to normalise too - a bare-text-only fix would look correct and still find nothing.
+	prop_test().tag(nfd).is_match(std::format("tag:{}", nfc));
+	prop_test().tag(nfc).is_match(std::format("tag:{}", nfd));
+
+	// The same tag alongside others, since a tag list is split before each part is compared.
+	constexpr auto travel = "\uC5EC\uD589"; // 여행
+	prop_test().tag(std::format("{} {}", travel, nfd)).is_match(std::format("tag:{}", nfc));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

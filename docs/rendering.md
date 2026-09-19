@@ -89,6 +89,12 @@ Unsupported combinations convert through the shared rendering utilities before u
 Color transforms and image edits are applied in the shared render layer. Backends perform sampling,
 composition, and presentation; they do not reinterpret metadata.
 
+A destination is shaped by what the item is, not by what has arrived to draw into it: a stand-in
+staged before the decode need not match the item's shape, and stretching it would distort the picture
+until the decode landed. Video is the exception, because a decoded frame can carry non-square pixels.
+There the stored frame is not the shape to fill, so the destination takes the container's declared
+display dimensions and the frame is stretched into them.
+
 ## Hardware Video
 
 Video decoding runs off the UI thread. Hardware decode uses a dedicated D3D11 video device and

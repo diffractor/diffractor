@@ -939,6 +939,35 @@ static void should_show_selected_thumbnail_without_waiting()
 	assert_equal(true, d->_selected_texture1->is_provisional(), "what it draws is still marked provisional");
 }
 
+// Issue #78 - a decoded video frame can carry non-square pixels, so the stored frame is not the
+// shape the media box should be filled at. The reporter's file stores 528x560 and declares 4:3:
+// fitting the destination to the texture letterboxed a correctly shaped box with a squeezed
+// picture, which is why the thumbnail (whose aspect is baked into the bitmap) looked right while
+// playback did not. A photo keeps its texture's shape, because a stand-in staged before the decode
+// may not match the item's declared dimensions yet.
+static void should_shape_video_by_its_display_dimensions()
+{
+	constexpr sizei stored{528, 560}; // what the frame decodes to
+	constexpr sizei declared{528, 396}; // 4:3, what the container declares
+
+	const auto shape = [](const sizei tex, const sizei display, const bool is_video)
+	{
+		const auto r = calc_draw_shape(tex, display, is_video);
+		return std::format("{}x{}", r.cx, r.cy);
+	};
+
+	assert_equal("528x396"s, shape(stored, declared, true), "video takes the declared shape");
+	assert_equal("528x560"s, shape(stored, declared, false), "a photo keeps its texture's shape");
+
+	// Before the container's dimensions are known there is nothing better than the texture, and a
+	// zero shape would collapse the destination rather than letterbox it.
+	assert_equal("528x560"s, shape(stored, {}, true), "unknown display dimensions fall back");
+	assert_equal("0x0"s, shape({}, declared, true), "an empty texture stays empty");
+
+	// Square pixels are the common case and must be left exactly alone.
+	assert_equal("1920x1080"s, shape(sizei{1920, 1080}, sizei{1920, 1080}, true), "square-pixel video is unchanged");
+}
+
 static void should_stage_neighbour_stand_ins()
 {
 	null_state_strategy ss;
@@ -2510,6 +2539,8 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should orient selector thumbnails"s, should_orient_selector_thumbnails);
 	tests.add("Should range select across selector"s, should_range_select_across_selector);
 	tests.add("Should stage neighbour stand ins"s, should_stage_neighbour_stand_ins);
+	// Issue #78 - anamorphic video fills its box at the declared aspect
+	tests.add("Should shape video by its display dimensions"s, should_shape_video_by_its_display_dimensions);
 	tests.add("Should show selected thumbnail without waiting"s, should_show_selected_thumbnail_without_waiting);
 	tests.add("Should hold media column still as detail arrives"s, should_hold_media_column_still_as_detail_arrives);
 	tests.add("Should fit the whole primary block in the media column"s,

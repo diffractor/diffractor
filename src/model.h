@@ -540,6 +540,14 @@ public:
 };
 
 
+// The extent a texture's destination is shaped by. A decoded video frame can carry non-square
+// pixels, so the stored frame is not the shape to fill: the container's declared display
+// dimensions are. A photo keeps its texture's own shape, because a stand-in staged before the
+// decode need not match the item's declared dimensions and stretching it would distort the
+// picture until the decode landed (#78).
+sizei calc_draw_shape(sizei oriented_texture_extent, sizei display_dimensions, bool is_video);
+
+
 class texture_state final : public std::enable_shared_from_this<texture_state>
 {
 public:

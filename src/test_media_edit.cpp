@@ -469,6 +469,35 @@ static void should_update_label(const std::string_view name)
 	}
 }
 
+// Issue #252 - a rotated video reported its rotation until a label was applied, after which the
+// tile flipped from portrait to landscape. The recorded orientation has to survive the write, so
+// this scans the rotated fixture, writes a label, and reads the orientation back.
+static void should_keep_video_rotation_through_a_metadata_write()
+{
+	files ff;
+
+	const auto save_path = _temps.next_path(".mp4");
+	const auto load_path = test_files_folder.combine("excluded1").combine_file("rotated90.mp4");
+
+	const auto before = ff_scan_file(ff, load_path);
+	assert_equal(true, before.success, "the rotated fixture scans");
+	assert_equal(560u, before.width, "coded width");
+	assert_equal(320u, before.height, "coded height");
+	assert_equal(ui::orientation::right_top, before.to_props()->orientation,
+	             "the fixture is a video carrying a 90 degree display matrix");
+
+	metadata_edits set_label;
+	set_label.label = label_approved_text;
+	auto written = ff.update(load_path, save_path, set_label, {}, {}, false, {}, {},
+	                         ff_inspect_rescan(save_path));
+
+	const auto scanned = ff_scan_after_update(ff, written, save_path, detect_xmp_sidecar(save_path));
+	const auto ps = scanned.to_props();
+
+	assert_equal(label_approved_text, ps->label, "label written to the rotated video");
+	assert_equal(ui::orientation::right_top, ps->orientation, "rotation survives a metadata write");
+}
+
 // Issue #134 - ratings and labels could not be applied to files whose name contains emoji.
 // Emoji are non-BMP: surrogate pairs in the UTF-16 filesystem API and 4-byte sequences in the
 // UTF-8 path the model carries. The in-place update path is the risky one - it derives a
@@ -1520,6 +1549,9 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	}
 
 	tests.add("Should update gps in exif"s, should_update_gps_in_exif);
+	// Issue #252 - rotated video keeps its rotation across a metadata write
+	tests.add("Should keep video rotation through a metadata write"s,
+	          should_keep_video_rotation_through_a_metadata_write);
 	// Issue #134 - emoji filenames
 	tests.add("Should update rating and label for emoji filename"s,
 	          should_update_rating_and_label_for_emoji_filename);

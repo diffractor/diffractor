@@ -87,6 +87,11 @@ description keys are selected by plain value, UI language, then any available va
 duration, streams, codecs, bitrate, frame rate, and pixel/audio format are technical properties and
 are not written through the user metadata editor.
 
+A video's shape also comes from the container rather than from its frames: the sample aspect ratio
+gives the displayed dimensions for anamorphic video, and the display matrix gives the orientation.
+Both are read without decoding, so a scan that never opens a frame describes the same shape the
+player does.
+
 The XMP toolkit reconciles a bounded legacy subset. In particular, MP4/MOV writes do not rewrite the
 full iTunes atom set, so software that ignores XMP may continue to show an older atom value.
 Matroska metadata is read-only.
