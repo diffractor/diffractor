@@ -3188,6 +3188,12 @@ msgid_plural "{count} items were ignored because they were previously imported."
 msgstr[0] "已忽略 {first-name}，因为该项目以前已导入。"
 msgstr[1] "已忽略 {count} 个项目，因为这些项目以前已导入。"
 
+msgid "1 item was imported but its created date could not be set."
+msgid_plural ""
+"{count} items were imported but their created date could not be set."
+msgstr[0] ""
+msgstr[1] ""
+
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
 msgstr[0] "{first-name} 将移到回收站。"
@@ -3742,6 +3748,9 @@ msgid "A clip could not be decoded."
 msgstr ""
 
 msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
+msgid "That name belongs to a clip in this movie. Choose another name."
 msgstr ""
 
 msgid "Rendered {}."

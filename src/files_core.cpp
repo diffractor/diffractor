@@ -49,7 +49,12 @@ ui::const_surface_ptr file_type::default_thumbnail() const
 
 struct file_type_config
 {
-	file_group_by_name groups_by_name;
+	// Replaced whole, never edited in place. parse_file_group reads it on workers - auto-complete and
+	// query - while a language switch registers that language's spellings on the UI thread, and an
+	// insert that rehashed under a lookup left the reader walking freed buckets.
+	std::atomic<std::shared_ptr<const file_group_by_name>> groups_by_name{
+		std::make_shared<const file_group_by_name>()
+	};
 	file_type_by_extension types_by_name;
 
 	std::vector<file_group_ref> groups;
@@ -78,14 +83,11 @@ file_group_ref file_group_from_index(const int from_id)
 
 file_group_ref parse_file_group(const std::string& text)
 {
-	const auto found = s_config.groups_by_name.find(text);
+	const auto groups = s_config.groups_by_name.load();
+	if (!groups) return nullptr;
 
-	if (found != s_config.groups_by_name.end())
-	{
-		return found->second;
-	}
-
-	return nullptr;
+	const auto found = groups->find(text);
+	return found != groups->end() ? found->second : nullptr;
 }
 
 // `@photo` is not the only spelling that reaches parse_file_group: format_term writes the group's
@@ -95,19 +97,24 @@ file_group_ref parse_file_group(const std::string& text)
 // They are registered here rather than compared per call because parse_file_group runs on the
 // auto-complete worker once per candidate per keystroke, and display_name reads the translation
 // catalog, which the language switch replaces wholesale. A canonical name always wins a collision.
+// The table is copied, extended and published whole, because that worker may be reading it.
 void register_file_group_spellings()
 {
+	auto groups = std::make_shared<file_group_by_name>(*s_config.groups_by_name.load());
+
 	for (const auto g : s_config.groups)
 	{
-		const auto add = [g](const std::string_view name)
+		const auto add = [g, &groups](const std::string_view name)
 		{
-			if (!str::is_empty(name)) s_config.groups_by_name.try_emplace(str::cache(name), g);
+			if (!str::is_empty(name)) groups->try_emplace(str::cache(name), g);
 		};
 
 		add(g->plural_name);
 		add(g->display_name(false));
 		add(g->display_name(true));
 	}
+
+	s_config.groups_by_name.store(std::shared_ptr<const file_group_by_name>(std::move(groups)));
 }
 
 static constexpr file_traits photo_traits = file_traits::bitmap | file_traits::cache_metadata |
@@ -575,13 +582,16 @@ void load_file_types()
 	};
 
 	int next_id = 0;
+	auto canonical = std::make_shared<file_group_by_name>();
 
 	for (const auto g : s_config.groups)
 	{
-		s_config.groups_by_name[g->name] = g;
+		(*canonical)[g->name] = g;
 		g->id = next_id;
 		next_id += 1;
 	}
+
+	s_config.groups_by_name.store(std::shared_ptr<const file_group_by_name>(std::move(canonical)));
 
 	// The plural and the current-language spellings, so the address box round trips before any
 	// catalog is loaded. Loading one calls this again.
@@ -1634,8 +1644,16 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		const auto scale_hint = intent == decode_intent::analysis
 			                            ? analysis_scale_down_factor(source_dimensions, target_extent)
 			                            : ui::calc_scale_down_factor(source_dimensions, target_extent);
-		const auto decode_bytes = (static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4) /
+		const auto scaled_output_bytes = (static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4) /
 			(static_cast<int64_t>(scale_hint) * scale_hint);
+
+		// A progressive or non-interleaved stream cannot produce a single row until every coefficient
+		// of the full-resolution image is buffered, and that storage is not scaled - so the reduction
+		// that makes a large stitch affordable as a thumbnail does not apply to it. Charging only the
+		// scaled output let a stream whose coefficients alone run to gigabytes pass a check that said
+		// tens of megabytes.
+		const auto decode_bytes = scaled_output_bytes +
+			(_jpeg_decoder.buffers_whole_image() ? _jpeg_decoder.coefficient_bytes() : 0);
 
 		if (decode_bytes > df::max_decode_bytes)
 		{
@@ -2188,6 +2206,18 @@ df::blob file_read_stream::read_all()
 	if (_file_size > (std::numeric_limits<size_t>::max)())
 		throw app_exception("file too large to load"s);
 
+	// The size is the file's own claim, and the caller is about to hold all of it at once. Without
+	// the ceiling every other whole-file read observes, a scan of an arbitrarily large file
+	// allocates to match it. Answered empty rather than thrown: one file that cannot be held must
+	// not abandon the batch that was scanning it, and every caller already treats an empty view as
+	// a file it could not read.
+	if (_file_size > df::max_blob_size)
+	{
+		df::log(__FUNCTION__, std::format("{} is too large to read whole ({})", _h->path(),
+		                                  df::file_size(_file_size).str()));
+		return {};
+	}
+
 	const auto len = static_cast<size_t>(_file_size);
 	df::blob result(len);
 
@@ -2446,7 +2476,7 @@ ui::image_ptr load_image_file(df::cspan file)
 
 file_load_result files::load(const df::file_path path, const bool can_load_preview)
 {
-	df::last_loaded_path = path;
+	df::last_loaded_path.store(path, std::memory_order_relaxed);
 	df::bump(df::file_perf.loads);
 	df::perf_timer timer(df::file_perf.load_us, &df::file_perf.load_max_us);
 
@@ -2462,6 +2492,19 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 		}
 		else
 		{
+			// Larger than this can hold at once. Reading a prefix would decode a frame whose tail is
+			// whatever the codec fills missing rows with, and the edit path would re-encode that over
+			// the original. Named as a property of the file, so it is not retried.
+			const auto attributes = platform::file_attributes(path);
+
+			if (attributes.size > static_cast<uint64_t>(df::max_blob_size))
+			{
+				df::log(__FUNCTION__, std::format("{} is too large to load ({})", path.name(),
+				                                  df::file_size(attributes.size).str()));
+				result.reason = file_load_result::failure::too_large;
+				return result;
+			}
+
 			const auto file = blob_from_file(path);
 
 			if (!file.empty())
@@ -2697,6 +2740,7 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 			record_file_op(mt, file_op_stat::patch_in_place);
 
 			xmp_update_result in_place;
+			const auto before_attempt = platform::file_attributes(path_dst);
 
 			try
 			{
@@ -2704,8 +2748,21 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 			}
 			catch (const app_exception&)
 			{
-				// The toolkit reports a lost race with a reader as an opaque open failure, so retry
-				// once, but only while the file is merely locked.
+				// The toolkit reports a lost race with a reader as an opaque open failure, so one
+				// retry is worth having - but it cannot tell that race from any other app_exception,
+				// and wait_for_unlocked_write answers true the moment the file is writable, which it
+				// also is for a corrupt container that will fail in exactly the same way. This
+				// branch hands the LIVE file to the toolkit, so the retry is gated on the file being
+				// untouched: an attempt that already wrote part of it must not run again over its
+				// own half-finished work.
+				const auto after_attempt = platform::file_attributes(path_dst);
+
+				if (after_attempt.modified != before_attempt.modified ||
+					after_attempt.size != before_attempt.size)
+				{
+					throw;
+				}
+
 				if (!platform::wait_for_unlocked_write(path_dst)) throw;
 				in_place = metadata_xmp::update(path_dst, path_dst, metadata_edits, src_xmp_name, {});
 			}
@@ -2771,16 +2828,25 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 				const auto jpeg_to_jpeg = ui::is_jpeg(loaded.i) && dst_path_is_jpeg;
 
 				df::blob transformed;
+				auto rotate_over_budget = false;
 
 				if (jpeg_to_jpeg && photo_edits.is_no_loss(dimensions_in) && params.jpeg_save_quality >= 75)
 				{
 					// Empty when the rotation would not be lossless, which the re-encode below handles.
 					transformed = _jpeg_decoder.transform(loaded.i->data(), _jpeg_encoder,
 					                                      angle_to_transform(
-						                                      df::round(photo_edits.rotation_angle())));
+						                                      df::round(photo_edits.rotation_angle())),
+					                                      &rotate_over_budget);
 				}
 
-				if (!transformed.empty())
+				if (rotate_over_budget)
+				{
+					// Lossless was possible and refused for the coefficients it would hold. The
+					// re-encode would hold the decoded picture and a rotated copy - more than that -
+					// and give up quality besides, so the edit fails rather than falling back.
+					result.code = platform::file_op_result_code::FAILED;
+				}
+				else if (!transformed.empty())
 				{
 					// The file is created before a short write can fail, so the stage is claimed for
 					// cleanup either way; otherwise a full disk leaves a truncated diffractor_* file

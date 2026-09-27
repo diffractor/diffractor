@@ -893,6 +893,10 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits, con
 
 	if (photo_edits.has_color_changes())
 	{
+		// A geometry step that could not allocate leaves nothing to adjust. Answering the empty
+		// surface here is the failure; reading its dimensions would be a null dereference.
+		if (!surface_result) return {};
+
 		color_adjust adjust;
 		adjust.color_params(photo_edits.vibrance(), photo_edits.saturation(), photo_edits.darks(),
 		                    photo_edits.midtones(),
@@ -903,7 +907,9 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits, con
 
 		if (canvas->alloc(surface_result->dimensions(), surface_result->format()))
 		{
-			adjust.apply(surface_result, canvas->pixels(), canvas->stride(), token);
+			// A cancelled pass leaves the rows it never reached uninitialised, so the canvas is
+			// dropped rather than published: the caller asked for this result and no longer wants it.
+			if (!adjust.apply(surface_result, canvas->pixels(), canvas->stride(), token)) return {};
 			surface_result = std::move(canvas);
 		}
 	}

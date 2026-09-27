@@ -64,6 +64,7 @@ public:
 
 	void deactivate() override
 	{
+		abandon_processing();
 		_rows.clear();
 		_status.clear();
 		_analysis.clear();

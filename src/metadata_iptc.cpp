@@ -795,18 +795,26 @@ static void walk_iptc_datasets(const df::cspan cs, Handler handler)
 
 		if (cs.data[i + 3] & static_cast<uint8_t>(0x80))
 		{
-			// Extended length - need at least 8 bytes total
-			if (i + 7 >= cs.size)
+			// IIM 4.1: with the top bit set, the low 15 bits of the two-octet size field are not
+			// the size - they are the COUNT of octets that hold it, and those follow the field.
+			// Reading the size straight out of the field itself both took the wrong bytes and
+			// advanced by the wrong amount, so the walk lost sync and every dataset after an
+			// extended one was parsed out of a payload rather than a header.
+			const uint32_t size_octets = (static_cast<uint32_t>(cs.data[i + 3] & 0x7F) << 8) | cs.data[i + 4];
+
+			// A size wider than four octets exceeds what this reader can hold, and zero octets
+			// describes no length at all. Either way the stream cannot be followed further.
+			if (size_octets == 0 || size_octets > 4 || i + 5 + size_octets > cs.size)
 			{
 				break;
 			}
 
-			block_len = static_cast<long>(cs.data[i + 4]) << 24 |
-				static_cast<long>(cs.data[i + 5]) << 16 |
-				static_cast<long>(cs.data[i + 6]) << 8 |
-				static_cast<long>(cs.data[i + 7]);
+			for (uint32_t b = 0; b < size_octets; ++b)
+			{
+				block_len = block_len << 8 | cs.data[i + 5 + b];
+			}
 
-			header_len = 8;
+			header_len = 5 + size_octets;
 		}
 		else
 		{

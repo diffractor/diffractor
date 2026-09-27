@@ -126,6 +126,37 @@ static void should_recalculate_zoom_fit_variants()
 	assert_zoom_near(4000.0 / 3.0, geometry.destination.Width, "fill crops width");
 }
 
+// update_fit_variant runs on every layout - a resize, a panel opening, a sidebar toggle. It has to
+// follow the viewport with the scale, but where the user panned to is theirs: recentring here threw
+// a Fit width or Fill pan away every time the window changed shape. Choosing the command still
+// recentres, because that is what the command says it does.
+static void should_keep_the_pan_when_a_fit_variant_refits()
+{
+	df::zoom_view_state zoom;
+	constexpr sized source{4000, 3000};
+
+	zoom.fit_width(source, {1000, 500});
+	assert_zoom_near(0.5, zoom.center().X, "the command centres the picture");
+	assert_zoom_near(0.5, zoom.center().Y, "on both axes");
+
+	zoom.set_center({0.5, 0.8});
+	assert_zoom_near(0.8, zoom.center().Y, "the user pans down");
+
+	zoom.update_fit_variant(source, {2000, 500});
+	assert_zoom_near(0.5, zoom.effective_scale(0.1666666667), "the scale follows the new viewport");
+	assert_zoom_near(0.8, zoom.center().Y, "and the pan survives the relayout");
+
+	// The command itself still recentres.
+	zoom.fit_width(source, {2000, 500});
+	assert_zoom_near(0.5, zoom.center().Y, "choosing fit width again recentres");
+
+	// Fill behaves the same way.
+	zoom.fill(source, {1000, 1000});
+	zoom.set_center({0.3, 0.5});
+	zoom.update_fit_variant(source, {1200, 1000});
+	assert_zoom_near(0.3, zoom.center().X, "a fill pan survives a relayout too");
+}
+
 static void should_step_zoom_reversibly_through_fit()
 {
 	df::zoom_view_state zoom;
@@ -1673,6 +1704,33 @@ static void should_keep_a_partly_covered_control_clickable()
 	assert_equal(1, element->invokes, "a click on the covered half still invoked");
 }
 
+// An ordinary clickable control had no escape of its own, so a press the user backed out of still
+// invoked on release - and Escape is exactly the key that may have changed the view the click was
+// made in, so the action landed somewhere the user was no longer looking.
+static void should_not_invoke_an_escaped_click()
+{
+	const auto host = std::make_shared<detached_test_host>();
+	host->_extent = {200, 400};
+
+	const auto element = std::make_shared<invoke_counting_element>();
+	hit_test_context ctx{{20, 20}, recti(0, 0, 200, 400)};
+	const auto controller = element->controller_from_location(host, {20, 20}, {}, ctx);
+	assert_equal(true, controller != nullptr, "the control answered");
+
+	controller->on_mouse_left_button_down({20, 20}, {});
+	assert_equal(true, controller->escape(), "escape claimed the held press");
+
+	controller->on_mouse_left_button_up({20, 20}, {});
+	assert_equal(0, element->invokes, "the release did not invoke the escaped click");
+
+	// The control is not left dead: the next press works as it always did.
+	controller->on_mouse_left_button_down({20, 20}, {});
+	controller->on_mouse_left_button_up({20, 20}, {});
+	assert_equal(1, element->invokes, "a fresh press still invokes");
+
+	assert_equal(false, controller->escape(), "escape claims nothing when no button is held");
+}
+
 // A region containing the pointer stops the walk; one that does not is cut away instead. Confining
 // is neither: it narrows to a region already chosen, whichever side of the pointer it lies.
 static void should_separate_occlusion_from_exclusion()
@@ -2512,6 +2570,7 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should keep comparison zoom panes matched"s, should_keep_comparison_zoom_panes_matched);
 	tests.add("Should calculate zoom model fit without enlarging"s, should_calculate_zoom_fit_without_enlarging);
 	tests.add("Should recalculate zoom fit variants"s, should_recalculate_zoom_fit_variants);
+	tests.add("Should keep the pan when a fit variant refits"s, should_keep_the_pan_when_a_fit_variant_refits);
 	tests.add("Should step zoom model reversibly through fit"s, should_step_zoom_reversibly_through_fit);
 	tests.add("Should keep zoom model anchor still"s, should_keep_zoom_anchor_still);
 	tests.add("Should step zoom model at pointer anchor"s, should_step_zoom_at_pointer_anchor);
@@ -2568,6 +2627,7 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should not clip a hit test controller to what covers it"s,
 	          should_not_clip_a_controller_to_what_covers_it);
 	tests.add("Should keep a partly covered control clickable"s, should_keep_a_partly_covered_control_clickable);
+	tests.add("Should not invoke an escaped click"s, should_not_invoke_an_escaped_click);
 	tests.add("Should separate hit test occlusion from exclusion"s, should_separate_occlusion_from_exclusion);
 	tests.add("Should keep the processing row clear of the view chrome"s,
 	          should_keep_the_processing_row_clear_of_the_view_chrome);

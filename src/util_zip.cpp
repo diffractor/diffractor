@@ -62,7 +62,8 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in) con
 
 	if (f.open_read(path, true))
 	{
-		const auto ft = date_t(platform::file_attributes(path).modified).date();
+		const auto attributes = platform::file_attributes(path);
+		const auto ft = date_t(attributes.modified).date();
 		const auto name = std::string(name_in);
 		//const auto wpath = platform::to_file_system_path(path)
 
@@ -83,6 +84,12 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in) con
 			return false;
 		}
 
+		// read64k answers false for the end of the file and for a read that failed alike, so the
+		// loop alone cannot tell a complete copy from a truncated one. Counting what was written
+		// and holding it to what the file holds is what makes a short read a failure rather than a
+		// smaller entry that reports success and looks intact until it is opened.
+		uint64_t written = 0;
+
 		while (f.read64k())
 		{
 			// Read in and write the item
@@ -99,6 +106,15 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in) con
 				zipCloseFileInZip(std::any_cast<zipFile>(_handle));
 				return false;
 			}
+
+			written += f.buffer_data_size();
+		}
+
+		if (written != attributes.size)
+		{
+			df::log(__FUNCTION__, std::format("read {} of {} bytes of {}", written, attributes.size, name));
+			zipCloseFileInZip(std::any_cast<zipFile>(_handle));
+			return false;
 		}
 
 		err = zipCloseFileInZip(std::any_cast<zipFile>(_handle));

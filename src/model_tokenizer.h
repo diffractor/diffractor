@@ -79,11 +79,36 @@ class search_tokenizer
 		return !s.empty();
 	}
 
+	// A latitude as format_terms writes it into a loc: or near: term, which is the only place a
+	// comma is followed by a signed component rather than by another term.
+	static bool is_coordinate_component(const search_part& part)
+	{
+		if (str::icmp(part.scope, "loc") != 0 && str::icmp(part.scope, "near") != 0) return false;
+
+		const std::string_view s = part.term;
+		auto i = size_t{0};
+		auto digits = 0;
+		auto points = 0;
+
+		if (i < s.size() && (s[i] == '-' || s[i] == '+')) ++i;
+
+		for (; i < s.size(); ++i)
+		{
+			if (is_ascii_digit(s[i])) ++digits;
+			else if (s[i] != '.' || ++points > 1) return false;
+		}
+
+		return digits > 0;
+	}
+
 	void append_current_term(const bool finish = false)
 	{
 		if (!current_text.empty())
 		{
-			if (current_term.scope.empty())
+			// A quoted word is the word, not the operator. Without the literal test a search for
+			// "and" or "or" as text - a band, a film, an ordinary word in Dutch or Danish - rewrote
+			// the query's own logic instead of matching what the user had quoted.
+			if (current_term.scope.empty() && !current_term.literal)
 			{
 				if (str::icmp(current_text, "or") == 0 || str::icmp(current_text, tt.query_or) == 0)
 				{
@@ -193,7 +218,17 @@ public:
 					append_current_term();
 					current_term.modifier.positive = false;
 				}
-				else if (c == '-' && (current_term.scope.empty() || !current_text.empty()))
+				// A '-' that opens a component right after a comma is that number's sign, not a
+				// negation. "loc:51.5142,-0.0985" is one coordinate, and reading the minus as a
+				// negation gave the longitude a non-default modifier - which stops coalesce_parts
+				// absorbing it - so the pair format_terms had written came back as a latitude plus a
+				// stray negated term, and the query reopened somewhere else entirely. Only a latitude
+				// earns it: after anything else a comma separates terms, and "sunset, -2019" still
+				// excludes 2019.
+				else if (c == '-' && (current_term.scope.empty() || !current_text.empty()) &&
+					!(pending_comma && current_text.empty() && pos + 1 < text.size() &&
+						is_ascii_digit(text[pos + 1]) && !results.empty() &&
+						is_coordinate_component(results.back())))
 				{
 					append_current_term();
 					current_term.modifier.positive = false;

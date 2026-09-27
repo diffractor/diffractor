@@ -28,10 +28,17 @@ struct plural_text
 	text_t one;
 	text_t plural;
 
-	// Translated plural forms with index >= 2 (e.g. the Slavic "many" form).
-	// English and binary-plural languages leave this empty; one/plural cover
-	// forms 0 and 1. Populated from msgstr[2..] by app_text_t::load_lang.
-	std::vector<std::string> extra_forms;
+	// Translated plural forms with index >= 2 (e.g. the Slavic "many" form), from msgstr[2..].
+	// English and binary-plural languages leave it null; one/plural cover forms 0 and 1. Published
+	// the way a text_t is - a pointer to storage app_text_t never frees - because a worker formatting
+	// a count can hold a form across a language switch, which reassigned a vector under it.
+	std::atomic<const std::vector<std::string>*> extra_forms{nullptr};
+
+	std::string_view extra_form(const size_t index) const
+	{
+		const auto* const forms = extra_forms.load(std::memory_order_acquire);
+		return forms != nullptr && index < forms->size() ? std::string_view((*forms)[index]) : std::string_view{};
+	}
 };
 
 struct po_entry
@@ -105,6 +112,15 @@ struct app_text_t
 	text_mapping _text_mapping;
 	std::vector<std::reference_wrapper<plural_text>> _all_plurals;
 	std::vector<std::reference_wrapper<text_t>> _all_texts;
+
+	// Every translation this session has loaded. A switch publishes new strings and leaves the
+	// previous ones in place, because a worker that read a translation pointer just before the
+	// switch still has to find valid storage behind it. A deque, so appending never moves what is
+	// already published. Bounded by the catalog size times the number of switches in one session.
+	std::deque<std::string> _translation_storage;
+
+	// The same for the extra plural forms of each plural text, which are published as a set.
+	std::deque<std::vector<std::string>> _plural_form_storage;
 
 	// Plural rule for the active language. Maps a count to a form index.
 	// Defaults to the binary one/plural rule used by English.
@@ -1276,6 +1292,7 @@ struct app_text_t
 	text_t movie_error_no_memory = "There was not enough memory for a movie frame.";
 	text_t movie_error_undecodable = "A clip could not be decoded.";
 	text_t movie_error_encoder_failed = "The encoder stopped before the movie was finished.";
+	text_t movie_error_output_is_source = "That name belongs to a clip in this movie. Choose another name.";
 	text_t movie_rendered_fmt = "Rendered {}.";
 	text_t movie_render_cancelled = "Rendering was canceled. Nothing was written.";
 	text_t movie_relink_none = "No missing clip was found in that folder.";
@@ -1480,6 +1497,10 @@ struct app_text_t
 	plural_text ignored_previous_fmt = {
 		"{first-name} was ignored because it was previously imported.",
 		"{count} items were ignored because they were previously imported."
+	};
+	plural_text import_date_unset_fmt = {
+		"1 item was imported but its created date could not be set.",
+		"{count} items were imported but their created date could not be set."
 	};
 	plural_text delete_info_fmt = {
 		"{first-name} will be moved to the recycle bin.",

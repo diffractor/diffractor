@@ -21,6 +21,7 @@
 #include "test_runner.h"
 
 #include <unistd.h>
+#include <sys/stat.h>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shell verbs. Some map to XDG portals; several have no counterpart.
@@ -179,6 +180,13 @@ namespace
 		// them would be a quietly incomplete copy.
 		const auto contents = platform::iterate_file_items(source, true);
 
+		// An enumeration that failed lists only part of the folder - or none of it - and copying
+		// that listing and answering OK reports a folder as copied whole when it is not.
+		if (!contents.success)
+		{
+			return {platform::file_op_result_code::FAILED, std::format("Could not read {}", source.text())};
+		}
+
 		for (const auto& file : contents.files)
 		{
 			const auto result = platform::copy_file(source.combine_file(file.name),
@@ -197,7 +205,31 @@ namespace
 
 	platform::file_op_result delete_folder_contents(const df::folder_path folder)
 	{
+		const std::string path(folder.text());
+
+		// A symlink to a directory enumerates as a folder, so recursing into it would delete files
+		// outside the tree that was selected - and rmdir on the link would then fail, leaving the
+		// damage with nothing to show for it. The link itself is what a delete removes.
+		struct stat link_st = {};
+
+		if (::lstat(path.c_str(), &link_st) == 0 && S_ISLNK(link_st.st_mode))
+		{
+			if (::unlink(path.c_str()) != 0)
+			{
+				return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+			}
+
+			return {platform::file_op_result_code::OK};
+		}
+
 		const auto contents = platform::iterate_file_items(folder, true);
+
+		// An enumeration that failed lists only part of the folder, and rmdir below would fail on
+		// what it never reached. Deleting half a tree and reporting success is the worse answer.
+		if (!contents.success)
+		{
+			return {platform::file_op_result_code::FAILED, std::format("Could not read {}", folder.text())};
+		}
 
 		for (const auto& file : contents.files)
 		{
@@ -212,7 +244,7 @@ namespace
 		}
 
 		// The interface has no delete_folder: on Windows a folder only ever leaves through the shell.
-		if (::rmdir(std::string(folder.text()).c_str()) != 0)
+		if (::rmdir(path.c_str()) != 0)
 		{
 			return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
 		}
@@ -248,6 +280,16 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 
 	file_op_result result{file_op_result_code::OK};
 
+	// Whatever the run has already created stays in the answer. The caller selects and indexes from
+	// created_files, so returning a bare failure hid every mutation that had already been made - the
+	// files were on disk and nothing in the application knew about them.
+	const auto stopped_by = [&result](const file_op_result& failure)
+	{
+		result.code = failure.code;
+		result.error_message = failure.error_message;
+		return result;
+	};
+
 	for (const auto& file : files)
 	{
 		const auto destination = replace_existing
@@ -256,15 +298,22 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 
 		if (destination.is_empty())
 		{
-			return {file_op_result_code::FAILED, std::format("Could not find a free name for {}", file.str())};
+			return stopped_by({
+				file_op_result_code::FAILED, std::format("Could not find a free name for {}", file.str())
+			});
 		}
 
 		const auto copied = copy_file(file, destination, false, false);
-		if (copied.failed()) return copied;
+		if (copied.failed()) return stopped_by(copied);
 
 		if (is_move)
 		{
-			if (const auto removed = delete_file(file); removed.failed()) return removed;
+			if (const auto removed = delete_file(file); removed.failed())
+			{
+				// The copy landed before the source refused to go, so it is named too.
+				result.created_files.files.emplace_back(destination);
+				return stopped_by(removed);
+			}
 		}
 
 		result.created_files.files.emplace_back(destination);
@@ -278,15 +327,26 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 
 		if (destination.is_empty())
 		{
-			return {file_op_result_code::FAILED, std::format("Could not find a free name for {}", folder.text())};
+			return stopped_by({
+				file_op_result_code::FAILED, std::format("Could not find a free name for {}", folder.text())
+			});
 		}
 
 		const auto copied = copy_folder_contents(folder, destination);
-		if (copied.failed()) return copied;
+		if (copied.failed())
+		{
+			// The folder was created and partly filled before the failure, so it is named too.
+			result.created_files.folders.emplace_back(destination);
+			return stopped_by(copied);
+		}
 
 		if (is_move)
 		{
-			if (const auto removed = delete_folder_contents(folder); removed.failed()) return removed;
+			if (const auto removed = delete_folder_contents(folder); removed.failed())
+			{
+				result.created_files.folders.emplace_back(destination);
+				return stopped_by(removed);
+			}
 		}
 
 		result.created_files.folders.emplace_back(destination);

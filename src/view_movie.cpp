@@ -103,7 +103,10 @@ namespace
 
 	std::string format_clock(const double seconds)
 	{
-		const auto total = static_cast<int>(std::max(0.0, seconds));
+		// std::max answers 0 for a NaN, and the upper bound keeps the conversion defined for a
+		// duration no clock can show.
+		const auto total = static_cast<int>(std::min(std::max(0.0, seconds),
+		                                             static_cast<double>(std::numeric_limits<int>::max())));
 		return std::format("{}:{:02}", total / 60, total % 60);
 	}
 
@@ -3599,7 +3602,7 @@ namespace
 	movie_render_result render_movie_to_file(const movie_render_request& request,
 	                                         const std::function<void(double)>& report,
 	                                         const df::cancel_token& token,
-	                                         const std::shared_ptr<std::atomic_int>& publish_state)
+	                                         const std::shared_ptr<movie_render_control>& control)
 	{
 		movie_render_result result;
 
@@ -3610,6 +3613,15 @@ namespace
 		if (timing.duration <= 0 || request.output.extent.cx <= 0 || request.output.extent.cy <= 0)
 		{
 			result.reason = movie_render_error::no_length;
+			return result;
+		}
+
+		// The output is replaced only after the last clip has been read, so an output that names a
+		// clip would consume that source without the timeline ever showing it gone. Refused here,
+		// where the replace is owned, rather than trusted to whichever caller chose the path.
+		if (movie_output_names_a_clip(request.clips, request.path))
+		{
+			result.reason = movie_render_error::output_is_source;
 			return result;
 		}
 
@@ -3651,8 +3663,17 @@ namespace
 		ui::surface_ptr fitted;
 		std::vector<int16_t> chunk;
 
-		const auto frame_count = std::max<int64_t>(
-			1, static_cast<int64_t>(std::ceil(timing.duration * frame_rate)));
+		const auto frames = std::ceil(timing.duration * frame_rate);
+
+		// The document bounds its own durations, but a frame count that does not fit the arithmetic
+		// that walks it is not a movie to attempt: the conversion below would be undefined.
+		if (!std::isfinite(frames) || frames > static_cast<double>(movie_max_frames))
+		{
+			result.reason = movie_render_error::no_length;
+			return result;
+		}
+
+		const auto frame_count = std::max<int64_t>(1, static_cast<int64_t>(frames));
 		int64_t samples_written = 0;
 
 		for (int64_t i = 0; i < frame_count; ++i)
@@ -3758,8 +3779,10 @@ namespace
 			return result;
 		}
 
-		auto expected = 0;
-		if (!publish_state || !publish_state->compare_exchange_strong(expected, 2))
+		// Cancel and this replace decide each other here: only one of them can claim the render, so a
+		// cancel that lands while the encoder was closing discards the file, and one that lands after
+		// this point leaves the movie the user already has.
+		if (!control || !control->claim_publication())
 		{
 			platform::delete_file(staged);
 			result.cancelled = true;
@@ -3810,18 +3833,18 @@ void movie_view::render_movie()
 	request.path = path;
 
 	++_render_generation;
-	_render_cancel = std::make_shared<std::atomic_int>();
+	_render_control = std::make_shared<movie_render_control>();
 	_progress = {true, 0, 100};
 	_status = std::string(tt.movie_rendering.sv());
 
 	const auto generation = _render_generation;
 	const auto weak = weak_from_this();
-	const auto token = df::cancel_token(*_render_cancel);
+	const auto control = _render_control;
+	const auto token = df::cancel_token(control->cancelled);
 
 	_state.invalidate_view(view_invalid::status | view_invalid::command_state | view_invalid::app_layout);
 
-	const auto publish_state = _render_cancel;
-	_state.queue_async(async_queue::work, [weak, request, token, publish_state, generation, &s = _state]
+	_state.queue_async(async_queue::work, [weak, request, token, control, generation, &s = _state]
 	{
 		// Coalesced to whole percent: a queued UI message per frame is tens a second of work the UI
 		// thread has no use for.
@@ -3845,7 +3868,7 @@ void movie_view::render_movie()
 
 		try
 		{
-			result = render_movie_to_file(request, report, token, publish_state);
+			result = render_movie_to_file(request, report, token, control);
 		}
 		catch (const std::exception& e)
 		{
@@ -3880,7 +3903,7 @@ void movie_view::render_finished(const size_t generation, const bool ok, const b
 	if (generation != _render_generation) return;
 
 	_progress = {};
-	_render_cancel.reset();
+	_render_control.reset();
 
 	const auto why = [reason, &message]() -> std::string_view
 	{
@@ -3891,6 +3914,7 @@ void movie_view::render_finished(const size_t generation, const bool ok, const b
 		case movie_render_error::no_memory: return tt.movie_error_no_memory.sv();
 		case movie_render_error::undecodable: return tt.movie_error_undecodable.sv();
 		case movie_render_error::encoder_failed: return tt.movie_error_encoder_failed.sv();
+		case movie_render_error::output_is_source: return tt.movie_error_output_is_source.sv();
 		case movie_render_error::none: break;
 		}
 
@@ -3908,10 +3932,9 @@ void movie_view::render_finished(const size_t generation, const bool ok, const b
 
 void movie_view::cancel_operation()
 {
-	if (_render_cancel)
+	if (_render_control)
 	{
-		auto expected = 0;
-		_render_cancel->compare_exchange_strong(expected, 1);
+		_render_control->cancel();
 	}
 }
 

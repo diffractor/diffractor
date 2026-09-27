@@ -487,6 +487,34 @@ platform::file_op_result platform::move_file(const df::file_path existing, const
 
 	if (fail_if_exists)
 	{
+		// rename() has no refusal mode, and a stat-then-rename would silently replace a destination
+		// created in the window between them. link() refuses atomically with EEXIST, so the pair is
+		// the refusal; the source is only unlinked once the new name is known to be this move's.
+		if (::link(from.c_str(), to.c_str()) == 0)
+		{
+			if (::unlink(from.c_str()) == 0)
+			{
+				return {file_op_result_code::OK};
+			}
+
+			const auto unlink_error = errno;
+			::unlink(to.c_str());
+			return {file_op_result_code::FAILED, std::string(::strerror(unlink_error))};
+		}
+
+		if (errno == EEXIST)
+		{
+			return {file_op_result_code::ALREADY_EXISTS};
+		}
+
+		// Hard links are not available for this source - a filesystem without them, or one that
+		// refuses them across its boundaries. The pre-check is then the best refusal there is, and
+		// it is the one this function already made.
+		if (errno != EPERM && errno != EXDEV && errno != EMLINK && errno != EOPNOTSUPP && errno != ENOSYS)
+		{
+			return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
 		struct stat st = {};
 		if (::stat(to.c_str(), &st) == 0)
 		{
@@ -536,6 +564,14 @@ void platform::mutex::ex_lock() const
 void platform::mutex::ex_unlock() const
 {
 	lock_state(_cs).store(0, std::memory_order_release);
+}
+
+bool platform::mutex::try_ex_lock() const
+{
+	auto state = lock_state(_cs);
+	uintptr_t expected = 0;
+	return state.compare_exchange_strong(expected, lock_writer_bit, std::memory_order_acquire,
+	                                     std::memory_order_relaxed);
 }
 
 void platform::mutex::sh_lock() const

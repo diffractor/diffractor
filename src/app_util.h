@@ -63,6 +63,14 @@ struct rename_item
 	bool destination_exists = false;
 	std::vector<std::pair<df::file_path, df::file_path>> sidecars;
 	std::vector<bool> sidecar_destinations_exist;
+	// The file identity the review was made against. The run moves the source and, under Replace,
+	// writes over the destination, so both have to still be the files the user saw - existence alone
+	// cannot tell a file that was replaced in between from the one that was reviewed. Folders carry
+	// none of this: a folder's contents change without the folder becoming a different folder.
+	platform::file_attributes_t source_attributes;
+	platform::file_attributes_t destination_attributes;
+	std::vector<platform::file_attributes_t> sidecar_source_attributes;
+	std::vector<platform::file_attributes_t> sidecar_destination_attributes;
 	collision_policy policy = collision_policy::block_run;
 	std::string original_name;
 	std::string new_name;
@@ -143,6 +151,9 @@ struct import_result
 	item_import_set imports;
 	// Rows whose files no longer matched the review. They wrote nothing and need a fresh analysis.
 	uint32_t refused = 0;
+	// Rows that arrived but whose requested created date the filesystem refused. The file is there,
+	// so this is not a failed import, but the user asked for the date and did not get it.
+	uint32_t dates_unset = 0;
 };
 
 struct import_analysis_item
@@ -159,9 +170,20 @@ struct import_analysis_item
 	// that writes over a file instead of proving the name is free.
 	platform::file_attributes_t source_fi;
 	platform::file_attributes_t destination_fi;
+
 	// Sidecars travel with the file they describe rather than standing as rows of their own, so a
-	// partial import can never leave metadata at one end and its file at the other.
-	std::vector<std::pair<df::file_path, df::file_path>> sidecars;
+	// partial import can never leave metadata at one end and its file at the other. Each carries the
+	// same pair of stamps the primary does: the run writes the group that was reviewed or none of
+	// it, and a sidecar destination that appeared since the review is not a reviewed replacement.
+	struct sidecar_move
+	{
+		df::file_path source;
+		df::file_path destination;
+		platform::file_attributes_t source_fi;
+		platform::file_attributes_t destination_fi;
+	};
+
+	std::vector<sidecar_move> sidecars;
 };
 
 using import_analysis_result = std::map<df::folder_path, std::vector<import_analysis_item>, df::iless>;
@@ -217,7 +239,10 @@ struct sync_analysis_item
 	df::folder_path remote_root;
 
 	sync_action action = sync_action::none;
-	uint32_t delete_crc = 0;
+	// Unset when the analysis could not read the file it planned to delete. Two failed reads both
+	// answering zero would otherwise compare equal and prove the content unchanged, which is how a
+	// file nobody could read got deleted.
+	std::optional<uint32_t> delete_crc;
 };
 
 struct sync_analysis_folder
@@ -293,6 +318,9 @@ struct convert_item_plan
 	df::file_path destination;
 	// True when the destination existed before the policy was applied.
 	bool collides = false;
+	// What stood at a colliding destination when it was reviewed. A row that replaces it is held to
+	// this, as every other operation that writes over a reviewed file is.
+	platform::file_attributes_t destination_fi;
 	// Resolved outcome of the collision policy for this row.
 	bool skipped = false;
 	bool renamed_to_avoid_collision = false;

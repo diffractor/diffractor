@@ -441,11 +441,6 @@ platform::file_op_result platform::create_folder(const df::folder_path path)
 platform::file_op_result platform::copy_file(const df::file_path existing, const df::file_path destination,
                                              const bool fail_if_exists, const bool can_create_folder)
 {
-	if (fail_if_exists && exists(destination))
-	{
-		return {file_op_result_code::ALREADY_EXISTS};
-	}
-
 	if (can_create_folder)
 	{
 		const auto folder = destination.folder();
@@ -455,11 +450,21 @@ platform::file_op_result platform::copy_file(const df::file_path existing, const
 	const auto src = ::open(existing.str().c_str(), O_RDONLY);
 	if (src < 0) return {file_op_result_code::FAILED, std::string(::strerror(errno))};
 
-	const auto dst = ::open(destination.str().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	// O_EXCL is the refusal, not a preceding exists() check: a destination created between the two
+	// would be opened with O_TRUNC and overwritten, which is the file the caller asked to protect.
+	const auto create_flags = fail_if_exists ? O_EXCL : O_TRUNC;
+	const auto dst = ::open(destination.str().c_str(), O_WRONLY | O_CREAT | create_flags, 0644);
 	if (dst < 0)
 	{
+		const auto open_error = errno;
 		::close(src);
-		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+
+		if (fail_if_exists && open_error == EEXIST)
+		{
+			return {file_op_result_code::ALREADY_EXISTS};
+		}
+
+		return {file_op_result_code::FAILED, std::string(::strerror(open_error))};
 	}
 
 	uint8_t buffer[64 * 1024];
@@ -590,7 +595,12 @@ std::string platform::file_write_error(const df::file_path path)
 df::file_path platform::temp_file(const std::string_view ext, const df::folder_path folder)
 {
 	const auto dir = folder.is_empty() ? known_path(known_folder::app_cache_data) : folder;
-	if (!exists(dir)) create_folder(dir);
+
+	// Only the default folder is this function's to create. A caller that names a folder is staging
+	// beside its own files, and a folder that is not there is that caller's failure to report - as
+	// on Windows, where this only ever picks a name. Creating it here let a save into a missing
+	// folder succeed on Linux alone.
+	if (folder.is_empty() && !exists(dir)) create_folder(dir);
 
 	for (auto attempt = 0; attempt < 64; ++attempt)
 	{
@@ -618,10 +628,16 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 	auto* const dir = ::opendir(path.c_str());
 	if (dir == nullptr) return result;
 
-	while (const auto* const entry = ::readdir(dir))
+	for (;;)
 	{
-		const std::string_view name(entry->d_name);
+		// Cleared immediately before each call so the check after the loop sees only that call's
+		// outcome: ::stat below sets errno on the entries it skips, and a directory whose last entry
+		// was one of those has not failed.
+		errno = 0;
+		const auto* const entry = ::readdir(dir);
+		if (entry == nullptr) break;
 
+		const std::string_view name(entry->d_name);
 		if (name == "." || name == "..") continue;
 		if (!show_hidden && name.size() > 1 && name.front() == '.') continue;
 
@@ -648,7 +664,19 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 		}
 	}
 
+	// readdir answers null for both the end of the directory and a failure, and the caller expires
+	// every entry a successful listing did not mention. A short listing reported as a complete one
+	// would take the rest of the folder out of the index.
+	const auto walk_error = errno;
+
 	::closedir(dir);
+
+	if (walk_error != 0)
+	{
+		df::log(__FUNCTION__, std::format("enumeration of {} failed: {}", path, ::strerror(walk_error)));
+		return {};
+	}
+
 	result.success = true;
 	return result;
 }
@@ -897,8 +925,13 @@ uint32_t platform::file_crc32(const df::file_path path)
 
 uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& token)
 {
+	return file_crc32_checked(path, token).value_or(0);
+}
+
+std::optional<uint32_t> platform::file_crc32_checked(const df::file_path path, const df::cancel_token& token)
+{
 	const auto f = open_file(path, file_open_mode::sequential_scan);
-	if (!f) return 0;
+	if (!f) return {};
 
 	const auto size = f->size();
 	uint64_t total_read = 0;
@@ -910,7 +943,7 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 
 	for (;;)
 	{
-		if (token.is_cancelled()) return 0;
+		if (token.is_cancelled()) return {};
 
 		const auto n = f->read(buffer.data(), buffer.size());
 		if (n == 0) break;
@@ -921,7 +954,7 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 
 	// A file truncated by another process reads short without failing, and a partial checksum would
 	// be recorded as if it described the whole file.
-	return total_read == size ? ~crc : 0;
+	return total_read == size ? std::optional{~crc} : std::nullopt;
 }
 
 // Rasterising a glyph needs the text stack, which is Stage 3 of the port. The icon font itself is

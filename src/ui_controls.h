@@ -74,7 +74,14 @@ public:
 	{
 		const auto was_tracking = is_style_bit_set(view_element_style::tracking);
 		if (was_tracking != ic.tracking) ic.invalidate_view = true;
-		if ((was_tracking || ic.tracking) && !_slider_bounds.is_empty())
+
+		// A controller being torn down says the pointer is gone by passing {-1,-1}. That is a
+		// leave, not a drag off the left edge - and clamping it lands on _min, so a slider or a
+		// scrubber jumped to the start as the control that owned it was replaced, taking the
+		// playback position or the setting with it.
+		const auto pointer_left = ic.loc.x < 0 && ic.loc.y < 0;
+
+		if ((was_tracking || ic.tracking) && !pointer_left && !_slider_bounds.is_empty())
 		{
 			const auto pos = std::clamp(ic.loc.x, _slider_bounds.left, _slider_bounds.right) - _slider_bounds.left;
 			const auto value = _min + df::round(static_cast<double>(pos) * (_max - _min) /
@@ -424,12 +431,24 @@ public:
 		auto text_changed = false;
 
 		if (keys.control && key == 'A') model.select_all();
-		else if (keys.control && key == 'C') platform::set_clipboard(model.selected_text());
+		else if (keys.control && key == 'C')
+		{
+			// Nothing selected is nothing to copy. Sending it anyway replaced whatever the user had
+			// put on the clipboard with an empty string, which is a loss they did not ask for and
+			// cannot undo.
+			const auto selected = model.selected_text();
+			if (!selected.empty()) platform::set_clipboard(selected);
+		}
 		else if (keys.control && key == 'X')
 		{
-			platform::set_clipboard(model.selected_text());
-			model.erase_selection();
-			text_changed = true;
+			const auto selected = model.selected_text();
+
+			if (!selected.empty())
+			{
+				platform::set_clipboard(selected);
+				model.erase_selection();
+				text_changed = true;
+			}
 		}
 		else if (keys.control && key == 'V')
 		{
@@ -2205,6 +2224,28 @@ public:
 		const auto track_bounds = calc_track_bounds(ic.element_offset);
 		if (track_bounds.is_empty()) return;
 
+		const auto is_tracking = is_style_bit_set(view_element_style::tracking);
+
+		// {-1,-1} is a controller saying the pointer is gone: Escape, or the controller being torn
+		// down. That is a leave, not a drag off the left edge - clamping it lands on the start, so a
+		// scrub cancelled that way sent playback back to the beginning. A scrub still in progress
+		// ends where it is, which also takes the player out of scrubbing.
+		if (ic.loc.x < 0 && ic.loc.y < 0)
+		{
+			if (is_tracking && !ic.tracking)
+			{
+				set_style_bit(view_element_style::tracking, false);
+				ic.invalidate_view = true;
+
+				if (_display->_session)
+				{
+					_player->seek(_display->_session, _display->media_pos(), false);
+				}
+			}
+
+			return;
+		}
+
 		const auto scrubber_width = track_bounds.width();
 		const auto media_start = _display->media_start();
 		const auto media_end = _display->media_end();
@@ -2217,8 +2258,6 @@ public:
 			_display->load_seek_preview(scrubber_pos, scrubber_width,
 			                            [d = ui_owned(_display->_async, _display)] { d->preview_loaded(); });
 		}
-
-		const auto is_tracking = is_style_bit_set(view_element_style::tracking);
 
 		if (is_tracking || ic.tracking || is_tracking != ic.tracking)
 		{

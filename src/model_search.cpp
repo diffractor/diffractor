@@ -154,7 +154,9 @@ namespace
 
 	bool is_size_unit_token(const std::string_view token)
 	{
-		return str::icmp(token, "kb") == 0 || str::icmp(token, "mb") == 0 || str::icmp(token, "gb") == 0;
+		// Every unit format_size writes, since format_term writes it apart from its number.
+		return str::icmp(token, "kb") == 0 || str::icmp(token, "mb") == 0 || str::icmp(token, "gb") == 0 ||
+			str::icmp(token, "tb") == 0;
 	}
 }
 
@@ -267,6 +269,14 @@ static std::string quote_term_value(const std::string_view term_text)
 static std::string term_quote(const std::string_view term_text)
 {
 	auto has_special_char = term_text.find_first_of(" \t\'\"!-#@") != std::string::npos;
+
+	// The tokenizer reads a bare "and" or "or" as the operator, so a term that is one of those words
+	// has to be written quoted to read back as the text it is.
+	if (!has_special_char && (str::icmp(term_text, "and") == 0 || str::icmp(term_text, "or") == 0 ||
+		str::icmp(term_text, tt.query_and) == 0 || str::icmp(term_text, tt.query_or) == 0))
+	{
+		has_special_char = true;
+	}
 
 	if (!has_special_char)
 	{
@@ -719,7 +729,10 @@ void df::search_t::next_date(const bool forward)
 	{
 		if (forward)
 		{
-			const auto days_in_month = days_per_month(parts.month);
+			// The year decides February's length, and passing only the month left it at 28 - so
+			// stepping forward from the 28th of a leap February skipped the 29th entirely. A
+			// year-less date still takes the 28-day reading, which is what it did before.
+			const auto days_in_month = days_per_month(parts.month, parts.year ? parts.year : -1);
 			parts.day += 1;
 
 			if (parts.day > days_in_month)
@@ -756,7 +769,7 @@ void df::search_t::next_date(const bool forward)
 					}
 				}
 
-				parts.day = days_per_month(parts.month);
+				parts.day = days_per_month(parts.month, parts.year ? parts.year : -1);
 			}
 		}
 
@@ -1216,7 +1229,14 @@ void df::search_t::parse_part(const search_part& part)
 			_terms.emplace_back(search_term(part.term, text_mods));
 
 			search_term_modifier ap_mods = part.modifier;
-			ap_mods.logical_op = search_term_modifier_bool::m_or;
+
+			// Negated, the two arms have to be joined the other way round: "not either reading" is
+			// "neither reading", which is De Morgan's law. Left as OR, a negated pair read as
+			// "not the text OR not the aperture" - true of very nearly every photograph, so the
+			// exclusion the user asked for removed almost nothing.
+			ap_mods.logical_op = part.modifier.positive
+				                     ? search_term_modifier_bool::m_or
+				                     : search_term_modifier_bool::m_and;
 			ap_mods.end_group += 1;
 			result = search_term(prop::f_number, d1, ap_mods);
 		}
@@ -1412,26 +1432,31 @@ void df::search_t::parse_part(const search_part& part)
 	}
 	else if (type == prop::file_size)
 	{
-		// Not 0ull: under LP64 unsigned long long is a distinct type from uint64_t, so the
-		// search_term overload set has no exact match and the call is ambiguous.
+		// Scaled from the double, not the int: a bare byte count above two billion overflowed the
+		// int and matched small files instead. Clamped rather than wrapped at the top of the range.
+		const auto scaled = [d](const double multiplier) -> uint64_t
+		{
+			const auto bytes = d * multiplier;
+			if (!std::isfinite(bytes) || bytes <= 0.0) return 0;
+
+			constexpr auto limit = static_cast<double>(std::numeric_limits<uint64_t>::max());
+			// std::round, not df::round: that one answers an int32 and turned every size at or above
+			// two gigabytes into a negative number, which then widened to an enormous unsigned one.
+			return bytes >= limit ? std::numeric_limits<uint64_t>::max() : static_cast<uint64_t>(std::round(bytes));
+		};
+
+		constexpr auto kb = 1024.0;
+		constexpr auto mb = kb * 1024.0;
+		constexpr auto gb = mb * 1024.0;
+		constexpr auto tb = gb * 1024.0;
+
 		uint64_t size = 0;
 
-		if (str::ends(part.term, "gb"))
-		{
-			size = round(d * 1024ull * 1024ull * 1024ull);
-		}
-		else if (str::ends(part.term, "mb"))
-		{
-			size = round(d * 1024ull * 1024ull);
-		}
-		else if (str::ends(part.term, "kb"))
-		{
-			size = round(d * 1024ull);
-		}
-		else
-		{
-			size = n;
-		}
+		if (str::ends(part.term, "tb")) size = scaled(tb);
+		else if (str::ends(part.term, "gb")) size = scaled(gb);
+		else if (str::ends(part.term, "mb")) size = scaled(mb);
+		else if (str::ends(part.term, "kb")) size = scaled(kb);
+		else size = scaled(1.0);
 
 		result = search_term(type, size, part.modifier);
 	}
@@ -1456,8 +1481,12 @@ void df::search_t::parse_part(const search_part& part)
 			break;
 		case prop::data_type::int_pair:
 			{
-				// "N" or "N/M", as format_xy writes it back out
-				const auto sep = part.term.find('/');
+				// "N" or "N/M" as format_xy writes a track or a disc, and "WxH" as
+				// format_dimensions writes a size. Splitting on '/' alone read "1920x1080" as a bare
+				// 1920, and compare_term treats a zero second component as "any" - so a saved
+				// dimensions query came back matching every image of that width whatever its
+				// height, which is broader than what the user asked for and than what was shown.
+				const auto sep = part.term.find_first_of("/xX");
 				const auto x = static_cast<int16_t>(str::to_int(part.term.substr(0, sep)));
 				const auto y = sep == std::string_view::npos
 					               ? int16_t{0}
@@ -2768,25 +2797,38 @@ df::search_result df::search_matcher::match_all_terms(const str::cached folder_n
 	{
 		bool logical_and = true;
 		bool state = true;
+		// A level starts with no value rather than with an operator's identity. `true` is the
+		// identity for AND but the annihilator for OR, so an OR level seeded with it stays true
+		// whatever it later receives - which is what made a nested group after OR match everything.
+		bool has_value = false;
 	};
 
 	constexpr auto max_levels = 32;
 	level level_results[max_levels];
 	auto current_level = 0;
 
-	const auto fold_level = [](level* levels, int& depth)
+	const auto contribute = [](level& target, const bool value, const bool logical_and)
+	{
+		if (!target.has_value)
+		{
+			target.state = value;
+			target.has_value = true;
+		}
+		else if (logical_and)
+		{
+			target.state &= value;
+		}
+		else
+		{
+			target.state |= value;
+		}
+	};
+
+	const auto fold_level = [&contribute](level* levels, int& depth)
 	{
 		if (depth > 0)
 		{
-			if (levels[depth].logical_and)
-			{
-				levels[depth - 1].state &= levels[depth].state;
-			}
-			else
-			{
-				levels[depth - 1].state |= levels[depth].state;
-			}
-
+			contribute(levels[depth - 1], levels[depth].state, levels[depth].logical_and);
 			depth -= 1;
 		}
 	};
@@ -2805,20 +2847,15 @@ df::search_result df::search_matcher::match_all_terms(const str::cached folder_n
 				level_results[current_level].logical_and = term.modifiers.logical_op !=
 					search_term_modifier_bool::m_or;
 				level_results[current_level].state = true;
+				level_results[current_level].has_value = false;
 				opened += 1;
 			}
 		}
 
 		// combine into whichever level the term now sits in, so a '(' beyond max_levels still
 		// contributes its match rather than being discarded
-		if (opened > 0 || term.modifiers.logical_op != search_term_modifier_bool::m_or)
-		{
-			level_results[current_level].state &= is_match;
-		}
-		else
-		{
-			level_results[current_level].state |= is_match;
-		}
+		contribute(level_results[current_level], is_match,
+		           opened > 0 || term.modifiers.logical_op != search_term_modifier_bool::m_or);
 
 		for (auto i = 0; i < term.modifiers.end_group; i++)
 		{

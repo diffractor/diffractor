@@ -301,6 +301,11 @@ namespace platform
 	file_ptr open_file(df::file_path path, file_open_mode mode);
 	uint32_t file_crc32(df::file_path path);
 	uint32_t file_crc32(df::file_path path, const df::cancel_token& token);
+
+	// The same checksum, with "could not read it" distinguished from "it checksummed to zero". A
+	// caller that acts on the answer - Sync deletes a file whose content still matches what it
+	// reviewed - cannot treat two failed reads as proof the file is unchanged.
+	std::optional<uint32_t> file_crc32_checked(df::file_path path, const df::cancel_token& token);
 	// Rasterises one glyph of the bundled icon font to a surface, for the places that need an image
 	// rather than drawn text. Takes a code point, so it does not depend on the size of wchar_t.
 	ui::const_surface_ptr create_icon_surface(char32_t ch);
@@ -776,6 +781,11 @@ namespace platform
 		_Acquires_exclusive_lock_(this)
 		void ex_lock() const;
 
+		// For a caller that must never block, such as the crash handler reading state a worker
+		// mutates. Answers false rather than waiting; the caller decides what a refused read means.
+		_When_(return != 0, _Acquires_exclusive_lock_(this))
+		bool try_ex_lock() const;
+
 		_Releases_exclusive_lock_(this)
 		void ex_unlock() const;
 
@@ -848,6 +858,27 @@ namespace platform
 		{
 			_rw.ex_unlock();
 		}
+	};
+
+	// Never waits. Held by callers that cannot afford to block on a lock another thread may be
+	// holding - the crash handler above all, where blocking on the faulting thread's own lock would
+	// hang the report instead of producing it.
+	class try_exclusive_lock final : public df::no_copy
+	{
+		const mutex& _rw;
+		const bool _locked;
+
+	public:
+		try_exclusive_lock(const mutex& rw) : _rw(rw), _locked(rw.try_ex_lock())
+		{
+		}
+
+		~try_exclusive_lock() override
+		{
+			if (_locked) _rw.ex_unlock();
+		}
+
+		bool locked() const { return _locked; }
 	};
 
 	class thread_event

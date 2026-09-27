@@ -91,6 +91,7 @@ public:
 
 	void deactivate() override
 	{
+		abandon_processing();
 		_rows.clear();
 		_adds.clear();
 		_removes.clear();

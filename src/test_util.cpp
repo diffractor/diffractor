@@ -51,6 +51,48 @@ static void should_abort_result_scope_during_exception()
 	assert_equal(1, results->abort_count, "exception unwinding aborts results");
 }
 
+// EXIF text can arrive as UTF-16, and which way round it is decides whether it reads as words or
+// as mojibake. Testing only the even bytes for zero recognised big-endian alone - so a
+// little-endian value, which is what Windows writes, was read a byte at a time.
+static void should_detect_utf16_either_way_round()
+{
+	const auto is_utf16 = [](const std::initializer_list<uint8_t> bytes)
+	{
+		const std::vector<uint8_t> v(bytes);
+		return str::is_utf16(v.data(), static_cast<int>(v.size()));
+	};
+
+	// "Hi" with no mark, each way round.
+	assert_equal(true, is_utf16({'H', 0, 'i', 0}), "unmarked little-endian is recognised");
+	assert_equal(true, is_utf16({0, 'H', 0, 'i'}), "and so is unmarked big-endian");
+
+	// Marked, each way round.
+	assert_equal(true, is_utf16({0xff, 0xfe, 'H', 0}), "a little-endian mark is recognised");
+	assert_equal(true, is_utf16({0xfe, 0xff, 0, 'H'}), "and so is a big-endian mark");
+
+	// UTF-32 LE opens with the UTF-16 LE mark and must not be taken for it.
+	assert_equal(false, is_utf16({0xff, 0xfe, 0x00, 0x00}), "a utf-32 mark is not utf-16");
+
+	// Plain bytes stay plain.
+	assert_equal(false, is_utf16({'H', 'e', 'l', 'l', 'o'}), "ascii is not utf-16");
+	assert_equal(false, is_utf16({0xe2, 0x82, 0xac, 'x'}), "utf-8 is not utf-16");
+	assert_equal(false, is_utf16({'H'}), "and a single byte cannot be");
+
+	// Recognising either order is only half of it: the text is decoded the same way round it was
+	// recognised, and a mark is not part of the value. Copied as it lay, big-endian text came out
+	// backwards and a marked value kept an invisible U+FEFF at its start.
+	const auto decode = [](const std::initializer_list<uint8_t> bytes)
+	{
+		const std::vector<uint8_t> v(bytes);
+		return str::utf16_from_bytes(v.data(), static_cast<int>(v.size()));
+	};
+
+	assert_equal(true, decode({'H', 0, 'i', 0}) == u"Hi", "unmarked little-endian decodes");
+	assert_equal(true, decode({0, 'H', 0, 'i'}) == u"Hi", "and so does unmarked big-endian");
+	assert_equal(true, decode({0xff, 0xfe, 'H', 0, 'i', 0}) == u"Hi", "a little-endian mark is not part of the text");
+	assert_equal(true, decode({0xfe, 0xff, 0, 'H', 0, 'i'}) == u"Hi", "and a big-endian mark sets the order");
+}
+
 static void should_icmp_natural()
 {
 	// Test basic numeric comparison - the key bug fix
@@ -123,6 +165,24 @@ static void should_icmp_natural()
 	assert_equal(true, str::icmp_natural("DSC_0001.jpg", "DSC_0002.jpg") < 0, "DSC sequence");
 	assert_equal(true, str::icmp_natural("DSC_0099.jpg", "DSC_0100.jpg") < 0, "DSC sequence 99-100");
 	assert_equal(true, str::icmp_natural("IMG_9999.png", "IMG_10000.png") < 0, "IMG sequence overflow");
+
+	// A run longer than nineteen digits does not fit a uint64_t. Accumulating the value wrapped it,
+	// and the wrapped result compared as something small - so a long serial number, a hash or a
+	// phone-camera timestamp landed at an arbitrary point in the listing. Leading zeros have
+	// already been consumed by this point, so the longer run is simply the larger number.
+	assert_equal(true, str::icmp_natural("id_99999999999999999999", "id_100000000000000000000") < 0,
+	             "twenty digits beats twenty");
+	assert_equal(true, str::icmp_natural("id_18446744073709551615", "id_18446744073709551616") < 0,
+	             "one past the widest value a uint64 holds still orders after it");
+	assert_equal(true, str::icmp_natural("id_9", "id_99999999999999999999999999") < 0,
+	             "a short run orders before a very long one");
+	assert_equal(0, str::icmp_natural("id_99999999999999999999", "id_99999999999999999999"),
+	             "and two of the same are equal");
+
+	// 2^64 wraps to zero, so any comparison that forms the value puts it below a bare 1.
+	assert_equal(true, str::icmp_natural("id_1", "id_18446744073709551616") < 0,
+	             "two to the sixty-four is larger than one, not smaller");
+	assert_equal(true, str::icmp_natural("id_18446744073709551616", "id_1") > 0, "and the reverse holds");
 }
 
 static void should_follow_the_filesystem_for_path_identity()
@@ -629,6 +689,30 @@ static void should_split_genre()
 	assert_equal("Jazz", str::trim(parts3[0]), "single genre");
 }
 
+static void should_parse_dates()
+{
+	const auto parsed = [](const std::string_view text)
+	{
+		df::date_t d;
+		return d.parse(text) ? d.date() : df::day_t{0};
+	};
+
+	assert_equal(2006, parsed("2006-01-14 15:51:31").year, "an ISO date parses");
+	assert_equal(31, parsed("2006-01-14 15:51:31").second, "including its seconds");
+	assert_equal(2006, parsed("2006:01:14 15:51:31").year, "an EXIF date parses");
+	assert_equal(13, parsed("2011-10-03T02:59:13.000000Z").second, "fractional seconds truncate to the second");
+
+	// The seconds field is read with %lg, which accepts "inf", "nan" and an overflowing exponent.
+	// Converting any of those to int is undefined, so they fail the parse instead of reaching it.
+	df::date_t d;
+	assert_equal(false, d.parse("2006-01-14 15:51:inf"), "infinite seconds is not a date");
+	assert_equal(false, d.parse("2006-01-14 15:51:nan"), "seconds that are not a number is not a date");
+	assert_equal(false, d.parse("2006-01-14 15:51:1e400"), "an overflowing seconds exponent is not a date");
+	assert_equal(false, d.parse("2006-01-14 15:51:-1"), "negative seconds is not a date");
+	assert_equal(false, d.parse("2006-01-14 15:51:99"), "seconds past a leap second is not a date");
+	assert_equal(true, d.parse("2006-01-14 15:51:60"), "a leap second still is");
+}
+
 static void should_extract_url()
 {
 	constexpr auto input1 = "Visit my website at https://www.example.com for more info.";
@@ -994,6 +1078,33 @@ static void should_report_file_presence()
 	             "unqueried attributes are not confirmed missing");
 }
 
+// The write used to open the destination with create, truncating whatever was there before the
+// first byte was written: a short write or a full disk left a partial file where a whole one used
+// to be. A zero-length write compounded it, reporting success when the file could not be opened at
+// all because zero of zero bytes had been written.
+static void should_save_a_blob_without_truncating_the_destination()
+{
+	const auto scratch = _temps.next_folder("blob-save");
+	const auto path = scratch.combine_file("payload.bin");
+
+	const df::blob whole = {1, 2, 3, 4};
+	assert_equal(true, df::blob_save_to_file(whole, path), "a blob is saved");
+	assert_equal(4_z, platform::file_attributes(path).size, "and lands whole");
+
+	const df::blob empty;
+	assert_equal(true, df::blob_save_to_file(empty, path), "an empty blob replaces it");
+	assert_equal(0_z, platform::file_attributes(path).size, "with an empty file");
+
+	// Nothing can be written here, so nothing is reported as written.
+	const auto missing = scratch.combine("no-such-folder").combine_file("payload.bin");
+	assert_equal(false, df::blob_save_to_file(whole, missing), "an unwritable destination fails");
+	assert_equal(false, df::blob_save_to_file(empty, missing), "and does so for an empty blob too");
+
+	// The staging file is moved into place, not left beside it.
+	const auto contents = platform::iterate_file_items(scratch, true);
+	assert_equal(1_z, contents.files.size(), "the save leaves only the destination behind");
+}
+
 static void should_map_files()
 {
 	const auto scratch = _temps.next_folder("map-file");
@@ -1224,6 +1335,40 @@ static void should_find_the_closest_kdtree_point()
 	assert_equal(true, empty.is_empty(), "an empty point set builds no nodes", "kd closest");
 }
 
+// The gazetteer stores degrees, and a degree of longitude is only a degree of latitude's worth of
+// ground at the equator. Searching the raw plane therefore ranked somewhere far to the east as
+// nearer than somewhere just up the road, and at sixty degrees the error is a factor of two.
+static void should_weigh_longitude_by_latitude_when_finding_the_closest()
+{
+	// x is latitude and y is longitude, as the gazetteer tree stores them.
+	kd_points pts;
+	pts.emplace_back(60.0f, 1.0f, 0, 0, 0, 0.0f); // one degree east: about 56 km at this latitude
+	pts.emplace_back(60.8f, 0.0f, 0, 0, 1, 0.0f); // 0.8 degrees north: about 89 km
+
+	kd_tree tree;
+	tree.build(pts);
+
+	// Unweighted, the northern point wins on raw degrees (0.8 against 1.0) despite being half as
+	// far again on the ground.
+	const auto raw = tree.find_closest(pts, 60.0f, 0.0f);
+	assert_equal(1u, raw.id, "raw degrees pick the point that is fewer degrees away");
+
+	// cos(60 degrees) is a half, so the eastern point's degree counts for half a degree and it wins
+	// - which is the answer the ground agrees with.
+	const auto weighted = tree.find_closest(pts, 60.0f, 0.0f, 0.5f);
+	assert_equal(0u, weighted.id, "weighting longitude picks the point that is actually nearer");
+
+	// At the equator the weighting is one and nothing changes.
+	kd_points equator;
+	equator.emplace_back(0.0f, 1.0f, 0, 0, 0, 0.0f);
+	equator.emplace_back(0.8f, 0.0f, 0, 0, 1, 0.0f);
+
+	kd_tree equator_tree;
+	equator_tree.build(equator);
+	assert_equal(1u, equator_tree.find_closest(equator, 0.0f, 0.0f, 1.0f).id,
+	             "on the equator a degree is a degree either way");
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Platform queue
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1335,6 +1480,7 @@ static void should_rank_the_most_common_values()
 void register_util_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should natural compare"s, should_icmp_natural);
+	tests.add("Should detect utf16 either way round"s, should_detect_utf16_either_way_round);
 	tests.add("Should complete result scope"s, should_complete_result_scope);
 	tests.add("Should abort result scope during exception"s, should_abort_result_scope_during_exception);
 	tests.add("Should cancel superseded tokens"s, should_cancel_superseded_tokens);
@@ -1342,6 +1488,8 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should follow the filesystem for path identity"s, should_follow_the_filesystem_for_path_identity);
 	tests.add("Should report file presence"s, should_report_file_presence);
 	tests.add("Should map files"s, should_map_files);
+	tests.add("Should save a blob without truncating the destination"s,
+	          should_save_a_blob_without_truncating_the_destination);
 	tests.add("Should intern strings"s, should_intern_strings);
 	tests.add("Should round-trip base64"s, should_round_trip_base64);
 	tests.add("Should rank the most common values"s, should_rank_the_most_common_values);
@@ -1354,6 +1502,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should split"s, should_split);
 	tests.add("Should split genre"s, should_split_genre);
 	tests.add("Should extract url"s, should_extract_url);
+	tests.add("Should parse dates"s, should_parse_dates);
 	tests.add("Should detect wildcard"s, should_detect_wildcard);
 	tests.add("Should match wildcard"s, should_match_wildcard);
 	tests.add("Should compare versions"s, should_compare_versions);
@@ -1379,6 +1528,8 @@ void register_util_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should query kd-tree bounds"s, should_query_kdtree_bounds);
 	tests.add("Should find the closest kd-tree point"s, should_find_the_closest_kdtree_point);
+	tests.add("Should weigh longitude by latitude when finding the closest"s,
+	          should_weigh_longitude_by_latitude_when_finding_the_closest);
 
 	//
 	// Platform queue

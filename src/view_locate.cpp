@@ -130,6 +130,11 @@ public:
 	ui::auto_complete_results _results;
 	ui::auto_complete_match_ptr _selected;
 
+	// Each keystroke supersedes the last. The gazetteer answers on its own queue, so an older query
+	// can return after a newer one and put its matches back in the list - where the first is
+	// selected, retargeting the operation to a place the user had already typed past.
+	uint64_t _search_generation = 0;
+
 	std::function<void(const location_t&)> _changed;
 
 	locate_auto_complete_strategy(view_state& s, ui::control_frame_ptr parent,
@@ -152,17 +157,22 @@ public:
 
 	void search(const std::string& query, std::function<void(const ui::auto_complete_results&)> complete) override
 	{
+		const auto generation = ++_search_generation;
+
 		if (str::is_empty(query))
 		{
-			_state.queue_ui([complete = std::move(complete)]
+			_state.queue_ui([t = shared_from_this(), generation, complete = std::move(complete)]
 			{
+				if (t->_search_generation != generation) return;
+				t->_results.clear();
 				complete({});
 			});
 			return;
 		}
 
 		_state.queue_location(
-			[t = shared_from_this(), query, complete = std::move(complete)](const location_cache& locations)
+			[t = shared_from_this(), query, generation, complete = std::move(complete)](
+			const location_cache& locations)
 			{
 				const auto locally_found = locations.auto_complete(query, t->max_predictions, setting.default_location);
 
@@ -178,8 +188,10 @@ public:
 						                                             static_cast<int>(found.size())));
 				}
 
-				t->_state.queue_ui([t, complete, found]
+				t->_state.queue_ui([t, generation, complete, found]
 				{
+					if (t->_search_generation != generation) return;
+
 					t->_results = found;
 					if (t->_results.size() > t->max_predictions) t->_results.resize(t->max_predictions);
 					complete(t->_results);

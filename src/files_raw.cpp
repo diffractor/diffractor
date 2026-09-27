@@ -1393,6 +1393,24 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 
 		if (!result.success)
 		{
+			const auto& header_sizes = image_data.sizes;
+			const sizei raw_dimensions{header_sizes.width, header_sizes.height};
+
+			// Every other decoder asks before it allocates. LibRaw builds the whole frame inside
+			// unpack/dcraw_process, so the question has to be put here - after the header is read
+			// and before a pixel is committed - or a raw large enough to exhaust the machine is the
+			// one source that walks past the budget. Named as a property of the file, like the
+			// other decoders name it, so it is not retried.
+			if (!raw_dimensions.is_empty() && files::exceeds_decode_budget(raw_dimensions))
+			{
+				df::log(__FUNCTION__, std::format("{} is {} x {}, past the decode budget of {}", path.name(),
+				                                  raw_dimensions.cx, raw_dimensions.cy,
+				                                  df::file_size(df::max_decode_bytes).str()));
+				result.source_dimensions = raw_dimensions;
+				result.reason = file_load_result::failure::too_large;
+				return result;
+			}
+
 			// Decode full image
 			if (rp.processor->unpack() == LIBRAW_SUCCESS)
 			{

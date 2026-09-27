@@ -539,10 +539,16 @@ public:
 
 	// The ground radius a cluster bubble covers at the current zoom, in kilometres. Web
 	// Mercator resolves 156543.03392 m/px at the equator for zoom 0, scaled by cos(latitude).
+	//
+	// The whole cell diagonal, not half a cell width: a bubble sits at the weighted average of its
+	// members rather than at the centre of its cell, so a member in the opposite corner is up to a
+	// full diagonal away. Half a width left those members out of the search the bubble opened,
+	// which is the one thing a cluster's radius promises not to do.
 	double cluster_radius_km(const gps_coordinate& at) const
 	{
+		constexpr auto cell_diagonal_px = cluster_cell_px * 1.4142135623730951;
 		const auto meters_per_pixel = 156543.03392 * std::cos(at.latitude() * M_PI / 180.0) / std::pow(2.0, _zoom);
-		return meters_per_pixel * (cluster_cell_px / 2.0) / 1000.0;
+		return meters_per_pixel * cell_diagonal_px / 1000.0;
 	}
 
 	std::vector<gps_coordinate> visible_cluster_coordinates(const sizei& extent)

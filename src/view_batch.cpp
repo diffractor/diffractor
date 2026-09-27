@@ -141,6 +141,7 @@ void batch_tool_view::activate(const sizei extent)
 
 void batch_tool_view::deactivate()
 {
+	abandon_processing();
 	_rows.clear();
 	_convert_plan.clear();
 	_plan_valid = false;
@@ -599,6 +600,9 @@ void batch_tool_view::run_convert()
 		// The review found this destination occupied and the policy said to replace it. Every other row
 		// was reviewed as free, so anything now in its way is a file the user never saw.
 		bool replaces_existing = false;
+		// What the review saw at that destination. Replace was agreed to for that file, not for one
+		// edited or swapped in since.
+		platform::file_attributes_t destination_fi;
 	};
 	std::vector<convert_request> requests;
 	requests.reserve(_convert_plan.size());
@@ -612,7 +616,7 @@ void batch_tool_view::run_convert()
 		// Nothing has been attempted yet, so a row the run never reaches reports itself as not run.
 		statuses[index] = item_status::cancel;
 		requests.emplace_back(index, entry.source.path, entry.destination, entry.source.xmp,
-		                      entry.collides && !entry.renamed_to_avoid_collision);
+		                      entry.collides && !entry.renamed_to_avoid_collision, entry.destination_fi);
 	}
 	const auto title = std::string(tt.command_convert_or_resize.sv());
 	const auto max_side = setting.convert.limit_dimension ? setting.convert.max_side : 0;
@@ -664,8 +668,15 @@ void batch_tool_view::run_convert()
 
 					                   // The review is a snapshot, and the write itself cannot refuse an existing
 					                   // file. A destination that filled up in between belongs to something the user
-					                   // never reviewed, so the row is left alone rather than written over.
-					                   if (!request.replaces_existing && request.destination.exists())
+					                   // never reviewed, so the row is left alone rather than written over - and so
+					                   // is a reviewed one that has changed since, which is no longer the file the
+					                   // user agreed to replace.
+					                   const auto destination_exists = request.destination.exists();
+
+					                   if (destination_exists && (!request.replaces_existing ||
+						                   !unchanged_since_analysis(request.destination,
+						                                             request.destination_fi.modified,
+						                                             request.destination_fi.size)))
 					                   {
 						                   statuses[plan_index] = item_status::ignore;
 						                   continue;

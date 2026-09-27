@@ -47,7 +47,9 @@ constexpr size_t max_photos_sharing_capture_time = 8;
 constexpr size_t max_phash_requests_per_pass = 256;
 
 // A picture worth this much I/O to identify. Beyond it the read costs more than the answer is worth.
-constexpr uint64_t max_phash_file_bytes = 128ull * 1024ull * 1024ull;
+// The hash reads the file whole, so the bound is also the most a whole read may hold: above that the
+// read answers empty, and a file refused for its size was recorded as one that failed to decode.
+constexpr uint64_t max_phash_file_bytes = df::max_blob_size;
 
 // Shared by duplicate search and presence, so neither can claim a copy the other denies. Compared by
 // aspect rather than extent, so a resize still counts. The tolerance is an absolute block rather than
@@ -392,21 +394,25 @@ static void iterate_items(const df::search_t& search_in,
 
 							const auto folder_path = current_folder.combine(folder_entry->name);
 
-							if (!selector.has_wildcard() || wildcard_icmp(folder_entry->name, wildcard))
-							{
-								if (!folder_entry->is_excluded)
-								{
-									if (recursive)
-									{
-										folders.emplace_back(folder_path);
-									}
+							if (folder_entry->is_excluded) continue;
 
-									if ((!recursive && !matcher.has_terms) || matcher.match_folder(
-										folder_path.text(), folder_path.name()).is_match())
-									{
-										report_folder(folder_path, folder_entry);
-									}
-								}
+							// The wildcard names the files being looked for, not the folders they are
+							// under. Gating the descent on it left "*.jpg" searching only folders called
+							// *.jpg, so every nested match was missed.
+							if (recursive)
+							{
+								folders.emplace_back(folder_path);
+							}
+
+							if (selector.has_wildcard() && !wildcard_icmp(folder_entry->name, wildcard))
+							{
+								continue;
+							}
+
+							if ((!recursive && !matcher.has_terms) || matcher.match_folder(
+								folder_path.text(), folder_path.name()).is_match())
+							{
+								report_folder(folder_path, folder_entry);
 							}
 						}
 
@@ -577,7 +583,10 @@ void index_state::query_items(const df::search_t& search,
 		record_feature_use(features::search_type);
 	}
 
-	found_callback(std::move(results.results), true);
+	// The walk stops where the token was raised, so a cancelled pass has a partial set and must not
+	// claim otherwise. Its caller re-opens and publishes the whole answer; a partial set announced
+	// as complete settled the list showing fewer items than exist and said it was finished.
+	found_callback(std::move(results.results), !token.is_cancelled());
 }
 
 df::item_set index_state::materialize_query_items(query_item_results items, const df::unique_items& existing) const
@@ -1053,6 +1062,16 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					++old_first;
 				}
 			}
+
+			// Folders left only in the old list. The merge above stops as soon as either side runs
+			// out, so without this a folder deleted from the end - or the only folder there was -
+			// was never recorded as removed, and everything indexed beneath it stayed searchable.
+			while (old_first != old_last)
+			{
+				removed_folders.emplace_back(folder_path.combine((*old_first)->name));
+				changes_detected = true;
+				++old_first;
+			}
 		}
 		else
 		{
@@ -1070,6 +1089,22 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 		auto file_first = contents.files.begin();
 		const auto file_last = contents.files.end();
+
+		// Files whose stored checksum or picture hash no longer describes their bytes. Clearing the
+		// node's copy only lasts the session: the rows keep theirs, and the next launch loads them.
+		std::vector<df::file_path> stale_hashes;
+
+		const auto forget_hashes = [&stale_hashes, &folder_path](df::index_file_item& info)
+		{
+			// Asked of the copy, so a file cleared for two reasons is recorded once.
+			if (info.crc32c.load() != 0 || info.phash.load() != nullptr)
+			{
+				stale_hashes.emplace_back(folder_path.combine_file(info.name));
+			}
+
+			info.crc32c = 0;
+			info.phash = nullptr;
+		};
 
 		if (existing_folder)
 		{
@@ -1130,7 +1165,10 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 					if (content_changed)
 					{
 						changes_detected = true;
-						info.crc32c = 0;
+						// The picture hash describes the previous bytes just as the checksum does, and
+						// it is persisted - so a hash left behind here reports an edited file and an
+						// untouched copy as the same picture for every session that follows.
+						forget_hashes(info);
 					}
 
 					const auto was_offline = old_first->flags && df::index_item_flags::is_offline;
@@ -1152,8 +1190,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 						// re-scan so it gets a real thumbnail, content hash and full metadata (tags,
 						// camera, etc.) that the offline shell path could not provide.
 						info.metadata_scanned = df::date_t{};
-						info.crc32c = 0;
-						info.phash = nullptr;
+						forget_hashes(info);
 					}
 
 					updated_files.emplace_back(info);
@@ -1316,8 +1353,56 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			df::assert_true(!is_empty(folder_node->name));
 			folder_node->reset_search_presence();
 
-			_items.replace(folder_path, folder_node);
+			// The snapshot this node was built from was read before the enumeration, which holds no
+			// lock. Another thread that rebuilt or scanned this folder since then has newer state in
+			// the index, and it is in the node rather than in the file items - which were copied,
+			// atomics and all, when this pass started. Publishing over it would lose every scan
+			// result recorded in that window and send those files back through the scanner.
+			auto published = _items.replace_if(folder_path, existing_folder, folder_node);
+
+			// Except a node that holds nothing, which has nothing to lose. When this folder had no
+			// node at all, the usual one is the placeholder a validation of the parent creates for it
+			// while this pass enumerates - and losing to that answered an empty folder as its
+			// contents. It is replaced, keeping what the parent learned about the folder itself.
+			if (published != folder_node && published && !existing_folder && published->files.empty() &&
+				published->folders_snapshot()->empty())
+			{
+				folder_node->is_read_only = published->is_read_only;
+				folder_node->is_excluded = published->is_excluded.load();
+				folder_node->is_in_collection = published->is_in_collection.load();
+				folder_node->volume = published->volume;
+				folder_node->created = published->created;
+				folder_node->modified = published->modified;
+				published = _items.replace_if(folder_path, published, folder_node);
+			}
+
+			if (published != folder_node)
+			{
+				// Lost the race. Discarding this pass costs only work that will be redone; the
+				// removals it found were decided against the same stale view, so they go too.
+				add_distinct_other_folders({folder_path});
+				return {published, false};
+			}
+
 			_items.erase(removed_folders);
+
+			// The published node no longer holds the changed files' hashes; the rows are cleared to
+			// match, or the next launch would load them back as a description of bytes that are gone.
+			if (!stale_hashes.empty())
+			{
+				std::vector<item_db_write> writes;
+				writes.reserve(stale_hashes.size());
+
+				for (const auto& path : stale_hashes)
+				{
+					item_db_write write;
+					write.path = path;
+					write.clear_hashes = true;
+					writes.emplace_back(std::move(write));
+				}
+
+				enqueue_db_writes(std::move(writes));
+			}
 
 			return {folder_node, changes_detected};
 		}
@@ -1508,7 +1593,7 @@ void index_state::update_predictions()
 	// tolerance, not an equality, so it may not be closed over transitively. Every candidate is
 	// compared against one anchor chosen for the capture time and never against another candidate,
 	// which makes each set a star rather than a chain (docs/collections.md section 7.2).
-	std::vector<df::file_path> phash_wanted;
+	std::vector<phash_request> phash_wanted;
 
 	{
 		df::hash_map<uint64_t, std::vector<size_t>> capture_times;
@@ -1617,7 +1702,8 @@ void index_state::update_predictions()
 				// noted here. The pass that follows the hashes will see them and compare.
 				if (phash_wanted.size() < max_phash_requests_per_pass)
 				{
-					phash_wanted.emplace_back(files[member].path, files[member].file->name);
+					phash_wanted.emplace_back(df::file_path(files[member].path, files[member].file->name),
+					                          revision_of(*files[member].file));
 				}
 			}
 
@@ -1778,9 +1864,9 @@ void index_state::update_predictions()
 // Decoding cannot happen on the predictions walk, so the pairs it could not judge are hashed here
 // and the pass is asked for again. Each pass narrows the work, so a large collection converges over
 // several rounds instead of stalling on the first.
-void index_state::queue_calc_perceptual_hashes(std::vector<df::file_path> paths)
+void index_state::queue_calc_perceptual_hashes(std::vector<phash_request> requests)
 {
-	_async.queue_async(async_queue::crc, [this, paths = std::move(paths)]
+	_async.queue_async(async_queue::crc, [this, requests = std::move(requests)]
 	{
 		auto usable = 0;
 
@@ -1788,13 +1874,14 @@ void index_state::queue_calc_perceptual_hashes(std::vector<df::file_path> paths)
 		// its own found both the work queue and the write queue empty every time and woke two threads
 		// per file for a few microseconds of work each.
 		constexpr size_t publish_group = 32;
-		std::vector<std::pair<df::file_path, crypto::phash_rotations>> hashed;
+		std::vector<phash_result> hashed;
 		hashed.reserve(publish_group);
 
-		for (const auto& path : paths)
+		for (const auto& request : requests)
 		{
 			if (df::is_closing) break;
 
+			const auto& path = request.path;
 			crypto::phash_rotations hash{};
 			auto readable = false;
 
@@ -1822,13 +1909,13 @@ void index_state::queue_calc_perceptual_hashes(std::vector<df::file_path> paths)
 			// decoded. Without that the next pass asks for the same file again, forever.
 			if (crypto::phash_is_usable(hash[0]))
 			{
-				hashed.emplace_back(path, hash);
+				hashed.emplace_back(path, request.revision, hash);
 				df::bump(df::index_perf.phash_usable);
 				++usable;
 			}
 			else
 			{
-				hashed.emplace_back(path, crypto::phash_rotations{crypto::phash_declined, 0, 0, 0});
+				hashed.emplace_back(path, request.revision, crypto::phash_rotations{crypto::phash_declined, 0, 0, 0});
 				if (readable) df::bump(df::index_perf.phash_declined);
 			}
 
@@ -2724,7 +2811,12 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 	{
 		item_db_write write;
 		write.path = file_path;
-		write.metadata_scanned = now;
+		// Stamped with the file's own modified time, not with now. Nothing was read, so a stamp in
+		// the present would record this version as examined at a moment it never was - and any
+		// later touch of the file that lands before that moment would then read as already scanned.
+		// Against the file's own time the record says which version was attempted, and a file that
+		// changes at all re-opens the question.
+		write.metadata_scanned = found_file->file_modified.load();
 		write.modified = found_file->file_modified;
 		queue_write(std::move(write));
 
@@ -3114,106 +3206,84 @@ void index_state::save_media_position(const df::file_path id, const double media
 	enqueue_db_write(std::move(write));
 }
 
-void index_state::save_crc(const df::file_path id, const uint32_t crc)
+void index_state::save_crc(const df::file_path id, const index_file_revision revision, const uint32_t crc)
 {
-	_async.queue_async(async_queue::work, [this, id, crc]
+	_async.queue_async(async_queue::work, [this, id, revision, crc]
 	{
 		const auto f = _items.find(id.folder());
+		if (!f) return;
 
-		if (f)
-		{
-			const auto found_file = find_file(f->files, id.name());
+		const auto found_file = find_file(f->files, id.name());
 
-			if (found_file != f->files.end())
-			{
-				found_file->crc32c = crc;
-				found_file->calc_search_presence();
-				f->update_search_presence(*found_file);
-			}
-		}
+		// The checksum describes the bytes that were read. A file replaced while it was being read
+		// is a different file at the same name, so the checksum is dropped rather than attached to
+		// content it does not describe.
+		if (found_file == f->files.end() || !(revision_of(*found_file) == revision)) return;
+
+		found_file->crc32c = crc;
+		found_file->calc_search_presence();
+		f->update_search_presence(*found_file);
+
+		item_db_write write;
+		write.path = id;
+		write.crc32c = crc;
+		enqueue_db_write(std::move(write));
 	});
-
-	item_db_write write;
-	write.path = id;
-	write.crc32c = crc;
-	enqueue_db_write(std::move(write));
 }
 
-void index_state::save_phash(const df::file_path id, const crypto::phash_rotations& phash)
+void index_state::save_phash(const df::file_path id, const index_file_revision revision,
+                             const crypto::phash_rotations& phash)
 {
-	_async.queue_async(async_queue::work, [this, id, published = df::make_picture_hashes(phash)]
-	{
-		const auto f = _items.find(id.folder());
-		auto found = false;
-
-		if (f)
-		{
-			const auto found_file = find_file(f->files, id.name());
-
-			if (found_file != f->files.end())
-			{
-				found_file->phash = published;
-				found = true;
-			}
-		}
-
-		// The database write is an update keyed on an existing row, so a path the collection does not
-		// hold keeps no hash and will be decoded again next time it is asked about.
-		if (!found) df::bump(df::index_perf.phash_unpersisted);
-	});
-
-	item_db_write write;
-	write.path = id;
-	write.phash = phash;
-	enqueue_db_write(std::move(write));
+	std::vector<phash_result> one;
+	one.emplace_back(id, revision, phash);
+	save_phashes(std::move(one));
 }
 
-void index_state::save_phashes(std::vector<std::pair<df::file_path, crypto::phash_rotations>> hashes)
+void index_state::save_phashes(std::vector<phash_result> hashes)
 {
 	if (hashes.empty()) return;
 
-	std::vector<item_db_write> writes;
-	writes.reserve(hashes.size());
-
-	for (const auto& [path, phash] : hashes)
+	// Verified and published on one hop, and the database row written only for what survived: a
+	// write enqueued ahead of the check would persist a hash the index had already refused.
+	_async.queue_async(async_queue::work, [this, hashes = std::move(hashes)]
 	{
-		item_db_write write;
-		write.path = path;
-		write.phash = phash;
-		writes.emplace_back(std::move(write));
-	}
+		std::vector<item_db_write> writes;
+		writes.reserve(hashes.size());
 
-	enqueue_db_writes(std::move(writes));
-
-	// Published as complete sets, so the walk never sees a picture with some orientations filled in.
-	std::vector<std::pair<df::file_path, df::picture_hashes_ptr>> published;
-	published.reserve(hashes.size());
-
-	for (const auto& [path, phash] : hashes)
-	{
-		published.emplace_back(path, df::make_picture_hashes(phash));
-	}
-
-	_async.queue_async(async_queue::work, [this, published = std::move(published)]
-	{
-		for (const auto& [path, hashes_ptr] : published)
+		for (const auto& result : hashes)
 		{
-			const auto f = _items.find(path.folder());
+			const auto f = _items.find(result.path.folder());
 			auto found = false;
 
 			if (f)
 			{
-				const auto found_file = find_file(f->files, path.name());
+				const auto found_file = find_file(f->files, result.path.name());
 
-				if (found_file != f->files.end())
+				if (found_file != f->files.end() && revision_of(*found_file) == result.revision)
 				{
-					found_file->phash = hashes_ptr;
+					// Published as complete sets, so the walk never sees a picture with some
+					// orientations filled in.
+					found_file->phash = df::make_picture_hashes(result.rotations);
 					found = true;
 				}
 			}
 
-			if (!found) df::bump(df::index_perf.phash_unpersisted);
+			if (found)
+			{
+				item_db_write write;
+				write.path = result.path;
+				write.phash = result.rotations;
+				writes.emplace_back(std::move(write));
+			}
+			else
+			{
+				// The database write is an update keyed on an existing row, so a path the collection
+				// no longer holds at this revision keeps no hash and is decoded again when asked.
+				df::bump(df::index_perf.phash_unpersisted);
+			}
 		}
+
+		enqueue_db_writes(std::move(writes));
 	});
 }
 
@@ -3729,6 +3799,7 @@ struct presence_similar_candidate
 	df::file_path path;
 	crypto::phash_rotations phash{};
 	df::date_t file_modified;
+	uint64_t size = 0;
 	df::duplicate_info duplicates;
 	sizei dimensions;
 };
@@ -3799,7 +3870,7 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 	// A member is only hashed by the predictions pass when another member shares its capture time, so
 	// the picture an outside file is being compared against often has no hash yet. It is computed
 	// here and saved, because answering "checking" forever would be an absence in all but name.
-	const auto hash_of = [&decoder, &index](const df::file_path path,
+	const auto hash_of = [&decoder, &index](const df::file_path path, const index_file_revision revision,
 	                                        const crypto::phash_rotations& known) -> crypto::phash_rotations
 	{
 		if (known[0] != 0) return known;
@@ -3830,7 +3901,7 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 
 		if (!crypto::phash_is_usable(hash[0])) hash = {crypto::phash_declined, 0, 0, 0};
 
-		index.save_phash(path, hash);
+		index.save_phash(path, revision, hash);
 		return hash;
 	};
 
@@ -3850,7 +3921,7 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 
 		if (!already_matched && member_count <= max_photos_sharing_capture_time)
 		{
-			const auto probe_hash = hash_of(request.path, {});
+			const auto probe_hash = hash_of(request.path, {request.file_modified, request.size.to_int64()}, {});
 
 			if (crypto::phash_is_usable(probe_hash[0]))
 			{
@@ -3866,7 +3937,9 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 					// Shape narrows before the picture is decoded, exactly as duplicate search does.
 					if (!same_picture_shape(request.dimensions, candidate->dimensions)) continue;
 
-					const auto candidate_hash = hash_of(candidate->path, candidate->phash);
+					const auto candidate_hash = hash_of(candidate->path,
+					                                    {candidate->file_modified, candidate->size},
+					                                    candidate->phash);
 
 					if (!crypto::phash_is_usable(candidate_hash[0])) continue;
 					if (crypto::phash_distance(probe_hash[0], candidate_hash) > max_duplicate_phash_distance)
@@ -4032,6 +4105,7 @@ void index_state::queue_update_presence(const df::item_set& items)
 									                                df::file_path(ifn.first, file.name),
 									                                rotations,
 									                                file.file_modified.load(),
+									                                file.size.to_int64(),
 									                                file.duplicates.load(),
 									                                file_dims);
 								}
@@ -4616,24 +4690,29 @@ void index_state::publish_thumbnail_failure(std::weak_ptr<df::item_element> item
 }
 
 void index_state::publish_crc(std::weak_ptr<df::item_element> item, df::file_path path, const df::file_size size,
-                              const df::item_online_status online_status, const uint32_t existing_crc,
-                              const uint32_t crc)
+                              const df::date_t modified, const df::item_online_status online_status,
+                              const uint32_t existing_crc, const uint32_t crc)
 {
-	_async.queue_ui([this, item = std::move(item), path = std::move(path), size, online_status, existing_crc, crc]
-	{
-		const auto current_item = item.lock();
-		if (!current_item || current_item->path() != path || current_item->file_size() != size ||
-			current_item->online_status() != online_status || current_item->crc32c() != existing_crc)
+	_async.queue_ui(
+		[this, item = std::move(item), path = std::move(path), size, modified, online_status, existing_crc, crc]
 		{
-			return;
-		}
+			const auto current_item = item.lock();
 
-		save_crc(path, crc);
-		current_item->crc32c(crc);
-		// A checksum changes no tile geometry, so a redraw is enough; relayout here re-wrapped the
-		// grid under the pointer while duplicate detection worked through a folder.
-		_async.invalidate_view(view_invalid::view_redraw | view_invalid::presence);
-	});
+			// Size alone does not identify content: a file replaced by one of the same length is a
+			// different file, and its modified time is what says so.
+			if (!current_item || current_item->path() != path || current_item->file_size() != size ||
+				current_item->file_modified() != modified ||
+				current_item->online_status() != online_status || current_item->crc32c() != existing_crc)
+			{
+				return;
+			}
+
+			save_crc(path, {modified, size.to_int64()}, crc);
+			current_item->crc32c(crc);
+			// A checksum changes no tile geometry, so a redraw is enough; relayout here re-wrapped the
+			// grid under the pointer while duplicate detection worked through a folder.
+			_async.invalidate_view(view_invalid::view_redraw | view_invalid::presence);
+		});
 }
 
 void index_state::queue_load_visible_thumbnails(const df::item_elements& visible)

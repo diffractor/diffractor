@@ -164,6 +164,16 @@ void view_state::modify_items(const df::results_ptr& results, const df::item_ele
 
 			            for (const auto& request : requests)
 			            {
+				            // Asked before the write, not after it. A cancel that arrived while the
+				            // previous item was being written - or before this loop started at all -
+				            // must not reach one more file, and the row it stops at is reported as the
+				            // cancellation it was rather than left out of the result list entirely.
+				            if (results->is_canceled())
+				            {
+					            results->end_item(request.name, item_status::cancel);
+					            continue;
+				            }
+
 				            results->start_item(request.name);
 
 				            const auto edits = spec.make_edits(request.path);
@@ -205,9 +215,6 @@ void view_state::modify_items(const df::results_ptr& results, const df::item_ele
 				            {
 					            immediate_done.emplace_back(request.scan);
 				            }
-
-				            if (results->is_canceled())
-					            break;
 			            }
 
 			            // Background rescan: force the items whose immediate scan failed (the mtime-tie heuristic
@@ -327,6 +334,8 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 	{
 		rename.sidecars.clear();
 		rename.sidecar_destinations_exist.clear();
+		rename.sidecar_source_attributes.clear();
+		rename.sidecar_destination_attributes.clear();
 		if (i.is_folder) return;
 
 		for (const auto sidecar_source : i.sidecars)
@@ -334,7 +343,10 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 			const auto sidecar_destination =
 				primary.folder().combine_file(primary.file_name_without_extension()).extension(
 					sidecar_source.extension());
-			rename.sidecar_destinations_exist.emplace_back(sidecar_destination.exists());
+			const auto destination_attributes = platform::file_attributes(sidecar_destination);
+			rename.sidecar_destinations_exist.emplace_back(destination_attributes.exists());
+			rename.sidecar_source_attributes.emplace_back(platform::file_attributes(sidecar_source));
+			rename.sidecar_destination_attributes.emplace_back(destination_attributes);
 			rename.sidecars.emplace_back(sidecar_source, sidecar_destination);
 		}
 	};
@@ -349,6 +361,7 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 		rename_item rename;
 		rename.source = i.source;
 		rename.is_folder = i.is_folder;
+		rename.source_attributes = i.is_folder ? platform::file_attributes_t{} : platform::file_attributes(i.source);
 		rename.policy = policy;
 		rename.original_name = original_name;
 		rename.new_name = name;
@@ -387,6 +400,9 @@ std::vector<rename_item> calc_item_renames(const std::vector<rename_source>& ite
 		{
 			const auto destination_key = rename_path_key(rename.destination, rename.is_folder);
 			rename.destination_exists = rename_path_exists(rename.destination, rename.is_folder);
+			rename.destination_attributes = rename.is_folder
+				                                ? platform::file_attributes_t{}
+				                                : platform::file_attributes(rename.destination);
 
 			if (df::compare_path_key(source_key, destination_key) != 0 && rename.destination_exists &&
 				!vacated.contains(destination_key))
@@ -619,6 +635,11 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 	// discard one source and Auto-rename would hand both the same free name.
 	df::unique_paths planned_destinations;
 
+	// Sidecars an earlier importing row already carries. The RAW and the JPEG of one shot share an
+	// XMP by base name, so both rows name it, but the group travels once: a second row carrying it
+	// again collided with the copy the first had just written - refused outright under Replace - or,
+	// on a move, found it already gone.
+	df::unique_paths claimed_sidecars;
 
 	for (const auto& i : src_items)
 	{
@@ -641,7 +662,10 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 		if (md)
 		{
 			for (const auto& file_name : split(md->sidecars, true))
-				sidecar_paths_in.emplace_back(i.folder.combine_file(file_name));
+			{
+				const auto sidecar_path_in = i.folder.combine_file(file_name);
+				if (!claimed_sidecars.contains(sidecar_path_in)) sidecar_paths_in.emplace_back(sidecar_path_in);
+			}
 		}
 
 		auto sidecar_destination = [](const df::file_path primary, const df::file_path sidecar)
@@ -703,14 +727,19 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 		}
 		else
 		{
-			std::vector<std::pair<df::file_path, df::file_path>> sidecars;
+			std::vector<import_analysis_item::sidecar_move> sidecars;
 			sidecars.reserve(sidecar_paths_in.size());
 
 			for (const auto sidecar_path_in : sidecar_paths_in)
 			{
 				const auto sidecar_path_out = sidecar_destination(path_out, sidecar_path_in);
-				sidecars.emplace_back(sidecar_path_in, sidecar_path_out);
+				sidecars.emplace_back(sidecar_path_in, sidecar_path_out,
+				                      platform::file_attributes(sidecar_path_in),
+				                      options.collision == collision_policy::replace
+					                      ? platform::file_attributes(sidecar_path_out)
+					                      : platform::file_attributes_t{});
 				planned_destinations.emplace(sidecar_path_out);
+				claimed_sidecars.emplace(sidecar_path_in);
 			}
 
 			// Every other policy leaves the destination free, and the write itself proves that. Only
@@ -745,6 +774,10 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 		bool success = true;
 	};
 	df::hash_map<item_import, import_group_state, item_import_hash, item_import_eq> import_states;
+	// Set when a destination folder cannot be made. The run stops there, but everything already
+	// written still has to be recorded and rescanned below - returning from the middle of the walk
+	// lost both, so a later run imported those files again and the index never saw them.
+	std::string abort_message;
 
 	for (const auto& ff_dest : src_items)
 	{
@@ -792,9 +825,9 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 
 			if (create_folder_result.failed())
 			{
-				results->abort(
-					create_folder_result.format_error(str_format(tt.error_create_folder_failed_fmt.sv(), folder_out)));
-				return result;
+				abort_message = create_folder_result.format_error(
+					str_format(tt.error_create_folder_failed_fmt.sv(), folder_out));
+				break;
 			}
 
 			write_folders.emplace(folder_out);
@@ -831,12 +864,34 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 			// path is still free rather than overwriting whatever appeared since.
 			const auto primary_fail_if_exists = fail_if_exists || !i.destination_fi.exists();
 
-			// The reviewed row named a specific file. A source that no longer matches would import
+			// The reviewed row named specific files. A source that no longer matches would import
 			// content nobody approved, and under Replace a changed destination would be written over
-			// without ever having been reviewed. Neither is recoverable once the write starts.
-			const auto source_unchanged = unchanged_since_analysis(path_in, i.source_fi.modified, i.source_fi.size);
-			const auto destination_unchanged = fail_if_exists || !i.destination_fi.exists() ||
-				unchanged_since_analysis(path_out, i.destination_fi.modified, i.destination_fi.size);
+			// without ever having been reviewed. Neither is recoverable once the write starts, and
+			// the sidecars are held to it too - they travel as part of the group, so a group that is
+			// no longer what was reviewed cannot be written at either end.
+			const auto reviewed_source = [](const df::file_path path, const platform::file_attributes_t& reviewed)
+			{
+				return unchanged_since_analysis(path, reviewed.modified, reviewed.size);
+			};
+
+			const auto reviewed_destination = [fail_if_exists](const df::file_path path,
+			                                                   const platform::file_attributes_t& reviewed)
+			{
+				return fail_if_exists || !reviewed.exists() ||
+					unchanged_since_analysis(path, reviewed.modified, reviewed.size);
+			};
+
+			const auto source_unchanged = reviewed_source(path_in, i.source_fi) &&
+				std::ranges::all_of(i.sidecars, [&reviewed_source](const import_analysis_item::sidecar_move& sc)
+				{
+					return reviewed_source(sc.source, sc.source_fi);
+				});
+
+			const auto destination_unchanged = reviewed_destination(path_out, i.destination_fi) &&
+				std::ranges::all_of(i.sidecars, [&reviewed_destination](const import_analysis_item::sidecar_move& sc)
+				{
+					return reviewed_destination(sc.destination, sc.destination_fi);
+				});
 
 			if (!source_unchanged || !destination_unchanged)
 			{
@@ -849,9 +904,11 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 			}
 
 			// Sidecars are written before the file they describe and undone in reverse if anything in the
-			// group fails, so the group either arrives whole or is left entirely at the source. Only
-			// sidecars this run created are undone: under Replace the write can land on a file that
-			// already existed, and deleting or moving that path back would destroy the user's original.
+			// group fails, so the group either arrives whole or is left entirely at the source. A move
+			// always undoes: the destination it replaced is gone either way, and putting the sidecar
+			// back is what leaves the group whole. A copy that replaced an existing destination stays
+			// where it is - deleting it would leave that path empty rather than restoring the user's
+			// file, which the copy already consumed.
 			auto undo_sidecar = [&](const std::pair<df::file_path, df::file_path>& moved)
 			{
 				if (options.is_move) move_or_copy(moved.second, moved.first, true, false);
@@ -861,12 +918,16 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 			std::vector<std::pair<df::file_path, df::file_path>> moved_sidecars;
 			auto move_or_copy_result = platform::file_op_result{platform::file_op_result_code::OK, {}, {}};
 
-			for (const auto& [sidecar_in, sidecar_out] : i.sidecars)
+			for (const auto& sidecar : i.sidecars)
 			{
-				const auto destination_existed = !fail_if_exists && platform::file_attributes(sidecar_out).exists();
-				move_or_copy_result = move_or_copy(sidecar_in, sidecar_out, options.is_move, fail_if_exists);
+				// The same rule the primary takes: only a destination the review actually saw is a
+				// reviewed replacement, so anything that appeared since has to stop the write.
+				const auto sidecar_fail_if_exists = fail_if_exists || !sidecar.destination_fi.exists();
+				move_or_copy_result = move_or_copy(sidecar.source, sidecar.destination, options.is_move,
+				                                   sidecar_fail_if_exists);
 				if (move_or_copy_result.failed()) break;
-				if (!destination_existed) moved_sidecars.emplace_back(sidecar_in, sidecar_out);
+				if (sidecar_fail_if_exists || options.is_move)
+					moved_sidecars.emplace_back(sidecar.source, sidecar.destination);
 			}
 
 			if (move_or_copy_result.success())
@@ -884,7 +945,14 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 				import_states[i.import_rec].attempted = true;
 				if (options.set_created_date && i.created_date.is_valid())
 				{
-					platform::created_date(path_out, i.created_date);
+					// The file arrived, so this is not a failed import - but the date was asked for
+					// and the filesystem refused it, and a row reported as plain success would say
+					// the opposite. Counted so the run can state it.
+					if (!platform::created_date(path_out, i.created_date))
+					{
+						df::log(__FUNCTION__, std::format("could not set created date on {}", path_out.str()));
+						++result.dates_unset;
+					}
 				}
 
 				// An import that moves empties the folder it took from, which is only in the index
@@ -913,6 +981,12 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 
 	index.queue_scan_folders(write_folders);
 
+	if (!abort_message.empty())
+	{
+		results->abort(abort_message);
+		return result;
+	}
+
 	std::string result_text;
 
 	if (!existing.empty())
@@ -928,6 +1002,12 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 		result_text += format_plural_text(tt.ignored_previous_fmt, previous.front().item.name,
 		                                  static_cast<int>(previous.size()), {},
 		                                  static_cast<int>(src_items.size()));
+	}
+
+	if (result.dates_unset > 0)
+	{
+		if (!result_text.empty()) result_text += "\n\n";
+		result_text += format_plural_text(tt.import_date_unset_fmt, result.dates_unset);
 	}
 
 	rr.complete(result_text);
@@ -1071,18 +1151,7 @@ sync_action calc_sync_action(const bool local_exists, const bool remote_exists,
 
 static bool path_contains(const df::folder_path parent, const df::folder_path child)
 {
-	const auto parent_text = parent.text().sv();
-	const auto child_text = child.text().sv();
-	if (parent_text.size() >= child_text.size()) return parent == child;
-	if (!df::path_text_starts(child_text, parent_text)) return false;
-
-	// A root keeps its separator - "C:\" and "/" normalise with one - so the boundary to test is the
-	// text without it. Testing the raw length instead makes every drive root contain nothing, and the
-	// overlap guard would then let Sync run a folder into its own subtree.
-	const auto boundary = parent_text.empty()
-		                      ? 0_z
-		                      : parent_text.size() - (df::is_path_sep(parent_text.back()) ? 1 : 0);
-	return child_text.size() == boundary || df::is_path_sep(child_text[boundary]);
+	return df::folder_contains(parent.text().sv(), child.text().sv());
 }
 
 std::string sync_invalid_message(const sync_analysis_result& analysis)
@@ -1318,11 +1387,11 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 
 			if (f.second.action == sync_action::delete_local)
 			{
-				f.second.delete_crc = platform::file_crc32(f.second.local_path, token);
+				f.second.delete_crc = platform::file_crc32_checked(f.second.local_path, token);
 			}
 			else if (f.second.action == sync_action::delete_remote)
 			{
-				f.second.delete_crc = platform::file_crc32(f.second.remote_path, token);
+				f.second.delete_crc = platform::file_crc32_checked(f.second.remote_path, token);
 			}
 		}
 	}
@@ -1387,10 +1456,14 @@ sync_run_result sync_copy(const df::results_ptr& status, const sync_analysis_res
 				return !reviewed.exists() || unchanged_since_analysis(path, reviewed.modified, reviewed.size);
 			};
 
-			// Deletes were reviewed against the file's content, so that is what they are held to.
+			// Deletes were reviewed against the file's content, so that is what they are held to. An
+			// unreadable file proves nothing about its content: the delete is refused rather than
+			// allowed through on two reads that both failed and both answered zero.
 			const auto delete_content_unchanged = [&](const df::file_path path)
 			{
-				return platform::file_crc32(path, token) == f.second.delete_crc;
+				const auto current = platform::file_crc32_checked(path, token);
+				return current.has_value() && f.second.delete_crc.has_value() &&
+					current.value() == f.second.delete_crc.value();
 			};
 
 			// A cancelled check proves nothing, so it is reported as the cancellation it was rather
@@ -1580,16 +1653,33 @@ std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_
 	});
 
 	df::hash_set<df::file_path, df::ihash, df::ieq> planned_paths;
+	// A destination that names another row's source is a file this run reads. Writing it would
+	// destroy an input the review listed as a source, and the later row would then convert whatever
+	// the earlier one just wrote, so those paths are occupied whatever the collision policy says.
+	// A row's own source is not: that is conversion in place, which is what the row asked for.
+	df::hash_set<df::file_path, df::ihash, df::ieq> source_paths;
+
+	for (const auto& source : ordered)
+	{
+		source_paths.emplace(source.path);
+	}
+
 	std::vector<convert_item_plan> result;
 	result.reserve(ordered.size());
 
 	for (const auto& source : ordered)
 	{
+		const auto taken = [&](const df::file_path candidate)
+		{
+			return planned_paths.contains(candidate) ||
+				(source_paths.contains(candidate) && candidate != source.path);
+		};
+
 		const auto base_name = source.path.file_name_without_extension();
 		auto destination = df::file_path(write_folder, base_name, new_extension);
 		// Two sources can share a base name, so a destination another row already claimed is taken
 		// even when nothing is on disk yet. Use the " (n)" variant every other operation uses.
-		for (auto suffix = 2; planned_paths.contains(destination); ++suffix)
+		for (auto suffix = 2; taken(destination); ++suffix)
 		{
 			destination = df::file_path(write_folder, std::format("{} ({})", base_name, suffix), new_extension);
 		}
@@ -1601,7 +1691,7 @@ std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_
 		if (plan.collides && policy == collision_policy::auto_rename)
 		{
 			auto renamed = next_free_destination(destination);
-			for (auto suffix = 2; renamed.exists() || planned_paths.contains(renamed); ++suffix)
+			for (auto suffix = 2; renamed.exists() || taken(renamed); ++suffix)
 			{
 				renamed = df::file_path(write_folder, std::format("{} ({})", base_name, suffix), new_extension);
 			}
@@ -1611,6 +1701,10 @@ std::vector<convert_item_plan> plan_convert_outputs(const df::folder_path write_
 		else if (plan.collides && policy == collision_policy::skip)
 		{
 			plan.skipped = true;
+		}
+		else if (plan.collides)
+		{
+			plan.destination_fi = platform::file_attributes(destination);
 		}
 
 		plan.destination = destination;

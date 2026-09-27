@@ -215,6 +215,17 @@ static void scan_gif_blocks(read_stream& s, file_scan_result& result, uint64_t o
 
 						while (sub_block_size != 0 && offset + sub_block_size < size)
 						{
+							// The raw-XML path above bounds its search to max_gif_xmp_bytes. This
+							// one walked sub-blocks to the end of the file, so a crafted GIF could
+							// make a scan hold far more than the declared ceiling. A packet that
+							// runs past it is dropped rather than truncated: half an XMP packet
+							// parses to nothing and would only be carried around.
+							if (result.metadata.xmp.size() + sub_block_size > max_gif_xmp_bytes)
+							{
+								result.metadata.xmp.clear();
+								break;
+							}
+
 							s.read(offset, read_buffer, sub_block_size);
 							result.metadata.xmp.insert(result.metadata.xmp.end(), read_buffer,
 							                           read_buffer + sub_block_size);
@@ -432,6 +443,7 @@ static void scan_exif(file_scan_result& result, const df::cspan data, const bool
 			if (offset_ifd0 < limit)
 			{
 				const auto entry_count = get_uint16(data.data + offset_ifd0, order);
+				auto orientation_from_primary = false;
 
 				for (auto i = 0u; i < entry_count; ++i)
 				{
@@ -450,6 +462,7 @@ static void scan_exif(file_scan_result& result, const df::cspan data, const bool
 					{
 					case EXIF_TAG_ORIENTATION:
 						result.orientation = static_cast<ui::orientation>(get_uint16(data.data + pos + 8, order));
+						orientation_from_primary = true;
 						break;
 					}
 				}
@@ -506,8 +519,16 @@ static void scan_exif(file_scan_result& result, const df::cspan data, const bool
 								break;
 
 							case EXIF_TAG_ORIENTATION:
-								result.orientation = static_cast<ui::orientation>(get_uint16(
-									data.data + pos + 8, order));
+								// IFD1 describes the embedded thumbnail, which is often stored
+								// already upright while the primary image is not. Its orientation
+								// stands in only where the primary image gave none; taking it
+								// unconditionally displayed the photograph at its thumbnail's
+								// rotation.
+								if (!orientation_from_primary)
+								{
+									result.orientation = static_cast<ui::orientation>(get_uint16(
+										data.data + pos + 8, order));
+								}
 								break;
 							}
 						}

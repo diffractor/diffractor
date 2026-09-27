@@ -5986,13 +5986,17 @@ public:
 		return TRUE;
 	}
 
-	LRESULT on_query_end_session(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/) const
+	// Persisted before anything is asked. The question can_exit may put - a running task, an unsaved
+	// movie - is asked inside the shutdown sequence, and a forced shutdown ends the process with it
+	// still open, so state saved only after the answer would not be saved at all. A critical
+	// shutdown cannot be refused, so it is not asked either.
+	LRESULT on_query_end_session(uint32_t /*uMsg*/, WPARAM /*wParam*/, const LPARAM lParam) const
 	{
 		const auto app = _app.lock();
 		if (!app) return TRUE;
-		if (!app->can_exit()) return FALSE;
 		app->system_event(ui::os_event_type::session_ending);
-		return TRUE;
+		if (lParam & ENDSESSION_CRITICAL) return TRUE;
+		return app->can_exit() ? TRUE : FALSE;
 	}
 
 	LRESULT on_end_session(uint32_t /*uMsg*/, const WPARAM wParam, LPARAM /*lParam*/) const

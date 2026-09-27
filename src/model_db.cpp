@@ -288,24 +288,24 @@ public:
 
 	df::blob blob(const int i) const
 	{
-		if (_handle != nullptr)
-		{
-			const auto* const pData = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
-			const auto len = sqlite3_column_bytes(_handle, i);
-			return {pData, pData + len};
-		}
-		return {};
+		const auto bytes = data(i);
+		return {bytes.data, bytes.data + bytes.size};
 	}
 
 	df::cspan data(const int i) const
 	{
-		df::cspan r = {nullptr, 0};
-		if (_handle != nullptr)
-		{
-			r.data = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
-			r.size = sqlite3_column_bytes(_handle, i);
-		}
-		return r;
+		if (_handle == nullptr) return {nullptr, 0};
+
+		// sqlite3_column_blob answers null for a null column, for a zero-length blob, and for an
+		// allocation failure - and only the last of those still reports a length. Taking that length
+		// on trust would build a range over a pointer that does not exist.
+		const auto* const data_ptr = static_cast<const uint8_t*>(sqlite3_column_blob(_handle, i));
+
+		if (data_ptr == nullptr) return {nullptr, 0};
+
+		// The length is read after the value, as sqlite documents: asking first can convert the
+		// column and change what the value call then returns.
+		return {data_ptr, static_cast<size_t>(sqlite3_column_bytes(_handle, i))};
 	}
 
 	// Distinguishes a column an upgrade added but never filled from one holding zero, which the
@@ -337,7 +337,14 @@ public:
 		{
 			try
 			{
-				db_exec(_db, "COMMIT"s);
+				if (db_exec(_db, "COMMIT"s) != SQLITE_OK)
+				{
+					// A COMMIT that failed leaves the transaction open on a connection that outlives
+					// this object, and every later BEGIN then fails with "cannot start a transaction
+					// within a transaction" - so nothing the session writes from here on is ever
+					// committed. Rolling back closes it: this batch is lost, the rest are not.
+					db_exec(_db, "ROLLBACK"s);
+				}
 			}
 			catch (...)
 			{
@@ -351,6 +358,8 @@ public:
 					// formatting the diagnostic must not terminate the process
 				}
 			}
+
+			_acquired = false;
 		}
 	}
 
@@ -1476,6 +1485,9 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 	const db_statement update_crc(_db, "update item_properties set crc = ? where folder=? and name=?"s);
 	const db_statement update_phash(
 		_db, "update item_properties set phash = ?, phash90 = ?, phash180 = ?, phash270 = ? where folder=? and name=?"s);
+	const db_statement clear_hashes(
+		_db,
+		"update item_properties set crc = null, phash = null, phash90 = null, phash180 = null, phash270 = null where folder=? and name=?"s);
 	const db_statement update_media_position(
 		_db, "update item_properties set media_position = ? where folder=? and name=?"s);
 	const db_statement insert_thumbnails(
@@ -1486,6 +1498,15 @@ void database::perform_writes(std::deque<item_db_write> writes) const
 	for (auto&& write : writes)
 	{
 		const auto path = write.path;
+
+		// First, so a write that also carries a fresh hash for the new bytes still lands it.
+		if (write.clear_hashes)
+		{
+			clear_hashes.bind(1, path.folder().text());
+			clear_hashes.bind(2, path.name());
+			clear_hashes.exec();
+			clear_hashes.reset();
+		}
 
 		if (write.md.has_value())
 		{

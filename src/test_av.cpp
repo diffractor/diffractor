@@ -333,7 +333,7 @@ static void should_reject_a_non_media_file()
 	// The extension alone still says video; only the header settles it.
 	assert_equal(true, path.exists(), "fixture is present");
 	assert_equal(true, ft->has_trait(file_traits::av), "ts is an av extension");
-	assert_equal(false, files::media_header_matches(path.extension(), df::blob_from_file(path, 1024)),
+	assert_equal(false, files::media_header_matches(path.extension(), df::blob_head_from_file(path, 1024)),
 	             "the header rule refuses it before the demuxer sees it");
 
 	av_format_decoder decoder;

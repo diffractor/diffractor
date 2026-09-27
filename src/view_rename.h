@@ -71,6 +71,7 @@ public:
 
 	void deactivate() override
 	{
+		abandon_processing();
 		_rows.clear();
 		_renames.clear();
 		_status.clear();

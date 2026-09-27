@@ -16,10 +16,58 @@
 
 namespace
 {
+	// A running spherical mean. Summing latitude and longitude directly is wrong across the
+	// antimeridian - +179 and -179 average to 0, the middle of the map rather than the middle of the
+	// pair - and wrong again near the poles. Unit vectors have no seam, so they sum and merge the
+	// same way everywhere and read back as a direction.
+	struct coordinate_sum
+	{
+		double x = 0.0;
+		double y = 0.0;
+		double z = 0.0;
+
+		void add(const gps_coordinate c)
+		{
+			const auto lat = gps_coordinate::deg2rad(c.latitude());
+			const auto lon = gps_coordinate::deg2rad(c.longitude());
+			const auto cos_lat = std::cos(lat);
+			x += cos_lat * std::cos(lon);
+			y += cos_lat * std::sin(lon);
+			z += std::sin(lat);
+		}
+
+		void add(const coordinate_sum& other)
+		{
+			x += other.x;
+			y += other.y;
+			z += other.z;
+		}
+
+		// Degenerate only when the members cancel out exactly - antipodal pairs have no meaningful
+		// centre - so the caller's fallback is the answer rather than a direction read from zero.
+		gps_coordinate mean(const gps_coordinate fallback) const
+		{
+			const auto hypotenuse = std::sqrt(x * x + y * y);
+
+			if (hypotenuse < 1e-12 && std::abs(z) < 1e-12) return fallback;
+
+			const auto lat = std::atan2(z, hypotenuse);
+			const auto lon = (hypotenuse < 1e-12) ? 0.0 : std::atan2(y, x);
+
+			// gps_coordinate reserves 180 as its "no coordinate" sentinel, so a mean that lands
+			// exactly on the antimeridian has to be nudged inside the representable range rather
+			// than answered as an absent coordinate.
+			auto lon_deg = gps_coordinate::rad2deg(lon);
+			if (lon_deg >= 180.0) lon_deg = std::nextafter(180.0, 0.0);
+			else if (lon_deg <= -180.0) lon_deg = std::nextafter(-180.0, 0.0);
+
+			return gps_coordinate(gps_coordinate::rad2deg(lat), lon_deg);
+		}
+	};
+
 	struct cluster_t
 	{
-		double lat_sum = 0.0;
-		double lon_sum = 0.0;
+		coordinate_sum coordinates;
 		uint32_t coord_count = 0;
 		std::vector<size_t> members;
 
@@ -41,6 +89,16 @@ namespace
 	// locations.md 2.3/3.1: stored text qualifies nothing, so a bare `Richmond` would resolve to
 	// the largest Richmond on earth rather than the one the items are in. The gazetteer record for
 	// the stored parts supplies both the qualified label and the point a radius measures from.
+	// The identity a place name carries. Place alone merges namesakes - a Springfield in Illinois
+	// and one in Massachusetts are not the same visit - so the qualifying parts belong in the key,
+	// and folding the case is what stops one spelling splitting into two.
+	std::string place_identity_key(const str::cached place, const str::cached state, const str::cached country)
+	{
+		auto key = std::format("{}\x1f{}\x1f{}", place.sv(), state.sv(), country.sv());
+		str::to_lower(key);
+		return key;
+	}
+
 	resolved_name_t resolve_stored_name(const df::visit_sample& s, const location_cache& locations,
 	                                    std::map<std::string, resolved_name_t>& memo)
 	{
@@ -257,7 +315,12 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 	{
 		const auto& s = samples[i];
 
-		const auto has_location = s.coordinate.is_valid() || !is_empty(s.place) || !is_empty(s.country);
+		// A state or province is a location. Leaving it out of this test counted a photograph
+		// described only by its state as unlocated, so the summary understated how much of the
+		// result is placed - and the place breakdown below, which keys on the same fields, still
+		// listed it.
+		const auto has_location = s.coordinate.is_valid() || !is_empty(s.place) || !is_empty(s.state) ||
+			!is_empty(s.country);
 
 		if (s.days == 0)
 		{
@@ -312,8 +375,7 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 
 			if (is_empty(place) && is_empty(state) && is_empty(country)) continue;
 
-			auto key = std::format("{}\x1f{}\x1f{}", place.sv(), state.sv(), country.sv());
-			str::to_lower(key);
+			auto key = place_identity_key(place, state, country);
 
 			const auto found = keys.find(key);
 
@@ -368,10 +430,11 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 		}
 		else
 		{
-			const auto by_place = !is_empty(s.place);
-			const auto text = by_place ? s.place.sv() : s.country.sv();
-			auto key = std::string(text);
-			str::to_lower(key);
+			// The same identity the place tallies use. Keying on the place name alone merged
+			// namesakes into one visit - a Springfield in Illinois and one in Massachusetts are not
+			// the same trip - and a name that appeared with and without its qualifiers split into
+			// two. A country-only sample keys on the country, which is all the identity it has.
+			auto key = place_identity_key(s.place, s.state, s.country);
 
 			const auto found = text_clusters.find(key);
 
@@ -403,28 +466,23 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 
 	for (const auto* const b : ordered)
 	{
-		auto lat_sum = 0.0;
-		auto lon_sum = 0.0;
+		coordinate_sum bucket_coordinates;
 
 		for (const auto i : b->second)
 		{
-			lat_sum += samples[i].coordinate.latitude();
-			lon_sum += samples[i].coordinate.longitude();
+			bucket_coordinates.add(samples[i].coordinate);
 		}
 
-		const auto n = static_cast<double>(b->second.size());
-		const auto centre = gps_coordinate(lat_sum / n, lon_sum / n);
+		const auto centre = bucket_coordinates.mean(samples[b->second.front()].coordinate);
 		auto merged = false;
 
 		for (size_t c = first_coord_cluster; c < clusters.size(); ++c)
 		{
 			if (clusters[c].centre.distance_in_kilometers(centre) <= visit_cluster_merge_km)
 			{
-				clusters[c].lat_sum += lat_sum;
-				clusters[c].lon_sum += lon_sum;
+				clusters[c].coordinates.add(bucket_coordinates);
 				clusters[c].coord_count += static_cast<uint32_t>(b->second.size());
-				clusters[c].centre = gps_coordinate(clusters[c].lat_sum / clusters[c].coord_count,
-				                                    clusters[c].lon_sum / clusters[c].coord_count);
+				clusters[c].centre = clusters[c].coordinates.mean(clusters[c].centre);
 				clusters[c].members.insert(clusters[c].members.end(), b->second.begin(), b->second.end());
 				merged = true;
 				break;
@@ -435,8 +493,7 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 		if (clusters.size() >= visit_max_clusters) continue;
 
 		cluster_t c;
-		c.lat_sum = lat_sum;
-		c.lon_sum = lon_sum;
+		c.coordinates = bucket_coordinates;
 		c.coord_count = static_cast<uint32_t>(b->second.size());
 		c.centre = centre;
 		c.members = b->second;

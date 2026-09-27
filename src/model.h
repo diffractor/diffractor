@@ -195,11 +195,11 @@ public:
 
 	~ui_owned_ptr()
 	{
-		// use_count only filters out the common case where another reference survives this one, so an
-		// over-estimate costs a redundant hop. It cannot under-estimate: once this is the sole owner no
-		// other thread has a shared_ptr to copy, and every weak_ptr to these types is locked on the UI
-		// thread, which would only push the count up and keep the object alive.
-		if (_p && _p.use_count() == 1 && !ui::is_ui_thread())
+		// The hop is unconditional off the UI thread. use_count cannot be tested and acted on
+		// atomically: a count above one can drop to zero between the test and this destructor's own
+		// release, which is precisely the worker-thread destruction this type exists to prevent. The
+		// hop costs one queued message that releases a reference and does nothing else.
+		if (_p && !ui::is_ui_thread())
 		{
 			_async->queue_ui([p = std::move(_p)]
 			{
@@ -2033,6 +2033,23 @@ private:
 	df::file_path _hydration_rescan_done;
 	uint64_t _hover_thumbnail_generation = 0;
 
+	// Stamped on each display capture request, which arrives later when it has to be read from a
+	// playing video. Only the latest request acts on its frame. Mutable because asking for a
+	// capture is a read of the view that still has to retire the requests before it.
+	mutable uint64_t _capture_generation = 0;
+
+	// What the latest open still owes the view until a pass of it publishes complete: the items it
+	// was asked to select, and whether it moved to a new search. A superseded pass never publishes,
+	// so a later open of the same search takes these over rather than dropping them.
+	struct unpublished_open_t
+	{
+		df::search_t search;
+		df::unique_paths selection;
+		bool path_changed = false;
+	};
+
+	std::optional<unpublished_open_t> _unpublished_open;
+
 	view_state(const view_state& other) = delete;
 	const view_state& operator=(const view_state& other) = delete;
 
@@ -2600,6 +2617,11 @@ public:
 
 	df::process_result can_process_selection_and_mark_errors(const view_host_base_ptr& view,
 	                                                         df::process_items_type file_types) const;
+	// The same test against a set the caller names. A per-item command operates on one item that
+	// need not be selected at all, and holding it to the selection's eligibility answers about the
+	// wrong files in both directions.
+	df::process_result can_process_items_and_mark_errors(const view_host_base_ptr& view, const df::item_set& items,
+	                                                     df::process_items_type file_types) const;
 	bool can_process_selection(const view_host_base_ptr& view, df::process_items_type file_types) const;
 	// Same test as can_process_selection, but keeps the reason so a disabled command can explain itself.
 	df::process_result selection_process_result(df::process_items_type file_types) const;

@@ -1546,10 +1546,20 @@ location_t location_cache::find_by_id(const uint32_t id) const
 	return result;
 }
 
+// locations.md 4.1: a degree of longitude is only a degree of latitude's worth of ground at the
+// equator, so a nearest-place search over raw degrees ranks somewhere too far east or west as
+// nearer than somewhere just up the road. collect_within_km already corrects for this; the same
+// factor, and the same floor near the poles, applies to the nearest-point search.
+static float lon_scale_at(const double latitude)
+{
+	return static_cast<float>(std::max(0.05, std::cos(gps_coordinate::deg2rad(latitude))));
+}
+
 country_loc location_cache::find_country(const double x, const double y) const
 {
 	platform::shared_lock lock(_rw);
-	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y));
+	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y),
+	                                        lon_scale_at(x));
 	const auto found = _countries.find(closest.country);
 	// NOTE: returns the canonical (English) name deliberately. This feeds the map/heat-map
 	// country grouping whose label doubles as a search term (sidebar .with(name)); the search
@@ -1572,7 +1582,8 @@ location_t location_cache::find_closest(const double x, const double y, country_
 
 location_t location_cache::find_closest_locked(const double x, const double y, country_loc* country) const
 {
-	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y));
+	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y),
+	                                        lon_scale_at(x));
 
 	if (country)
 	{
@@ -1664,7 +1675,10 @@ located_place location_cache::find_attributed(const double x, const double y, co
 	platform::shared_lock lock(_rw);
 	if (_tree.is_empty()) return {};
 
-	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y));
+	// Weighed the same way as find_closest: raw degrees rank somewhere far east or west as nearer
+	// than somewhere up the road, and this is the lookup that names the place an item is shown at.
+	const auto closest = _tree.find_closest(_coords, static_cast<float>(x), static_cast<float>(y),
+	                                        lon_scale_at(x));
 	const auto closest_km = at.distance_in_kilometers(gps_coordinate(closest.x, closest.y));
 
 	auto winner = closest;

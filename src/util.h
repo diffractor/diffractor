@@ -90,6 +90,37 @@ struct text_t
 	{
 	}
 
+	// A copy is a snapshot of whatever translation was published when it was taken, which is what
+	// the std::string this replaced already did. The atomic member is what forces them to be
+	// written out.
+	text_t(const text_t& other) : text(other.text), trans(other.trans.load(std::memory_order_acquire))
+	{
+	}
+
+	text_t(text_t&& other) noexcept : text(other.text), trans(other.trans.load(std::memory_order_acquire))
+	{
+	}
+
+	text_t& operator=(const text_t& other)
+	{
+		if (this != &other)
+		{
+			text = other.text;
+			trans.store(other.trans.load(std::memory_order_acquire), std::memory_order_release);
+		}
+		return *this;
+	}
+
+	text_t& operator=(text_t&& other) noexcept
+	{
+		if (this != &other)
+		{
+			text = other.text;
+			trans.store(other.trans.load(std::memory_order_acquire), std::memory_order_release);
+		}
+		return *this;
+	}
+
 	operator std::string_view() const
 	{
 		return sv();
@@ -97,16 +128,33 @@ struct text_t
 
 	std::string_view sv() const
 	{
-		return trans.empty() ? text : trans;
+		// Published as a pointer to storage that is never freed. A worker formatting a message while
+		// the language is switched keeps a view that stays valid; a std::string assigned in place
+		// would reallocate its buffer under that reader.
+		const auto* const t = trans.load(std::memory_order_acquire);
+		return (t == nullptr || t->empty()) ? text : std::string_view(*t);
 	}
 
 	void clear()
 	{
-		trans.clear();
+		trans.store(nullptr, std::memory_order_release);
+	}
+
+	// Publishes a translation. The storage has to outlive every reader, because a worker can hold
+	// the pointer across a language switch; app_text_t keeps it in _translation_storage, which is
+	// appended to and never cleared.
+	void publish(const std::string* translated)
+	{
+		trans.store(translated, std::memory_order_release);
+	}
+
+	const std::string* published() const
+	{
+		return trans.load(std::memory_order_acquire);
 	}
 
 	std::string_view text;
-	std::string trans;
+	std::atomic<const std::string*> trans{nullptr};
 };
 
 namespace df
@@ -225,7 +273,11 @@ namespace df
 	extern int64_t max_texture_bytes;
 	extern int64_t max_decode_bytes;
 	extern date_t start_time;
-	extern file_path last_loaded_path;
+	// Written by whichever worker is decoding and read by the crash handler on another thread, so it
+	// is an atomic value rather than a path assigned in place. str::cached is an interned id, which
+	// makes a file_path two 32-bit words and this a lock-free load - a handler that spun on a lock
+	// held by the faulting thread would hang the report it exists to produce.
+	extern std::atomic<file_path> last_loaded_path;
 	extern file_path previous_log_path;
 	extern file_path log_path;
 
@@ -858,7 +910,15 @@ namespace df
 		}
 	};
 
-	blob blob_from_file(file_path path, size_t max_load = max_blob_size);
+	// The whole file. A file larger than max_blob_size is refused rather than truncated: a caller
+	// handed the first 100 MiB of a larger image decodes a frame whose tail is whatever the codec
+	// fills missing rows with, and on the edit path that part-black frame is re-encoded over the
+	// original.
+	blob blob_from_file(file_path path);
+
+	// An explicit prefix, for a caller probing a header or a signature. Named separately so a
+	// truncated read is always something the caller asked for.
+	blob blob_head_from_file(file_path path, size_t max_load);
 	bool blob_save_to_file(cspan data, file_path path);
 
 	struct span

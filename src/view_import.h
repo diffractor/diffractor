@@ -69,6 +69,7 @@ public:
 
 	void deactivate() override
 	{
+		abandon_processing();
 		_rows.clear();
 		_sources.clear();
 		_status.clear();

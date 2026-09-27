@@ -243,7 +243,7 @@ void display_state_t::load_selected_item_data()
 	                   {
 		                   df::scope_locked_inc l(df::loading_media);
 		                   // Shared because the UI task is stored in a std::function, which requires a copyable target.
-		                   auto data = std::make_shared<df::blob>(blob_from_file(path, df::one_meg));
+		                   auto data = std::make_shared<df::blob>(blob_head_from_file(path, df::one_meg));
 
 		                   self->_async.queue_ui([self, data]
 		                   {
@@ -743,19 +743,32 @@ void view_state::capture_display(const std::function<void(file_load_result)>& f)
 
 	if (d)
 	{
+		// The frame of a playing video arrives later, on this thread, and only the latest request
+		// may act on it: a Copy overtaken by a newer Copy would otherwise land last and put the older
+		// frame on a clipboard the user has since filled. Moving on to another item does not
+		// overtake it - every caller takes what it needs when it asks, so Copy followed at once by
+		// Next still copies. The display itself is not held: this callback waits on the media read
+		// thread, which must never be left holding the last reference to UI-owned state.
+		const auto generation = ++_capture_generation;
+		const auto deliver = [this, generation, f](file_load_result lr)
+		{
+			if (generation != _capture_generation) return;
+			f(std::move(lr));
+		};
+
 		// player_has_video() reports the media info, which outlives the session across a
 		// file-handle detach, so the session itself has to be checked too.
 		if (d->player_has_video() && d->_session)
 		{
-			_player->capture(d->_session, f);
+			_player->capture(d->_session, deliver);
 		}
 		else if (d->_selected_texture1)
 		{
-			f(d->_selected_texture1->loaded());
+			deliver(d->_selected_texture1->loaded());
 		}
 		else
 		{
-			f({});
+			deliver({});
 		}
 	}
 }
@@ -3577,13 +3590,29 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 		history.history_add(new_search, _selected.ids());
 	}
 
+	// A pass superseded before it publishes is dropped, but what it was opened for is still owed. A
+	// refresh of the same search is the usual superseder - Delete re-opens the listing naming the
+	// item to land on, and validating the deleted files refreshes it straight away with nothing to
+	// select - so the refresh inherits the selection and the path change it would otherwise lose.
+	auto publish_selection = selection;
+	auto publish_path_changed = path_changed;
+
+	if (_unpublished_open && _unpublished_open->search == new_search)
+	{
+		if (publish_selection.empty()) publish_selection = _unpublished_open->selection;
+		publish_path_changed = publish_path_changed || _unpublished_open->path_changed;
+	}
+
+	_unpublished_open = unpublished_open_t{new_search, publish_selection, publish_path_changed};
+
 	_events.invalidate_view(view_invalid::address);
 
 	// The host is UI-owned and is only ever used on the UI hop below, so it crosses the worker as a
 	// handle whose release is posted back rather than as a plain owning reference - a truncated
 	// query queue would otherwise run a view host destructor on the query thread.
 	_async.queue_async(async_queue::query,
-	                   [this, view = ui_owned(_async, view), new_search, selection, path_changed, token]
+	                   [this, view = ui_owned(_async, view), new_search, selection = std::move(publish_selection),
+		                   path_changed = publish_path_changed, token]
 	                   {
 		                   // A newer open supersedes this one before the worker reaches it, so retire
 		                   // here rather than walking the index for a search nobody is waiting on.
@@ -3596,8 +3625,14 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 		                   {
 			                   _async.queue_ui(
 				                   [this, view, new_search, query_items = std::move(query_items), selection, is_first,
-					                   is_complete, path_changed]
+					                   is_complete, path_changed, token]
 				                   {
+					                   // The identity test alone cannot retire a superseded pass:
+					                   // re-opening the same search leaves _search equal to it, so a
+					                   // cancelled walk's partial results were appended over the
+					                   // pass that replaced it.
+					                   if (token.is_cancelled()) return;
+
 					                   if (new_search == _search)
 					                   {
 						                   auto append_items = item_index.
@@ -3607,6 +3642,8 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 
 						                   if (is_complete)
 						                   {
+							                   // Settled: nothing this open asked for is owed any more.
+							                   _unpublished_open.reset();
 							                   _events.search_complete(new_search, path_changed);
 						                   }
 					                   }
@@ -3780,6 +3817,7 @@ void view_state::load_display_state()
 				std::weak_ptr<df::item_element> item;
 				df::file_path path;
 				df::file_size size;
+				df::date_t modified;
 				df::item_online_status online_status = df::item_online_status::offline;
 				uint32_t existing_crc = 0;
 			};
@@ -3794,7 +3832,8 @@ void view_state::load_display_state()
 				if (item && item->crc32c() == 0 && item->online_status() == df::item_online_status::disk &&
 					(two_files_size_same || item->file_size().to_int64() < max_load_size))
 				{
-					requests.emplace_back(item, item->path(), item->file_size(), item->online_status(), item->crc32c());
+					requests.emplace_back(item, item->path(), item->file_size(), item->file_modified(),
+					                      item->online_status(), item->crc32c());
 				}
 			}
 
@@ -3807,8 +3846,8 @@ void view_state::load_display_state()
 
 					if (crc)
 					{
-						index->publish_crc(request.item, request.path, request.size, request.online_status,
-						                   request.existing_crc, crc);
+						index->publish_crc(request.item, request.path, request.size, request.modified,
+						                   request.online_status, request.existing_crc, crc);
 					}
 				}
 			});
@@ -5207,8 +5246,15 @@ void texture_state::display_dimensions(const sizei dims)
 df::process_result view_state::can_process_selection_and_mark_errors(const view_host_base_ptr& view,
                                                                      const df::process_items_type file_types) const
 {
+	return can_process_items_and_mark_errors(view, _selected, file_types);
+}
+
+df::process_result view_state::can_process_items_and_mark_errors(const view_host_base_ptr& view,
+                                                                 const df::item_set& items,
+                                                                 const df::process_items_type file_types) const
+{
 	clear_error_items(view);
-	return _selected.can_process(file_types, true, view);
+	return items.can_process(file_types, true, view);
 }
 
 bool view_state::can_process_selection(const view_host_base_ptr& view, const df::process_items_type file_types) const

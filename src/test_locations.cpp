@@ -925,6 +925,33 @@ static void should_describe_bearing()
 	assert_equal(""s, bearing_descriptor(london), "an item At its place carries no bearing");
 }
 
+// Attribution starts from the nearest place, and it has to be the same nearest place find_closest
+// names. Searching raw degrees there while find_closest weighed longitude by latitude meant that far
+// from the equator an item was labelled after somewhere half as close as a place it was actually
+// nearer to. The grid spans high latitudes, where a degree of longitude is least like a degree of
+// latitude; against the unweighted search it finds disagreements.
+static void should_attribute_from_the_place_find_closest_names()
+{
+	const auto& locations = test_locations();
+	auto compared = 0;
+	auto disagreements = 0;
+
+	for (auto latitude = 56.0; latitude <= 70.0; latitude += 0.5)
+	{
+		for (auto longitude = 5.0; longitude <= 60.0; longitude += 1.5)
+		{
+			const auto attributed = locations.find_attributed(latitude, longitude);
+			const auto closest = locations.find_closest(latitude, longitude);
+
+			if (attributed.nearest.id != closest.id) ++disagreements;
+			++compared;
+		}
+	}
+
+	assert_equal(true, compared > 1000, "the grid covers a wide band of high latitudes");
+	assert_equal(0, disagreements, "attribution starts from the place find_closest names");
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Location search
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1296,6 +1323,22 @@ static void should_open_a_map_area_as_a_place_and_radius()
 	assert_equal(location_distance_at_detent(0), point.search_radius_km(),
 	             "a degenerate area uses the smallest detent");
 
+	// A zoomed-out area is wider than the widest detent. Rounding it down to the top of the ladder
+	// dropped every item the area showed beyond 100 km, which is the one thing the radius promises
+	// not to do. The slider clamps at its widest; the search covers what was displayed.
+	map_location_area wide;
+	wide.position = wide.place_position = gps_coordinate(0.0, 0.0);
+	wide.min_latitude = -10.0;
+	wide.max_latitude = 10.0;
+	wide.min_longitude = -10.0;
+	wide.max_longitude = 10.0;
+
+	const auto wide_furthest = wide.place_position.distance_in_kilometers(gps_coordinate(10.0, 10.0));
+	assert_equal(true, wide_furthest > location_distance_at_detent(location_distance_detent_count - 1),
+	             "the fixture is wider than the ladder");
+	assert_equal(true, wide.search_radius_km() >= wide_furthest,
+	             "a radius past the widest detent still covers the area");
+
 	// What the click opens: a resolved place term the distance slider can then widen.
 	auto named = df::search_t();
 	named.location(area.name, df::location_level::any).set_place_distance(km);
@@ -1454,6 +1497,83 @@ static void should_derive_visits_from_a_result_set()
 	assert_equal(10u, timeline.places[0].count, "largest place count");
 }
 
+// A visit centre used to be the arithmetic mean of latitude and longitude, which has a seam: a trip
+// straddling the antimeridian averaged +179 and -179 to 0 and put the visit off West Africa, from
+// where its covering radius reached half the planet.
+static void should_centre_a_visit_across_the_antimeridian()
+{
+	const location_cache locations;
+	df::visit_request request;
+
+	for (auto d = 1; d <= 6; ++d)
+	{
+		request.samples.emplace_back(visit_sample_at(2022, 5, d, -16.9, 179.9, "Taveuni"));
+		request.samples.emplace_back(visit_sample_at(2022, 5, d + 6, -16.9, -179.9, "Taveuni"));
+	}
+
+	const auto timeline = df::compute_visits(request, locations);
+
+	assert_equal(1u, static_cast<uint32_t>(timeline.nodes.size()),
+	             std::format("one visit either side of the line (located {}, nodes {})",
+	                         timeline.located_count, timeline.nodes.size()));
+
+	const auto centre = timeline.nodes.front().centre;
+	assert_equal(true, centre.is_valid(),
+	             std::format("the visit has a centre ({}, {})", centre.latitude(), centre.longitude()));
+	assert_equal(true, std::abs(centre.longitude()) > 179.0,
+	             std::format("the centre stays on the meridian the samples straddle ({}, {})",
+	                         centre.latitude(), centre.longitude()));
+	assert_equal(true, std::abs(centre.latitude() + 16.9) < 0.5, "and keeps the latitude it was given");
+
+	// The radius covers the members, so a centre on the wrong side of the planet would show up as a
+	// radius of thousands of kilometres rather than a few.
+	assert_equal(true, timeline.nodes.front().radius_km < 100.0,
+	             "the covering radius is local, not half the planet");
+}
+
+// A text-only visit is keyed by the same identity the place tallies use. Keying on the place name
+// alone merged namesakes into one trip: two Springfields in different states are not one visit, and
+// a timeline that says they are cannot be reproduced by the search the node promises.
+static void should_tell_text_only_namesakes_apart()
+{
+	const location_cache locations;
+	df::visit_request request;
+
+	const auto sample_at = [](const int year, const int month, const int day, const std::string_view place,
+	                          const std::string_view state)
+	{
+		df::visit_sample s;
+		s.days = df::date_t(year, month, day, 12, 0, 0).to_days();
+		s.place = str::cache(place);
+		s.state = str::cache(state);
+		s.country = str::cache("United States");
+		return s;
+	};
+
+	for (auto d = 1; d <= 8; ++d)
+	{
+		request.samples.emplace_back(sample_at(2021, 4, d, "Springfield", "Illinois"));
+	}
+
+	for (auto d = 1; d <= 8; ++d)
+	{
+		request.samples.emplace_back(sample_at(2023, 9, d, "Springfield", "Massachusetts"));
+	}
+
+	const auto timeline = df::compute_visits(request, locations);
+
+	assert_equal(2u, static_cast<uint32_t>(timeline.nodes.size()), "two Springfields are two visits");
+	assert_equal(2u, static_cast<uint32_t>(timeline.places.size()), "and two places");
+	assert_equal(8u, timeline.nodes.front().count, "neither absorbed the other");
+	assert_equal(8u, timeline.nodes.back().count, "and both kept their own items");
+
+	// The node count alone does not discriminate: one cluster spanning both years would split at the
+	// gap into two nodes regardless. It is the cluster identity that says the two places were told
+	// apart in the first place.
+	assert_equal(false, timeline.nodes.front().cluster == timeline.nodes.back().cluster,
+	             "and they are two clusters, not one split at the gap");
+}
+
 static void should_split_a_cluster_at_long_gaps()
 {
 	const location_cache locations;
@@ -1502,6 +1622,32 @@ static void should_exclude_items_that_cannot_sit_on_a_timeline()
 	assert_equal(1u, timeline.undated_count, "undated count");
 	assert_equal(1u, timeline.unlocated_count, "unlocated count");
 	assert_equal(2u, static_cast<uint32_t>(timeline.nodes.size()), "node count");
+}
+
+// A state or province places a photograph as surely as a town does. Leaving it out of the test for
+// "has a location" counted an item described only by its state as unlocated, so the summary
+// understated how much of the result is placed - while the place breakdown, which keys on the same
+// fields, still listed it.
+static void should_count_a_state_only_sample_as_located()
+{
+	const location_cache locations;
+	df::visit_request request;
+
+	for (auto d = 1; d <= 8; ++d)
+	{
+		request.samples.emplace_back(visit_sample_at(2020, 5, d, 48.85, 2.35, "Paris"));
+	}
+
+	// Described by its state alone: no coordinate, no town, no country.
+	auto state_only = visit_sample_at(2020, 5, 20, 0.0, 0.0, {});
+	state_only.coordinate = {};
+	state_only.state = "Bavaria"_c;
+	request.samples.emplace_back(state_only);
+
+	const auto timeline = df::compute_visits(request, locations);
+
+	assert_equal(0u, timeline.unlocated_count, "a state-only sample is not unlocated");
+	assert_equal(9u, timeline.located_count, "it is counted among the located");
 }
 
 // locations.md 7.2: a chip states a count and then runs a search. They are one promise, so the
@@ -1778,6 +1924,7 @@ void register_location_tests(view_state& state, test_registry& tests)
 	tests.add("Should compose qualified place name"s, should_compose_qualified_place_name);
 	tests.add("Should bound place attribution"s, should_bound_place_attribution);
 	tests.add("Should describe bearing"s, should_describe_bearing);
+	tests.add("Should attribute from the place find closest names"s, should_attribute_from_the_place_find_closest_names);
 
 	//
 	// Location search
@@ -1806,8 +1953,11 @@ void register_location_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should derive visits from a result set"s, should_derive_visits_from_a_result_set);
 	tests.add("Should split a cluster at long gaps"s, should_split_a_cluster_at_long_gaps);
+	tests.add("Should centre a visit across the antimeridian"s, should_centre_a_visit_across_the_antimeridian);
+	tests.add("Should tell text only namesakes apart"s, should_tell_text_only_namesakes_apart);
 	tests.add("Should exclude items that cannot sit on a timeline"s,
 	          should_exclude_items_that_cannot_sit_on_a_timeline);
+	tests.add("Should count a state only sample as located"s, should_count_a_state_only_sample_as_located);
 	tests.add("Should reproduce a place breakdown from its chip"s,
 	          should_reproduce_a_place_breakdown_from_its_chip);
 	tests.add("Should tell two place chips apart"s, should_tell_two_place_chips_apart);

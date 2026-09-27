@@ -629,27 +629,28 @@ namespace str
 				}
 
 				// Extract numeric values
-				uint64_t l_num = 0;
-				uint64_t r_num = 0;
-				int l_digits = 0;
-				int r_digits = 0;
+				const auto l_start = il;
+				const auto r_start = ir;
 
-				while (il < el && *il >= '0' && *il <= '9')
-				{
-					l_num = l_num * 10 + (*il - '0');
-					++il;
-					++l_digits;
-				}
-				while (ir < er && *ir >= '0' && *ir <= '9')
-				{
-					r_num = r_num * 10 + (*ir - '0');
-					++ir;
-					++r_digits;
-				}
+				while (il < el && *il >= '0' && *il <= '9') ++il;
+				while (ir < er && *ir >= '0' && *ir <= '9') ++ir;
 
-				// Compare numeric values
-				if (l_num < r_num) return -1;
-				if (l_num > r_num) return 1;
+				const auto l_digits = static_cast<int>(il - l_start);
+				const auto r_digits = static_cast<int>(ir - r_start);
+
+				// Leading zeros are already consumed, so the longer run is the larger number and
+				// equal-length runs order the same lexicographically as numerically. Accumulating
+				// the value instead wrapped a uint64_t once a run passed nineteen digits, and the
+				// wrapped result sorted as something small - so a long serial number in a file name
+				// landed in an arbitrary place in the listing.
+				if (l_digits != r_digits) return l_digits < r_digits ? -1 : 1;
+
+				for (auto k = 0; k < l_digits; ++k)
+				{
+					const auto dl = *(l_start + k);
+					const auto dr = *(r_start + k);
+					if (dl != dr) return dl < dr ? -1 : 1;
+				}
 
 				// If equal, fewer leading zeros comes first (preserves original behavior for "007" vs "7")
 				if (l_leading_zeros < r_leading_zeros) return -1;
@@ -951,6 +952,10 @@ namespace str
 	bool is_utf8(const char* sz, int len);
 	bool is_utf16(const uint8_t* sz, int len);
 
+	// Decodes what is_utf16 accepts, on the same evidence: the byte-order mark when there is one,
+	// which is dropped, otherwise the side the zero bytes of Latin text fall on.
+	std::u16string utf16_from_bytes(const uint8_t* sz, int len);
+
 
 	std::string format_seconds(int val);
 
@@ -1055,11 +1060,15 @@ namespace str
 
 	inline bool is_wildcard(const std::string_view text)
 	{
-		for (auto i = text.begin(); i < text.end(); ++i)
+		for (auto i = text.begin(); i != text.end(); ++i)
 		{
 			const auto c = *i;
 			if (c == '*') return true;
-			if (c == '\\') ++i;
+
+			// An escape consumes the character after it. A trailing backslash has none, so stopping
+			// here is what keeps the step off the end: incrementing past one-past-the-end is
+			// undefined even though nothing is read through it.
+			if (c == '\\' && ++i == text.end()) break;
 		}
 
 		return false;

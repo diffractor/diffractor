@@ -116,14 +116,24 @@ public:
 	}
 
 	// The following two readers run from the crash / application-recovery handler
-	// (see app_frame::crash and recover_callback). They deliberately do NOT take _mtx:
-	// a blocking acquire would deadlock the handler if the crashing thread happened to
-	// hold the lock inside add_open/remove_open. Those mutators hold the lock only for a
-	// brief map insert/erase, so a best-effort lock-free read here is the safer trade-off
-	// for diagnostic output produced while the process is already failing.
+	// (see app_frame::crash and recover_callback). They take _mtx only if it is free: a blocking
+	// acquire would deadlock the handler if the crashing thread happened to hold the lock inside
+	// add_open/remove_open, and iterating without it is undefined - a concurrent insert rehashes the
+	// map and invalidates the iterator, which turns one crash into two and loses the protection this
+	// list exists to provide. A refused lock costs one unrecorded crash, which is bounded and stated.
 	void flush_open_files() const
 	{
-		if (_open_files.empty() || is_full()) return;
+		if (is_full()) return;
+
+		platform::try_exclusive_lock lock(_mtx);
+
+		if (!lock.locked())
+		{
+			df::log(__FUNCTION__, "open files busy - crash list not updated");
+			return;
+		}
+
+		if (_open_files.empty()) return;
 
 		// Several workers decode at once, so most open files are bystanders. Only the thread running
 		// this handler faulted, so record what it had open and leave the rest scannable. The recovery
@@ -162,6 +172,14 @@ public:
 
 	void log_open_files() const
 	{
+		platform::try_exclusive_lock lock(_mtx);
+
+		if (!lock.locked())
+		{
+			df::log(__FUNCTION__, "open files busy - not listed");
+			return;
+		}
+
 		const auto faulting_thread = platform::current_thread_id();
 
 		for (const auto& [path, open] : _open_files)

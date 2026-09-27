@@ -1269,7 +1269,10 @@ namespace ui
 	public:
 		void color_params(double vibrance, double saturation, double darks, double midtones, double lights,
 		                  double contrast, double brightness, double temperature = 0, double tint = 0);
-		void apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride, const df::cancel_token& token) const;
+		// False when the token stopped it part-way, which leaves the rows it never reached holding
+		// whatever the destination allocation came with. A cancelled result is not a picture.
+		bool apply(const const_surface_ptr& src, uint8_t* dst, size_t dst_stride,
+		           const df::cancel_token& token) const;
 		void populate_texture_transform(struct texture_transform& transform) const;
 
 	private:
@@ -2007,6 +2010,149 @@ namespace ui
 		virtual void hide() = 0;
 		virtual bool is_visible() const = 0;
 	};
+
+	// The same contract null_frame keeps for an absent window, extended to the controls a dialog
+	// asks its frame to make. Creating a native dialog can fail - desktop heap exhaustion, or a
+	// request made while the session is ending - and the dozens of call sites that open a dialog
+	// cannot each be asked to test for that. A dialog built on this one reports itself cancelled and
+	// does nothing, which is what a dialog that never appeared means.
+	class null_control_frame final : public control_frame
+	{
+		// Stands in for any control the absent frame was asked to make.
+		class null_control : public toolbar, public edit, public trackbar, public button, public date_time_control
+		{
+		public:
+			std::any handle() const override { return {}; }
+			void destroy() override {}
+			void enable(bool) override {}
+			std::string window_text() const override { return {}; }
+			void window_text(std::string_view) override {}
+			void focus() override {}
+			sizei measure(int) const override { return {}; }
+			bool is_visible() const override { return false; }
+			bool has_focus() const override { return false; }
+			recti window_bounds() const override { return {}; }
+			void window_bounds(recti, bool) override {}
+			void show(bool) override {}
+			void options_changed() override {}
+
+			sizei measure_toolbar(int) override { return {}; }
+			void update_button_state(bool, bool) override {}
+			recti button_bounds(const command_ptr&) const override { return {}; }
+
+			void limit_text_len(int) override {}
+			void replace_sel(std::string_view, bool) override {}
+			void select(int, int) override {}
+			void select_all() override {}
+			void set_icon(icon_index) override {}
+			void set_background(color32) override {}
+			void auto_completes(const std::vector<std::string>&) override {}
+
+			int get_pos() const override { return 0; }
+			void SetPos(int) override {}
+			void buddy(const edit_ptr&) override {}
+
+			void set_checked(bool) override {}
+		};
+
+		class null_bubble final : public bubble_frame
+		{
+		public:
+			void show(const view_elements_ptr&, recti, int, int, bool) override {}
+			void hide() override {}
+			bool is_visible() const override { return false; }
+		};
+
+		static std::shared_ptr<null_control> control()
+		{
+			static const auto instance = std::make_shared<null_control>();
+			return instance;
+		}
+
+	public:
+		std::any handle() const override { return {}; }
+		void destroy() override {}
+		void enable(bool) override {}
+		std::string window_text() const override { return {}; }
+		void window_text(std::string_view) override {}
+		void focus() override {}
+		sizei measure(int) const override { return {}; }
+		bool is_visible() const override { return false; }
+		bool has_focus() const override { return false; }
+		recti window_bounds() const override { return {}; }
+		void window_bounds(recti, bool) override {}
+		void show(bool) override {}
+		void options_changed() override {}
+
+		void invalidate(recti = {}, bool = false) override {}
+		void layout() override {}
+		void redraw() override {}
+		void redraw_now() override {}
+		void scroll(int, int, recti, bool) override {}
+		void track_menu(recti, const std::vector<command_ptr>&) override {}
+		void close(bool = false) override {}
+
+		bool is_enabled() const override { return false; }
+		bool is_maximized() const override { return false; }
+		bool is_occluded() const override { return true; }
+		void set_cursor(style::cursor) override {}
+		void reset_graphics() override {}
+		pointi cursor_location() override { return {-1, -1}; }
+
+		edit_ptr create_edit(const edit_styles&, std::string_view, std::function<void(const std::string&)>) override
+		{
+			return control();
+		}
+
+		trackbar_ptr create_slider(int, int, std::function<void(int, bool)>) override { return control(); }
+
+		toolbar_ptr create_toolbar(const toolbar_styles&, const std::vector<command_ptr>&) override
+		{
+			return control();
+		}
+
+		button_ptr create_button(std::string_view, std::function<void()>, bool) override { return control(); }
+
+		button_ptr create_button(icon_index, std::string_view, std::string_view, std::function<void()>, bool) override
+		{
+			return control();
+		}
+
+		button_ptr create_check_button(bool, std::string_view, bool, std::function<void(bool)>, int) override
+		{
+			return control();
+		}
+
+		date_time_control_ptr create_date_time_control(df::date_t, std::function<void(df::date_t)>, bool) override
+		{
+			return control();
+		}
+
+		control_frame_ptr create_dlg(frame_host_weak_ptr, bool) override;
+		frame_ptr create_frame(frame_host_weak_ptr, const frame_style&) override { return no_frame(); }
+		bubble_window_ptr create_bubble() override { return std::make_shared<null_bubble>(); }
+
+		void apply_layout(const control_layouts&, pointi) override {}
+		// A dialog that could not be shown is one the user did not agree to.
+		close_result wait_for_close(uint32_t) override { return close_result::cancel; }
+		void focus_first() override {}
+		void position(recti) override {}
+		void save_window_position(platform::setting_file_ptr&) override {}
+		bool is_canceled() const override { return true; }
+		double scale_factor() const override { return 1.0; }
+	};
+
+	// Stateless, so one instance serves every dialog that has no window.
+	inline const control_frame_ptr& no_control_frame()
+	{
+		static const control_frame_ptr instance = std::make_shared<null_control_frame>();
+		return instance;
+	}
+
+	inline control_frame_ptr null_control_frame::create_dlg(frame_host_weak_ptr, bool)
+	{
+		return no_control_frame();
+	}
 
 	enum class os_event_type
 	{

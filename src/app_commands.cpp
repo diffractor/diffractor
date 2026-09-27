@@ -605,14 +605,19 @@ static void desktop_background_invoke(view_state& s, const ui::control_frame_ptr
 
 static void capture_invoke(view_state& s, const ui::control_frame_ptr& parent)
 {
-	s.capture_display([&s, parent](const file_load_result& lr)
-	{
-		const auto item = s.command_item();
+	// Read now, not when the frame arrives: the frame is of this item, so this is the name it has
+	// to be offered under. Reading it in the callback named the capture after whatever the display
+	// had moved on to. Only the path is kept - the callback waits on the media read thread, which
+	// must not end up holding the item itself.
+	const auto item = s.command_item();
 
-		if (item && !lr.is_empty())
+	if (!item) return;
+
+	s.capture_display([&s, parent, source_path = item->path()](const file_load_result& lr)
+	{
+		if (!lr.is_empty())
 		{
 			auto i = 1;
-			const auto source_path = item->path();
 			const auto save_ext = lr.is_jpeg() ? "jpg" : "png";
 			const auto save_folder = s.save_path();
 			const auto save_name = source_path.file_name_without_extension();
@@ -1095,9 +1100,19 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 						s.open(view, s.search(), selection);
 					}
 				}
-				else if (result.code != platform::file_op_result_code::CANCELLED)
+				else
 				{
-					dlg->show_message(icon_index::error, title, result.format_error());
+					// A run that stopped part way has still changed what it reached: the files it put
+					// in the destination and, for a move, the folders it took them from. The index
+					// learns of both either way, or those files stay out of every listing until
+					// something else happens to rescan there.
+					s.item_index.queue_scan_folder(write_folder);
+					if (!sources.empty()) s.item_index.queue_validate_changed_folders(std::move(sources));
+
+					if (result.code != platform::file_op_result_code::CANCELLED)
+					{
+						dlg->show_message(icon_index::error, title, result.format_error());
+					}
 				}
 			}
 		}
@@ -1604,10 +1619,30 @@ static void favorite_invoke(view_state& state, const ui::control_frame_ptr& pare
 
 	bool updated = false;
 
-	for (auto i = 0; i < setting.search.count && !updated; i++)
+	if (is_favorite)
 	{
-		if (str::is_empty(setting.search.path[i]))
+		// Removal has to consider every slot. Sharing one loop with the add path meant an empty
+		// slot before the favourite ended the scan on the Add dialog, so removing a favourite that
+		// sat after a gap offered to add a second copy of it instead - and accepting that is how
+		// the duplicate got there. Every copy goes, which also clears up any already made.
+		for (auto i = 0; i < setting.search.count; i++)
 		{
+			if (str::is_empty(setting.search.path[i])) continue;
+
+			if (search == df::search_t::parse(setting.search.path[i]))
+			{
+				setting.search.path[i].clear();
+				setting.search.title[i].clear();
+				updated = true;
+			}
+		}
+	}
+	else
+	{
+		for (auto i = 0; i < setting.search.count && !updated; i++)
+		{
+			if (!str::is_empty(setting.search.path[i])) continue;
+
 			auto dlg = make_dlg(parent);
 			auto dlg_parent = dlg->_frame;
 
@@ -1641,20 +1676,6 @@ static void favorite_invoke(view_state& state, const ui::control_frame_ptr& pare
 			{
 				// exit on cancel
 				return;
-			}
-		}
-		else
-		{
-			if (is_favorite)
-			{
-				const auto fav = df::search_t::parse(setting.search.path[i]);
-
-				if (search == fav)
-				{
-					setting.search.path[i].clear();
-					setting.search.title[i].clear();
-					updated = true;
-				}
 			}
 		}
 	}

@@ -93,6 +93,22 @@ inline constexpr double movie_bits_per_pixel = 0.10;
 inline constexpr int movie_min_bitrate = 1000000;
 inline constexpr int movie_max_bitrate = 60000000;
 
+// The document's own bounds on the two durations the settings carry. The panel already clamps to
+// these; a project file is untrusted input and is held to the same range, because a value from
+// outside it reaches the frame-count arithmetic as a duration no encoder can express.
+inline constexpr double movie_max_transition_seconds = 10.0;
+inline constexpr double movie_min_photo_seconds = 0.1;
+inline constexpr double movie_max_photo_seconds = 60.0;
+
+// A day of video at the highest rate the output can take. Past this the frame count stops fitting
+// the arithmetic that walks it, and a movie that long is a broken document rather than a request.
+inline constexpr int64_t movie_max_frames = 24ll * 60ll * 60ll * movie_max_frame_rate;
+
+// The most any one clip may cover: the longest movie a render will make. A project file's clip range
+// past it is a broken document, and it would reach the frame arithmetic and the displayed clock as a
+// number no integer can hold.
+inline constexpr double movie_max_clip_seconds = static_cast<double>(movie_max_frames) / movie_max_frame_rate;
+
 movie_output derive_movie_output(const std::vector<movie_clip>& clips);
 
 // Seconds two adjacent clips overlap. Half of the shorter clip is the ceiling, so a transition
@@ -141,6 +157,12 @@ movie_frame calc_movie_frame(const std::vector<movie_clip>& clips, const movie_s
 // Builds a clip from a path. The duration and extent come from the caller because probing is I/O;
 // a photo is given the settings' default hold.
 movie_clip make_movie_clip(df::file_path path, const movie_settings& settings);
+
+// True when a proposed output path names one of the clips the render reads. The render replaces the
+// output only after its last read, so an output that names a source destroys that source silently
+// and leaves the timeline pointing at a file that is now the movie. Compared by path, which is the
+// identity every other destination-writing operation uses.
+bool movie_output_names_a_clip(const std::vector<movie_clip>& clips, df::file_path output);
 
 enum class movie_load_status
 {

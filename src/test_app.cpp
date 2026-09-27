@@ -25,6 +25,7 @@
 #include "ui_dialog.h"
 #include "app.h"
 #include "view_rename.h"
+#include "view_batch.h"
 #include "view_tags.h"
 #include "view_items.h"
 
@@ -271,6 +272,45 @@ static void should_rename_a_set_onto_names_it_is_vacating()
 	assert_equal(true, can_rename_items(case_only), "a case-only rename is not a collision");
 }
 
+// Rename used to revalidate by existence alone. A source replaced between the review and the run was
+// then moved under a name chosen for content the user never saw, and under Replace a destination
+// that had become a different file was written over. The plan records the identity the run is held
+// to, which is the same test Sync makes.
+static void should_record_rename_identity()
+{
+	const auto root = _temps.next_folder("rename-identity");
+	const auto sources = make_rename_sources(root, {"alpha"});
+	const auto occupied = root.combine_file("renamed.jpg");
+	df::blob_save_to_file(df::blob{1, 2, 3}, occupied);
+
+	const auto renames = calc_item_renames(sources, "renamed", 1, collision_policy::replace);
+	assert_equal(1_z, renames.size(), "one row");
+
+	const auto& row = renames.front();
+	assert_equal(true, row.source_attributes.exists(), "the source identity was recorded");
+	assert_equal(true, row.destination_attributes.exists(), "so was the destination the row will replace");
+	assert_equal(true, unchanged_since_analysis(row.source, row.source_attributes.modified,
+	                                            row.source_attributes.size),
+	             "an untouched source still matches the review");
+	assert_equal(true, unchanged_since_analysis(row.destination, row.destination_attributes.modified,
+	                                            row.destination_attributes.size),
+	             "and so does an untouched destination");
+
+	// Both paths still exist, which is all the run used to ask. Only the recorded identity says the
+	// content behind them is no longer what was reviewed.
+	df::blob_save_to_file(df::blob{1, 2, 3, 4, 5}, row.source);
+	df::blob_save_to_file(df::blob{9}, row.destination);
+
+	assert_equal(true, row.source.exists(), "the source path is still occupied");
+	assert_equal(true, row.destination.exists(), "and so is the destination path");
+	assert_equal(false, unchanged_since_analysis(row.source, row.source_attributes.modified,
+	                                             row.source_attributes.size),
+	             "a rewritten source no longer matches the review");
+	assert_equal(false, unchanged_since_analysis(row.destination, row.destination_attributes.modified,
+	                                             row.destination_attributes.size),
+	             "nor does a destination that became another file");
+}
+
 static void should_cascade_skipped_rename_rows()
 {
 	const auto root = _temps.next_folder("rename-cascade");
@@ -324,6 +364,34 @@ static void should_plan_unique_convert_outputs()
 	assert_equal("photo.webp", plan[0].destination.name(), "first conversion keeps basename");
 	assert_equal("photo (2).webp", plan[1].destination.name(), "duplicate conversion basename is suffixed");
 	assert_equal(false, plan[0].destination == plan[1].destination, "conversion outputs are unique");
+}
+
+// A destination that names another row's source is a file this run reads. Writing it destroyed an
+// input the review listed as a source, and that row then converted whatever the earlier one had
+// just written over it. Ordering matters: the clobbering row is planned first, so the source it
+// lands on has not yet claimed its own destination.
+static void should_not_plan_a_convert_output_over_a_source()
+{
+	std::vector<convert_source> sources;
+	sources.emplace_back(df::file_path("c:\\a\\photo.png"), sizei{}, str::cached{});
+	sources.emplace_back(df::file_path("c:\\destination\\photo.jpg"), sizei{}, str::cached{});
+
+	const auto plan = plan_convert_outputs(df::folder_path("c:\\destination"), sources, ".jpg",
+	                                       collision_policy::replace);
+	assert_equal(2_z, plan.size(), "both conversion sources planned");
+
+	for (const auto& entry : plan)
+	{
+		for (const auto& source : sources)
+		{
+			if (entry.source.path == source.path) continue;
+			assert_equal(false, entry.destination == source.path, "a destination never names another row's source");
+		}
+	}
+
+	assert_equal("c:\\a\\photo.png", plan[0].source.path.str(), "the row planned first is the one from elsewhere");
+	assert_equal("photo (2).jpg", plan[0].destination.name(), "and it is moved off the other row's source");
+	assert_equal("photo.jpg", plan[1].destination.name(), "a row may still convert itself in place");
 }
 
 static void should_adjust_item_dates_from_snapshot()
@@ -537,6 +605,56 @@ static void should_detect_duplicate_import_destinations()
 	assert_equal(2, static_cast<int>(destinations.size()), "auto-rename gives each source its own destination");
 }
 
+// A destination folder that cannot be created stops the run, but everything already imported into
+// earlier folders still has to be recorded and rescanned. Returning from the middle of the walk lost
+// both: a later run imported those files again as duplicates, and the index never saw them arrive.
+static void should_keep_import_bookkeeping_when_a_folder_fails(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-folder-fail");
+	const auto src = root.combine("source");
+	const auto dest_ok = root.combine("a-ok");
+	const auto dest_blocked = root.combine("b-blocked");
+	platform::create_folder(src);
+
+	write_test_file(src.combine_file("first.txt"), "first");
+	write_test_file(src.combine_file("second.txt"), "second");
+
+	// A file where the second destination folder needs to be, so creating it cannot succeed.
+	write_test_file(df::file_path(root, "b-blocked"), "in the way");
+
+	const auto make_row = [&src](const std::string_view name, const df::folder_path destination)
+	{
+		const auto path = src.combine_file(name);
+		const auto fi = platform::file_attributes(path);
+
+		import_analysis_item row;
+		row.source = path;
+		row.destination = destination.combine_file(name);
+		row.action = import_action::import;
+		row.source_fi = fi;
+		row.import_rec.name = path.name();
+		return row;
+	};
+
+	import_analysis_result analysis;
+	analysis[dest_ok].emplace_back(make_row("first.txt", dest_ok));
+	analysis[dest_blocked].emplace_back(make_row("second.txt", dest_blocked));
+
+	import_options options;
+	options.dest_folder = root;
+
+	const auto status = std::make_shared<recording_status>();
+	const auto run = import_copy(stc.empty_index, status, analysis, options, test_token);
+
+	assert_equal(true, dest_ok.combine_file("first.txt").exists(), "the first folder was imported into");
+	assert_equal(true, status->status_of("first.txt") == item_status::success, "and its row says so");
+
+	// The whole point: the run stopped, but what it wrote is still accounted for.
+	assert_equal(1u, static_cast<uint32_t>(run.imports.size()),
+	             "the file that did arrive is recorded as imported");
+	assert_equal(true, run.folder == dest_ok, "and the run names the folder it reached");
+}
+
 // Import holds each reviewed row to the file that was reviewed, and lets the file system prove a
 // destination is free rather than asking and then writing.
 static void should_revalidate_import_rows(shared_test_context& stc)
@@ -592,6 +710,122 @@ static void should_revalidate_import_rows(shared_test_context& stc)
 	assert_equal(false, dest.combine_file("changed.txt").exists(), "refused row wrote nothing");
 	assert_equal("not yours"s, read_test_file(dest.combine_file("claimed.txt")),
 	             "claimed destination was not overwritten");
+}
+
+// A sidecar is part of the group the user reviewed, not a detail of it. The primary was held to the
+// file that was reviewed and its sidecars were not, so a sidecar edited since the review travelled
+// with an approved file as content nobody approved.
+static void should_revalidate_import_sidecars(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-sidecar-revalidate");
+	const auto src = root.combine("source");
+	const auto dest = root.combine("dest");
+	platform::create_folder(src);
+	platform::create_folder(dest);
+
+	const auto make_item = [&src](const std::string_view name)
+	{
+		const auto path = src.combine_file(name);
+		const auto sidecar = path.extension(".xmp");
+		write_test_file(path, "media");
+		write_test_file(sidecar, "sidecar");
+
+		const auto fi = platform::file_attributes(path);
+		folder_scan_item item;
+		item.folder = src;
+		item.item.name = path.name();
+		item.item.file_modified = df::date_t(fi.modified);
+		item.item.file_created = fi.created;
+		item.item.size = df::file_size(fi.size);
+		item.item.ft = files::file_type_from_name(path);
+
+		const auto metadata = std::make_shared<prop::item_metadata>();
+		metadata->sidecars = sidecar.name();
+		item.item.metadata.store(metadata);
+		return item;
+	};
+
+	const std::vector<folder_scan_item> items{make_item("keep.txt"), make_item("racing.txt")};
+
+	import_options options;
+	options.dest_folder = dest;
+	options.dest_structure = {};
+	options.collision = collision_policy::skip;
+
+	const auto analysis = import_analysis(items, options, {}, test_token);
+	assert_equal(2, static_cast<int>(count_imports(analysis)), "both groups are planned");
+
+	// Only the sidecar changes. The file it describes is exactly what was reviewed, so nothing the
+	// primary is held to can see this.
+	write_test_file(src.combine_file("racing.xmp"), "edited since review");
+
+	const auto status = std::make_shared<recording_status>();
+	const auto run = import_copy(stc.empty_index, status, analysis, options, test_token);
+
+	assert_equal(true, status->status_of("keep.txt") == item_status::success, "an unchanged group imports");
+	assert_equal(true, dest.combine_file("keep.xmp").exists(), "and brings its sidecar");
+
+	assert_equal(true, status->status_of("racing.txt") == item_status::fail,
+	             "a group whose sidecar changed is refused");
+	assert_equal(1, static_cast<int>(run.refused), "and is reported as a refusal so the run can say why");
+	assert_equal(false, dest.combine_file("racing.txt").exists(), "the refused group wrote nothing");
+	assert_equal(false, dest.combine_file("racing.xmp").exists(), "not even the sidecar that changed");
+}
+
+// The RAW and the JPEG of one shot share an XMP by base name, so both rows name it. The group travels
+// once: a second row carrying the sidecar again collided with the copy the first had just written.
+// Under Replace that refused the JPEG outright, and under Skip the JPEG was blocked by its own twin.
+static void should_import_a_shared_sidecar_once(shared_test_context& stc)
+{
+	for (const auto policy : {collision_policy::replace, collision_policy::skip})
+	{
+		const auto root = _temps.next_folder("import-shared-sidecar");
+		const auto src = root.combine("source");
+		const auto dest = root.combine("dest");
+		platform::create_folder(src);
+		platform::create_folder(dest);
+
+		const auto sidecar = src.combine_file("shot.xmp");
+		write_test_file(sidecar, "shared sidecar");
+
+		const auto make_item = [&src, &sidecar](const std::string_view name)
+		{
+			const auto path = src.combine_file(name);
+			write_test_file(path, name);
+
+			const auto fi = platform::file_attributes(path);
+			folder_scan_item item;
+			item.folder = src;
+			item.item.name = path.name();
+			item.item.file_modified = df::date_t(fi.modified);
+			item.item.file_created = fi.created;
+			item.item.size = df::file_size(fi.size);
+			item.item.ft = files::file_type_from_name(path);
+
+			const auto metadata = std::make_shared<prop::item_metadata>();
+			metadata->sidecars = sidecar.name();
+			item.item.metadata.store(metadata);
+			return item;
+		};
+
+		const std::vector<folder_scan_item> items{make_item("shot.cr2"), make_item("shot.jpg")};
+
+		import_options options;
+		options.dest_folder = dest;
+		options.dest_structure = {};
+		options.collision = policy;
+
+		const auto analysis = import_analysis(items, options, {}, test_token);
+		assert_equal(2, static_cast<int>(count_imports(analysis)), "both files of the shot are planned");
+
+		const auto status = std::make_shared<recording_status>();
+		import_copy(stc.empty_index, status, analysis, options, test_token);
+
+		assert_equal(true, status->status_of("shot.cr2") == item_status::success, "the raw imports");
+		assert_equal(true, status->status_of("shot.jpg") == item_status::success, "and so does the jpeg");
+		assert_equal("shared sidecar"s, read_test_file(dest.combine_file("shot.xmp")),
+		             "the sidecar they share arrives once");
+	}
 }
 
 // Replace is the one policy that writes over a file instead of proving the name is free, so it is
@@ -1180,6 +1414,7 @@ static void should_start_safe_only_after_repeated_failures()
 	s.sidebar.width = 900;
 	s.use_gpu = true;
 	s.use_d3d11va = true;
+	s.use_yuv = true;
 	s.write_folder = "c:\\keep-me";
 	s.favorite_tags = "keep";
 	s.language = "de";
@@ -1193,7 +1428,9 @@ static void should_start_safe_only_after_repeated_failures()
 	assert_equal(0, s.sidebar.width, "sidebar width returns to auto");
 	assert_equal(false, s.use_gpu, "hardware acceleration off, not merely defaulted");
 	assert_equal(false, s.use_d3d11va, "hardware video decode off");
-	assert_equal(false, s.use_yuv, "hardware yuv textures off");
+	// A latch only a driver fault clears, with no option to set it again: clearing it on a safe start
+	// switched YUV textures off for good. The GPU being off already keeps them out of this session.
+	assert_equal(true, s.use_yuv, "the yuv fault latch is not the safe start's to clear");
 	assert_equal("c:\\keep-me"s, s.write_folder, "user paths survive");
 	assert_equal("keep"s, s.favorite_tags, "favorite tags survive");
 	assert_equal("de"s, s.language, "language survives");
@@ -1844,7 +2081,147 @@ static void should_run_a_rename_onto_vacated_names()
 	assert_equal(false, root.combine_file("Item 001.jpg").exists(), "the vacated name is gone");
 	for (const auto& name : {"Item 002.jpg"s, "Item 003.jpg"s, "Item 004.jpg"s})
 		assert_equal(true, root.combine_file(name).exists(), std::format("{} was written", name));
+
+	// Every file the run leaves behind carries a name the review showed. The parked-file cleanup
+	// has a last-resort " (n)" variant for when a file can reach neither its own name nor its
+	// reviewed destination; nothing in a chain that completes should ever reach it, and a file
+	// under a generated name is one the user was never shown and cannot have expected.
+	const auto contents = platform::iterate_file_items(root, false);
+	assert_equal(3_z, contents.files.size(), "the folder holds exactly the three renamed files");
+
+	for (const auto& file : contents.files)
+	{
+		assert_equal(true, std::string_view(file.name).find(" (") == std::string_view::npos,
+		             std::format("{} is a reviewed name, not a generated variant", file.name));
+	}
 }
+
+// The plan records each file's identity (see should_record_rename_identity); this is the run holding
+// itself to it. A source rewritten between the review and the run still exists, which is all the run
+// used to ask, but it is not the file that was reviewed - so nothing is renamed.
+static void should_refuse_a_rename_whose_source_changed_since_review()
+{
+	const auto root = _temps.next_folder("rename-identity-run");
+	const auto source = root.combine_file("alpha.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+
+	browsing_fixture f(root);
+	const auto item = f.find("alpha.jpg");
+	assert_equal(true, item != nullptr, "the source is listed");
+	f.state.select(f.view, item, false, false, false);
+	f.state.update_selection();
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "renamed";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "the rename can run");
+
+	write_test_file(source, "rewritten since the review");
+	view->run();
+
+	assert_equal(true, source.exists(), "the changed source keeps its name");
+	assert_equal(false, root.combine_file("renamed.jpg").exists(), "and nothing was renamed");
+}
+
+// Convert under Replace wrote over a colliding destination whatever had happened to it since the
+// review. Replace was agreed to for the file the review showed, and one edited since is not that
+// file - the same test Import, Sync and Rename hold a replaced destination to.
+static void should_not_convert_over_a_destination_changed_since_review()
+{
+	const auto root = _temps.next_folder("convert-replace-identity");
+	const auto sources = root.combine("sources");
+	const auto output = root.combine("output");
+	platform::create_folder(sources);
+	platform::create_folder(output);
+
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), sources.combine_file("photo.jpg"), false, false);
+	const auto destination = output.combine_file("photo.jpg");
+	write_test_file(destination, "reviewed");
+
+	browsing_fixture f(sources);
+	const auto item = f.find("photo.jpg");
+	assert_equal(true, item != nullptr, "the source is listed");
+	f.state.select(f.view, item, false, false, false);
+	f.state.update_selection();
+
+	const auto saved_convert = setting.convert;
+	const auto saved_folder = setting.write_folder;
+	const df::scope_exit restore([saved_convert, saved_folder]
+	{
+		setting.convert = saved_convert;
+		setting.write_folder = saved_folder;
+	});
+
+	setting.convert = {};
+	setting.convert.to_jpeg = true;
+	setting.convert.jpeg_quality = 90;
+	setting.convert.collision = collision_policy::replace;
+	setting.write_folder = std::string(output.text());
+
+	const auto view = std::make_shared<batch_tool_view>(f.state, nullptr);
+	view->mode(batch_tool_mode::convert);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a replacing convert can run");
+
+	write_test_file(destination, "edited since the review");
+	view->run();
+
+	assert_equal("edited since the review"s, read_test_file(destination), "the edited destination is left alone");
+}
+
+#ifdef _WIN32
+// A rename is a move, so once a sidecar has landed on a Replace destination that destination's
+// former content is gone whether or not the row completes. Leaving the sidecar there after the
+// primary fails strands it away from the file it describes and empties the source of a group the
+// run promised to leave whole; putting it back destroys nothing further. The failure is staged by
+// holding the destination open, which denies the move only where locking is mandatory.
+static void should_restore_a_replaced_sidecar_when_the_rename_fails()
+{
+	const auto root = _temps.next_folder("rename-replace-rollback");
+	const auto source = root.combine_file("a.jpg");
+	const auto source_sidecar = root.combine_file("a.xmp");
+	const auto destination = root.combine_file("b.jpg");
+	const auto destination_sidecar = root.combine_file("b.xmp");
+
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+	platform::copy_file(df::file_path(test_files_folder, "IMG_0604.xmp"), source_sidecar, false, false);
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), destination, false, false);
+	platform::copy_file(df::file_path(test_files_folder, "IMG_0604.xmp"), destination_sidecar, false, false);
+
+	browsing_fixture f(root);
+	const auto item = f.find("a.jpg");
+	assert_equal(true, item != nullptr, "the source is listed");
+	f.state.select(f.view, item, false, false, false);
+	f.state.update_selection();
+	assert_equal(1_z, f.state.selected_count(), "only the source is selected");
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "b";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::replace;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a replacing rename can run");
+
+	// Denies the primary move while leaving the sidecar's destination writable, so the row fails
+	// after its sidecar has already been replaced.
+	auto locked = platform::open_file(destination, platform::file_open_mode::read_write);
+	assert_equal(true, locked != nullptr, "the destination is held open");
+
+	view->run();
+	locked.reset();
+
+	assert_equal(true, source.exists(), "the primary is left at its source");
+	assert_equal(true, source_sidecar.exists(), "and so is the sidecar that had already moved");
+}
+#endif
 
 // A case-only rename frees nothing, so the run must not park the file it is renaming within.
 static void should_run_a_case_only_rename()
@@ -1912,6 +2289,49 @@ static void should_land_on_what_followed_a_removed_set()
 	f.state.select_all(f.view);
 	f.state.update_selection();
 	assert_equal(true, f.state.next_unselected_item() == nullptr, "a whole listing leaving has no successor");
+}
+
+// Delete re-opens the listing naming the item to land on, and validating the deleted files refreshes
+// the same listing straight away - an open of the same search with nothing to select. The refresh
+// supersedes the first pass before it publishes, and a superseded pass is dropped, so unless the
+// refresh takes over what that pass was opened for the cursor lands nowhere at all.
+static void should_keep_what_a_superseded_open_asked_for()
+{
+	const auto root = _temps.next_folder("superseded-open");
+	for (const auto& name : {"a.jpg"s, "b.jpg"s, "c.jpg"s})
+		platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), root.combine_file(name), false, false);
+
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	const view_host_base_ptr view;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	s.view_mode(view_type::items);
+
+	const auto settle = [&as]
+	{
+		while (as.run_next(async_queue::query))
+		{
+		}
+
+		as.drain_ui();
+	};
+
+	const auto search = df::search_t().add_selector(root);
+	s.open(view, search, {});
+	settle();
+	assert_equal(true, s.find_displayed_item_by_name("b.jpg") != nullptr, "the folder is listed");
+	assert_equal(0_z, s.selected_count(), "and nothing is selected yet");
+
+	// Both opens are queued before either pass runs, so the first is superseded without publishing.
+	const auto landing = root.combine_file("b.jpg");
+	s.open(view, search, df::unique_paths{landing});
+	s.open(view, search, {});
+	settle();
+
+	assert_equal(1_z, s.selected_count(), "the refresh selects what the superseded open named");
+	assert_equal(true, s.selected_items().items().front()->path() == landing, "which is the item it named");
 }
 
 // design.md: "Only photos, video, and audio take part, so a folder, document, or archive is stepped
@@ -2444,6 +2864,36 @@ static void should_accept_a_completion_without_running_it()
 	assert_equal(false, ignored.set_edit_text, "tab without a completion changes nothing");
 }
 
+// A preview is a suggestion the user is looking at, not one they chose. Ending the session left it
+// sitting in the address box, where the next Enter - and anything else that reads the box - takes
+// it for the address. The draft the user actually typed has to come back with them.
+static void should_restore_the_draft_when_a_previewing_session_ends()
+{
+	search_edit_session session;
+	session.begin("c:\\photos");
+	session.typed("bea");
+	session.preview("beach huts");
+
+	const auto ended = session.end();
+	assert_equal(true, ended.set_edit_text, "ending while previewing puts the box back");
+	assert_equal("bea", ended.edit_text, "and what it puts back is the draft that was typed");
+	assert_equal(false, session.is_previewing(), "the preview is over");
+
+	// Nothing to undo when no preview was showing: the box already holds what the user typed.
+	search_edit_session typed_only;
+	typed_only.begin("c:\\photos");
+	typed_only.typed("bea");
+	assert_equal(false, typed_only.end().set_edit_text, "ending without a preview leaves the box alone");
+
+	// And accepting a completion makes it the draft, so ending after that keeps it.
+	search_edit_session accepted;
+	accepted.begin("c:\\photos");
+	accepted.typed("bea");
+	accepted.preview("beach");
+	accepted.accept(true, "beach ");
+	assert_equal(false, accepted.end().set_edit_text, "an accepted completion is the draft and stays");
+}
+
 // design.md: "Enter commits the highlighted completion when one is selected, otherwise it commits
 // the visible address."
 static void should_commit_the_highlighted_completion_or_the_visible_address()
@@ -2783,10 +3233,20 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should plan the default rename template"s, should_plan_the_default_rename_template);
 	tests.add("Should rename a set onto names it is vacating"s, should_rename_a_set_onto_names_it_is_vacating);
 	tests.add("Should cascade skipped rename rows"s, should_cascade_skipped_rename_rows);
+	tests.add("Should record rename identity"s, should_record_rename_identity);
 	tests.add("Should run a rename onto vacated names"s, should_run_a_rename_onto_vacated_names);
+	tests.add("Should refuse a rename whose source changed since review"s,
+	          should_refuse_a_rename_whose_source_changed_since_review);
+	tests.add("Should not convert over a destination changed since review"s,
+	          should_not_convert_over_a_destination_changed_since_review);
+#ifdef _WIN32
+	tests.add("Should restore a replaced sidecar when the rename fails"s,
+	          should_restore_a_replaced_sidecar_when_the_rename_fails);
+#endif
 	tests.add("Should run a case only rename"s, should_run_a_case_only_rename);
 	tests.add("Should format rename"s, should_format_rename);
 	tests.add("Should plan unique convert outputs"s, should_plan_unique_convert_outputs);
+	tests.add("Should not plan a convert output over a source"s, should_not_plan_a_convert_output_over_a_source);
 	tests.add("Should adjust item dates from snapshot"s, should_adjust_item_dates_from_snapshot);
 	tests.add("Should round trip the environment mask"s, should_round_trip_the_environment_mask);
 #ifdef _WIN32
@@ -2794,6 +3254,10 @@ void register_app_tests(view_state& state, test_registry& tests)
 #endif
 	tests.add("Should detect duplicate import destinations"s, should_detect_duplicate_import_destinations);
 	tests.add("Should revalidate import rows"s, should_revalidate_import_rows);
+	tests.add("Should revalidate import sidecars"s, should_revalidate_import_sidecars);
+	tests.add("Should import a shared sidecar once"s, should_import_a_shared_sidecar_once);
+	tests.add("Should keep import bookkeeping when a folder fails"s,
+	          should_keep_import_bookkeeping_when_a_folder_fails);
 	tests.add("Should revalidate replaced import destinations"s, should_revalidate_replaced_import_destinations);
 	tests.add("Should reject missing sync folder"s, should_reject_missing_sync_folder);
 	tests.add("Should reject overlapping sync folders"s, should_reject_overlapping_sync_folders);
@@ -2851,6 +3315,8 @@ void register_app_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should run an address editing session"s, should_run_an_address_editing_session);
 	tests.add("Should accept a completion without running it"s, should_accept_a_completion_without_running_it);
+	tests.add("Should restore the draft when a previewing session ends"s,
+	          should_restore_the_draft_when_a_previewing_session_ends);
 	tests.add("Should commit the highlighted completion or the visible address"s,
 	          should_commit_the_highlighted_completion_or_the_visible_address);
 	tests.add("Should rank address completions"s, should_rank_address_completions);
@@ -2864,6 +3330,7 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should step over items that cannot play"s, should_step_over_items_that_cannot_play);
 	// Issue #250 - the cursor reset instead of landing after the set that left
 	tests.add("Should land on what followed a removed set"s, should_land_on_what_followed_a_removed_set);
+	tests.add("Should keep what a superseded open asked for"s, should_keep_what_a_superseded_open_asked_for);
 	tests.add("Should offer a slideshow only when something can play"s,
 	          should_offer_a_slideshow_only_when_something_can_play);
 	tests.add("Should move between sibling folders"s, should_move_between_sibling_folders);

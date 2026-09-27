@@ -607,6 +607,36 @@ static void should_refuse_over_budget_sources()
 	             "a caller that wants no diagnostic is still told to refuse");
 }
 
+// LibRaw builds the whole frame inside unpack/dcraw_process, so the budget has to be asked before
+// that starts. RAW was the one source that allocated a full frame without asking, so a raw large
+// enough to exhaust the machine walked straight past the ceiling every other decoder observes.
+static void should_refuse_an_over_budget_raw()
+{
+	const auto path = test_files_folder.combine("raw").combine_file("Screws.CR2");
+
+	const auto restore_budget = df::max_decode_bytes;
+	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
+
+	files ff;
+
+	// The preview path answers first and is not the subject, so it is asked for the full decode.
+	const auto whole = ff.load(path, false);
+	assert_equal(true, whole.success, "the fixture decodes within the default budget");
+
+	const auto dimensions = whole.dimensions();
+	assert_equal(false, dimensions.is_empty(), "and reports its size");
+
+	// One pixel's worth under what this source needs.
+	df::max_decode_bytes = static_cast<int64_t>(dimensions.cx) * dimensions.cy * 4 - 4;
+
+	const auto refused = ff.load(path, false);
+	assert_equal(false, refused.success, "a raw past the budget is refused");
+	assert_equal(true, refused.reason == file_load_result::failure::too_large,
+	             "and says so as a property of the file");
+	assert_equal(false, is_valid(refused.s), "no frame was committed");
+	assert_equal(false, is_valid(refused.i), "and no image either");
+}
+
 static void should_animate_alpha_between_values()
 {
 	// The gate is off when the CPU software backend is active, so force the animated
@@ -1733,6 +1763,7 @@ void register_render_tests(view_state& state, test_registry& tests)
 	tests.add("Should bilinear resize packed surfaces"s, should_bilinear_resize_packed_surfaces);
 	tests.add("Should estimate decode cost"s, should_estimate_decode_cost);
 	tests.add("Should refuse over budget sources"s, should_refuse_over_budget_sources);
+	tests.add("Should refuse an over budget raw"s, should_refuse_an_over_budget_raw);
 	tests.add("Should animate alpha between values"s, should_animate_alpha_between_values);
 	tests.add("Should fade at the same rate on any refresh rate"s, should_fade_at_the_same_rate_on_any_refresh_rate);
 	tests.add("Should skip alpha animation when disabled"s, should_skip_alpha_animation_when_disabled);

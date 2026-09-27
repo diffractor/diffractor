@@ -3220,6 +3220,14 @@ msgstr[1] "Пропущено {count} елементи, оскільки їх у
 msgstr[2] "Пропущено {count} елементів, оскільки їх уже було імпортовано."
 msgstr[3] "Пропущено {count} елемента, оскільки їх уже було імпортовано."
 
+msgid "1 item was imported but its created date could not be set."
+msgid_plural ""
+"{count} items were imported but their created date could not be set."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+msgstr[3] ""
+
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
 msgstr[0] "{first-name} буде переміщено до Кошика."
@@ -3804,6 +3812,9 @@ msgid "A clip could not be decoded."
 msgstr ""
 
 msgid "The encoder stopped before the movie was finished."
+msgstr ""
+
+msgid "That name belongs to a clip in this movie. Choose another name."
 msgstr ""
 
 msgid "Rendered {}."

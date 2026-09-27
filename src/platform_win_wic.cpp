@@ -78,7 +78,11 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 	bi.biSizeImage = static_cast<DWORD>(pixel_count * sizeof(uint32_t));
 
 	const auto alloc_size = sizeof(bi) + bi.biSizeImage;
-	auto* const h = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, alloc_size);
+	// Zeroed: the rows below copy only min(source stride, destination stride) bytes, so a narrower
+	// source leaves the tail of every row untouched, and a decode that produced nothing leaves the
+	// whole pixel area untouched. Without this the clipboard would carry whatever that memory last
+	// held.
+	auto* const h = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE | GMEM_ZEROINIT, alloc_size);
 
 	if (h == nullptr)
 	{
@@ -99,7 +103,16 @@ HGLOBAL image_to_handle(const file_load_result& loaded)
 
 	const auto s = loaded.to_surface();
 
-	if (is_valid(s))
+	if (!is_valid(s))
+	{
+		// A picture that could not be decoded is not a picture to offer: returning the allocation
+		// would put an empty frame on the clipboard and report the copy as having worked.
+		df::log(__FUNCTION__, "clipboard image could not be decoded");
+		GlobalUnlock(h);
+		GlobalFree(h);
+		throw std::invalid_argument("Invalid clipboard image");
+	}
+
 	{
 		const auto stride_out = dimensions.cx * 4_z;
 		const auto stride_in = s->stride();

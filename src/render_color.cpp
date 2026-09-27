@@ -194,7 +194,7 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, const d
 	return saturate_rgba(df::round(r * 255.0), df::round(g * 255.0), df::round(b * 255.0), df::round(a * 255.0));
 }
 
-void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
+bool ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
                              const df::cancel_token& token) const
 {
 	const auto dims = src->dimensions();
@@ -222,9 +222,11 @@ void ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
 
 		if (token.is_cancelled())
 		{
-			break;
+			return false;
 		}
 	}
+
+	return true;
 }
 
 void ui::color_adjust::populate_texture_transform(texture_transform& transform) const

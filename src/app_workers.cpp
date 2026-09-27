@@ -60,30 +60,32 @@ static _Guarded_by_(media_preview_mutex) std::deque<std::function<void(media_pre
 // media_preview_mutex so the running task cannot miss a request queued after it started.
 static std::atomic_bool media_preview_superseded = false;
 
-df::index_roots index_folders()
+// The collection roots the settings name. Taken as a value rather than read from the global: the
+// callers copy the settings on the thread that owns them and hand the copy to a worker.
+df::index_roots index_folders(const settings_t::index_t& collection)
 {
 	df::index_roots result;
 	const auto local_folders = platform::local_folders();
 
-	if (setting.collection.pictures && !local_folders.pictures.is_empty())
+	if (collection.pictures && !local_folders.pictures.is_empty())
 		result.folders.emplace(
 			local_folders.pictures);
-	if (setting.collection.video && !local_folders.video.is_empty()) result.folders.emplace(local_folders.video);
-	if (setting.collection.music && !local_folders.music.is_empty()) result.folders.emplace(local_folders.music);
-	if (setting.collection.drop_box && !local_folders.dropbox_photos.is_empty())
+	if (collection.video && !local_folders.video.is_empty()) result.folders.emplace(local_folders.video);
+	if (collection.music && !local_folders.music.is_empty()) result.folders.emplace(local_folders.music);
+	if (collection.drop_box && !local_folders.dropbox_photos.is_empty())
 		result.folders.emplace(
 			local_folders.dropbox_photos);
-	if (setting.collection.onedrive_pictures && !local_folders.onedrive_pictures.is_empty())
+	if (collection.onedrive_pictures && !local_folders.onedrive_pictures.is_empty())
 		result.folders.emplace(
 			local_folders.onedrive_pictures);
-	if (setting.collection.onedrive_video && !local_folders.onedrive_video.is_empty())
+	if (collection.onedrive_video && !local_folders.onedrive_video.is_empty())
 		result.folders.emplace(
 			local_folders.onedrive_video);
-	if (setting.collection.onedrive_music && !local_folders.onedrive_music.is_empty())
+	if (collection.onedrive_music && !local_folders.onedrive_music.is_empty())
 		result.folders.emplace(
 			local_folders.onedrive_music);
 
-	parse_more_folders(result, setting.collection.more_folders);
+	parse_more_folders(result, collection.more_folders);
 
 	return result;
 }
@@ -132,7 +134,13 @@ void app_frame::queue_index_update(const bool forget_cached_metadata)
 {
 	auto token = df::cancel_token(index_version);
 
-	index_task_queue.reset_and_enqueue([this, token, forget_cached_metadata]
+	// Copied here, on the thread that owns the settings, and read from the copy on the worker. The
+	// collection settings are ordinary mutable globals: reading more_folders on a worker while the
+	// options dialog assigns it is a data race on a std::string, and the folder set the worker acts
+	// on should in any case be the one the user just applied.
+	const auto collection = setting.collection;
+
+	index_task_queue.reset_and_enqueue([this, token, forget_cached_metadata, collection]
 	{
 		// Forgetting runs on this queue, not the caller's, so it cannot interleave with the
 		// scan_uncached it is meant to feed.
@@ -141,7 +149,7 @@ void app_frame::queue_index_update(const bool forget_cached_metadata)
 			_state.item_index.forget_cached_metadata();
 		}
 
-		_state.item_index.index_roots(index_folders());
+		_state.item_index.index_roots(index_folders(collection));
 		_state.item_index.index_folders(token);
 		invalidate_view(view_invalid::sidebar | view_invalid::presence);
 
@@ -906,7 +914,7 @@ void app_frame::start_workers()
 	// created by the entry point that first queues to it, so a session that never searches, never
 	// reaches the network, never opens the map and never plays media runs without those threads.
 
-	index_task_queue.enqueue([this, scan_uncached_func]
+	index_task_queue.enqueue([this, scan_uncached_func, collection = setting.collection]
 	{
 		// Wait for the database cache to finish loading before validating folders. The cache
 		// loader (merge_folder) and folder validation (validate_folder) both mutate the same
@@ -922,7 +930,7 @@ void app_frame::start_workers()
 
 		if (df::is_closing) return;
 
-		_state.item_index.index_roots(index_folders());
+		_state.item_index.index_roots(index_folders(collection));
 
 		const auto token = df::cancel_token(index_version);
 		_state.item_index.index_folders(token);

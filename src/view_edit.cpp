@@ -1848,18 +1848,26 @@ void edit_view::queue_auto_adjust(const int max_dimension, std::string title,
 	const auto loaded = _loaded;
 	const auto scale_hint = ui::scale_dimensions(loaded.dimensions(), max_dimension, true);
 	const auto generation = _display_generation;
+	const auto edit_generation = _edit_generation;
 	const auto weak = weak_from_this();
 
 	_state.queue_async(async_queue::render,
-	                   [weak, loaded, scale_hint, generation, title = std::move(title), analyze = std::move(analyze),
-		                   &s = _state]() mutable
+	                   [weak, loaded, scale_hint, generation, edit_generation, title = std::move(title),
+		                   analyze = std::move(analyze), &s = _state]() mutable
 	                   {
 		                   auto apply = analyze(loaded.to_surface(scale_hint));
 
-		                   s.queue_ui([weak, generation, title = std::move(title), apply = std::move(apply)]
+		                   s.queue_ui([weak, generation, edit_generation, title = std::move(title),
+			                   apply = std::move(apply)]
 		                   {
 			                   const auto self = weak.lock();
 			                   if (!self || self->_display_generation != generation) return;
+
+			                   // The analysis describes the picture as it stood when it was asked
+			                   // for. Anything adjusted since is newer than its answer, and applying
+			                   // it now would undo the user's own work with a reply to a question
+			                   // they have already moved past.
+			                   if (self->_edit_generation != edit_generation) return;
 
 			                   if (!apply)
 			                   {
@@ -2210,6 +2218,7 @@ bool edit_view::escape()
 
 void edit_view::changed()
 {
+	++_edit_generation;
 	_state.invalidate_view(view_invalid::command_state);
 
 	if (_mt && _edit_controls && _edit_controls->_straighten_slider)

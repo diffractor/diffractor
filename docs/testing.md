@@ -14,7 +14,7 @@ Tests are compiled into the application and run from the command line. There is 
 
 `/test:` takes a wildcard matched against the test name, case-insensitively. A filter that matches nothing is a failure, not a silent pass.
 
-Release registers exactly seven more tests than Debug: five decoder fuzz sweeps, the closest-location lookup, and the degraded-face sweep are `#ifndef _DEBUG`. Debug `N` and Release `N + 7` is correct; any other gap means something was skipped.
+Release registers exactly six more tests than Debug: five decoder fuzz sweeps and the closest-location lookup are `#ifndef _DEBUG`. Debug `N` and Release `N + 6` is correct; any other gap means something was skipped.
 
 ## Taxonomy
 

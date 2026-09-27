@@ -961,6 +961,11 @@ uint32_t platform::file_crc32(const df::file_path path)
 
 uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& token)
 {
+	return file_crc32_checked(path, token).value_or(0);
+}
+
+std::optional<uint32_t> platform::file_crc32_checked(const df::file_path path, const df::cancel_token& token)
+{
 	bool success = false;
 	uint32_t result = crypto::CRCINIT;
 	df::perf_timer timer(df::index_perf.crc_us, &df::index_perf.crc_max_us);
@@ -982,7 +987,7 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 		{
 			CloseHandle(hFile);
 			df::bump(df::index_perf.crc_failed);
-			return 0;
+			return {};
 		}
 
 		const auto size = static_cast<uint64_t>(li.QuadPart);
@@ -1019,7 +1024,7 @@ uint32_t platform::file_crc32(const df::file_path path, const df::cancel_token& 
 
 	if (!success) df::bump(df::index_perf.crc_failed);
 
-	return success ? ~result : 0;
+	return success ? std::optional{~result} : std::nullopt;
 }
 
 // GUID_DEVINTERFACE_DISK. Defined here because the SDK only declares it and which import library
@@ -2098,13 +2103,19 @@ void platform::mutex::ex_lock() const
 	AcquireSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs));
 }
 
+_When_(return != 0, _Acquires_exclusive_lock_(this))
+
+bool platform::mutex::try_ex_lock() const
+{
+	return TryAcquireSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs)) != 0;
+}
+
 _Releases_exclusive_lock_(this)
 
 void platform::mutex::ex_unlock() const
 {
 	ReleaseSRWLockExclusive(std::bit_cast<PSRWLOCK>(&_cs));
 }
-
 _Acquires_shared_lock_(this)
 
 void platform::mutex::sh_lock() const

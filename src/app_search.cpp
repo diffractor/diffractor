@@ -505,7 +505,8 @@ void app_frame::focus_search(const bool has_focus)
 		}
 		else
 		{
-			_search_session.end();
+			const auto outcome = _search_session.end();
+			if (outcome.set_edit_text) set_search_edit_text(outcome.edit_text);
 			hide_search_predictions();
 		}
 	}

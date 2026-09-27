@@ -49,6 +49,8 @@
 // SAL annotations document ownership and locking, and MSVC's analyser acts on them. They have no
 // GCC or Clang equivalent, so they compile away rather than being deleted from the source.
 #define _Guarded_by_(lock)
+#define _Requires_lock_held_(lock)
+#define _When_(expr, annotes)
 #define _Acquires_exclusive_lock_(lock)
 #define _Releases_exclusive_lock_(lock)
 #define _Acquires_shared_lock_(lock)

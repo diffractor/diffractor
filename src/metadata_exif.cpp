@@ -366,10 +366,7 @@ public:
 			}
 			else if (str::is_utf16(p, len))
 			{
-				const auto char_length = len / 2;
-				std::u16string aligned(char_length, u'\0');
-				std::memcpy(aligned.data(), p, char_length * sizeof(char16_t));
-				return str::strip_and_cache(aligned);
+				return str::strip_and_cache(str::utf16_from_bytes(p, static_cast<int>(len)));
 			}
 			else if (str::is_utf8(std::bit_cast<const char*>(p), len))
 			{
@@ -1077,10 +1074,13 @@ bool exif_gps_coordinate_builder::is_valid() const
 	const auto alat = fabs(_latitude);
 	const auto alon = fabs(_longitude);
 
-	return alat < invalid_coordinate &&
-		alon < invalid_coordinate &&
-		alat > 0.0 &&
-		alon > 0.0;
+	// invalid_coordinate is the absent sentinel, and it decides whether each component arrived.
+	// Testing each magnitude for zero as well was far broader than it needed to be: it discarded
+	// the whole equator and the whole Greenwich meridian - Kenya, Indonesia and Ecuador sit on one,
+	// the UK, Spain and Ghana on the other - and those photographs silently lost the location they
+	// carried. Only the exact pair is refused, which is what a receiver with no fix writes.
+	return alat < invalid_coordinate && alon < invalid_coordinate &&
+		!(_latitude == 0.0 && _longitude == 0.0);
 }
 
 gps_coordinate exif_gps_coordinate_builder::build() const
@@ -1905,7 +1905,13 @@ df::blob metadata_exif::fix_dims(const df::span cs, const int image_width, const
 	df::blob result;
 
 	df::assert_true(is_exif_signature(cs));
-	const std::unique_ptr<ExifData, exif_free> ed(exif_data_new_from_data(cs.data, static_cast<unsigned int>(cs.size)));
+
+	// Loaded as stored. A lossless rotate rewrites the block to correct its orientation and
+	// dimensions and nothing else, so libexif's normalising defaults do not belong here:
+	// IGNORE_UNKNOWN_TAGS drops every maker note and vendor tag the camera wrote, and
+	// FOLLOW_SPECIFICATION removes and rewrites off-spec entries. Both turned a rotate into a
+	// silent rewrite of metadata the user never asked to change.
+	const auto ed = exif_load_as_stored(cs.data, cs.size);
 
 	if (ed)
 	{

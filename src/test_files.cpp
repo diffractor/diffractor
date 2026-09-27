@@ -48,6 +48,32 @@ static void should_report_zip_create_failure()
 	assert_equal(false, path.exists(), "failed zip was not created");
 }
 
+// The copy loop stops when read64k answers false, which it does for the end of the file and for a
+// read that failed alike - so a truncated copy used to close as a successful entry. What is written
+// is now held to what the file holds. A real short read cannot be staged here without a fault
+// injection seam, so what this pins is the other half: that a file crossing several buffer loads
+// still satisfies the check rather than being refused as short.
+static void should_add_a_multi_chunk_file_to_a_zip()
+{
+	const auto source = _temps.next_path(".bin");
+
+	// Three buffer loads and a remainder, so the loop runs more than once and ends part way.
+	df::blob payload(64u * 1024u * 3u + 517u);
+	for (auto i = 0_z; i < payload.size(); ++i) payload[i] = static_cast<uint8_t>(i * 7 + (i >> 11));
+	df::blob_save_to_file(payload, source);
+
+	const auto archive = _temps.next_path(".zip");
+	df::zip_file zip;
+	assert_equal(true, zip.create(archive), "the archive is created");
+	assert_equal(true, zip.add(source, "payload.bin"), "a file spanning several reads is added whole");
+	assert_equal(true, zip.close(), "and the archive closes");
+
+	const auto listed = df::zip_file::list(archive);
+	assert_equal(1_z, listed.size(), "the archive holds the one entry");
+	assert_equal(static_cast<uint64_t>(payload.size()), listed.front().uncompressed_size.to_int64(),
+	             "and it holds every byte of the source");
+}
+
 static void should_create_original_before_replace()
 {
 	const auto destination = _temps.next_path(".jpg");
@@ -408,6 +434,10 @@ static void should_extract_embedded_thumbnails_only_on_demand()
 	}
 }
 
+// Defined below with the other JPEG helpers; the orientation tests need a stream that carries no
+// Exif of its own, which is exactly what encoding one here produces.
+static ui::surface_ptr make_gradient_surface(int cx, int cy);
+
 // Regression: the JPEG decoder must call jpeg_save_markers so read_header can
 // recover the embedded EXIF orientation from the APP1 marker.
 static void should_read_jpeg_orientation()
@@ -418,6 +448,92 @@ static void should_read_jpeg_orientation()
 	jpeg_decoder_x decoder;
 	assert_equal(true, decoder.read_header(data), "read jpeg header");
 	assert_equal(ui::orientation::right_top, decoder._orientation_out, "decoder recovers EXIF orientation");
+
+	// files holds ONE decoder for every image it reads, so each header has to state what its own
+	// stream carries. Assigning the orientation only when an Exif marker was found left the
+	// previous file's value in place for a stream with none - which is most embedded RAW
+	// thumbnails - and drew them at that rotation.
+	files ff;
+	const auto plain = ff.surface_to_image(make_gradient_surface(32, 32), {}, {}, ui::image_format::JPEG);
+	assert_equal(true, decoder.read_header(plain->data()), "a jpeg carrying no orientation reads");
+	assert_equal(ui::orientation::top_left, decoder._orientation_out,
+	             "and is upright rather than keeping the last one's rotation");
+}
+
+// IFD1 describes the embedded thumbnail, which cameras commonly store already upright while the
+// primary image is not. Taking its orientation over IFD0's displayed the photograph at its
+// thumbnail's rotation; it may only stand in where the primary image gave none.
+static void should_prefer_primary_orientation_over_the_thumbnail_ifd()
+{
+	// A little-endian TIFF whose IFD0 carries one orientation and points at an IFD1 carrying
+	// another. Nothing else: the scanner reads orientation from both and needs no more.
+	const auto build_exif = [](const uint16_t ifd0_orientation, const uint16_t ifd1_orientation)
+	{
+		std::vector<uint8_t> b;
+		const auto put16 = [&b](const uint16_t v)
+		{
+			b.push_back(static_cast<uint8_t>(v));
+			b.push_back(static_cast<uint8_t>(v >> 8));
+		};
+		const auto put32 = [&b](const uint32_t v)
+		{
+			for (auto i = 0; i < 4; ++i) b.push_back(static_cast<uint8_t>(v >> (8 * i)));
+		};
+		const auto orientation_ifd = [&](const uint16_t orientation)
+		{
+			put16(1); // one entry
+			put16(0x0112); // Orientation
+			put16(3); // FMT_USHORT
+			put32(1);
+			put16(orientation);
+			put16(0); // the value field is four bytes wide
+		};
+
+		put16(0x4949);
+		put16(0x002a);
+		put32(8); // IFD0 follows the header
+
+		constexpr uint32_t ifd1_offset = 8 + 2 + 12 + 4;
+		orientation_ifd(ifd0_orientation);
+		put32(ifd1_offset);
+		orientation_ifd(ifd1_orientation);
+		put32(0); // no further IFD
+		return b;
+	};
+
+	files ff;
+	const auto jpeg = ff.surface_to_image(make_gradient_surface(32, 32), {}, {}, ui::image_format::JPEG);
+
+	const auto scan_with_exif = [&](const uint16_t ifd0_orientation, const uint16_t ifd1_orientation)
+	{
+		const auto tiff = build_exif(ifd0_orientation, ifd1_orientation);
+		const auto& source = jpeg->data();
+
+		std::vector<uint8_t> out;
+		out.insert(out.end(), source.data(), source.data() + 2); // SOI
+
+		const auto payload = static_cast<uint16_t>(2 + 6 + tiff.size());
+		out.push_back(0xFF);
+		out.push_back(0xE1);
+		out.push_back(static_cast<uint8_t>(payload >> 8));
+		out.push_back(static_cast<uint8_t>(payload));
+
+		constexpr uint8_t signature[] = {'E', 'x', 'i', 'f', 0, 0};
+		out.insert(out.end(), std::begin(signature), std::end(signature));
+		out.insert(out.end(), tiff.begin(), tiff.end());
+		out.insert(out.end(), source.data() + 2, source.data() + source.size());
+
+		const auto path = _temps.next_path(".jpg");
+		df::blob_save_to_file(df::blob(out.begin(), out.end()), path);
+		return ff_scan_file(ff, path).orientation;
+	};
+
+	assert_equal(static_cast<int>(ui::orientation::right_top),
+	             static_cast<int>(scan_with_exif(6, 1)),
+	             "the primary image's rotation is what the photograph is shown at");
+	assert_equal(static_cast<int>(ui::orientation::top_left),
+	             static_cast<int>(scan_with_exif(1, 6)),
+	             "and an upright primary is not rotated by its thumbnail");
 }
 
 // The payload of the first DQT segment, which is the table the encoder quantized with.
@@ -570,6 +686,111 @@ static void should_survive_truncated_lossless_rotate()
 
 	assert_equal(false, decoder.transform(data, encoder, simple_transform::rot_90).empty(),
 	             "decoder and encoder stay usable after the refusal");
+}
+
+// jpeg_read_coefficients holds every coefficient of the full-resolution image whatever scale the
+// caller asked for, and transupp requests a second array the same size to rotate into. The decode
+// budget divides by the scale factor, so it describes none of that - a rotate has to be measured
+// against what its coefficients cost, or a hundred-megapixel photograph reaches libjpeg asking for
+// gigabytes.
+static void should_refuse_an_over_budget_lossless_rotate()
+{
+	files ff;
+	const auto image = ff.surface_to_image(make_gradient_surface(256, 256), {}, {}, ui::image_format::JPEG);
+
+	jpeg_encoder encoder;
+	jpeg_decoder_x decoder;
+
+	assert_equal(true, decoder.read_header(image->data()), "header read");
+	assert_equal(false, decoder.buffers_whole_image(), "a baseline single-scan jpeg decodes a block at a time");
+
+	// 256 x 256 at 4:2:0 is 32 x 32 luma blocks and 16 x 16 of each chroma, at 128 bytes a block.
+	constexpr int64_t expected = (32 * 32 + 2 * 16 * 16) * 128;
+	assert_equal(static_cast<uint64_t>(expected), static_cast<uint64_t>(decoder.coefficient_bytes()),
+	             "a rotate holds the whole image however little it would decode");
+
+	const auto restore_budget = df::max_decode_bytes;
+	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
+
+	df::max_decode_bytes = expected * 2 - 1;
+	auto over_budget = false;
+	assert_equal(true, decoder.transform(image->data(), encoder, simple_transform::rot_90, &over_budget).empty(),
+	             "a rotate one byte over its workspace refuses");
+	assert_equal(true, over_budget, "and says the budget is why, which is not an imperfect rotate");
+
+	df::max_decode_bytes = expected * 2;
+	assert_equal(false, decoder.transform(image->data(), encoder, simple_transform::rot_90, &over_budget).empty(),
+	             "the same rotate is taken when source and workspace both fit");
+	assert_equal(false, over_budget, "and is not reported as over budget");
+}
+
+// A lossless rotate refused for its budget must not turn into a re-encode. The re-encode holds the
+// decoded picture and a rotated copy - more than the rotate was refused for - and gives up quality
+// besides, so a JPEG that could have turned losslessly came back lossy from a check meant to bound
+// memory. The budget here fits the decode the re-encode would start with, but not the rotate.
+static void should_not_re_encode_a_rotate_refused_for_its_budget()
+{
+	const auto load_path = test_files_folder.combine_file("Lossless0.jpg");
+	const auto save_path = _temps.next_path();
+	const auto source = df::blob_from_file(load_path);
+
+	jpeg_decoder_x decoder;
+	assert_equal(true, decoder.read_header({source.data(), source.size()}), "header read");
+	const auto dimensions = decoder.dimensions();
+	const auto rotate_bytes = decoder.coefficient_bytes() * 2;
+
+	const auto restore_budget = df::max_decode_bytes;
+	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
+
+	df::max_decode_bytes = rotate_bytes - 1;
+	assert_equal(true, static_cast<int64_t>(dimensions.cx) * dimensions.cy * 4 <= df::max_decode_bytes,
+	             "the decode a re-encode starts with fits the budget");
+
+	image_edits edits;
+	const quadd crop(dimensions);
+	edits.crop_bounds(crop.transform(simple_transform::rot_90));
+
+	files ff;
+	const auto result = ff.update(load_path, save_path, {}, edits, {}, false, {});
+
+	assert_equal(false, result.success(), "the rotate is refused rather than re-encoded");
+	assert_equal(false, save_path.exists(), "and nothing is written in its place");
+}
+
+// libjpeg reduces while it decodes, which is what makes an enormous stitch affordable as a
+// thumbnail - but a progressive stream must first buffer every coefficient of the full-resolution
+// image, and no decode scale touches that. Charging only the reduced output let a stream whose
+// coefficients alone run to gigabytes pass a budget that said kilobytes.
+static void should_charge_a_progressive_jpeg_for_its_coefficients()
+{
+	files ff;
+
+	// The fixture lives in excluded1 so that adding it does not change the indexed item counts.
+	const auto progressive = ff.load(test_files_folder.combine("excluded1").combine_file("Progressive.jpg"), false);
+	assert_equal(true, is_valid(progressive.i), "the progressive fixture loads");
+
+	const auto baseline = ff.surface_to_image(make_gradient_surface(256, 256), {}, {}, ui::image_format::JPEG);
+	assert_equal(true, is_valid(baseline), "and a baseline control of the same shape encodes");
+
+	// Both are 256 x 256 at 4:2:0. An eighth-scale decode writes 32 x 32 pixels either way, but the
+	// progressive one also holds 32 x 32 luma blocks and 16 x 16 of each chroma at 128 bytes a
+	// block, whole and unscaled, before it can emit a single row.
+	constexpr sizei thumbnail{32, 32};
+	constexpr int64_t scaled_output_bytes = 32ll * 32 * 4;
+	constexpr int64_t coefficient_bytes = (32 * 32 + 2 * 16 * 16) * 128;
+
+	const auto restore_budget = df::max_decode_bytes;
+	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
+
+	df::max_decode_bytes = scaled_output_bytes + coefficient_bytes - 1;
+	assert_equal(false, is_valid(ff.image_to_surface(progressive.i, thumbnail)),
+	             "a progressive thumbnail one byte short of its coefficients is refused");
+	assert_equal(true, is_valid(ff.image_to_surface(baseline, thumbnail)),
+	             "a baseline thumbnail of the same picture is not");
+
+	df::max_decode_bytes = scaled_output_bytes + coefficient_bytes;
+	assert_equal(true, is_valid(ff.image_to_surface(progressive.i, thumbnail)),
+	             "and the progressive one is taken once its coefficients fit");
 }
 
 static void should_rotate_lossless()
@@ -1387,6 +1608,62 @@ static void should_bound_and_time_animated_webp()
 	assert_equal(true, malformed.frames.size() < 2, "malformed animated webp terminates on decode failure");
 }
 
+// A file larger than can be held in memory used to be read as its first 100 MiB. The codec decoded
+// what it was given and filled the missing rows itself, so the frame ended in a black tail - and on
+// the edit path that frame was re-encoded straight over the user's original.
+static void should_refuse_a_file_too_large_to_hold()
+{
+	const auto path = _temps.next_path(".jpg");
+
+	// A valid JPEG header followed by enough bytes to pass the ceiling. Nothing decodes it; the
+	// refusal happens on the file's size, before a byte is read.
+	{
+		const auto source = df::blob_from_file(test_files_folder.combine_file("Test.jpg"));
+		assert_equal(false, source.empty(), "the fixture loaded");
+
+		std::ofstream f(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
+		f.write(std::bit_cast<const char*>(source.data()), static_cast<std::streamsize>(source.size()));
+
+		const std::vector<char> filler(1024 * 1024, 0);
+		auto written = source.size();
+
+		while (written <= static_cast<size_t>(df::max_blob_size))
+		{
+			f.write(filler.data(), static_cast<std::streamsize>(filler.size()));
+			written += filler.size();
+		}
+	}
+
+	assert_equal(true, platform::file_attributes(path).size > static_cast<uint64_t>(df::max_blob_size),
+	             "the fixture is past the ceiling");
+
+	files ff;
+	const auto loaded = ff.load(path, false);
+
+	assert_equal(false, loaded.success, "an oversized file does not load");
+	assert_equal(true, loaded.reason == file_load_result::failure::too_large,
+	             "and says so as a property of the file rather than as an unreadable one");
+	assert_equal(false, is_valid(loaded.i), "no truncated image is handed back");
+
+	// The read itself refuses too, so no caller can obtain a prefix by accident. A caller that
+	// asks for one by name still gets exactly what it asked for.
+	auto threw = false;
+
+	try
+	{
+		df::blob_from_file(path);
+	}
+	catch (const app_exception&)
+	{
+		threw = true;
+	}
+
+	assert_equal(true, threw, "reading the whole file refuses rather than truncating");
+	assert_equal(1024_z, df::blob_head_from_file(path, 1024).size(), "an explicit prefix is still served");
+
+	platform::delete_file(path);
+}
+
 static void should_convert_raw_to_jpeg()
 {
 	const auto load_path = test_files_folder.combine("raw").combine_file("Screws.CR2");
@@ -1661,6 +1938,7 @@ void register_files_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should check overwrite"s, should_check_overwrite);
 	tests.add("Should report zip create failure"s, should_report_zip_create_failure);
+	tests.add("Should add a multi chunk file to a zip"s, should_add_a_multi_chunk_file_to_a_zip);
 	tests.add("Should create original before replace"s, should_create_original_before_replace);
 	tests.add("Should report move or copy collision paths"s, should_report_move_or_copy_collision_paths);
 	tests.add("Should fail replace when flush fails"s, should_fail_replace_when_flush_fails);
@@ -1709,9 +1987,16 @@ void register_files_tests(view_state& state, test_registry& tests)
 	// JPEG
 	//
 	tests.add("Should read jpeg orientation"s, should_read_jpeg_orientation);
+	tests.add("Should prefer primary orientation over the thumbnail ifd"s,
+	          should_prefer_primary_orientation_over_the_thumbnail_ifd);
 	tests.add("Should reuse source jpeg tables"s, should_reuse_source_jpeg_tables);
 	tests.add("Should refuse imperfect lossless rotate"s, should_refuse_imperfect_lossless_rotate);
 	tests.add("Should survive truncated lossless rotate"s, should_survive_truncated_lossless_rotate);
+	tests.add("Should refuse an over budget lossless rotate"s, should_refuse_an_over_budget_lossless_rotate);
+	tests.add("Should not re-encode a rotate refused for its budget"s,
+	          should_not_re_encode_a_rotate_refused_for_its_budget);
+	tests.add("Should charge a progressive jpeg for its coefficients"s,
+	          should_charge_a_progressive_jpeg_for_its_coefficients);
 	tests.add("Should reuse jpeg encoder after abandoned encode"s,
 	          should_reuse_jpeg_encoder_after_abandoned_encode);
 	tests.add("Should rotate lossless"s, should_rotate_lossless);
@@ -1749,6 +2034,7 @@ void register_files_tests(view_state& state, test_registry& tests)
 	// RAW
 	//
 	tests.add("Should convert raw to jpeg"s, should_convert_raw_to_jpeg);
+	tests.add("Should refuse a file too large to hold"s, should_refuse_a_file_too_large_to_hold);
 
 	//
 	// File handle lifetime

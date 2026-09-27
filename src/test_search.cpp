@@ -551,12 +551,177 @@ static void should_format_search_predictions()
 	assert_equal(true, search_icon("@photo") == icon_index::photo, "media group uses media icon");
 }
 
+// A bare byte count went through an int, so anything above two billion wrapped and matched small
+// files, and TB was not a unit the parser knew at all - the formatter already wrote it, so a
+// terabyte query did not survive a round trip through the address box.
+static void should_parse_file_size_terms()
+{
+	const auto size_of = [](const std::string_view query) -> uint64_t
+	{
+		const auto search = df::search_t::parse(query);
+		const auto& terms = search.terms();
+		return terms.empty() ? 0ull : terms.front().int64_val;
+	};
+
+	constexpr uint64_t kb = 1024ull;
+	constexpr uint64_t mb = kb * 1024ull;
+	constexpr uint64_t gb = mb * 1024ull;
+	constexpr uint64_t tb = gb * 1024ull;
+
+	assert_equal(14ull * kb, size_of("size:14kb"), "kilobytes");
+	assert_equal(mb, size_of("size:1mb"), "megabytes");
+	assert_equal(2ull * gb, size_of("size:2gb"), "gigabytes");
+	assert_equal(tb, size_of("size:1tb"), "terabytes");
+	assert_equal(3ull * tb / 2ull, size_of("size:1.5tb"), "fractional terabytes");
+	assert_equal(512ull, size_of("size:512"), "a bare byte count");
+
+	// Larger than a signed 32-bit count, which is where the int overflowed.
+	assert_equal(3'000'000'000ull, size_of("size:3000000000"), "a bare count past the int range");
+	assert_equal(tb, size_of("size:1099511627776"), "a bare count of a terabyte");
+
+	// The formatter writes a terabyte as "size: 1 TB", the unit apart from its number, so the unit
+	// has to be recognised on its own as well or the query reads back as one byte and a text term.
+	const auto formatted = df::search_t::parse("size:1tb").format_terms();
+	assert_equal(1_z, df::search_t::parse(formatted).terms().size(), "a formatted terabyte is still one term");
+	assert_equal(tb, size_of(formatted), "and still a terabyte");
+}
+
 static void should_not_match_folder_without()
 {
 	const auto now_days = df::date_t(2000, 1, 1).to_days();
 	const auto search = df::search_t::parse("without:tag");
 	const df::search_matcher matcher(search, now_days);
 	assert_equal(false, matcher.match_folder(test_files_folder.text(), "test"_c).is_match(), "folder name test");
+}
+
+// A level used to start at `true`, the identity for AND but the annihilator for OR. A group opened
+// by an OR term folded into a parent seeded with `true`, so the parent stayed true whatever it
+// received and the whole expression matched every item.
+static void should_group_search_terms()
+{
+	const auto matches = [](const std::string_view query, const std::string_view name)
+	{
+		df::index_file_item file;
+		file.name = str::cache(name);
+		file.ft = files::file_type_from_name(name);
+		file.safe_ps();
+
+		const auto search = df::search_t::parse(query);
+		const df::search_matcher matcher(search, df::date_t(2000, 1, 1).to_days());
+		return matcher.match_all_terms(test_files_folder.text(), file).is_match();
+	};
+
+	assert_equal(true, matches("alpha or (beta gamma)", "alpha.jpg"), "the left side of an or still matches");
+	assert_equal(false, matches("alpha or (beta gamma)", "beta.jpg"), "half of an and-group does not");
+	assert_equal(false, matches("alpha or (beta gamma)", "delta.jpg"), "neither side matches nothing");
+
+	// The regression: the same expression with the group nested one deeper.
+	assert_equal(false, matches("alpha or ((beta gamma))", "delta.jpg"),
+	             "a nested group after or does not match everything");
+	assert_equal(false, matches("alpha or ((beta gamma))", "beta.jpg"),
+	             "and still binds inside the nested group");
+	assert_equal(true, matches("alpha or ((beta gamma))", "alpha.jpg"),
+	             "and the or still matches its left side");
+
+	assert_equal(false, matches("(alpha) (beta)", "alpha.jpg"), "two and-groups both have to match");
+	assert_equal(true, matches("(alpha) or (beta)", "beta.jpg"), "either or-group may match");
+	assert_equal(false, matches("(alpha) or (beta)", "delta.jpg"), "an or of groups is not unconditional");
+}
+
+// Four ways a query came back as a different question from the one that was asked. Each is a silent
+// wrong answer: the search runs, returns a plausible set, and never says the question changed.
+static void should_read_a_query_back_as_it_was_asked()
+{
+	// Dimensions are written "WxH", but the pair was split on '/' alone - so the height fell off,
+	// and compare_term reads a zero second component as "any". The query then matched every image
+	// of that width whatever its height, which is broader than what was asked and than what the
+	// list had shown.
+	{
+		const auto parsed = df::search_t::parse("dimensions:1920x1080");
+		assert_equal(1_z, parsed.terms().size(), "a dimension is one term");
+		assert_equal(1920, static_cast<int>(parsed.terms().front().xy_val.x), "the width is read");
+		assert_equal(1080, static_cast<int>(parsed.terms().front().xy_val.y), "and so is the height");
+
+		const auto track = df::search_t::parse("track:3/12");
+		assert_equal(3, static_cast<int>(track.terms().front().xy_val.x), "a track still reads its number");
+		assert_equal(12, static_cast<int>(track.terms().front().xy_val.y), "and its total");
+	}
+
+	// A quoted word is the word. Rewriting it into an operator changed the query's own logic
+	// instead of matching the text between the quotes.
+	{
+		const auto quoted = df::search_t::parse("alpha \"and\" beta");
+		assert_equal(3_z, quoted.terms().size(), "a quoted and is a term of its own");
+
+		const auto bare = df::search_t::parse("alpha and beta");
+		assert_equal(2_z, bare.terms().size(), "an unquoted one still joins the two either side");
+
+		// Written back it has to stay quoted: format_terms is what the address box shows once the
+		// typed text is gone, and a bare "and" there reads back as the operator again.
+		const auto reread = df::search_t::parse(quoted.format_terms());
+		assert_equal(3_z, reread.terms().size(), "a quoted and survives being written back");
+	}
+
+	// "-f/2.8" expands to a group matching either reading of the value: the text of a lens
+	// description, or the aperture. Negated, the arms have to be joined the other way round -
+	// "not either" is "neither". Left as an OR the pair read as "not the text or not the
+	// aperture", which is true whenever the two readings disagree, so the exclusion let through
+	// exactly the photographs it was asked to remove.
+	{
+		// A zoom whose description names f/3.5, on a frame actually taken at f/5.6. That is the one
+		// shape where the two arms disagree, so it is the only one where the join between them can
+		// be observed at all.
+		const auto matches = [](const std::string_view query)
+		{
+			df::index_file_item file;
+			file.name = "shot.jpg"_c;
+			file.ft = files::file_type_from_name("shot.jpg");
+			const auto md = file.safe_ps();
+			md->lens = "EF 24-105mm f/3.5-5.6 IS"_c;
+			md->f_number = 5.6f;
+
+			const auto search = df::search_t::parse(query);
+			const df::search_matcher matcher(search, df::date_t(2000, 1, 1).to_days());
+			return matcher.match_all_terms(test_files_folder.text(), file).is_match();
+		};
+
+		assert_equal(true, matches("f/3.5"), "the lens description is one of the two readings");
+		assert_equal(false, matches("-f/3.5"), "so excluding that value excludes this photograph");
+		assert_equal(true, matches("f/5.6"), "the aperture it was taken at is the other reading");
+		assert_equal(false, matches("-f/5.6"), "and excluding that excludes it too");
+	}
+}
+
+// A cancelled walk stops where the token was raised, so what it holds is a prefix of the answer.
+// Reporting that as complete let a superseded pass settle the list showing fewer items than exist
+// and announce that it had finished - and because re-opening the same search leaves the search
+// identity unchanged, the identity test at the publication point could not tell the two apart.
+static void should_not_call_a_cancelled_query_complete(shared_test_context& stc)
+{
+	const auto search = df::search_t().add_selector(test_files_folder);
+
+	auto complete_runs = 0;
+	auto partial_runs = 0;
+
+	auto cb = [&complete_runs, &partial_runs](const index_state::query_item_results& items, const bool is_complete)
+	{
+		if (is_complete) ++complete_runs;
+		else ++partial_runs;
+	};
+
+	stc.test_index.query_items(search, cb, test_token);
+	assert_equal(1, complete_runs, "a walk that ran to the end reports completion");
+	assert_equal(0, partial_runs, "and reports it once");
+
+	complete_runs = 0;
+	partial_runs = 0;
+
+	std::atomic_bool cancelled = true;
+	const df::cancel_token stopped(cancelled);
+	stc.test_index.query_items(search, cb, stopped);
+
+	assert_equal(0, complete_runs, "a cancelled walk does not claim to be complete");
+	assert_equal(1, partial_runs, "it still answers, but as the partial set it holds");
 }
 
 static void should_match_volume_label()
@@ -1149,6 +1314,22 @@ static void should_parse_search()
 	assert_equal(true, location_parts[1].after_comma, "a comma binds the following token");
 	assert_equal("UK", location_parts[1].term, "comma bound token");
 	assert_equal(false, location_parts[2].after_comma, "a space does not bind");
+
+	// A comma-bound '-' is a sign only where a latitude precedes it. Everywhere else the comma
+	// separates terms and the '-' negates the one after it, as it did before coordinates had signs.
+	const auto coordinate_parts = t.parse("loc:51.5142,-0.0985");
+	assert_equal(2, static_cast<int>(coordinate_parts.size()), "a coordinate tokenizes as two components");
+	assert_equal(true, coordinate_parts[1].modifier.positive, "a longitude's sign is not a negation");
+	assert_equal("-0.0985", coordinate_parts[1].term, "the sign stays with the longitude");
+
+	const auto excluded_year = t.parse("sunset, -2019");
+	assert_equal(2, static_cast<int>(excluded_year.size()), "a comma separates two terms");
+	assert_equal(false, excluded_year[1].modifier.positive, "a '-' after an ordinary term still negates");
+	assert_equal("2019", excluded_year[1].term, "and the number is the negated term");
+
+	const auto excluded_from_place = t.parse("loc:London,-2019");
+	assert_equal(false, excluded_from_place.back().modifier.positive, "a place name is not a latitude");
+	assert_equal("2019", excluded_from_place.back().term, "so the '-' after it negates");
 }
 
 static void assert_date_shift(df::search_t d, const std::string_view expected_prev,
@@ -1177,6 +1358,15 @@ static void should_next_date_search()
 	assert_date_shift(df::search_t().month(1, df::date_parts_prop::created).year(2010, df::date_parts_prop::created),
 	                  "created:2009-dec", "created:2010-jan");
 	assert_date_shift(df::search_t().year(2010, df::date_parts_prop::original), "original:2009", "original:2010");
+
+	// A leap February has 29 days, and the step read the month without its year - so navigating
+	// across the end of February 2024 jumped straight over the 29th in both directions.
+	assert_date_shift(df::search_t().day(29, 2, 2024), "2024-feb-28", "2024-feb-29");
+	assert_date_shift(df::search_t().day(1, 3, 2024), "2024-feb-29", "2024-mar-1");
+
+	// 1900 is not a leap year, and a year-less February keeps the 28-day reading it always had.
+	assert_date_shift(df::search_t().day(1, 3, 1900), "1900-feb-28", "1900-mar-1");
+	assert_date_shift(df::search_t().day(1, 3, 0), "feb-28", "mar-1");
 }
 
 static void should_parse_search_input()
@@ -1992,6 +2182,10 @@ void register_search_tests(view_state& state, test_registry& tests)
 	tests.add("Should classify search scope"s, should_classify_search_scope);
 	tests.add("Should format search predictions"s, should_format_search_predictions);
 	tests.add("Should not match folder against without:tag"s, should_not_match_folder_without);
+	tests.add("Should group search terms"s, should_group_search_terms);
+	tests.add("Should read a query back as it was asked"s, should_read_a_query_back_as_it_was_asked);
+	tests.add("Should not call a cancelled query complete"s, should_not_call_a_cancelled_query_complete);
+	tests.add("Should parse file size terms"s, should_parse_file_size_terms);
 
 	// Issue #203 - Cyrillic character search
 	tests.add("Should search Cyrillic text"s, should_search_cyrillic_text);
@@ -2089,6 +2283,9 @@ void register_search_tests(view_state& state, test_registry& tests)
 	register_assert_format(df::search_t().month(5, df::date_parts_prop::modified));
 	register_assert_format(df::search_t().fuzzy(prop::duration, 33));
 	register_assert_format(df::search_t().location(gps_coordinate(-30.515, 151.665), 5.0));
+	// A west longitude carries its sign after the comma, where a leading '-' used to read as a
+	// negation and split the component off as a term of its own.
+	register_assert_format(df::search_t().location(gps_coordinate(51.5142, -0.0985), 2.0));
 	register_assert_format(df::search_t().with_extension("jpg"));
 
 	auto register_assert_parse = [&tests](const std::string& query, const std::string& expected = {})

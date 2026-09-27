@@ -92,10 +92,10 @@ public:
 
 class kd_tree
 {
-	static float dist(const float x1, const float y1, const float x2, const float y2)
+	static float dist(const float x1, const float y1, const float x2, const float y2, const float y_scale)
 	{
 		const auto dx = x1 - x2;
-		const auto dy = y1 - y2;
+		const auto dy = (y1 - y2) * y_scale;
 		return dx * dx + dy * dy;
 	}
 
@@ -103,6 +103,12 @@ class kd_tree
 	{
 		float x = 0.0f;
 		float y = 0.0f;
+		// The y axis is scaled before it is squared. The tree stores degrees, and a degree of
+		// longitude is not a degree of latitude anywhere but the equator, so an unscaled plane
+		// ranks a place too far east or west as nearer than one just up the road. Scaling one axis
+		// uniformly is an affine map: axis-aligned boxes stay axis-aligned, so as long as
+		// dist_to_box applies the same factor the pruning bound is still a bound.
+		float y_scale = 1.0f;
 		float closest_d2 = std::numeric_limits<float>::max();
 		size_t closest = SIZE_MAX;
 	};
@@ -130,10 +136,10 @@ class kd_tree
 
 	std::vector<node_t> _nodes;
 
-	static float dist_to_box(const float x, const float y, const node_t& node)
+	static float dist_to_box(const float x, const float y, const node_t& node, const float y_scale)
 	{
 		const auto dx = x < node.xmin ? node.xmin - x : (x > node.xmax ? x - node.xmax : 0.0f);
-		const auto dy = y < node.ymin ? node.ymin - y : (y > node.ymax ? y - node.ymax : 0.0f);
+		const auto dy = (y < node.ymin ? node.ymin - y : (y > node.ymax ? y - node.ymax : 0.0f)) * y_scale;
 		return dx * dx + dy * dy;
 	}
 
@@ -257,7 +263,7 @@ class kd_tree
 			{
 				const auto point = node.offset_or_child2 + i;
 				const auto& c = data.point(point);
-				const auto myd2 = dist(c.x, c.y, ti.x, ti.y);
+				const auto myd2 = dist(c.x, c.y, ti.x, ti.y, ti.y_scale);
 
 				if (myd2 < ti.closest_d2)
 				{
@@ -271,8 +277,8 @@ class kd_tree
 
 		const auto child1 = index + 1;
 		const auto child2 = node.offset_or_child2;
-		const auto d1 = dist_to_box(ti.x, ti.y, _nodes[child1]);
-		const auto d2 = dist_to_box(ti.x, ti.y, _nodes[child2]);
+		const auto d1 = dist_to_box(ti.x, ti.y, _nodes[child1], ti.y_scale);
+		const auto d2 = dist_to_box(ti.x, ti.y, _nodes[child2], ti.y_scale);
 
 		// Nearer box first: it usually tightens closest_d2 enough to prune the other outright.
 		const auto near_first = d1 <= d2;
@@ -338,7 +344,11 @@ public:
 		return _nodes.empty();
 	}
 
-	kd_coordinates_t find_closest(const kd_points& data, const float x, const float y) const
+	// `y_scale` weights the second axis before the distance is squared. A caller holding geographic
+	// degrees passes cos(latitude) so that longitude counts for what it is worth at that latitude;
+	// one holding an isotropic plane leaves it at one.
+	kd_coordinates_t find_closest(const kd_points& data, const float x, const float y,
+	                              const float y_scale = 1.0f) const
 	{
 		if (_nodes.empty())
 		{
@@ -348,6 +358,7 @@ public:
 		traversal_state ti;
 		ti.x = x;
 		ti.y = y;
+		ti.y_scale = y_scale;
 
 		find_closest_to_pt(data, ti, 0);
 

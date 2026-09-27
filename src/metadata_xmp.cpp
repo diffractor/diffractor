@@ -274,17 +274,23 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	}
 
 	// A coordinate that failed to decode must not be applied - a zeroed half pins the item to the
-	// Gulf of Guinea instead of leaving the location unknown.
-	if (xmp.GetProperty(kXMP_NS_EXIF, "GPSLatitude", &utf8, &flags))
+	// Gulf of Guinea instead of leaving the location unknown. Applied as a pair for the same reason:
+	// a file carrying only one XMP component would otherwise keep the other from EXIF, pinning the
+	// item to a coordinate neither source states.
 	{
-		double v = 0;
-		if (xmp_decode_gps_coordinate(str::utf8_cast(utf8), v)) md.coordinate.latitude(v);
-	}
+		double latitude = 0;
+		double longitude = 0;
 
-	if (xmp.GetProperty(kXMP_NS_EXIF, "GPSLongitude", &utf8, &flags))
-	{
-		double v = 0;
-		if (xmp_decode_gps_coordinate(str::utf8_cast(utf8), v)) md.coordinate.longitude(v);
+		const auto has_latitude = xmp.GetProperty(kXMP_NS_EXIF, "GPSLatitude", &utf8, &flags) &&
+			xmp_decode_gps_coordinate(str::utf8_cast(utf8), latitude);
+		const auto has_longitude = xmp.GetProperty(kXMP_NS_EXIF, "GPSLongitude", &utf8, &flags) &&
+			xmp_decode_gps_coordinate(str::utf8_cast(utf8), longitude);
+
+		if (has_latitude && has_longitude)
+		{
+			md.coordinate.latitude(latitude);
+			md.coordinate.longitude(longitude);
+		}
 	}
 
 	if (xmp.GetProperty(kXMP_NS_Photoshop, "City", &utf8, &flags))
@@ -368,9 +374,14 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 		md.label = str::strip_and_cache(utf8);
 	}
 
-	if (const auto subject = xmp_load_array(xmp, kXMP_NS_DC, "subject"); !str::is_empty(subject))
+	// Xmp is parsed last, so an array that is simply absent must not erase what Exif or Iptc
+	// supplied. An array that is present and empty is different: that is the file stating it has no
+	// tags, and the writer above emits exactly that for cleared tags rather than deleting the
+	// property. Reading only the non-empty case threw that statement away, so clearing every tag
+	// and rescanning brought the legacy Iptc keywords straight back.
+	if (xmp.DoesPropertyExist(kXMP_NS_DC, "subject"))
 	{
-		md.tags = subject;
+		md.tags = xmp_load_array(xmp, kXMP_NS_DC, "subject");
 	}
 
 	if (xmp.GetProperty(kXMP_NS_TIFF, "Make", &utf8, &flags))

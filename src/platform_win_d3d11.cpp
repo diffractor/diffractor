@@ -2611,6 +2611,30 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			                        ? ui::texture_format::P010
 			                        : ui::texture_format::NV12;
 
+		// The shader samples NV12 and P010 and nothing else. Every other decoder layout was being
+		// claimed as NV12 and drawn with the wrong planes - and where a compatible shared texture
+		// was already built, no rebuild was triggered either, so the previous stream's frame stayed
+		// on screen. Refusing the bridge sends the frame down the CPU path, which converts whatever
+		// the decoder actually produced.
+		const auto format_supported = tex_desc_src.Format == DXGI_FORMAT_P010 ||
+			tex_desc_src.Format == DXGI_FORMAT_NV12;
+
+		if (!format_supported)
+		{
+			// Noted against the same key the build refusal uses, so it is said once per stream
+			// rather than once per frame.
+			if (_shared_texture_refused_device != video_device ||
+				_shared_texture_refused_dimensions != texture_extent)
+			{
+				df::log(__FUNCTION__, std::format("Unsupported video texture format {} - scaling on the CPU",
+				                                  static_cast<uint32_t>(tex_desc_src.Format)));
+			}
+
+			_shared_texture_refused_device = video_device;
+			_shared_texture_refused_dimensions = texture_extent;
+			_shared_texture_refused_format = video_tex_format;
+		}
+
 		if (video_texture_index >= tex_desc_src.ArraySize)
 		{
 			df::log(__FUNCTION__, std::format("Video texture index {} exceeds array size {}", video_texture_index,
@@ -2621,9 +2645,10 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		// The decode device is part of the key: a second video decodes on its own FFmpeg device,
 		// and reusing a producer copy owned by the previous device makes CopySubresourceRegion a
 		// cross-device call that the runtime rejects, leaving stale frames on screen.
-		const auto build_already_refused = _shared_texture_refused_device == video_device &&
-			_shared_texture_refused_dimensions == texture_extent &&
-			_shared_texture_refused_format == video_tex_format;
+		const auto build_already_refused = !format_supported ||
+			(_shared_texture_refused_device == video_device &&
+				_shared_texture_refused_dimensions == texture_extent &&
+				_shared_texture_refused_format == video_tex_format);
 
 		if (!build_already_refused &&
 			(!_shared_texture || !_shared_texture_render || _shared_texture_device != video_device ||
@@ -2712,7 +2737,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			}
 		}
 
-		if (_shared_texture && _shared_producer_mutex)
+		if (format_supported && _shared_texture && _shared_producer_mutex)
 		{
 			// IDXGIKeyedMutex::AcquireSync returns WAIT_TIMEOUT (0x102) and WAIT_ABANDONED
 			// (0x80) as *success* HRESULTs, so it must be tested against S_OK - anything else

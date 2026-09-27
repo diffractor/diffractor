@@ -29,6 +29,29 @@ static void should_convert_extended_file_system_paths()
 	             "extended path unchanged");
 }
 
+// The measured length excludes the terminator a string_view does not carry, so converting with -1
+// both over-read the view and asked for one wchar more than the measurement allowed. The call then
+// failed and left the buffer zeroed, which made every ordinary path convert to a run of NULs.
+static void should_convert_utf8_to_ansi()
+{
+	assert_equal("photo.jpg", platform::utf8_to_a("photo.jpg"), "an ordinary name converts");
+	assert_equal(9_z, platform::utf8_to_a("photo.jpg").size(), "and is not padded with terminators");
+	assert_equal(true, platform::utf8_to_a("").empty(), "an empty name converts to an empty name");
+
+	// The source has no terminator of its own: the conversion must respect the view's length rather
+	// than read past it.
+	const std::string backing("C:\\photos\\holiday.jpgTRAILING");
+	assert_equal("C:\\photos\\holiday.jpg", platform::utf8_to_a(std::string_view(backing).substr(0, 21)),
+	             "a view stops where it says it stops");
+
+	// The console commands run with a UTF-8 C locale, where each of these characters takes three
+	// bytes. An output sized at two bytes per UTF-16 unit truncated a name that is more CJK than
+	// ASCII, and a truncated conversion answers empty - so the file could not be opened by name.
+	const std::string cjk = "D:\\\xe5\x8b\x95\xe7\x94\xbb\\\xe6\x9d\xb1\xe4\xba\xac\xe6\x97\x85\xe8\xa1\x8c"
+		"\xe3\x81\xae\xe6\x80\x9d\xe3\x81\x84\xe5\x87\xba.mp4";
+	assert_equal(cjk, platform::utf8_to_a(cjk), "a name of three-byte characters converts whole");
+}
+
 // Undocking or unplugging a second display leaves a saved rect that intersects no monitor at all.
 static void should_restore_a_window_onto_a_display()
 {
@@ -378,6 +401,7 @@ static void should_refuse_an_impossible_movie()
 void register_platform_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should convert extended file system paths"s, should_convert_extended_file_system_paths);
+	tests.add("Should convert utf8 to ansi"s, should_convert_utf8_to_ansi);
 	tests.add("Should restore a window onto a display that still exists"s, should_restore_a_window_onto_a_display);
 	tests.add("Should classify DXGI device loss"s, should_classify_dxgi_device_loss);
 	tests.add("Should suppress GPU for one recovery session"s, should_suppress_gpu_for_recovery_session);

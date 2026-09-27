@@ -170,8 +170,11 @@ namespace df
 		{
 			if (_mode == zoom_scale_mode::fit_width || _mode == zoom_scale_mode::fill)
 			{
+				// The scale follows the viewport; where the user panned to is theirs to keep. This
+				// runs on every layout, so recentring here threw the pan away whenever the window
+				// was resized or a panel opened or closed. Choosing Fit width or Fill still
+				// recentres - that is what those commands do, and they say so themselves.
 				_scale = fit_variant_scale(_mode, source, viewport, enlarge);
-				_center = {0.5, 0.5};
 				_carried_fit = false;
 			}
 		}
@@ -228,9 +231,15 @@ namespace df
 			if (source.Width <= 0.0 || source.Height <= 0.0 || old_scale <= 0.0 || scale <= 0.0) return;
 
 			const pointd viewport_center{viewport.Width / 2.0, viewport.Height / 2.0};
+
+			// The anchor has to be resolved against what is on screen, and geometry() draws from
+			// the clamped centre. Pivoting about the raw one turned every zoom taken while the
+			// centre sat outside its clamped range into a pivot about a point the user is not
+			// looking at, and the picture slid out from under the pointer.
+			const auto center = clamp_center(_center, source, viewport, old_scale);
 			const auto source_anchor = pointd{
-				_center.X * source.Width + (anchor.X - viewport_center.X) / old_scale,
-				_center.Y * source.Height + (anchor.Y - viewport_center.Y) / old_scale
+				center.X * source.Width + (anchor.X - viewport_center.X) / old_scale,
+				center.Y * source.Height + (anchor.Y - viewport_center.Y) / old_scale
 			};
 			const auto new_center = pointd{
 				(source_anchor.X - (anchor.X - viewport_center.X) / scale) / source.Width,
@@ -251,9 +260,14 @@ namespace df
 			const auto scale = effective_scale(fit);
 			if (source.Width <= 0.0 || source.Height <= 0.0 || scale <= 0.0) return {};
 			const pointd viewport_center{viewport.Width / 2.0, viewport.Height / 2.0};
+
+			// Reads from the clamped centre for the same reason set_anchored writes to it: this
+			// names the source point under a screen point, and what is under a screen point is
+			// decided by what geometry() drew.
+			const auto center = clamp_center(_center, source, viewport, scale);
 			return {
-				_center.X * source.Width + (anchor.X - viewport_center.X) / scale,
-				_center.Y * source.Height + (anchor.Y - viewport_center.Y) / scale
+				center.X * source.Width + (anchor.X - viewport_center.X) / scale,
+				center.Y * source.Height + (anchor.Y - viewport_center.Y) / scale
 			};
 		}
 

@@ -99,6 +99,17 @@ void rename_view::run()
 		result_scope rr(results);
 		df::unique_folders scan_folders;
 
+		// Existence alone cannot tell the reviewed file from one that replaced it since. A source
+		// that changed would be moved under a name chosen for content the user never saw, and under
+		// Replace a changed destination would be written over without having been reviewed. Folders
+		// are held to existence only: their contents change without the folder becoming another.
+		const auto reviewed_file = [](const df::file_path path, const platform::file_attributes_t& reviewed)
+		{
+			return reviewed.exists()
+				       ? unchanged_since_analysis(path, reviewed.modified, reviewed.size)
+				       : !path.exists();
+		};
+
 		for (const auto& rename : renames)
 		{
 			if (!rename_path_exists(rename.source, rename.is_folder) ||
@@ -107,10 +118,21 @@ void rename_view::run()
 				rr.complete(tt.sync_analysis_changed);
 				return;
 			}
+
+			if (!rename.is_folder &&
+				(!reviewed_file(rename.source, rename.source_attributes) ||
+					!reviewed_file(rename.destination, rename.destination_attributes)))
+			{
+				rr.complete(tt.sync_analysis_changed);
+				return;
+			}
+
 			for (auto index = 0_z; index < rename.sidecars.size(); ++index)
 			{
 				const auto& [source, destination] = rename.sidecars[index];
-				if (!source.exists() || destination.exists() != rename.sidecar_destinations_exist[index])
+				if (!source.exists() || destination.exists() != rename.sidecar_destinations_exist[index] ||
+					!reviewed_file(source, rename.sidecar_source_attributes[index]) ||
+					!reviewed_file(destination, rename.sidecar_destination_attributes[index]))
 				{
 					rr.complete(tt.sync_analysis_changed);
 					return;
@@ -125,6 +147,10 @@ void rename_view::run()
 		// path the plan never counted as free.
 		std::set<std::string, df::path_key_less> vacating;
 
+		// Where each displaced path was reviewed to land. A parked file whose own name has since
+		// been taken has exactly one other name the user saw for it, and this is it.
+		std::map<std::string, df::file_path, df::path_key_less> reviewed_destination;
+
 		for (const auto& rename : renames)
 		{
 			const auto source_key = rename_path_key(rename.source, rename.is_folder);
@@ -132,8 +158,14 @@ void rename_view::run()
 				continue;
 
 			vacating.emplace(source_key);
+			reviewed_destination.emplace(source_key, rename.destination);
+
 			for (const auto& [source, destination] : rename.sidecars)
-				if (df::compare_path_key(source.pack(), destination.pack()) != 0) vacating.emplace(source.pack());
+				if (df::compare_path_key(source.pack(), destination.pack()) != 0)
+				{
+					vacating.emplace(source.pack());
+					reviewed_destination.emplace(source.pack(), destination);
+				}
 		}
 
 		struct parked_path
@@ -191,11 +223,13 @@ void rename_view::run()
 				                          rename.policy != collision_policy::replace);
 				if (result.failed()) break;
 				parked.erase(rename_path_key(source, false));
-				// Only paths this run created are rolled back: under Replace the write can land on a
-				// destination that already existed, and moving it back would destroy the original. A
-				// destination this run emptied itself is one it created, so it does roll back.
-				if (!rename.sidecar_destinations_exist[index] || vacating.contains(destination.pack()))
-					moved_sidecars.emplace_back(source, destination);
+				// Every sidecar this row moved rolls back, whatever stood at the destination. A
+				// rename is always a move, so under Replace the destination's former content is
+				// already gone by the time the primary can fail; putting the sidecar back destroys
+				// nothing further and is what leaves the group whole at its source, which is what
+				// the run promises. Import cannot take this rule - a copy that replaced a
+				// destination would leave that path empty rather than restored.
+				moved_sidecars.emplace_back(source, destination);
 			}
 			if (result.success()) result = free_destination(rename.destination, rename.is_folder);
 			if (result.success())
@@ -220,11 +254,28 @@ void rename_view::run()
 		// A row that failed or never ran leaves its source parked, so put it back under its own name.
 		for (const auto& [key, entry] : parked)
 		{
-			// A row that did complete can have taken that name. Landing beside it is best effort: if
-			// that name is taken too the item keeps the temporary one, which is where it already was.
-			if (move_rename_path(entry.temporary, entry.original, true, entry.is_folder).failed())
-				move_rename_path(entry.temporary, next_free_destination(entry.original), true, entry.is_folder);
 			scan_folders.emplace(entry.original.folder());
+
+			// Its own name first: that is where it belongs whenever the row that displaced it did
+			// not complete.
+			if (move_rename_path(entry.temporary, entry.original, true, entry.is_folder).success()) continue;
+
+			// The row that displaced it did complete, so that name is gone for good. The review
+			// showed this file exactly one other name - its own destination - so it goes there.
+			// Cancelling used to drop straight to a generated " (n)" variant, which meant a file
+			// ended up under a name the user had never been shown and could not have expected.
+			const auto reviewed = reviewed_destination.find(key);
+
+			if (reviewed != reviewed_destination.end() &&
+				move_rename_path(entry.temporary, reviewed->second, true, entry.is_folder).success())
+			{
+				scan_folders.emplace(reviewed->second.folder());
+				continue;
+			}
+
+			// Both names are taken. Landing beside the original is best effort: if that fails too
+			// the item keeps the temporary name, which is where it already was.
+			move_rename_path(entry.temporary, next_free_destination(entry.original), true, entry.is_folder);
 		}
 
 		index.queue_scan_folders(std::move(scan_folders));

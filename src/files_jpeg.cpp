@@ -744,6 +744,11 @@ bool jpeg_decoder_x::read_header(const df::cspan cs)
 
 	if (success)
 	{
+		// The decoder is reused for every image, so this has to state what THIS stream carries. A
+		// JPEG with no Exif orientation - which is most embedded RAW thumbnails - would otherwise
+		// keep the previous file's value and be drawn at its rotation.
+		_orientation_out = ui::orientation::top_left;
+
 		for (const auto* marker = _impl->dinfo.marker_list; marker != nullptr; marker = marker->next)
 		{
 			df::span block = {marker->data, marker->data_length};
@@ -1099,6 +1104,43 @@ sizei jpeg_decoder_x::dimensions_out() const
 	return {static_cast<int>(_impl->dinfo.output_width), static_cast<int>(_impl->dinfo.output_height)};
 }
 
+int64_t jpeg_decoder_x::coefficient_bytes() const
+{
+	const auto& dinfo = _impl->dinfo;
+
+	// In lossless mode a data unit is one sample rather than an 8x8 block, so width_in_blocks is the
+	// image width and no coefficient array of this shape exists. block_size carries the data unit
+	// from the first SOF and is not touched by the IDCT scaling jdmaster applies later.
+	if (dinfo.comp_info == nullptr || dinfo.num_components <= 0 || dinfo.block_size != DCTSIZE) return 0;
+
+	// Both jdcoefct and transupp pad the array to a whole number of sampling blocks each way.
+	const auto round_up = [](const int64_t value, const int64_t to)
+	{
+		return to > 0 ? (value + to - 1) / to * to : value;
+	};
+
+	int64_t result = 0;
+
+	for (auto ci = 0; ci < dinfo.num_components; ++ci)
+	{
+		const auto& comp = dinfo.comp_info[ci];
+
+		result += round_up(comp.width_in_blocks, comp.h_samp_factor) *
+			round_up(comp.height_in_blocks, comp.v_samp_factor) * static_cast<int64_t>(sizeof(JBLOCK));
+	}
+
+	return result;
+}
+
+bool jpeg_decoder_x::buffers_whole_image() const
+{
+	const auto& dinfo = _impl->dinfo;
+
+	// The condition jdinput uses to set has_multiple_scans, which is what makes jdmaster ask
+	// jdcoefct for full-image virtual arrays instead of a single-MCU buffer.
+	return dinfo.progressive_mode || dinfo.comps_in_scan < dinfo.num_components;
+}
+
 void jpeg_decoder_x::destroy()
 {
 	try
@@ -1140,9 +1182,10 @@ static JXFORM_CODE to_transform(simple_transform orientation_e)
 }
 
 df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
-                                   const simple_transform transform_in) const
+                                   const simple_transform transform_in, bool* const over_budget) const
 {
 	df::blob result;
+	if (over_budget) *over_budget = false;
 
 	// Both objects are long-lived members of the caller, and every libjpeg call below can throw out
 	// of handle_error_exit. Reset on entry and on every exit so one unreadable file cannot leave the
@@ -1183,10 +1226,30 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 	if (JPEG_HEADER_OK == jpeg_read_header(&_impl->dinfo, TRUE))
 	{
 		// Any space needed by a transform option must be requested before
-		// jpeg_read_coefficients so that memory allocation will be done right.
+		// jpeg_read_coefficients so that memory allocation will be done right. Requesting it
+		// allocates nothing yet, so the budget below still comes before anything large.
 		if (!jtransform_request_workspace(&_impl->dinfo, &transformoption))
 		{
 			// Refused as imperfect. An empty result tells the caller to take the re-encode path.
+			return result;
+		}
+
+		// jpeg_read_coefficients holds every coefficient of the full-resolution image, and transupp
+		// requests a workspace array the same size for every transform but a plain horizontal flip.
+		// Neither shrinks the way a decode does, so the scaled budget the decode path applies says
+		// nothing about a rotate - and without this a hundred-megapixel photograph reached libjpeg
+		// asking for gigabytes. Asked after the perfect test, so the caller is told why only for a
+		// rotate that could have been lossless: re-encoding that instead would hold the decoded
+		// picture and a rotated copy, more than this was refused for, and lose quality besides.
+		const auto workspace_bytes = coefficient_bytes() * 2;
+
+		if (workspace_bytes > df::max_decode_bytes)
+		{
+			df::log(__FUNCTION__, std::format("rotate of {} x {} needs {}, over the {} budget",
+			                                  _impl->dinfo.image_width, _impl->dinfo.image_height,
+			                                  df::file_size(workspace_bytes).str(),
+			                                  df::file_size(df::max_decode_bytes).str()));
+			if (over_budget) *over_budget = true;
 			return result;
 		}
 

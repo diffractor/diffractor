@@ -417,22 +417,38 @@ std::string platform::normalize_nfc(const std::string_view text)
 
 std::string platform::utf8_to_a(const std::string_view utf8)
 {
-	std::string result;
+	if (utf8.empty()) return {};
+
 	const auto length = MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<LPCSTR>(utf8.data()),
 	                                        static_cast<uint32_t>(utf8.size()), nullptr, 0);
 
-	if (length > 0)
-	{
-		std::vector<wchar_t> wide;
-		wide.resize(length + 1);
+	if (length <= 0) return {};
 
-		MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<LPCSTR>(utf8.data()), -1, wide.data(), length);
+	// Measured and converted with the same explicit length: the view carries no terminator, so -1
+	// here would both over-read it and ask for a buffer one wider than the measurement allowed,
+	// which fails the conversion and answers a string of NULs for every ordinary path.
+	std::wstring wide(static_cast<size_t>(length), L'\0');
+	const auto converted = MultiByteToWideChar(CP_UTF8, 0, std::bit_cast<LPCSTR>(utf8.data()),
+	                                           static_cast<uint32_t>(utf8.size()), wide.data(), length);
 
-		size_t convertedChars = 0;
-		result.resize(length + 1);
-		wcstombs_s(&convertedChars, result.data(), length + 1, wide.data(), _TRUNCATE);
-	}
+	if (converted <= 0) return {};
 
+	wide.resize(static_cast<size_t>(converted));
+
+	// Measured rather than estimated from the wide length. The process runs with a UTF-8 C locale
+	// (set at startup), where one UTF-16 unit can need three bytes, so a fixed multiple truncated
+	// any name mostly made of CJK characters - and a truncated conversion answers empty.
+	size_t required = 0;
+
+	if (wcstombs_s(&required, nullptr, 0, wide.c_str(), 0) != 0 || required == 0) return {};
+
+	std::string result(required, '\0');
+	size_t converted_chars = 0;
+
+	if (wcstombs_s(&converted_chars, result.data(), result.size(), wide.c_str(), _TRUNCATE) != 0) return {};
+
+	// converted_chars counts the terminator wcstombs_s wrote.
+	result.resize(converted_chars > 0 ? converted_chars - 1 : 0);
 	return result;
 }
 
@@ -1283,7 +1299,10 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 
 			SHFreeNameMappings(shfo.hNameMappings);
 
-			result.created_files = dest_file_list(target, str::utf8_cast2(file_list).c_str(), name_mapping);
+			// The list is a double-NUL-terminated multi-string, and dest_file_list walks it as one.
+			// Passing it through a std::string first stopped at the first NUL, so every file after
+			// the first fell out of the created-file list the caller uses to select what it made.
+			result.created_files = dest_file_list(target, file_list, name_mapping);
 		}
 	}
 
@@ -3647,7 +3666,6 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 
 	if (files != INVALID_HANDLE_VALUE)
 	{
-		results.success = true;
 		do
 		{
 			if (is_folder(fd.dwFileAttributes))
@@ -3681,7 +3699,23 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 		}
 		while (FindNextFile(files, &fd) != 0);
 
+		// The loop ends on any failure, not only on the end of the listing. A share that dropped
+		// mid-enumeration would otherwise report a short listing as a complete one, and the index
+		// expires every entry a complete listing did not mention.
+		const auto walk_error = GetLastError();
+
 		FindClose(files);
+
+		if (walk_error == ERROR_NO_MORE_FILES)
+		{
+			results.success = true;
+		}
+		else
+		{
+			df::log(__FUNCTION__, std::format("enumeration of {} failed: {}", folder.text(), walk_error));
+			results.files.clear();
+			results.folders.clear();
+		}
 	}
 	else if (is_server(folder.text()))
 	{

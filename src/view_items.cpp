@@ -2910,6 +2910,11 @@ class metadata_tree_control final : public std::enable_shared_from_this<metadata
 		bool open = false;
 	};
 
+	// One bit of spines a connector column. A path deeper than this draws no spine beyond the last
+	// column rather than shifting past the width of the mask, which is undefined and on MSVC wraps
+	// the count to draw a spine belonging to column zero.
+	static constexpr int max_spine_columns = 32;
+
 	std::vector<row> _rows;
 	metadata_tree_state_ptr _tree_state;
 
@@ -3134,7 +3139,7 @@ public:
 			const auto& r = _rows[v.index];
 			const auto mid = top + _line_height / 2;
 
-			for (auto c = 0; c + 1 < r.depth; ++c)
+			for (auto c = 0; c + 1 < r.depth && c < max_spine_columns; ++c)
 			{
 				if (v.spines & (1u << c))
 				{
@@ -3246,7 +3251,7 @@ public:
 			if (spines.size() < depth) spines.resize(depth, false);
 
 			uint32_t mask = 0;
-			for (auto c = 0_z; c + 1 < depth && c < 32; ++c)
+			for (auto c = 0_z; c + 1 < depth && c < static_cast<size_t>(max_spine_columns); ++c)
 			{
 				if (spines[c]) mask |= 1u << c;
 			}
@@ -3331,6 +3336,9 @@ class metadata_tree_controller final : public view_controller
 {
 	std::shared_ptr<metadata_tree_control> _control;
 	pointi _element_offset;
+	// The row the press landed on. A release resolves its own row and the two have to agree, or a
+	// press that drifted would act on whichever row it drifted onto.
+	int _pressed_row = -1;
 
 public:
 	metadata_tree_controller(const view_host_ptr& host, std::shared_ptr<metadata_tree_control> control,
@@ -3365,10 +3373,22 @@ public:
 		update_hot(loc);
 	}
 
+	void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+	{
+		_last_loc = loc;
+		_pressed_row = _bounds.contains(loc) ? _control->row_from_location(loc, _element_offset) : -1;
+	}
+
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
-		const auto row = _control->row_from_location(loc, _element_offset);
-		if (row >= 0) _control->toggle(row);
+		// The row that was pressed is the row that toggles. Reading the release alone meant a press
+		// that drifted onto a neighbour, or off the control entirely, expanded or collapsed a row
+		// the user had never pointed at.
+		const auto row = _bounds.contains(loc) ? _control->row_from_location(loc, _element_offset) : -1;
+
+		if (row >= 0 && row == _pressed_row) _control->toggle(row);
+
+		_pressed_row = -1;
 	}
 
 	ui::style::cursor cursor() const override

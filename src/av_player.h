@@ -1182,16 +1182,16 @@ public:
 				{
 					has_audio = session->_has_audio;
 
-					if (has_audio)
+					if (has_audio && !ds)
 					{
-						if (!ds)
-						{
-							need_create_device = true;
-						}
-						else
-						{
-							ds->reset();
-						}
+						need_create_device = true;
+					}
+					else if (ds)
+					{
+						// Reset covers both switches: to another item with audio, and to a silent one.
+						// A device left primed keeps playing - and on underrun WASAPI replays its ring -
+						// so the previous item would still be heard over media that has no sound at all.
+						ds->reset();
 					}
 				}
 				else

@@ -97,6 +97,21 @@ namespace df
 		return c == '\\' || c == '/';
 	}
 
+	// True when `child` is `parent` or lies beneath it. The boundary is tested on a separator rather
+	// than on length alone, so "C:\photo" does not contain "C:\photos".
+	inline bool folder_contains(const std::string_view parent_text, const std::string_view child_text)
+	{
+		if (parent_text.size() >= child_text.size()) return compare_path_key(parent_text, child_text) == 0;
+		if (!path_text_starts(child_text, parent_text)) return false;
+
+		// A root keeps its separator - "C:\" and "/" normalise with one - so the boundary to test is
+		// the text without it. Testing the raw length instead makes every drive root contain nothing.
+		const auto boundary = parent_text.empty()
+			                      ? size_t{0}
+			                      : parent_text.size() - (is_path_sep(parent_text.back()) ? 1 : 0);
+		return child_text.size() == boundary || is_path_sep(child_text[boundary]);
+	}
+
 	constexpr bool is_path(const char* s)
 	{
 		if (s == nullptr || s[0] == 0) return false;

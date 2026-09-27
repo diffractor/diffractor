@@ -455,7 +455,7 @@ void import_view::run()
 	                                                           });
 
 	_state.queue_async(async_queue::work,
-	                   [&s = _state, results, view, analysis_result, options, token, detach]
+	                   [&s = _state, results, view, analysis_result, options, token, detach, processing_generation]
 	                   {
 		                   result_scope rr(results);
 		                   const auto copy_result = import_copy(s.item_index, results, analysis_result, options,
@@ -465,8 +465,14 @@ void import_view::run()
 			                   db.writes_item_imports(copy_result.imports);
 		                   });
 
-		                   s.queue_ui([&s, view, folder = copy_result.folder, detach]
+		                   s.queue_ui([&s, view, folder = copy_result.folder, detach, processing_generation, token]
 		                   {
+			                   // Navigation is the run's own conclusion, so a run the user cancelled or
+			                   // replaced must not take the view somewhere when its worker finally
+			                   // finishes - by then the user has moved on and would be pulled back.
+			                   // Cancel stops the run without replacing it, so it is asked separately.
+			                   if (token.is_cancelled() || !view->is_processing_generation(processing_generation)) return;
+
 			                   if (!folder.is_empty())
 			                   {
 				                   detach->keep_display_closed();

@@ -38,10 +38,8 @@ std::string format_plural_text(const plural_text& fmt, const std::string_view fi
 	}
 	else
 	{
-		const size_t extra = static_cast<size_t>(form) - 2;
-		template_text = (extra < fmt.extra_forms.size() && !fmt.extra_forms[extra].empty())
-			                ? std::string_view(fmt.extra_forms[extra])
-			                : std::string_view(fmt.plural);
+		const auto extra = fmt.extra_form(static_cast<size_t>(form) - 2);
+		template_text = extra.empty() ? std::string_view(fmt.plural) : extra;
 	}
 
 	const auto number = [](const int64_t n) { return platform::format_number(str::to_string(n)); };
@@ -431,6 +429,12 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 	auto missing = 0;
 	auto total = 0;
 
+	// Storage that outlives the switch, so a worker holding a translation pointer keeps valid text.
+	const auto publish = [this](text_t& target, const std::string_view translated)
+	{
+		target.publish(&_translation_storage.emplace_back(translated));
+	};
+
 	for (const auto& t : _all_texts)
 	{
 		auto found = text_map.find(t.get().text);
@@ -438,13 +442,13 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 
 		if (found != text_map.end())
 		{
-			t.get().trans = found->second;
+			publish(t.get(), found->second);
 		}
 		else
 		{
 			++missing;
 			df::trace(std::format("{} missing: msgid \"{}\"", lang_file, t.get().text));
-			t.get().trans.clear();
+			t.get().clear();
 		}
 	}
 
@@ -455,35 +459,34 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 
 		if (found != text_map.end())
 		{
-			p.get().one.trans = found->second;
+			publish(p.get().one, found->second);
 		}
 		else
 		{
 			++missing;
 			df::trace(std::format("{} missing: msgid \"{}\"", lang_file, p.get().one.text));
-			p.get().one.trans.clear();
+			p.get().one.clear();
 		}
 
 		found = text_map.find(p.get().plural.text);
 
 		if (found != text_map.end())
 		{
-			p.get().plural.trans = found->second;
+			publish(p.get().plural, found->second);
 		}
 		else
 		{
 			++missing;
 			df::trace(std::format("{} missing: msgid_plural \"{}\"", lang_file, p.get().plural.text));
-			p.get().plural.trans.clear();
+			p.get().plural.clear();
 		}
 
-		// Extra Slavic plural forms (msgstr[2..]); empty for binary languages.
-		p.get().extra_forms.clear();
+		// Extra Slavic plural forms (msgstr[2..]); none for binary languages.
 		const auto found_extra = extra_map.find(p.get().plural.text);
-		if (found_extra != extra_map.end())
-		{
-			p.get().extra_forms = *found_extra->second;
-		}
+		p.get().extra_forms.store(found_extra != extra_map.end()
+			                          ? &_plural_form_storage.emplace_back(*found_extra->second)
+			                          : nullptr,
+		                          std::memory_order_release);
 	}
 
 	df::log(__FUNCTION__, std::format("{}: {} of {} strings translated", lang_file, total - missing, total));
@@ -498,7 +501,7 @@ void app_text_t::clear()
 
 	for (auto&& p : _all_plurals)
 	{
-		p.get().extra_forms.clear();
+		p.get().extra_forms.store(nullptr, std::memory_order_release);
 	}
 
 	_plural_rule = nullptr;
@@ -629,6 +632,7 @@ void app_text_t::calc_text_mapping()
 		movie_error_no_memory,
 		movie_error_undecodable,
 		movie_error_encoder_failed,
+		movie_error_output_is_source,
 		movie_rendered_fmt,
 		movie_render_cancelled,
 		movie_relink_none,
@@ -1770,6 +1774,7 @@ void app_text_t::calc_text_mapping()
 		canceled_items_fmt,
 		ignored_exist_already_fmt,
 		ignored_previous_fmt,
+		import_date_unset_fmt,
 		delete_info_fmt,
 		delete_info_permanent_fmt,
 		delete_many_warning_fmt,

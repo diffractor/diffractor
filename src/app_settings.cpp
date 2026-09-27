@@ -498,10 +498,11 @@ void settings_t::reset_presentation()
 	detail_items = defaults.detail_items;
 
 	// Not the defaults: a crash before the first frame is most often the graphics path, and the
-	// user cannot turn it off from a window that never appears.
+	// user cannot turn it off from a window that never appears. use_yuv is left alone: it is a
+	// latch only a driver fault clears and no option sets again, so clearing it here disabled YUV
+	// textures for good. Turning the GPU off already keeps them out of this session.
 	use_gpu = false;
 	use_d3d11va = false;
-	use_yuv = false;
 }
 
 class setting_formatter
@@ -617,9 +618,14 @@ public:
 	bool read(const std::string_view section, const std::string_view name, double& v) const
 	{
 		std::string str;
-		const bool success = _file->read(section, name, str);
+
+		// Only a value that was really there may replace the default. Converting unconditionally
+		// wrote to_double("") - which is zero - over whatever the constructor had set, so the first
+		// read of a setting that had never been written silently zeroed it.
+		if (!_file->read(section, name, str)) return false;
+
 		v = str::to_double(str);
-		return success;
+		return true;
 	}
 
 	bool write(const std::string_view section, const std::string_view name, const double v) const

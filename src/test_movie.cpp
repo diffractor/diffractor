@@ -15,6 +15,7 @@
 #include "model.h"
 #include "model_movie.h"
 #include "test_runner.h"
+#include "view_movie.h"
 
 static df::folder_path movie_test_folder()
 {
@@ -401,6 +402,106 @@ static void should_select_and_move_movie_clips()
 // The project file
 //
 
+// A project file is untrusted input. Its durations used to be read straight into the settings, and
+// a hold of 1e308 seconds reached the frame count as a number no integer can hold - the conversion
+// that walks it is undefined, which is not a thing a document should be able to ask for.
+static void should_bound_movie_project_durations()
+{
+	const auto url = str::replace(movie_test_path("a.mp4").pack(), "\\", "/");
+
+	const auto project_with = [&url](const std::string_view photo_seconds, const std::string_view transition_seconds)
+	{
+		return std::format(R"({{
+			"OTIO_SCHEMA": "Timeline.1",
+			"metadata": {{ "diffractor": {{
+				"transition": "crossfade",
+				"transition_seconds": {},
+				"photo_seconds": {}
+			}} }},
+			"tracks": {{
+				"OTIO_SCHEMA": "Stack.1",
+				"children": [
+					{{
+						"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+							{{
+								"OTIO_SCHEMA": "Clip.1",
+								"source_range": {{
+									"OTIO_SCHEMA": "TimeRange.1",
+									"start_time": {{ "OTIO_SCHEMA": "RationalTime.1", "rate": 24.0, "value": 0.0 }},
+									"duration": {{ "OTIO_SCHEMA": "RationalTime.1", "rate": 24.0, "value": 48.0 }}
+								}},
+								"media_reference": {{
+									"OTIO_SCHEMA": "ExternalReference.1", "target_url": "{}"
+								}}
+							}}
+						]
+					}}
+				]
+			}}
+		}})", transition_seconds, photo_seconds, url);
+	};
+
+	const auto enormous = read_otio(project_with("1e308", "1e308"), movie_test_folder());
+	assert_equal(true, static_cast<bool>(enormous), "the project still reads");
+	assert_equal(movie_max_photo_seconds, enormous.settings.photo_seconds, "an enormous hold is bounded");
+	assert_equal(movie_max_transition_seconds, enormous.settings.transition_seconds,
+	             "and so is an enormous transition");
+
+	const auto negative = read_otio(project_with("-5.0", "-5.0"), movie_test_folder());
+	assert_equal(movie_min_photo_seconds, negative.settings.photo_seconds, "a negative hold is bounded");
+	assert_equal(0.0, negative.settings.transition_seconds, "and a negative transition is no transition");
+
+	// A value the panel could have produced is left exactly as written.
+	const auto ordinary = read_otio(project_with("6.5", "2.25"), movie_test_folder());
+	assert_equal(6.5, ordinary.settings.photo_seconds, "an ordinary hold is untouched");
+	assert_equal(2.25, ordinary.settings.transition_seconds, "and so is an ordinary transition");
+
+	// Each clip's own range is held too. The settings above were bounded while a clip's range reached
+	// the frame arithmetic and the displayed clock unbounded, so one enormous clip still overflowed.
+	const auto clip_project = [](const std::string_view file, const std::string_view duration_value)
+	{
+		const auto clip_url = str::replace(movie_test_path(file).pack(), "\\", "/");
+
+		return std::format(R"({{
+			"OTIO_SCHEMA": "Timeline.1",
+			"tracks": {{
+				"OTIO_SCHEMA": "Stack.1",
+				"children": [
+					{{
+						"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+							{{
+								"OTIO_SCHEMA": "Clip.1",
+								"source_range": {{
+									"OTIO_SCHEMA": "TimeRange.1",
+									"start_time": {{ "OTIO_SCHEMA": "RationalTime.1", "rate": 1.0, "value": 0.0 }},
+									"duration": {{ "OTIO_SCHEMA": "RationalTime.1", "rate": 1.0, "value": {} }}
+								}},
+								"media_reference": {{
+									"OTIO_SCHEMA": "ExternalReference.1", "target_url": "{}"
+								}}
+							}}
+						]
+					}}
+				]
+			}}
+		}})", duration_value, clip_url);
+	};
+
+	// Compared rather than formatted: str::to_string cannot hold an unbounded value, so a regression
+	// here would take the whole run down instead of failing this test.
+	const auto enormous_photo = read_otio(clip_project("b.jpg", "1e308"), movie_test_folder());
+	assert_equal(1_z, enormous_photo.clips.size(), "an enormous still is still read");
+	assert_equal(true, enormous_photo.clips.front().duration() == movie_max_clip_seconds, "with its hold bounded");
+
+	const auto enormous_video = read_otio(clip_project("a.mp4", "1e308"), movie_test_folder());
+	assert_equal(1_z, enormous_video.clips.size(), "an enormous video range is still read");
+	assert_equal(true, enormous_video.clips.front().duration() == movie_max_clip_seconds, "with its range bounded");
+
+	const auto ordinary_photo = read_otio(clip_project("b.jpg", "120.0"), movie_test_folder());
+	assert_equal(1_z, ordinary_photo.clips.size(), "an ordinary still is read");
+	assert_equal(true, ordinary_photo.clips.front().duration() == 120.0, "a long but ordinary still keeps its hold");
+}
+
 static void should_round_trip_a_movie_project()
 {
 	std::vector<movie_clip> clips;
@@ -644,6 +745,31 @@ static void should_tell_a_seeded_timeline_from_an_edited_one()
 	assert_equal(true, project.seeded_from().empty(), "but it came from no selection, so it is never replaced");
 }
 
+// Saving is what turns a timeline into a document. A seeded one that has been written to a file is
+// no longer a view of the selection that produced it, and while it still carried that seed - and
+// saving cleared the modified flag - re-entering Movie with a different selection read it as an
+// untouched seed and replaced the file the user had just saved.
+static void should_treat_a_saved_seed_as_a_document()
+{
+	const std::vector<df::file_path> seed{movie_test_path("a.mp4"), movie_test_path("b.mp4")};
+
+	movie_project project;
+	project.append(make_video("a.mp4", 10, {1920, 1080}, 30));
+	project.append(make_video("b.mp4", 10, {1920, 1080}, 30));
+	project.mark_seeded(seed);
+
+	// What the view asks: unmodified and seeded from something means it is still that selection.
+	assert_equal(true, !project.is_modified() && !project.seeded_from().empty(),
+	             "before it is saved it is still a view of the selection");
+
+	project.mark_saved(movie_test_path("holiday.otio"), project.revision());
+
+	assert_equal(true, project.seeded_from().empty(), "saving leaves no seed behind");
+	assert_equal(false, !project.is_modified() && !project.seeded_from().empty(),
+	             "so a saved timeline is never read as an untouched seed");
+	assert_equal(false, project.is_modified(), "and saving still settles the modified flag");
+}
+
 // A clip nobody has looked for yet and a clip that has been looked for and is gone are one state in
 // the document and the opposite thing to the user: only the second is marked on the strip, counted
 // in the explainer, and offered a relink.
@@ -699,12 +825,69 @@ static void should_tell_an_unprobed_clip_from_a_lost_one()
 	assert_equal("c.mp4", project.clips()[1].path.name().sv(), "and the second clip together");
 }
 
+//
+// The render's destination and its cancellation
+//
+
+static void should_refuse_an_output_that_names_a_clip()
+{
+	const std::vector clips{
+		make_video("a.mp4", 4, {1920, 1080}, 30),
+		make_photo("b.jpg", 3, {4000, 3000}),
+	};
+
+	assert_equal(true, movie_output_names_a_clip(clips, movie_test_path("a.mp4")),
+	             "an output naming a video clip is refused");
+	assert_equal(true, movie_output_names_a_clip(clips, movie_test_path("B.JPG")),
+	             "the comparison folds case, as every other destination check does");
+	assert_equal(false, movie_output_names_a_clip(clips, movie_test_path("movie.mp4")),
+	             "an output naming nothing in the timeline is allowed");
+	assert_equal(false, movie_output_names_a_clip(clips, {}),
+	             "an empty output names no clip");
+	assert_equal(false, movie_output_names_a_clip({}, movie_test_path("a.mp4")),
+	             "an empty timeline has no clip to name");
+}
+
+static void should_let_cancel_and_publication_decide_each_other()
+{
+	// The defect this fixes: the render's cancel source doubled as its publication claim, and
+	// df::cancel_token's version constructor increments what it is handed. The claim was already 1
+	// before a frame was drawn, so Cancel's compare-exchange from 0 did nothing and publication's
+	// compare-exchange from 0 failed - every completed render was deleted as cancelled.
+	{
+		movie_render_control control;
+		const auto token = df::cancel_token(control.cancelled);
+		assert_equal(false, token.is_cancelled(), "a fresh render is not already cancelled");
+		assert_equal(true, control.claim_publication(), "an uncancelled render publishes its output");
+	}
+
+	{
+		movie_render_control control;
+		const auto token = df::cancel_token(control.cancelled);
+		control.cancel();
+		assert_equal(true, token.is_cancelled(), "cancel reaches the worker's token");
+		assert_equal(false, control.claim_publication(), "a cancelled render does not publish");
+	}
+
+	{
+		// Cancel pressed while the encoder was closing: publication got there first, so the movie the
+		// user already has stays, and a second cancel cannot take it away afterwards.
+		movie_render_control control;
+		assert_equal(true, control.claim_publication(), "publication claims the render");
+		control.cancel();
+		assert_equal(false, control.claim_publication(), "the claim is one-shot");
+	}
+}
+
 void register_movie_tests(view_state& state, test_registry& tests)
 {
 	//
 	// Output
 	//
 	tests.add("Should derive movie output geometry"s, should_derive_movie_output);
+	tests.add("Should refuse a movie output that names a clip"s, should_refuse_an_output_that_names_a_clip);
+	tests.add("Should let movie cancel and publication decide each other"s,
+	          should_let_cancel_and_publication_decide_each_other);
 
 	//
 	// Timing
@@ -721,6 +904,7 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	tests.add("Should trim movie clips"s, should_trim_movie_clips);
 	tests.add("Should tell a seeded movie timeline from an edited one"s,
 	          should_tell_a_seeded_timeline_from_an_edited_one);
+	tests.add("Should treat a saved movie seed as a document"s, should_treat_a_saved_seed_as_a_document);
 	tests.add("Should tell an unprobed movie clip from a lost one"s,
 	          should_tell_an_unprobed_clip_from_a_lost_one);
 
@@ -728,6 +912,7 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	// The project file
 	//
 	tests.add("Should round trip a movie project"s, should_round_trip_a_movie_project);
+	tests.add("Should bound movie project durations"s, should_bound_movie_project_durations);
 	tests.add("Should read a movie project it did not write"s, should_read_a_movie_project_it_did_not_write);
 	tests.add("Should import a movie maker project"s, should_import_a_movie_maker_project);
 }

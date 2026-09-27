@@ -101,7 +101,59 @@ static constexpr uint8_t BOM_UTF32_BE[] = {0x00, 0x00, 0xfe, 0xff}; // UTF-32, b
 
 bool str::is_utf16(const uint8_t* sz, const int len)
 {
-	return len > 4 && sz[0] == 0 && sz[2] == 0; // if every other char is zero then likely utf16
+	if (sz == nullptr || len < 2) return false;
+
+	// A byte-order mark answers outright. UTF-32 LE opens with the same two bytes as UTF-16 LE, so
+	// it has to be told apart before the mark is believed.
+	if (memcmp(sz, BOM_UTF16_LE, sizeof(BOM_UTF16_LE)) == 0)
+	{
+		return !(len >= 4 && memcmp(sz, BOM_UTF32_LE, sizeof(BOM_UTF32_LE)) == 0);
+	}
+
+	if (memcmp(sz, BOM_UTF16_BE, sizeof(BOM_UTF16_BE)) == 0) return true;
+
+	if (len < 4) return false;
+
+	// Unmarked: Latin text leaves every other byte zero, and which side holds the zero says which
+	// way round it is. Testing the even bytes alone recognised big-endian only, so a little-endian
+	// stream - which is what Windows writes - was read as single bytes and came out as mojibake.
+	return (sz[0] == 0 && sz[2] == 0) || (sz[1] == 0 && sz[3] == 0);
+}
+
+std::u16string str::utf16_from_bytes(const uint8_t* sz, int len)
+{
+	if (sz == nullptr || len < 2) return {};
+
+	// Accepting either order is only half the job: bytes copied as they lie read big-endian text
+	// backwards, and kept a mark as a character of the value.
+	auto big_endian = false;
+
+	if (memcmp(sz, BOM_UTF16_BE, sizeof(BOM_UTF16_BE)) == 0)
+	{
+		big_endian = true;
+		sz += 2;
+		len -= 2;
+	}
+	else if (memcmp(sz, BOM_UTF16_LE, sizeof(BOM_UTF16_LE)) == 0)
+	{
+		sz += 2;
+		len -= 2;
+	}
+	else
+	{
+		big_endian = len >= 4 && sz[0] == 0 && sz[2] == 0 && !(sz[1] == 0 && sz[3] == 0);
+	}
+
+	std::u16string result(static_cast<size_t>(len / 2), u'\0');
+
+	for (size_t i = 0; i < result.size(); ++i)
+	{
+		const auto first = sz[i * 2];
+		const auto second = sz[i * 2 + 1];
+		result[i] = static_cast<char16_t>(big_endian ? first << 8 | second : second << 8 | first);
+	}
+
+	return result;
 }
 
 std::string str::print(const std::string_view svformat, ...)

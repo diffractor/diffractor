@@ -2833,8 +2833,10 @@ void app_frame::delete_items(const df::item_set& items)
 {
 	const auto title = tt.command_delete;
 	auto dlg = make_dlg(_app_frame);
-	const auto can_process = _state.can_process_selection_and_mark_errors(
-		_view_frame, df::process_items_type::local_file_or_folder);
+	// Held to the set it was given. A per-item Delete names one item that need not be selected, and
+	// validating the selection instead answered about files the command was never going to touch.
+	const auto can_process = _state.can_process_items_and_mark_errors(
+		_view_frame, items, df::process_items_type::local_file_or_folder);
 
 	pause_media pause(_state);
 
@@ -2887,7 +2889,11 @@ void app_frame::delete_items(const df::item_set& items)
 		if (!needs_confirmation || dlg->show_modal(controls) == ui::close_result::ok)
 		{
 			bool should_select_next = false;
-			const auto next = _state.next_unselected_item();
+			// Navigation follows the selection, so it only applies when the selection is what is
+			// leaving. Deleting one item from its own row must not move the cursor off a selection
+			// that is still there.
+			const auto deleting_the_selection = !items.empty() && items == _state.selected_items();
+			const auto next = deleting_the_selection ? _state.next_unselected_item() : df::item_element_ptr{};
 
 			// Only selector folders are live-watched, so a search that names no folder - related
 			// items, duplicates, a tag or a date - has nothing watching it and would keep listing
@@ -3288,8 +3294,9 @@ void app_frame::system_event(const ui::os_event_type ost)
 	}
 	else if (ost == ui::os_event_type::session_ending)
 	{
-		// No prompting and no teardown: the shutdown sequence force-closes anything that asks a
-		// question, and the process is terminated regardless of what this does next.
+		// No prompting and no teardown: this runs before any shutdown question is asked, and again
+		// once the session is really ending, and the process is terminated regardless of what it
+		// does next.
 		save_options();
 	}
 	else if (ost == ui::os_event_type::graphics_device_lost)
@@ -3339,9 +3346,10 @@ void app_frame::crash(const df::file_path dump_file_path)
 		{
 			df::log(__FUNCTION__, "*** CRASH ***");
 
-			if (!df::last_loaded_path.is_empty())
+			if (const auto last_loaded = df::last_loaded_path.load(std::memory_order_relaxed);
+				!last_loaded.is_empty())
 			{
-				df::log(__FUNCTION__, std::format("Last file type opened: {}", df::last_loaded_path.extension()));
+				df::log(__FUNCTION__, std::format("Last file type opened: {}", last_loaded.extension()));
 			}
 
 			const auto* const render_func = df::rendering_func.load(std::memory_order_relaxed);

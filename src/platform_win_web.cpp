@@ -349,7 +349,7 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 
 		if (download_file)
 		{
-			uint8_t buffer[8192]; // Increased buffer size
+			uint8_t buffer[8192];
 			bool download_complete = false;
 			for (;;)
 			{
@@ -372,6 +372,14 @@ platform::web_response platform::send_request(const web_host_ptr& host, const we
 				download_file.reset();
 				delete_file(req.download_file_path);
 			}
+		}
+		else
+		{
+			// Nothing was downloaded, so nothing at this path came from this request. Reported as a
+			// failure or the caller validates and runs whatever was already there - an installer from
+			// an earlier session, which is exactly the file this download was meant to replace.
+			df::log(__FUNCTION__, std::format("could not create {}", req.download_file_path.str()));
+			result.status_code = 0;
 		}
 	}
 	else

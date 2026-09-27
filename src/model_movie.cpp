@@ -226,6 +226,16 @@ movie_clip make_movie_clip(df::file_path path, const movie_settings& settings)
 	return result;
 }
 
+bool movie_output_names_a_clip(const std::vector<movie_clip>& clips, const df::file_path output)
+{
+	if (output.is_empty()) return false;
+
+	return std::ranges::any_of(clips, [output](const movie_clip& clip)
+	{
+		return !clip.path.is_empty() && df::compare_path_key(clip.path.pack(), output.pack()) == 0;
+	});
+}
+
 //
 // The project file
 //
@@ -521,6 +531,32 @@ static double read_double(const json_value& v, const char* name, const double fa
 	return std::isfinite(result) ? result : fallback;
 }
 
+// A project file is untrusted input. The panel cannot express a duration outside its own range, so
+// neither may a document: a photo hold of 1e308 seconds reaches the frame count as a number no
+// integer can hold, and the conversion that walks it is undefined.
+static double read_bounded_double(const json_value& v, const char* name, const double fallback,
+                                  const double lowest, const double highest)
+{
+	return std::clamp(read_double(v, name, fallback), lowest, highest);
+}
+
+// The same for each clip's own range. A still has no timeline of its own, so only its hold means
+// anything; every clip is held to the longest movie a render will make.
+static void bound_clip_range(movie_clip& clip)
+{
+	const auto duration = std::min(clip.end - clip.start, movie_max_clip_seconds);
+
+	if (clip.is_photo)
+	{
+		clip.start = 0.0;
+		clip.end = std::max(duration, movie_min_photo_seconds);
+	}
+	else
+	{
+		clip.end = clip.start + duration;
+	}
+}
+
 static bool is_schema(const json_value& v, const std::string_view prefix)
 {
 	if (!v.IsObject()) return false;
@@ -584,10 +620,12 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		str::icmp(df::util::json::safe_string(doc_meta, "transition"), "crossfade") == 0
 		                             ? movie_transition::crossfade
 		                             : movie_transition::cut;
-	result.settings.transition_seconds = read_double(doc_meta, "transition_seconds", 1.0);
+	result.settings.transition_seconds = read_bounded_double(doc_meta, "transition_seconds", 1.0, 0.0,
+	                                                        movie_max_transition_seconds);
 	result.settings.fade_in = read_bool(doc_meta, "fade_in", false);
 	result.settings.fade_out = read_bool(doc_meta, "fade_out", false);
-	result.settings.photo_seconds = read_double(doc_meta, "photo_seconds", 4.0);
+	result.settings.photo_seconds = read_bounded_double(doc_meta, "photo_seconds", 4.0, movie_min_photo_seconds,
+	                                                    movie_max_photo_seconds);
 
 	const auto track_children = track->FindMember("children");
 
@@ -683,6 +721,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		const auto mt = files::file_type_from_name(path);
 		clip.is_photo = read_bool(clip_meta, "photo", mt && mt->group == file_group::photo);
 		clip.photo_duration_is_default = read_bool(clip_meta, "photo_duration_is_default", false);
+		bound_clip_range(clip);
 		clip.source_duration = read_double(clip_meta, "source_duration", clip.end);
 
 		if (pending_transition)
@@ -723,7 +762,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		if (uniform && complete)
 		{
 			result.settings.transition = movie_transition::crossfade;
-			result.settings.transition_seconds = length;
+			result.settings.transition_seconds = std::clamp(length, 0.0, movie_max_transition_seconds);
 		}
 		else
 		{
@@ -991,6 +1030,7 @@ movie_load_result read_wlmp(const std::string_view xml)
 			continue;
 		}
 
+		bound_clip_range(clip);
 		clip.source_duration = clip.end;
 		clips.emplace_back(positioned_clip{std::move(clip), parse_seconds(element.find("position"))});
 	}
@@ -1295,6 +1335,11 @@ void movie_project::mark_saved(const df::file_path path, const uint64_t revision
 {
 	_path = path;
 	if (_revision == revision) _modified = false;
+
+	// Saving makes it a document. A timeline seeded from a selection and then written to a file is
+	// no longer a view of that selection, and leaving the seed behind meant re-entering Movie with
+	// a different selection read it as an untouched seed and replaced the file just saved.
+	_seed.clear();
 }
 
 void movie_project::mark_seeded(std::vector<df::file_path> seed)

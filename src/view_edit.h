@@ -123,6 +123,9 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	view_element_ptr _play_element;
 	view_element_ptr _scrubber_element;
 	size_t _display_generation = 0;
+	// Bumped by changed(), which every edit routes through. A background analysis snapshots it and
+	// retires if anything has been adjusted since, so its answer cannot land on newer work.
+	size_t _edit_generation = 0;
 	bool _invalid = true;
 
 	friend class selection_move_controller<this_type>;

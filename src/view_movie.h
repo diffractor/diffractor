@@ -46,6 +46,33 @@ enum class movie_render_error
 	no_memory,
 	undecodable,
 	encoder_failed,
+	output_is_source,
+};
+
+// A render's cancel flag and its one-shot publication claim, shared by the view and its worker.
+// The claim is what makes Cancel and the final replace decide each other: whichever reaches it
+// first wins, so a cancel arriving while the encoder closes cannot leave a rendered file in place,
+// and a cancel arriving after it cannot claim one was discarded. The flag is a separate word
+// because df::cancel_token's version constructor increments the value it is handed, which a claim
+// read as "still running at zero" cannot afford.
+struct movie_render_control
+{
+	std::atomic_bool cancelled = false;
+	// 0 while the render runs, 1 once cancelled, 2 once the output is claimed for publication.
+	std::atomic_int claim = 0;
+
+	void cancel()
+	{
+		cancelled.store(true, std::memory_order_relaxed);
+		auto expected = 0;
+		claim.compare_exchange_strong(expected, 1);
+	}
+
+	bool claim_publication()
+	{
+		auto expected = 0;
+		return claim.compare_exchange_strong(expected, 2);
+	}
 };
 
 class movie_view_controls final : public view_controls_host
@@ -178,7 +205,7 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 	// pressed, so editing the timeline while it runs changes the next render, not the running one.
 	// The generation is what tells a result from a render the user has since cancelled and replaced.
 	progress_state _progress;
-	std::shared_ptr<std::atomic_int> _render_cancel;
+	std::shared_ptr<movie_render_control> _render_control;
 	size_t _render_generation = 0;
 	std::string _status;
 	bool _project_io_active = false;

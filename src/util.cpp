@@ -63,7 +63,7 @@ int64_t df::max_decode_bytes = 1024ll * 1024ll * 1024ll;
 
 df::date_t df::start_time;
 std::atomic_int df::cancel_token::empty;
-df::file_path df::last_loaded_path;
+std::atomic<df::file_path> df::last_loaded_path;
 
 // Portable and per-user installs keep the log beside the executable. Store packages and
 // per-machine installs have a read-only install folder, so those fall back to app data.
@@ -744,6 +744,11 @@ static bool parse_iso_8601_like(const std::string_view r, df::day_t& result)
 
 	if (success)
 	{
+		// %lg accepts "inf", "nan" and overflowing exponents, and converting any of those to int is
+		// undefined. A seconds field that is not a real clock value fails the parse instead of
+		// reaching the conversion; the date is then unparseable, which is what it is.
+		if (!std::isfinite(sec) || sec < 0.0 || sec >= 61.0) return false;
+
 		result.year = yyyy;
 		result.month = mm;
 		result.day = dd;
@@ -804,19 +809,38 @@ df::file_path df::probe_data_file(const std::string_view file_name)
 	return app_data_folder.combine_file(file_name);
 }
 
-df::blob df::blob_from_file(const file_path path, const size_t max_load)
+df::blob df::blob_from_file(const file_path path)
 {
 	file f;
 
 	if (f.open_read(path, true))
 	{
 		const auto file_len = f.file_size();
-		auto load_len = file_len;
 
-		if (max_load != 0 && load_len > max_load)
+		// Refused, not clamped. Returning the first max_blob_size bytes of a larger file answers
+		// with something that looks like the file and is not, which every caller then treats as
+		// whole - the edit path re-encodes it over the original.
+		if (file_len > max_blob_size)
 		{
-			load_len = max_load;
+			const auto message = std::format("Cannot read file into memory ({} bytes)", file_len);
+			df::log(__FUNCTION__, message);
+			throw app_exception(message);
 		}
+
+		return f.read_blob(static_cast<size_t>(file_len));
+	}
+
+	return {};
+}
+
+df::blob df::blob_head_from_file(const file_path path, const size_t max_load)
+{
+	file f;
+
+	if (f.open_read(path, true))
+	{
+		const auto file_len = f.file_size();
+		const auto load_len = max_load != 0 && file_len > max_load ? max_load : file_len;
 
 		if (load_len > max_blob_size)
 		{
@@ -833,16 +857,35 @@ df::blob df::blob_from_file(const file_path path, const size_t max_load)
 
 bool df::blob_save_to_file(const cspan data, const file_path path)
 {
-	size_t written = 0;
-	const auto len = data.size;
-	const auto file = open_file(path, platform::file_open_mode::create);
+	// Staged beside the destination and moved into place, the rule docs/file-io.md owns: writing
+	// straight to the destination truncates whatever is there before the first byte is written, so
+	// a short write or a full disk would leave a partial file where a whole one used to be.
+	const auto staged = platform::temp_file(path.extension(), path.folder());
+	auto file = open_file(staged, platform::file_open_mode::create);
 
-	if (file)
+	if (!file)
 	{
-		written = static_cast<size_t>(file->write(data.data, len));
+		return false;
 	}
 
-	return written == len;
+	const auto len = data.size;
+
+	if (len > 0 && static_cast<size_t>(file->write(data.data, len)) != len)
+	{
+		file.reset();
+		platform::delete_file(staged);
+		return false;
+	}
+
+	file.reset();
+
+	if (platform::replace_file(path, staged).failed())
+	{
+		platform::delete_file(staged);
+		return false;
+	}
+
+	return true;
 }
 
 df::util::json::json_doc df::util::json::json_from_file(const file_path path)

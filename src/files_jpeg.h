@@ -81,7 +81,22 @@ public:
 	void close() const;
 	sizei dimensions() const;
 	sizei dimensions_out() const;
+
+	// Bytes libjpeg holds in one whole-image DCT coefficient array for the stream whose header has
+	// been read. Full resolution always: a decode scale reduces the IDCT output, never the
+	// coefficients it reads. Zero for a lossless stream, whose data units are single samples that
+	// this accounting does not describe.
+	int64_t coefficient_bytes() const;
+
+	// True when decoding that stream buffers every coefficient before it can produce a row, which a
+	// progressive or non-interleaved JPEG does and a baseline single-scan one does not.
+	bool buffers_whole_image() const;
+
 	void destroy();
 
-	df::blob transform(df::cspan src, jpeg_encoder& encoder, simple_transform transform) const;
+	// Empty when the rotation cannot be done losslessly or the stream cannot be read. over_budget,
+	// when given, is set when it could have been but its coefficients would not fit the decode
+	// budget - a refusal a caller must not answer with a re-encode, which holds more still.
+	df::blob transform(df::cspan src, jpeg_encoder& encoder, simple_transform transform,
+	                   bool* over_budget = nullptr) const;
 };

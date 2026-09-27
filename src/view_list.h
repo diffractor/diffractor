@@ -429,6 +429,18 @@ public:
 		return true;
 	}
 
+	// Everything queued before this point belongs to a view that is no longer on screen. Bumping the
+	// generation is what makes their completion callbacks no-ops: without it, an analysis still
+	// running when the user switched away published on its return and restored a runnable plan built
+	// from a selection the view had already let go of.
+	void abandon_processing()
+	{
+		++_processing_generation;
+		if (_processing_cancel) ++(*_processing_cancel);
+		_progress = {};
+		_active_row.reset();
+	}
+
 	void cancel_operation() override
 	{
 		cancel_processing();
@@ -1096,8 +1108,18 @@ public:
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
 		_last_loc = loc;
+
+		// A press that escape abandoned, or that was released away from the header it started on,
+		// is not a click on that header. Sorting regardless re-ordered the whole list on a gesture
+		// the user had already taken back.
+		const auto was_tracking = _parent._header_tracking;
 		_parent._header_tracking = false;
-		_parent.sort(_col_num);
+
+		if (was_tracking && _bounds.contains(loc))
+		{
+			_parent.sort(_col_num);
+		}
+
 		_host->frame()->invalidate();
 	}
 

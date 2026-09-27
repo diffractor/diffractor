@@ -120,6 +120,27 @@ public:
 		}
 	}
 
+	// Escape cancels a press the same way it cancels a drag. The button is still down, and the
+	// release that follows must not invoke an action the user has just backed out of - by then
+	// Escape may have changed the view the click was made in.
+	bool escape() override
+	{
+		if (!_tracking) return false;
+
+		_tracking = false;
+		_hover = false;
+		interaction_context ic{{-1, -1}, _element_offset, _tracking};
+		update_highlight();
+		_element->hover(ic);
+
+		if (ic.invalidate_view)
+		{
+			_host->frame()->invalidate(_element->invalidate_bounds(_element_offset));
+		}
+
+		return true;
+	}
+
 	ui::style::cursor cursor() const override
 	{
 		return _can_click ? ui::style::cursor::link : ui::style::cursor::normal;

@@ -2348,7 +2348,17 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 		if (produced <= 0) return;
 
 		const auto source_frames = static_cast<int64_t>(produced);
-		const auto timestamp_frame = static_cast<int64_t>(std::llround((frame_time - wanted_start) * sample_rate));
+
+		// A malformed container can state a timestamp far outside anything the clip covers, and
+		// llround of a double past int64's range is undefined. Anything beyond the buffer
+		// contributes nothing regardless - the clamps below reduce it to a zero-length copy - so
+		// bounding the offset changes no placement while keeping the conversion defined.
+		const auto placement_limit = static_cast<double>(wanted_frames) + static_cast<double>(source_frames) + 1.0;
+		const auto offset_frames = (frame_time - wanted_start) * sample_rate;
+		const auto timestamp_frame = std::isfinite(offset_frames)
+			                             ? static_cast<int64_t>(std::llround(
+				                             std::clamp(offset_frames, -placement_limit, placement_limit)))
+			                             : int64_t{0};
 		auto destination_frame = next_destination_frame
 			                         ? std::max(timestamp_frame, *next_destination_frame)
 			                         : timestamp_frame;

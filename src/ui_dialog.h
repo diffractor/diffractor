@@ -3499,6 +3499,17 @@ public:
 	void create_frame()
 	{
 		_frame = _parent->create_dlg(shared_from_this(), true);
+
+		// Creating the native dialog can fail - desktop heap exhaustion, or a request made while the
+		// session is ending. There is no stand-in for a control_frame the way ui::no_frame() stands in
+		// for a window, so one is used here: every call site opening a dialog would otherwise have to
+		// test for null, and none of the dozens of them do.
+		if (!_frame)
+		{
+			df::log(__FUNCTION__, "dialog window could not be created");
+			_frame = ui::no_control_frame();
+		}
+
 		_scroller._scroll_child_controls = true;
 		_scroller.changed_func = [this]
 		{
@@ -3649,6 +3660,16 @@ public:
 		}
 
 		_controls.clear();
+
+		// The active controller holds this dialog as its host, so the pair keeps itself alive.
+		// on_window_destroy breaks that when the native window finally goes, which has not
+		// necessarily happened by the time the caller lets go of the dialog - and a dialog that
+		// outlives its modal loop takes a hidden popup window with it. The close callback holds
+		// the frame and whatever the caller gave it, so it goes here too.
+		_active_controller.reset();
+		_controller_invalid = true;
+		_close_cb = {};
+
 		enable_parent();
 		ui::focus(_parent_focus);
 		return result;
@@ -3669,6 +3690,12 @@ public:
 
 	void initialise(const std::vector<view_element_ptr>& controls)
 	{
+		// The controller answers for an element in the outgoing set, and it holds this dialog as its
+		// host - so the two keep each other alive, and the controller outlives the control it speaks
+		// for. Dropped here, where the set it belongs to is replaced.
+		_active_controller.reset();
+		_controller_invalid = true;
+
 		const auto destroyer = [](const ui::control_base_ptr& c) { c->destroy(); };
 		const std::unordered_set<view_element_ptr> controls_set(controls.begin(), controls.end());
 

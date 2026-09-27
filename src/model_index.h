@@ -19,10 +19,43 @@ class location_cache;
 class database;
 class async_strategy;
 
+// The content identity a hash was computed against. A checksum or picture hash describes the bytes
+// that were read, so publishing one against a path alone attaches it to whatever occupies that path
+// when the work finishes. A file replaced while it was being hashed is a different file at the same
+// name, and giving it the old hash reports it as a copy of what the previous content matched.
+struct index_file_revision
+{
+	df::date_t modified;
+	uint64_t size = 0;
+
+	bool operator==(const index_file_revision& other) const
+	{
+		return modified == other.modified && size == other.size;
+	}
+};
+
+inline index_file_revision revision_of(const df::index_file_item& file)
+{
+	return {file.file_modified.load(), file.size.to_int64()};
+}
+
+// One file the predictions walk wants a picture hash for, with the revision it was wanted at.
+struct phash_request
+{
+	df::file_path path;
+	index_file_revision revision;
+};
+
+struct phash_result
+{
+	df::file_path path;
+	index_file_revision revision;
+	crypto::phash_rotations rotations{};
+};
+
 struct item_db_write
 {
 	df::file_path path;
-
 	std::optional<prop::item_metadata_ptr> md;
 	std::optional<df::date_t> modified;
 	std::optional<double> media_position;
@@ -32,6 +65,9 @@ struct item_db_write
 	std::optional<df::date_t> metadata_scanned;
 	std::optional<uint32_t> crc32c;
 	std::optional<crypto::phash_rotations> phash;
+	// The bytes changed, so the stored checksum and picture hash describe content that is gone. The
+	// optional fields above cannot say this: a write that carries no hash keeps the stored one.
+	bool clear_hashes = false;
 
 	item_db_write() noexcept = default;
 	item_db_write(const item_db_write&) = delete;
@@ -161,36 +197,45 @@ public:
 	void replace(const df::folder_path folder_path, const df::index_folder_item_ptr& i)
 	{
 		platform::exclusive_lock lock(_rw);
-
-		_index[folder_path] = i;
-
-		// update parent to point to this
-		if (!folder_path.is_root())
-		{
-			const auto parent_folder = folder_path.parent();
-			const auto found_in_index = _index.find(parent_folder);
-
-			if (found_in_index != _index.end())
-			{
-				const auto parent_node = found_in_index->second;
-				parent_node->replace_child(i->name, i);
-			}
-		}
+		replace_locked(folder_path, i);
 	}
 
-	void erase(const std::vector<df::folder_path>& folders)
+	// Publishes only while the folder still holds the node the caller built from, and answers what
+	// the index holds afterwards. A rebuild reads the node, enumerates the file system without a
+	// lock, then publishes - and another thread that rebuilt or scanned the same folder inside that
+	// window left newer state in the index. Storing unconditionally puts the pre-enumeration copy
+	// back over it, losing every scan result recorded since.
+	df::index_folder_item_ptr replace_if(const df::folder_path folder_path,
+	                                     const df::index_folder_item_ptr& expected,
+	                                     const df::index_folder_item_ptr& i)
 	{
 		platform::exclusive_lock lock(_rw);
 
-		for (const auto& g : folders)
-		{
-			const auto found_in_index = _index.find(g);
+		const auto found_in_index = _index.find(folder_path);
+		const auto current = found_in_index != _index.end() ? found_in_index->second : nullptr;
 
-			if (found_in_index != _index.end())
+		if (current != expected) return current;
+
+		replace_locked(folder_path, i);
+		return i;
+	}
+
+	// Erases each folder and everything indexed beneath it. The index is flat and keyed by folder
+	// path, so erasing only the named key left every descendant indexed - still searchable, still
+	// counted - after the folder that held them was deleted.
+	void erase(const std::vector<df::folder_path>& folders)
+	{
+		if (folders.empty()) return;
+
+		platform::exclusive_lock lock(_rw);
+
+		std::erase_if(_index, [&folders](const auto& entry)
+		{
+			return std::ranges::any_of(folders, [&entry](const df::folder_path removed)
 			{
-				_index.erase(found_in_index);
-			}
-		}
+				return df::folder_contains(removed.text().sv(), entry.first.text().sv());
+			});
+		});
 	}
 
 	index_folders_t all_folders() const
@@ -223,6 +268,26 @@ public:
 	{
 		platform::exclusive_lock lock(_rw);
 		_index.clear();
+	}
+
+private:
+	_Requires_lock_held_(_rw) void replace_locked(const df::folder_path folder_path,
+	                                              const df::index_folder_item_ptr& i)
+	{
+		_index[folder_path] = i;
+
+		// update parent to point to this
+		if (!folder_path.is_root())
+		{
+			const auto parent_folder = folder_path.parent();
+			const auto found_in_index = _index.find(parent_folder);
+
+			if (found_in_index != _index.end())
+			{
+				const auto parent_node = found_in_index->second;
+				parent_node->replace_child(i->name, i);
+			}
+		}
 	}
 };
 
@@ -757,10 +822,12 @@ public:
 	void merge_folder(df::folder_path folder_path, const db_items_t& items);
 
 	void save_media_position(df::file_path id, double media_position);
-	void save_crc(df::file_path id, uint32_t crc);
-	void save_phash(df::file_path id, const crypto::phash_rotations& phash);
-	void save_phashes(std::vector<std::pair<df::file_path, crypto::phash_rotations>> hashes);
-	void queue_calc_perceptual_hashes(std::vector<df::file_path> paths);
+	// Each carries the revision its hash was read from; a file whose index entry no longer matches
+	// keeps neither the published hash nor the database row, so the next pass hashes it again.
+	void save_crc(df::file_path id, index_file_revision revision, uint32_t crc);
+	void save_phash(df::file_path id, index_file_revision revision, const crypto::phash_rotations& phash);
+	void save_phashes(std::vector<phash_result> hashes);
+	void queue_calc_perceptual_hashes(std::vector<phash_request> requests);
 	void save_thumbnail(df::file_path id, const ui::const_image_ptr& thumbnail_image,
 	                    const ui::const_image_ptr& cover_art, df::date_t scan_timestamp);
 	void publish_thumbnail(std::weak_ptr<df::item_element> item, df::file_path path,
@@ -770,7 +837,7 @@ public:
 	void publish_item_update(std::weak_ptr<df::item_element> item, df::file_path path) const;
 	void publish_thumbnail_failure(std::weak_ptr<df::item_element> item, df::file_path path) const;
 	void publish_crc(std::weak_ptr<df::item_element> item, df::file_path path, df::file_size size,
-	                 df::item_online_status online_status, uint32_t existing_crc, uint32_t crc);
+	                 df::date_t modified, df::item_online_status online_status, uint32_t existing_crc, uint32_t crc);
 
 	df::index_file_item find_item(df::file_path id) const;
 

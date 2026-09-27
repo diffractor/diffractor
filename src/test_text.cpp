@@ -18,17 +18,21 @@
 static void should_parse_translated_short_month()
 {
 	// Shipped catalogs carry short months that are not 3 bytes - ru/uk/ja/ko/zh for all 12, fr for 8.
-	const auto saved_oct = tt.month_short_oct.trans;
-	const auto saved_jan = tt.month_short_jan.trans;
+	const auto* const saved_oct = tt.month_short_oct.published();
+	const auto* const saved_jan = tt.month_short_jan.published();
 
-	tt.month_short_oct.trans = "\xd0\xbe\xd0\xba\xd1\x82"; // ru, 6 bytes
-	tt.month_short_jan.trans = "janv"; // fr, 4 bytes
+	// Storage that outlives the reads below, which is the contract text_t::publish states.
+	const std::string oct_ru = "\xd0\xbe\xd0\xba\xd1\x82"; // ru, 6 bytes
+	const std::string jan_fr = "janv"; // fr, 4 bytes
+
+	tt.month_short_oct.publish(&oct_ru);
+	tt.month_short_jan.publish(&jan_fr);
 
 	const auto oct = str::month("\xd0\xbe\xd0\xba\xd1\x82");
 	const auto jan = str::month("JANV");
 
-	tt.month_short_oct.trans = saved_oct;
-	tt.month_short_jan.trans = saved_jan;
+	tt.month_short_oct.publish(saved_oct);
+	tt.month_short_jan.publish(saved_jan);
 
 	assert_equal(10, oct, "6 byte translated short month");
 	assert_equal(1, jan, "4 byte translated short month, case insensitive");
@@ -117,10 +121,13 @@ static void should_select_slavic_plural_forms()
 	assert_equal(1, de.plural_form(2), "de form for 2");
 	assert_equal(1, de.plural_form(5), "de form for 5");
 
-	cs.title_item_count_fmt.extra_forms.emplace_back("{count} polozek");
+	// Storage that outlives the reads below, which is the contract a published form holds to.
+	const std::vector<std::string> czech_forms = {"{count} polozek"};
+	cs.title_item_count_fmt.extra_forms.store(&czech_forms);
+	assert_equal(false, cs.title_item_count_fmt.extra_form(0).empty(), "an extra plural form is published");
 	cs.clear();
 	assert_equal(1, cs.plural_form(5), "clear restores binary plural rule");
-	assert_equal(0, static_cast<int>(cs.title_item_count_fmt.extra_forms.size()), "clear drops extra plural forms");
+	assert_equal(true, cs.title_item_count_fmt.extra_form(0).empty(), "clear drops extra plural forms");
 }
 
 // The spell checker only reaches the user through metadata field editing, and it fails soft: a

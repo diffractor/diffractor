@@ -14,6 +14,8 @@
 
 #include "metadata_xmp.h"
 #include "metadata_exif.h"
+#include "metadata_icc.h"
+#include "metadata_iptc.h"
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "av_format.h"
@@ -114,6 +116,107 @@ static void should_parse_xmp()
 	assert_equal("IMG_0604.CR2", actual.raw_file_name);
 	assert_equal("Denmark", actual.location_country);
 	assert_equal(false, actual.is_panorama(), "an ordinary photograph declares no panorama");
+}
+
+// XMP is parsed last, so an array that is simply absent must not erase what EXIF or IPTC supplied.
+// An empty array is a different statement: it is the file saying it has no tags, and it is exactly
+// what the writer emits when the user clears them. Reading only the non-empty case meant clearing
+// every tag and rescanning brought the legacy keywords straight back.
+static void should_clear_tags_from_an_empty_xmp_subject()
+{
+	const auto write_sidecar = [](const std::string_view dc_body)
+	{
+		const auto path = _temps.next_path(".xmp");
+		const auto xml = std::format(
+			"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+			"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+			"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+			"<rdf:Description rdf:about=\"\" "
+			"xmlns:dc=\"http://purl.org/dc/elements/1.1/\">{}</rdf:Description>"
+			"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+			dc_body);
+
+		std::ofstream f(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
+		f.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+		f.close();
+		return path;
+	};
+
+	{
+		// What the writer produces for an item whose tags the user removed.
+		prop::item_metadata md;
+		md.tags = "Holiday Portugal"_c;
+		metadata_xmp::parse(md, write_sidecar("<dc:subject><rdf:Bag/></dc:subject>"));
+		assert_equal(true, str::is_empty(md.tags), "an empty subject array clears the tags it supersedes");
+	}
+
+	{
+		// No dc:subject at all says nothing about tags, so what EXIF or IPTC gave must survive.
+		prop::item_metadata md;
+		md.tags = "Holiday Portugal"_c;
+		metadata_xmp::parse(md, write_sidecar("<dc:title>Lisbon</dc:title>"));
+		assert_equal("Holiday Portugal", md.tags, "an absent subject array leaves them alone");
+	}
+
+	{
+		prop::item_metadata md;
+		md.tags = "Holiday Portugal"_c;
+		metadata_xmp::parse(md, write_sidecar(
+			                    "<dc:subject><rdf:Bag><rdf:li>Lisbon</rdf:li></rdf:Bag></dc:subject>"));
+		assert_equal("Lisbon", md.tags, "and a populated one replaces them");
+	}
+}
+
+// XMP GPS is applied as a pair. A sidecar carrying only one component used to overwrite that half
+// while the other stayed at whatever EXIF had already put there, pinning the item to a coordinate
+// neither source states - and an item with no EXIF coordinate at all got the zero half, which is
+// the Gulf of Guinea.
+static void should_apply_xmp_gps_as_a_pair()
+{
+	const auto write_sidecar = [](const std::string_view exif_body)
+	{
+		const auto path = _temps.next_path(".xmp");
+		const auto xml = std::format(
+			"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+			"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+			"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+			"<rdf:Description rdf:about=\"\" "
+			"xmlns:exif=\"http://ns.adobe.com/exif/1.0/\">{}</rdf:Description>"
+			"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+			exif_body);
+
+		std::ofstream f(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
+		f.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+		f.close();
+		return path;
+	};
+
+	{
+		prop::item_metadata md;
+		metadata_xmp::parse(md, write_sidecar("<exif:GPSLatitude>51,30.852N</exif:GPSLatitude>"
+			"<exif:GPSLongitude>0,5.910W</exif:GPSLongitude>"));
+		assert_equal(true, md.coordinate.is_valid(), "a complete pair is read");
+		assert_equal(true, std::abs(md.coordinate.latitude() - 51.5142) < 0.001, "latitude");
+		assert_equal(true, std::abs(md.coordinate.longitude() + 0.0985) < 0.001, "longitude");
+	}
+
+	{
+		// The item already carries an EXIF coordinate, as a scanned photo with a sidecar would.
+		prop::item_metadata md;
+		md.coordinate = gps_coordinate(35.68, 139.69);
+		metadata_xmp::parse(md, write_sidecar("<exif:GPSLatitude>51,30.852N</exif:GPSLatitude>"));
+
+		assert_equal(true, std::abs(md.coordinate.latitude() - 35.68) < 0.001,
+		             "half a pair changes neither component");
+		assert_equal(true, std::abs(md.coordinate.longitude() - 139.69) < 0.001,
+		             "so the EXIF coordinate is left whole");
+	}
+
+	{
+		prop::item_metadata md;
+		metadata_xmp::parse(md, write_sidecar("<exif:GPSLongitude>0,5.910W</exif:GPSLongitude>"));
+		assert_equal(false, md.coordinate.is_valid(), "half a pair alone locates nothing");
+	}
 }
 
 // The flag records what the file says about itself, not what its shape suggests: a 2:1 crop of a
@@ -816,6 +919,66 @@ static void should_present_derived_exif_section()
 	             file_name);
 }
 
+// A lossless rotate rewrites the EXIF block to correct its orientation and dimensions. libexif's
+// loading defaults drop every tag it has no name for - maker notes above all - so a rotate used to
+// take the camera's own record of the shot with it, silently and with no way back.
+static void should_keep_unknown_exif_tags_through_a_rotate()
+{
+	std::vector<uint8_t> buf;
+	const auto put16 = [&buf](const uint16_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
+	const auto put_entry = [&put16, &put32](const uint16_t tag, const uint16_t fmt, const uint32_t count,
+	                                        const uint32_t value)
+	{
+		put16(tag);
+		put16(fmt);
+		put32(count);
+		put32(value);
+	};
+
+	constexpr uint16_t fmt_short = 3;
+	constexpr uint16_t private_tag = 0xfde8;
+
+	// "Exif\0\0" ahead of the TIFF header, which is what fix_dims is handed.
+	for (const auto c : std::string_view("Exif\0\0", 6)) buf.push_back(static_cast<uint8_t>(c));
+
+	put16(0x4949); // little-endian TIFF header
+	put16(0x002a);
+	put32(8);
+
+	put16(2);
+	put_entry(0x0112, fmt_short, 1, 6); // Orientation, rotated
+	put_entry(private_tag, fmt_short, 1, 0x1234); // a tag libexif has no name for
+	put32(0);
+
+	const auto contains_private_tag = [](const df::blob& block)
+	{
+		for (const auto& kv : metadata_exif::to_info(df::cspan{block.data(), block.size()}))
+		{
+			if (kv.key.find("FDE8") != std::string::npos || kv.id.find("fde8") != std::string::npos) return true;
+		}
+
+		return false;
+	};
+
+	const df::blob before(buf.begin(), buf.end());
+	assert_equal(true, contains_private_tag(before), "the fixture carries a tag libexif does not name");
+
+	const auto after = metadata_exif::fix_dims(df::span{buf.data(), buf.size()}, 640, 480);
+	assert_equal(false, after.empty(), "the rotate rewrote the block");
+	assert_equal(true, contains_private_tag(after), "and the unnamed tag survived it");
+}
+
 // The focal-length family needs a 35 mm equivalent, which the EOS 7D fixture does not record. A
 // synthetic block fixes 15 mm at 24 mm equivalent and f/6.3 so each figure has one known answer.
 static void should_derive_focal_length_facts()
@@ -1240,6 +1403,87 @@ static void should_present_icc_block_sections()
 	assert_equal(true, tags > 0, "icc tag rows", file_name);
 }
 
+// A tag names a region of the profile, and several tags may name the same one: the sRGB profile most
+// cameras embed points all three tone curves at a single curve. A budget charging every tag for its
+// region refused two of the three as though the profile claimed more bytes than it holds. Regions
+// that overlap without being shared are still charged in full, which is what stops a crafted
+// directory copying many times the profile's own size.
+static void should_read_icc_tags_that_share_a_region()
+{
+	const auto put32 = [](std::vector<uint8_t>& out, const size_t at, const uint32_t v)
+	{
+		out[at] = static_cast<uint8_t>(v >> 24);
+		out[at + 1] = static_cast<uint8_t>(v >> 16);
+		out[at + 2] = static_cast<uint8_t>(v >> 8);
+		out[at + 3] = static_cast<uint8_t>(v);
+	};
+
+	// The loader checks the declared size and the 'acsp' signature in the 128 byte header, then
+	// reads a count and twelve-byte directory entries of signature, offset and size.
+	const auto make_profile = [&put32](const size_t tag_count, const size_t payload_bytes)
+	{
+		std::vector<uint8_t> profile(128 + 4 + tag_count * 12 + payload_bytes, 0);
+		put32(profile, 0, static_cast<uint32_t>(profile.size()));
+		put32(profile, 36, 0x61637370u); // acsp
+		put32(profile, 128, static_cast<uint32_t>(tag_count));
+		return profile;
+	};
+
+	const auto rows = [](const std::vector<uint8_t>& profile, const std::string_view prefix)
+	{
+		auto count = 0;
+
+		for (const auto& row : metadata_icc::to_info({profile.data(), profile.size()}))
+		{
+			if (row.id.starts_with(prefix)) ++count;
+		}
+
+		return count;
+	};
+
+	{
+		constexpr size_t curve_bytes = 12 + 1000 * 2;
+		auto profile = make_profile(3, curve_bytes);
+		constexpr auto curve_at = static_cast<uint32_t>(128 + 4 + 3 * 12);
+		put32(profile, curve_at, 0x63757276u); // curv
+		put32(profile, curve_at + 8, 1000);
+
+		constexpr uint32_t curves[] = {0x72545243u, 0x67545243u, 0x62545243u}; // rTRC gTRC bTRC
+
+		for (size_t i = 0; i < 3; ++i)
+		{
+			const auto entry = 132 + i * 12;
+			put32(profile, entry, curves[i]);
+			put32(profile, entry + 4, curve_at);
+			put32(profile, entry + 8, static_cast<uint32_t>(curve_bytes));
+		}
+
+		assert_equal(3, rows(profile, "icc.tag."), "every tone curve naming the shared curve is read");
+		assert_equal(0, rows(profile, "icc.unread"), "and none of them is refused");
+	}
+
+	{
+		constexpr size_t tag_count = 100;
+		constexpr size_t payload_bytes = 4000;
+		auto profile = make_profile(tag_count, payload_bytes);
+		constexpr auto payload_at = 128 + 4 + tag_count * 12;
+		constexpr auto region_bytes = static_cast<uint32_t>(payload_bytes - (tag_count - 1));
+
+		for (size_t i = 0; i < tag_count; ++i)
+		{
+			const auto entry = 132 + i * 12;
+			put32(profile, entry, 0x74000000u + static_cast<uint32_t>(i));
+			put32(profile, entry + 4, static_cast<uint32_t>(payload_at + i));
+			put32(profile, entry + 8, region_bytes);
+		}
+
+		const auto read = rows(profile, "icc.tag.");
+		assert_equal(true, read >= 1, "a region that fits is read");
+		assert_equal(true, static_cast<size_t>(read) * region_bytes <= profile.size(),
+		             "overlapping regions are charged in full, up to the profile's own size");
+	}
+}
+
 // The description panel presents one section for every prose field, so the field list drives its
 // header name, its ordering, and which entries collapse as repeats.
 static void should_collect_descriptive_fields()
@@ -1431,96 +1675,101 @@ static void should_parse_exif_tags()
 
 // locations.md 2.8: GPS altitude and speed live in a sub-IFD reached through tag 0x8825, and
 // the altitude reference that decides the sign may arrive either side of the value.
+struct test_gps_entry
+{
+	uint16_t tag;
+	uint16_t fmt;
+	uint32_t count;
+	std::vector<uint8_t> data;
+};
+
+// A minimal little-endian TIFF whose IFD0 carries nothing but a GPS IFD pointer, and whose GPS IFD
+// carries the given entries. A value wider than four bytes is written after the directory and
+// referenced by offset, as the format requires.
+static std::vector<uint8_t> build_gps_exif(const std::vector<test_gps_entry>& entries)
+{
+	std::vector<uint8_t> buf;
+	const auto put16 = [&buf](const uint16_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&buf](const uint32_t v)
+	{
+		buf.push_back(static_cast<uint8_t>(v));
+		buf.push_back(static_cast<uint8_t>(v >> 8));
+		buf.push_back(static_cast<uint8_t>(v >> 16));
+		buf.push_back(static_cast<uint8_t>(v >> 24));
+	};
+
+	constexpr uint32_t ifd0_offset = 8;
+	constexpr uint32_t gps_ifd_offset = ifd0_offset + 2 + 12 + 4; // IFD0 holds one entry
+	const auto count = static_cast<uint32_t>(entries.size());
+	const uint32_t gps_data_start = gps_ifd_offset + 2 + count * 12 + 4;
+
+	std::vector<uint32_t> data_offset(entries.size(), 0);
+	uint32_t cursor = gps_data_start;
+	for (size_t i = 0; i < entries.size(); ++i)
+	{
+		if (entries[i].data.size() > 4)
+		{
+			data_offset[i] = cursor;
+			cursor += static_cast<uint32_t>(entries[i].data.size());
+		}
+	}
+
+	put16(0x4949);
+	put16(0x002a);
+	put32(ifd0_offset);
+
+	put16(1);
+	put16(0x8825); // GPS IFD pointer
+	put16(4); // FMT_ULONG
+	put32(1);
+	put32(gps_ifd_offset);
+	put32(0);
+
+	put16(static_cast<uint16_t>(count));
+	for (size_t i = 0; i < entries.size(); ++i)
+	{
+		const auto& e = entries[i];
+		put16(e.tag);
+		put16(e.fmt);
+		put32(e.count);
+
+		const auto size = static_cast<uint32_t>(e.data.size());
+		if (size > 4)
+		{
+			put32(data_offset[i]);
+		}
+		else
+		{
+			uint32_t inline_value = 0;
+			memcpy(&inline_value, e.data.data(), size);
+			put32(inline_value);
+		}
+	}
+	put32(0);
+
+	for (const auto& e : entries)
+	{
+		if (e.data.size() > 4) buf.insert(buf.end(), e.data.begin(), e.data.end());
+	}
+
+	return buf;
+}
+
+static std::vector<uint8_t> exif_urational(const uint32_t n, const uint32_t d)
+{
+	std::vector<uint8_t> v(8);
+	memcpy(v.data(), &n, 4);
+	memcpy(v.data() + 4, &d, 4);
+	return v;
+}
+
 static void should_parse_exif_gps_height()
 {
-	struct gps_entry
-	{
-		uint16_t tag;
-		uint16_t fmt;
-		uint32_t count;
-		std::vector<uint8_t> data;
-	};
-
-	const auto build_gps_exif = [](const std::vector<gps_entry>& entries)
-	{
-		std::vector<uint8_t> buf;
-		const auto put16 = [&buf](const uint16_t v)
-		{
-			buf.push_back(static_cast<uint8_t>(v));
-			buf.push_back(static_cast<uint8_t>(v >> 8));
-		};
-		const auto put32 = [&buf](const uint32_t v)
-		{
-			buf.push_back(static_cast<uint8_t>(v));
-			buf.push_back(static_cast<uint8_t>(v >> 8));
-			buf.push_back(static_cast<uint8_t>(v >> 16));
-			buf.push_back(static_cast<uint8_t>(v >> 24));
-		};
-
-		constexpr uint32_t ifd0_offset = 8;
-		constexpr uint32_t gps_ifd_offset = ifd0_offset + 2 + 12 + 4; // IFD0 holds one entry
-		const auto count = static_cast<uint32_t>(entries.size());
-		const uint32_t gps_data_start = gps_ifd_offset + 2 + count * 12 + 4;
-
-		std::vector<uint32_t> data_offset(entries.size(), 0);
-		uint32_t cursor = gps_data_start;
-		for (size_t i = 0; i < entries.size(); ++i)
-		{
-			if (entries[i].data.size() > 4)
-			{
-				data_offset[i] = cursor;
-				cursor += static_cast<uint32_t>(entries[i].data.size());
-			}
-		}
-
-		put16(0x4949);
-		put16(0x002a);
-		put32(ifd0_offset);
-
-		put16(1);
-		put16(0x8825); // GPS IFD pointer
-		put16(4); // FMT_ULONG
-		put32(1);
-		put32(gps_ifd_offset);
-		put32(0);
-
-		put16(static_cast<uint16_t>(count));
-		for (size_t i = 0; i < entries.size(); ++i)
-		{
-			const auto& e = entries[i];
-			put16(e.tag);
-			put16(e.fmt);
-			put32(e.count);
-
-			const auto size = static_cast<uint32_t>(e.data.size());
-			if (size > 4)
-			{
-				put32(data_offset[i]);
-			}
-			else
-			{
-				uint32_t inline_value = 0;
-				memcpy(&inline_value, e.data.data(), size);
-				put32(inline_value);
-			}
-		}
-		put32(0);
-
-		for (const auto& e : entries)
-		{
-			if (e.data.size() > 4) buf.insert(buf.end(), e.data.begin(), e.data.end());
-		}
-
-		return buf;
-	};
-
-	const auto urational = [](const uint32_t n, const uint32_t d)
-	{
-		std::vector<uint8_t> v(8);
-		memcpy(v.data(), &n, 4);
-		memcpy(v.data() + 4, &d, 4);
-		return v;
-	};
+	const auto& urational = exif_urational;
 
 	constexpr uint16_t FMT_BYTE = 1;
 	constexpr uint16_t FMT_STRING = 2;
@@ -1555,6 +1804,136 @@ static void should_parse_exif_gps_height()
 	});
 	metadata_exif::parse(knots, df::cspan{knots_exif.data(), knots_exif.size()});
 	assert_equal(185.2f, knots.gps_speed, "GPSSpeed in knots -> km/h");
+}
+
+// A coordinate is absent when a component is missing, and +/-180 is the sentinel that says so.
+// Testing each magnitude for zero as well threw away the whole equator and the whole Greenwich
+// meridian. Zero is a position on both, and only the exact pair - what a receiver with no fix
+// writes - is worth refusing.
+static void should_keep_gps_on_the_equator_and_meridian()
+{
+	constexpr uint16_t FMT_BYTE = 1;
+	constexpr uint16_t FMT_STRING = 2;
+	constexpr uint16_t FMT_URATIONAL = 5;
+
+	// EXIF stores a coordinate as three rationals: degrees, minutes and seconds.
+	const auto dms = [](const uint32_t d, const uint32_t m, const uint32_t s)
+	{
+		std::vector<uint8_t> v;
+		for (const auto part : {d, m, s})
+		{
+			const auto r = exif_urational(part, 1);
+			v.insert(v.end(), r.begin(), r.end());
+		}
+		return v;
+	};
+
+	// Nanyuki, Kenya - on the equator, east of Greenwich.
+	prop::item_metadata equator;
+	const auto equator_exif = build_gps_exif({
+		{0x0001, FMT_STRING, 2, {'N', 0}},
+		{0x0002, FMT_URATIONAL, 3, dms(0, 0, 0)},
+		{0x0003, FMT_STRING, 2, {'E', 0}},
+		{0x0004, FMT_URATIONAL, 3, dms(37, 4, 0)},
+	});
+	metadata_exif::parse(equator, df::cspan{equator_exif.data(), equator_exif.size()});
+	assert_equal(true, equator.coordinate.is_valid(), "a latitude of zero is a position, not an absence");
+	assert_equal(true, std::abs(equator.coordinate.longitude() - 37.0667) < 0.001, "and it keeps its longitude");
+
+	// Greenwich - zero longitude, well north of the equator.
+	prop::item_metadata meridian;
+	const auto meridian_exif = build_gps_exif({
+		{0x0001, FMT_STRING, 2, {'N', 0}},
+		{0x0002, FMT_URATIONAL, 3, dms(51, 28, 40)},
+		{0x0003, FMT_STRING, 2, {'E', 0}},
+		{0x0004, FMT_URATIONAL, 3, dms(0, 0, 0)},
+	});
+	metadata_exif::parse(meridian, df::cspan{meridian_exif.data(), meridian_exif.size()});
+	assert_equal(true, meridian.coordinate.is_valid(), "a longitude of zero is a position too");
+	assert_equal(true, std::abs(meridian.coordinate.latitude() - 51.4778) < 0.001, "and it keeps its latitude");
+
+	// Null Island is still refused: a receiver with no fix writes exactly this.
+	prop::item_metadata no_fix;
+	const auto no_fix_exif = build_gps_exif({
+		{0x0001, FMT_STRING, 2, {'N', 0}},
+		{0x0002, FMT_URATIONAL, 3, dms(0, 0, 0)},
+		{0x0003, FMT_STRING, 2, {'E', 0}},
+		{0x0004, FMT_URATIONAL, 3, dms(0, 0, 0)},
+	});
+	metadata_exif::parse(no_fix, df::cspan{no_fix_exif.data(), no_fix_exif.size()});
+	assert_equal(false, no_fix.coordinate.is_valid(), "but a zero pair is a receiver with no fix");
+
+	// And a file carrying no coordinate at all still has none.
+	prop::item_metadata none;
+	const auto none_exif = build_gps_exif({{0x0005, FMT_BYTE, 1, {0}}});
+	metadata_exif::parse(none, df::cspan{none_exif.data(), none_exif.size()});
+	assert_equal(false, none.coordinate.is_valid(), "and an absent coordinate stays absent");
+}
+
+// IIM 4.1 encodes a dataset as 0x1C, record, dataset, then a two-octet size field. With the field's
+// top bit set the low 15 bits are not the size - they are the count of octets that carry it, and
+// those follow. Reading the size out of the field itself took the wrong bytes and advanced by the
+// wrong amount, so the walk lost sync and every dataset after an extended one was read out of a
+// payload rather than a header.
+static void should_parse_an_extended_length_iptc_dataset()
+{
+	// One dataset. `size_octets` of 0 asks for the ordinary two-octet form.
+	const auto dataset = [](const uint8_t record, const uint8_t tag, const std::string_view value,
+	                        const uint32_t size_octets)
+	{
+		std::vector<uint8_t> b{0x1c, record, tag};
+
+		if (size_octets == 0)
+		{
+			b.push_back(static_cast<uint8_t>(value.size() >> 8));
+			b.push_back(static_cast<uint8_t>(value.size()));
+		}
+		else
+		{
+			b.push_back(static_cast<uint8_t>(0x80 | (size_octets >> 8)));
+			b.push_back(static_cast<uint8_t>(size_octets));
+
+			for (auto i = size_octets; i-- > 0;)
+			{
+				b.push_back(static_cast<uint8_t>(value.size() >> (8 * i)));
+			}
+		}
+
+		b.insert(b.end(), value.begin(), value.end());
+		return b;
+	};
+
+	constexpr uint8_t application_record = 2;
+	constexpr uint8_t object_name = 5;
+	constexpr uint8_t copyright = 116;
+
+	{
+		// The ordinary form still reads, and a dataset after it is still found.
+		std::vector<uint8_t> block;
+		const auto a = dataset(application_record, object_name, "Lisbon", 0);
+		const auto b = dataset(application_record, copyright, "Ada Lovelace", 0);
+		block.insert(block.end(), a.begin(), a.end());
+		block.insert(block.end(), b.begin(), b.end());
+
+		prop::item_metadata md;
+		metadata_iptc::parse(md, df::cspan{block.data(), block.size()});
+		assert_equal("Lisbon", md.title, "a two-octet size still reads");
+		assert_equal("Ada Lovelace", md.copyright_notice, "and the dataset after it is still found");
+	}
+
+	{
+		// The extended form, and a following dataset that only parses if the walk stayed in sync.
+		std::vector<uint8_t> block;
+		const auto a = dataset(application_record, object_name, "Lisbon", 4);
+		const auto b = dataset(application_record, copyright, "Ada Lovelace", 0);
+		block.insert(block.end(), a.begin(), a.end());
+		block.insert(block.end(), b.begin(), b.end());
+
+		prop::item_metadata md;
+		metadata_iptc::parse(md, df::cspan{block.data(), block.size()});
+		assert_equal("Lisbon", md.title, "an extended size reads its own payload");
+		assert_equal("Ada Lovelace", md.copyright_notice, "and the walk stays aligned for what follows");
+	}
 }
 
 // Issue #65 - Binary text in JPEG comment
@@ -2155,6 +2534,8 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	          should_replace_item_metadata_without_resetting_playback_position);
 	tests.add("Should parse exif tags"s, should_parse_exif_tags);
 	tests.add("Should parse exif gps height"s, should_parse_exif_gps_height);
+	tests.add("Should keep gps on the equator and meridian"s, should_keep_gps_on_the_equator_and_meridian);
+	tests.add("Should parse an extended length iptc dataset"s, should_parse_an_extended_length_iptc_dataset);
 
 	// Issue #65 - binary exif comment
 	tests.add("Should drop binary exif comment"s, should_drop_binary_exif_comment);
@@ -2221,15 +2602,19 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should not double apply heif rotation"s, should_not_double_apply_heif_rotation);
 	tests.add("Should scan avif metadata"s, should_scan_avif);
 	tests.add("Should parse Xmp"s, should_parse_xmp);
+	tests.add("Should apply Xmp GPS as a pair"s, should_apply_xmp_gps_as_a_pair);
+	tests.add("Should clear tags from an empty Xmp subject"s, should_clear_tags_from_an_empty_xmp_subject);
 	tests.add("Should read the declared panorama projection"s, should_read_the_declared_panorama_projection);
 	tests.add("Should present exif metadata by ifd"s, should_present_exif_block_by_ifd);
 	tests.add("Should present maker note section"s, should_present_maker_note_section);
 	tests.add("Should present derived exif section"s, should_present_derived_exif_section);
 	tests.add("Should derive focal length facts"s, should_derive_focal_length_facts);
+	tests.add("Should keep unknown Exif tags through a rotate"s, should_keep_unknown_exif_tags_through_a_rotate);
 	tests.add("Should present exif tags as stored"s, should_present_exif_tags_as_stored);
 	tests.add("Should present embedded thumbnail as an image"s, should_present_embedded_thumbnail_as_an_image);
 	tests.add("Should present raw metadata sections"s, should_present_raw_block_sections);
 	tests.add("Should present icc metadata sections"s, should_present_icc_block_sections);
+	tests.add("Should read icc tags that share a region"s, should_read_icc_tags_that_share_a_region);
 	tests.add("Should present jpeg structure"s, should_present_jpeg_structure_block);
 	tests.add("Should present jpeg embedded images"s, should_present_jpeg_embedded_images);
 	tests.add("Should present webp structure"s, should_present_webp_structure_block);

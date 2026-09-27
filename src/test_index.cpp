@@ -1204,6 +1204,84 @@ static void should_drop_deleted_items_from_a_search_with_no_folder(shared_test_c
 	assert_equal(1, count_search_results(index, search), "the deleted copy is gone from the list");
 }
 
+// The index is flat and keyed by folder path, so erasing a removed folder left everything beneath
+// it indexed: the files of a deleted subtree stayed searchable and counted for the whole session.
+static void should_drop_descendants_of_a_deleted_folder(shared_test_context& stc)
+{
+	const df::file_path source(test_files_folder, "Test.jpg");
+	const auto root = _temps.next_folder("deleted-tree");
+	const auto branch = root.combine("branch");
+	const auto leaf = branch.combine("leaf");
+	platform::create_folder(leaf);
+
+	const auto in_root = root.combine_file("root.jpg");
+	const auto in_branch = branch.combine_file("branch.jpg");
+	const auto in_leaf = leaf.combine_file("leaf.jpg");
+
+	for (const auto& path : {in_root, in_branch, in_leaf})
+	{
+		assert_equal(true, platform::copy_file(source, path, false, false).success(), "copy fixture");
+	}
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	auto cache_path = _temps.next_path();
+	database db(index);
+	db.open(cache_path.folder(), cache_path.file_name_without_extension());
+
+	df::index_roots roots;
+	roots.folders.emplace(root);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+
+	const auto search = df::search_t::parse("@photo");
+	assert_equal(3, count_search_results(index, search), "every copy in the tree is listed");
+
+	assert_equal(true, platform::delete_items({}, {branch}, false).success(), "delete the branch");
+	assert_equal(false, platform::exists(branch), "the branch is gone from disk");
+
+	df::unique_folders touched;
+	touched.emplace(root);
+	index.queue_validate_changed_folders(std::move(touched));
+
+	assert_equal(1, count_search_results(index, search),
+	             "only the file outside the deleted branch survives");
+}
+
+// The wildcard names the files being looked for, not the folders they are under. Gating the descent
+// on it left a recursive "*.jpg" searching only folders that were themselves called *.jpg, so every
+// nested match was missed.
+static void should_search_a_recursive_wildcard_through_subfolders(shared_test_context& stc)
+{
+	const df::file_path source(test_files_folder, "Test.jpg");
+	const auto root = _temps.next_folder("recursive-wildcard");
+	const auto nested = root.combine("pictures");
+	platform::create_folder(nested);
+
+	assert_equal(true, platform::copy_file(source, root.combine_file("top.jpg"), false, false).success(), "copy top");
+	assert_equal(true, platform::copy_file(source, nested.combine_file("nested.jpg"), false, false).success(),
+	             "copy nested");
+	assert_equal(true, platform::copy_file(source, nested.combine_file("nested.png"), false, false).success(),
+	             "copy other extension");
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	df::index_roots roots;
+	roots.folders.emplace(root);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+
+	const auto recursive = df::search_t().add_selector(df::item_selector(root, true, "*.jpg"));
+	assert_equal(2, count_search_results(index, recursive), "a recursive wildcard reaches nested folders");
+
+	const auto shallow = df::search_t().add_selector(df::item_selector(root, false, "*.jpg"));
+	assert_equal(1, count_search_results(index, shallow), "a shallow wildcard stays in its folder");
+}
+
 static void should_detect_duplicates(shared_test_context& stc)
 {
 	files ff;
@@ -1557,16 +1635,37 @@ static void should_discard_stale_crc_result()
 	initial.name = str::cache("crc.jpg");
 	initial.ft = files::file_type_from_name(initial.name);
 	initial.size = df::file_size(100);
+	initial.file_modified = df::date_t(2026, 1, 1, 10, 0, 0);
 	const auto path = df::file_path("c:\\crc.jpg");
 	const auto item = std::make_shared<df::item_element>(path, initial);
 
-	index.publish_crc(item, path, initial.size, df::item_online_status::disk, 0, 123);
+	index.publish_crc(item, path, initial.size, initial.file_modified.load(), df::item_online_status::disk, 0, 123);
 	auto changed = initial;
 	changed.size = df::file_size(200);
 	item->update(path, changed);
 	async.drain_ui();
 
 	assert_equal(0u, item->crc32c(), "stale CRC result was discarded");
+
+	// A replacement of the same length is still a different file, and only its modified time says
+	// so. Size alone let the previous file's checksum land on the new content.
+	const auto same_size = std::make_shared<df::item_element>(path, initial);
+	index.publish_crc(same_size, path, initial.size, initial.file_modified.load(), df::item_online_status::disk, 0,
+	                  123);
+	auto retouched = initial;
+	retouched.file_modified = df::date_t(2026, 1, 1, 11, 0, 0);
+	same_size->update(path, retouched);
+	async.drain_ui();
+
+	assert_equal(0u, same_size->crc32c(), "a same-size replacement does not take the old checksum");
+
+	// The unchanged file still gets its checksum, or the guard would simply stop CRCs working.
+	const auto unchanged = std::make_shared<df::item_element>(path, initial);
+	index.publish_crc(unchanged, path, initial.size, initial.file_modified.load(), df::item_online_status::disk, 0,
+	                  123);
+	async.drain_ui();
+
+	assert_equal(123u, unchanged->crc32c(), "an unchanged file keeps its checksum");
 }
 
 static void should_detect_rotation(shared_test_context& stc)
@@ -1674,6 +1773,40 @@ static void should_index_concurrently()
 
 	assert_equal(true, reader_iterations.load() > 0, "concurrent readers ran");
 	assert_equal(true, index.is_in_collection(test_files_folder), "collection intact after concurrent indexing");
+}
+
+// validate_folder reads the folder node, enumerates the file system without holding a lock, then
+// publishes what it built. Another thread that rebuilt or scanned the same folder inside that
+// window leaves newer state in the index - this pass copied the file items, atomics and all, when
+// it started - so an unconditional store puts the pre-enumeration copy back over it, losing every
+// scan result recorded since and sending those files through the scanner again.
+static void should_not_publish_a_stale_folder_rebuild()
+{
+	index_items items;
+
+	const auto folder = test_files_folder.combine("stale-rebuild");
+	const auto name = str::cache("stale-rebuild"sv);
+
+	const auto original = std::make_shared<df::index_folder_item>();
+	original->name = name;
+	items.replace(folder, original);
+
+	// What a rebuild that read `original` before it enumerated would publish.
+	const auto stale = std::make_shared<df::index_folder_item>();
+	stale->name = name;
+
+	// Another thread finishes its own rebuild of the same folder first.
+	const auto newer = std::make_shared<df::index_folder_item>();
+	newer->name = name;
+	items.replace(folder, newer);
+
+	assert_equal(true, items.replace_if(folder, original, stale) == newer,
+	             "a rebuild built from a superseded node does not publish");
+	assert_equal(true, items.find(folder) == newer, "the newer node is what the folder still holds");
+
+	assert_equal(true, items.replace_if(folder, newer, stale) == stale,
+	             "a rebuild built from the current node publishes");
+	assert_equal(true, items.find(folder) == stale, "and becomes what the folder holds");
 }
 
 // Verifies the pure prefix-range lookup that powers fast typeahead prediction over the
@@ -2038,10 +2171,21 @@ static void should_keep_a_cached_checksum_the_bytes_still_describe()
 	location_cache locations;
 
 	constexpr uint32_t cached_crc = 0x1234u;
+	constexpr crypto::phash_rotations cached_phash{0x1111ull, 0x2222ull, 0x3333ull, 0x4444ull};
+
+	struct surviving
+	{
+		uint32_t crc = 0;
+		bool has_phash = false;
+		// What the next launch would load, once the validation's own writes are flushed.
+		uint32_t stored_crc = 0;
+		bool has_stored_phash = false;
+	};
 
 	// Writes one cached row for the file, reopens it in a fresh index (which is what builds a node
-	// with no stamp), runs the validation index_folders makes, and answers with the surviving hash.
-	const auto crc_after_validation = [&](const df::date_t scanned) -> uint32_t
+	// with no stamp), runs the validation index_folders makes, and answers with the surviving hashes -
+	// in the node, and in the row a later launch reads back.
+	const auto after_validation = [&](const df::date_t scanned) -> surviving
 	{
 		const auto db_name = _temps.next_path();
 
@@ -2055,6 +2199,7 @@ static void should_keep_a_cached_checksum_the_bytes_still_describe()
 			w.path = file_path;
 			w.md = std::make_shared<prop::item_metadata>();
 			w.crc32c = cached_crc;
+			w.phash = cached_phash;
 			w.metadata_scanned = scanned;
 			writes.emplace_back(std::move(w));
 
@@ -2062,26 +2207,55 @@ static void should_keep_a_cached_checksum_the_bytes_still_describe()
 			db.close();
 		}
 
-		index_state index(as, locations);
-		database db(index);
+		surviving result;
+
+		{
+			index_state index(as, locations);
+			database db(index);
+			db.open(db_name.folder(), db_name.file_name_without_extension());
+
+			assert_equal(cached_crc, index.find_item(file_path).crc32c.load(), "the cached hash was loaded");
+			assert_equal(true, index.find_item(file_path).phash.load() != nullptr,
+			             "the cached picture hash was loaded");
+
+			index.validate_folder(file_path.folder(), true, platform::now());
+
+			const auto item = index.find_item(file_path);
+			result.crc = item.crc32c.load();
+			result.has_phash = item.phash.load() != nullptr;
+
+			db.perform_writes();
+			db.close();
+		}
+
+		index_state reopened(as, locations);
+		database db(reopened);
 		db.open(db_name.folder(), db_name.file_name_without_extension());
 
-		assert_equal(cached_crc, index.find_item(file_path).crc32c.load(), "the cached hash was loaded");
-
-		index.validate_folder(file_path.folder(), true, platform::now());
-		return index.find_item(file_path).crc32c.load();
+		const auto stored = reopened.find_item(file_path);
+		result.stored_crc = stored.crc32c.load();
+		result.has_stored_phash = stored.phash.load() != nullptr;
+		return result;
 	};
 
 	// Scanned after the bytes were last written: nothing has happened to the file since we hashed it.
 	const auto scanned_after = df::date_t(file_modified).add_day(1);
-	assert_equal(cached_crc, crc_after_validation(scanned_after),
+	const auto kept = after_validation(scanned_after);
+	assert_equal(cached_crc, kept.crc,
 	             "a hash of bytes nothing has touched survives the first validation after a launch");
+	assert_equal(true, kept.has_phash, "and so does the picture hash");
+	assert_equal(cached_crc, kept.stored_crc, "and both stay stored for the next launch");
+	assert_equal(true, kept.has_stored_phash, "the picture hash included");
 
 	// Scanned before the bytes were last written: the file was edited while we were not looking, so
-	// the stored hash describes bytes that are gone.
+	// the stored hashes describe bytes that are gone. The picture hash is persisted, so one left
+	// behind here reports the edited file and its untouched copy as the same picture every session.
 	const auto scanned_before = df::date_t(file_modified).add_day(-1);
-	assert_equal(0u, crc_after_validation(scanned_before),
-	             "a hash of bytes that have since been rewritten is cleared");
+	const auto cleared = after_validation(scanned_before);
+	assert_equal(0u, cleared.crc, "a hash of bytes that have since been rewritten is cleared");
+	assert_equal(false, cleared.has_phash, "and so is the picture hash");
+	assert_equal(0u, cleared.stored_crc, "from the stored row too, or the next launch loads it back");
+	assert_equal(false, cleared.has_stored_phash, "the picture hash included");
 }
 
 // Verifies the item-level half of hydration recovery: an item whose thumbnail could not be
@@ -2694,6 +2868,9 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should detect duplicates"s, should_detect_duplicates);
 	tests.add("Should drop deleted items from a search with no folder"s,
 	          should_drop_deleted_items_from_a_search_with_no_folder);
+	tests.add("Should drop descendants of a deleted folder"s, should_drop_descendants_of_a_deleted_folder);
+	tests.add("Should search a recursive wildcard through subfolders"s,
+	          should_search_a_recursive_wildcard_through_subfolders);
 	tests.add("Should request a re-query only when a folder changed"s,
 	          should_request_a_re_query_only_when_a_folder_changed);
 	tests.add("Should require equal size for duplicate CRC"s, should_require_equal_size_for_duplicate_crc);
@@ -2715,6 +2892,7 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should parse roots"s, should_parse_roots);
 	tests.add("Should parse drive label roots"s, should_parse_drive_label_roots);
 	tests.add("Should index concurrently"s, should_index_concurrently);
+	tests.add("Should not publish a stale folder rebuild"s, should_not_publish_a_stale_folder_rebuild);
 	tests.add("Should index offline OneDrive placeholder"s, should_index_offline_placeholder);
 	tests.add("Should clear failed thumbnail on hydration"s, should_clear_failed_thumbnail_on_hydration);
 	tests.add("Should keep a cached checksum the bytes still describe"s,

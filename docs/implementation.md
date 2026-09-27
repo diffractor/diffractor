@@ -99,6 +99,15 @@ shared-texture handoff. Atomic reference counting synchronizes lifetime only.
 `item_element` remains entirely UI-owned. `index_file_item` is a synchronized index record whose
 atomic metadata pointer publishes complete immutable snapshots; published payloads are never mutated.
 
+Three process-wide values are also published to every thread. A translation - and the extra plural
+forms of a plural text - is an atomic pointer into storage `app_text_t` only ever appends to: the UI
+thread publishes on a language switch, and a worker formatting text across the switch reads the old
+string or the new one, never one being rewritten. The strings are read at too many call sites to hand
+each worker a snapshot. The file-group spellings `parse_file_group` accepts are an immutable table
+that a language switch copies, extends and swaps whole, for the same readers. `df::last_loaded_path`
+is a lock-free atomic value that decoding workers write and the crash handler reads, because a
+handler that waited on a lock held by the faulting thread would hang the report it exists to make.
+
 `index_state` owns face consent, the face content revision, and the immutable face snapshot.
 Detection owns its engine on one worker; a separate grouping worker builds detached snapshots and
 swaps the published pointer under the face lock. Groups are derived and never persisted, so a

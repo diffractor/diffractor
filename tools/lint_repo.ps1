@@ -48,6 +48,16 @@ function Get-BlankedSource {
         $c = $Text[$i]
         $next = if ($i + 1 -lt $n) { $Text[$i + 1] } else { [char]0 }
 
+        # A C++14 digit separator (100'000) does not open a character literal. The token the quote
+        # ends decides it: a number starts with a digit, and a literal prefix (u8'x', L'x') does
+        # not. Read as a literal, one separator blanked everything up to the next quote in the file.
+        $isSeparator = $false
+        if ($c -eq "'" -and $i -gt 0) {
+            $s = $i
+            while ($s -gt 0 -and "$($Text[$s - 1])" -match '[0-9A-Za-z_.]') { $s-- }
+            $isSeparator = $s -lt $i -and [char]::IsDigit($Text[$s])
+        }
+
         if ($c -eq '/' -and $next -eq '/') {
             while ($i -lt $n -and $Text[$i] -ne "`n") { & $blank $i; $i++ }
         }
@@ -70,7 +80,7 @@ function Get-BlankedSource {
             for ($k = $i; $k -lt $end + $terminator.Length; $k++) { & $blank $k }
             $i = $end + $terminator.Length
         }
-        elseif ($c -eq '"' -or $c -eq "'") {
+        elseif (($c -eq '"' -or $c -eq "'") -and -not $isSeparator) {
             $quote = $c
             & $blank $i; $i++
             while ($i -lt $n -and $Text[$i] -ne $quote) {
@@ -115,6 +125,13 @@ function Find-CaptureAndMove {
             # Only a plain by-copy capture of an outer variable can observe a move elsewhere in the
             # call: '&' does not copy, and an init-capture introduces a binding of its own.
             if ($p -notmatch '=' -and -not $p.StartsWith('&') -and $p -match '^([A-Za-z_]\w*)$') {
+                $copied += $matches[1]
+            }
+
+            # Except an init-capture that copies an outer variable ([t = tree]): it reads the
+            # variable when the lambda is built, so it observes a move in the same call exactly as
+            # a plain capture does. Only the moving form, [t = std::move(tree)], is exempt.
+            if ($p -match '^[A-Za-z_]\w*\s*=\s*([A-Za-z_]\w*)$') {
                 $copied += $matches[1]
             }
         }
@@ -279,8 +296,9 @@ try {
     }
 
     $rules['no-capture-and-move'] = @{
-        # Only a plain by-copy capture is reported. A '[=]' default capture would need to know which
-        # names it binds, and guessing there would report the safe cases too.
+        # A by-copy capture is reported, plain ([tree]) or through an init-capture ([t = tree]). A
+        # '[=]' default capture would need to know which names it binds, and guessing there would
+        # report the safe cases too.
         Why   = 'AGENTS.md "Argument order": a variable captured by copy and moved in one call is read in unspecified order.'
         Check = {
             $sourceFiles | ForEach-Object { Find-CaptureAndMove $_.FullName }
