@@ -879,8 +879,9 @@ public:
 
 	static int to_rating(const recti rating_bounds, const pointi loc)
 	{
-		// fix - divide by zero!
-		return (loc.x - rating_bounds.left) / std::max(1, rating_bounds.width() / 5) + 1;
+		// Clamped: the cells are whole divisions of the width, so the pixels past the last full cell
+		// - and the inclusive right edge - divided out to a sixth star no rating has.
+		return std::clamp((loc.x - rating_bounds.left) / std::max(1, rating_bounds.width() / 5) + 1, 1, 5);
 	}
 
 	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,

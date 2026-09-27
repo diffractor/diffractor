@@ -481,10 +481,9 @@ void import_view::run()
 			                   }
 		                   });
 
-		                   // A refused row is a file that moved on, not a disk error, and the two are
-		                   // indistinguishable from the row alone. Without this the user would read a
-		                   // partial run as a partly broken one.
-		                   rr.complete(copy_result.refused > 0 ? tt.sync_analysis_changed.sv() : std::string_view{});
+		                   // import_copy completes the run itself, refused rows explained, and the first
+		                   // completion is the only one shown. The scope above stands behind it for a
+		                   // copy that throws instead.
 	                   });
 }
 

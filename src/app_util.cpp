@@ -1010,6 +1010,15 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 		result_text += format_plural_text(tt.import_date_unset_fmt, result.dates_unset);
 	}
 
+	// A refused row is a file that moved on since the review, not a disk error, and the two are
+	// indistinguishable from the row alone. Said here because this is the completion the run
+	// shows: the first one reported is the only one, so a caller adding it afterwards was ignored.
+	if (result.refused > 0)
+	{
+		if (!result_text.empty()) result_text += "\n\n";
+		result_text += tt.sync_analysis_changed.sv();
+	}
+
 	rr.complete(result_text);
 
 	return result;

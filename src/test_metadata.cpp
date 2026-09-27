@@ -760,6 +760,37 @@ static const metadata_kv* find_row(const metadata_block& block, const std::strin
 	return nullptr;
 }
 
+// The block written for an orientation alone linked an empty IFD1 whose next-IFD offset was cut to
+// two of its four bytes, so every reader that walks the chain read past the end of it. The walk here
+// is the one a reader makes, and it has to stay inside the block.
+static void should_write_a_complete_orientation_exif()
+{
+	const auto exif = make_orientation_exif(ui::orientation::right_top);
+	const auto u16 = [&exif](const size_t at)
+	{
+		return static_cast<size_t>(exif[at]) | static_cast<size_t>(exif[at + 1]) << 8;
+	};
+	const auto u32 = [&u16](const size_t at) { return u16(at) | u16(at + 2) << 16; };
+
+	assert_equal(true, exif.size() >= 8 && exif[0] == 'I' && exif[1] == 'I', "a little-endian TIFF header");
+
+	auto ifd = u32(4);
+	auto ifds = 0;
+
+	while (ifd != 0 && ifds < 4)
+	{
+		assert_equal(true, ifd + 2 <= exif.size(), "each IFD's entry count lies inside the block");
+		const auto next_at = ifd + 2 + u16(ifd) * 12;
+		assert_equal(true, next_at + 4 <= exif.size(), "and so does all of its next-IFD offset");
+		ifd = u32(next_at);
+		++ifds;
+	}
+
+	assert_equal(1, ifds, "the chain is the one IFD that carries the orientation");
+	assert_equal(0x0112_z, u16(10), "whose one entry is the orientation tag");
+	assert_equal(static_cast<size_t>(ui::orientation::right_top), u16(18), "holding the value asked for");
+}
+
 // The verbose pane is a block inspector: each embedded block must describe its own extent and
 // present its own shape, so a reader can tell what the file actually contains.
 static void should_present_exif_block_by_ifd()
@@ -2606,6 +2637,7 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should clear tags from an empty Xmp subject"s, should_clear_tags_from_an_empty_xmp_subject);
 	tests.add("Should read the declared panorama projection"s, should_read_the_declared_panorama_projection);
 	tests.add("Should present exif metadata by ifd"s, should_present_exif_block_by_ifd);
+	tests.add("Should write a complete orientation exif"s, should_write_a_complete_orientation_exif);
 	tests.add("Should present maker note section"s, should_present_maker_note_section);
 	tests.add("Should present derived exif section"s, should_present_derived_exif_section);
 	tests.add("Should derive focal length facts"s, should_derive_focal_length_facts);

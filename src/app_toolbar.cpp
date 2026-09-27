@@ -488,7 +488,10 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::browse_search]->enable = is_items_view;
 	_commands[commands::edit_copy]->enable = can_process_local_items;
 	_commands[commands::edit_copy_item_path]->enable = can_process_local_items;
-	_commands[commands::edit_cut]->enable = has_selection;
+	// Cut runs the same eligibility test as Copy when invoked, so it answers the same way here. Enabled
+	// on a bare selection, it offered itself for offline items and outside the item views only to
+	// refuse once chosen.
+	_commands[commands::edit_cut]->enable = can_process_local_items;
 	_commands[commands::edit_item_auto_color]->enable = is_edit_view && _state._edit_item &&
 		_state._edit_item->file_type()->has_trait(file_traits::bitmap);
 	_commands[commands::edit_item_auto_document]->enable = is_edit_view && _state._edit_item &&
@@ -785,7 +788,8 @@ void app_frame::update_button_state(const bool resize)
 	set_disabled_reasons(local_files_result, {commands::print, commands::tool_email});
 	set_disabled_reasons(local_items_result, {
 		                     commands::tool_copy_to_folder, commands::tool_delete, commands::tool_move_to_folder,
-		                     commands::tool_rename, commands::edit_copy, commands::edit_copy_item_path
+		                     commands::tool_rename, commands::edit_copy, commands::edit_copy_item_path,
+		                     commands::edit_cut
 	                     });
 
 	// Photo editing is singular, so its refusal is about the displayed item, not the whole selection.

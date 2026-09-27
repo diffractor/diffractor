@@ -41,6 +41,9 @@ namespace df
 		double _scale = 1.0;
 		pointd _center{0.5, 0.5};
 		pointd _last_explicit_center{0.5, 0.5};
+		// What Fit replaced, so toggling back restores it as it was. A Fit width or Fill left for Fit
+		// came back as the fixed scale it last computed, which then stopped following the viewport.
+		zoom_scale_mode _restore_mode = zoom_scale_mode::explicit_scale;
 		sized _source;
 		bool _carried_fit = false;
 		bool _has_explicit = false;
@@ -184,6 +187,7 @@ namespace df
 			if (!is_fit())
 			{
 				_last_explicit_center = _center;
+				_restore_mode = _mode;
 				_has_explicit = true;
 			}
 			_mode = zoom_scale_mode::fit;
@@ -288,7 +292,8 @@ namespace df
 		{
 			if (is_fit() && _has_explicit)
 			{
-				_mode = zoom_scale_mode::explicit_scale;
+				// A Fit width or Fill comes back as itself; the next layout recomputes its scale.
+				_mode = _restore_mode;
 				_center = _last_explicit_center;
 				_carried_fit = false;
 			}

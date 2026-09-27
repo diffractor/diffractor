@@ -772,26 +772,19 @@ void app_frame::update_overlay()
 
 			ui::animations[this] = [v = _view_media, fv = _view_frame, display, overlay_target]
 			{
-				const auto dd = v->overlay_alpha_target - v->overlay_alpha;
-				bool invalidate = false;
-
-				if (fabs(dd) > 0.001f)
+				// Gated and timed as animate_alpha is: under the CPU renderer the overlay takes its
+				// new state at once, and elsewhere the fade lasts as long at any refresh rate.
+				const auto approach = [&fv](float& value, const float target)
 				{
-					v->overlay_alpha += dd * 0.2345f;
+					const auto dd = target - value;
+					if (fabs(dd) <= 0.001f) return false;
+					value = ui::animations_enabled ? value + dd * ui::animation_step_factor : target;
 					fv->invalidate_view(view_invalid::view_redraw);
-					invalidate = true;
-				}
-				if (display)
-				{
-					const auto zoom_dd = overlay_target - display->_zoom_overlay_alpha;
-					if (fabs(zoom_dd) > 0.001f)
-					{
-						display->_zoom_overlay_alpha += zoom_dd * 0.2345f;
-						fv->invalidate_view(view_invalid::view_redraw);
-						invalidate = true;
-					}
-				}
+					return true;
+				};
 
+				auto invalidate = approach(v->overlay_alpha, v->overlay_alpha_target);
+				if (display && approach(display->_zoom_overlay_alpha, overlay_target)) invalidate = true;
 				return invalidate;
 			};
 
@@ -3385,8 +3378,10 @@ void app_frame::crash(const df::file_path dump_file_path)
 				if (!dump_file_path.is_empty()) zip.add(dump_file_path, name);
 				if (log_file_path.exists()) zip.add(log_file_path);
 				if (previous_log_path.exists()) zip.add(previous_log_path);
-				zip.close();
-				has_zip = true;
+				// Only an archive that closed is one to send. Finishing the central directory can fail
+				// - a full disk, a short write - and the partial file would reach the server as a
+				// corrupt upload while the dump it was meant to carry is deleted below.
+				has_zip = zip.close();
 			}
 
 			std::ostringstream message;

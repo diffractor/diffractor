@@ -189,7 +189,10 @@ static CLSID wic_encoder_clsid(const std::string_view format)
 		{"heic", GUID_ContainerFormatHeif},
 	};
 
-	const auto found = extensions.find(format.substr(df::find_ext(format)));
+	// A bare extension such as "jpg" has no dot for find_ext to find, so the whole text is the
+	// extension. Taking the empty remainder instead fell back to PNG, and a ".jpg" file got PNG bytes.
+	const auto ext_pos = df::find_ext(format);
+	const auto found = extensions.find(ext_pos == format.size() ? format : format.substr(ext_pos));
 	return found == extensions.end() ? GUID_ContainerFormatPng : found->second;
 }
 

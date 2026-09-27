@@ -60,9 +60,24 @@ public:
 	void init(const audio_info_t& format_in)
 	{
 		format = format_in;
-		size = 4 * format.bytes_per_second();
-		data = static_cast<uint8_t*>(_aligned_realloc(
-			data, static_cast<size_t>(size) + static_cast<size_t>(data_padding), data_alignment));
+		const auto wanted = 4 * format.bytes_per_second();
+
+		// A failed realloc answers null and leaves the old block where it was. Assigning the result
+		// unexamined leaked that block and kept a size describing memory that was not there, which
+		// the next append then wrote into. Refused, the buffer holds nothing and plays silence.
+		auto* const resized = static_cast<uint8_t*>(_aligned_realloc(
+			data, static_cast<size_t>(wanted) + static_cast<size_t>(data_padding), data_alignment));
+
+		if (resized)
+		{
+			data = resized;
+			size = wanted;
+		}
+		else
+		{
+			size = 0;
+		}
+
 		start_pos = 0;
 		end_pos = 0;
 	}

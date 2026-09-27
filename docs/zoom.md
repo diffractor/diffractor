@@ -52,7 +52,8 @@ not alter anchoring, final geometry, or image quality.
 
 The explicit ladder ranges from small percentages through 100% to high magnification and always
 steps between fixed adjacent values. Fit is inserted as the floor when its calculated scale lies
-between ladder values. Toggle Fit restores the last explicit scale and center when one exists.
+between ladder values. Toggle Fit restores the scale and center Fit replaced when one exists: an
+explicit scale, or a Fit width or Fill that goes on following the viewport.
 
 Pointer drag, keyboard pan, auto-pan, and navigator repositioning all update the same center. Pan
 acceleration derives from displacement rather than event frequency. Wheel fractions accumulate

@@ -223,8 +223,10 @@ struct prop_variant_t
 		PropVariantClear(&v);
 	}
 
-	prop_variant_t(const variant_t& other) = delete;
-	prop_variant_t& operator=(const variant_t& other) = delete;
+	// PropVariantClear releases what v points to, so a copy would release it twice. The deleted pair
+	// used to name variant_t, which left this type's own copy operations generated.
+	prop_variant_t(const prop_variant_t& other) = delete;
+	prop_variant_t& operator=(const prop_variant_t& other) = delete;
 };
 
 

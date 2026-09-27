@@ -242,19 +242,35 @@ bool movie_output_names_a_clip(const std::vector<movie_clip>& clips, const df::f
 
 // Always forward-slashed, whether relative or absolute. A native Windows path would be written
 // into the JSON with every separator escaped, which is both unreadable and a needless difference
-// between the file this platform writes and the one the other reads.
+// between the file this platform writes and the one the other reads. A '%' is escaped: the reader
+// decodes percent escapes, as a URL wants, so a name holding "%20" came back naming another file
+// and one holding "50%" did not come back at all.
 static std::string to_url(const df::file_path path, const df::folder_path project_folder)
 {
+	const auto escape_percent = [](const std::string_view text)
+	{
+		std::string escaped;
+		escaped.reserve(text.size());
+
+		for (const auto c : text)
+		{
+			if (c == '%') escaped += "%25";
+			else escaped += c;
+		}
+
+		return escaped;
+	};
+
 	if (!project_folder.is_empty())
 	{
 		const auto relative = std::filesystem::path(path.pack()).lexically_relative(
 			std::filesystem::path(project_folder.text().sv()));
-		if (!relative.empty()) return relative.generic_string();
+		if (!relative.empty()) return escape_percent(relative.generic_string());
 	}
 
 	auto result = path.pack();
 	for (auto&& c : result) if (c == '\\') c = '/';
-	return result;
+	return escape_percent(result);
 }
 
 static int hex_digit(const char c)
@@ -278,10 +294,17 @@ static std::optional<std::string> decode_url_path(const std::string_view url)
 			continue;
 		}
 
-		if (i + 2 >= url.size()) return {};
-		const auto high = hex_digit(url[i + 1]);
-		const auto low = hex_digit(url[i + 2]);
-		if (high < 0 || low < 0) return {};
+		// Not an escape, so it is the character itself. A project written before '%' was escaped
+		// holds names such as "50% off.jpg", and refusing the whole path dropped the clip.
+		const auto high = i + 2 < url.size() ? hex_digit(url[i + 1]) : -1;
+		const auto low = i + 2 < url.size() ? hex_digit(url[i + 2]) : -1;
+
+		if (high < 0 || low < 0)
+		{
+			result += url[i];
+			continue;
+		}
+
 		const auto decoded = static_cast<char>((high << 4) | low);
 		if (decoded == '\0') return {};
 		result += decoded;

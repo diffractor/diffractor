@@ -3272,8 +3272,10 @@ public:
 			if (time_id == id && DTN_DATETIMECHANGE == pnmh->code) return on_changed(id, pnmh);
 			if (date_id == id && NM_SETFOCUS == pnmh->code) return on_focus(id, pnmh);
 			if (time_id == id && NM_SETFOCUS == pnmh->code) return on_focus(id, pnmh);
-			if (date_id == id && WM_KILLFOCUS == pnmh->code) return on_focus(id, pnmh);
-			if (time_id == id && WM_KILLFOCUS == pnmh->code) return on_focus(id, pnmh);
+			// NM_KILLFOCUS, not WM_KILLFOCUS: a notification code is never a window message, so the
+			// comparison never matched and the host was told the control gained focus but never lost it.
+			if (date_id == id && NM_KILLFOCUS == pnmh->code) return on_focus(id, pnmh);
+			if (time_id == id && NM_KILLFOCUS == pnmh->code) return on_focus(id, pnmh);
 		}
 
 		return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -7264,15 +7266,30 @@ public:
 		release_image_list();
 	}
 
-	void release_image_list() const
+	// Held here rather than read back from the window. A host destroys its window, and every toolbar
+	// in it, before it frees the control objects, so by this destructor there was no window left to
+	// ask and the list leaked with every dialog that carried a toolbar.
+	void release_image_list()
 	{
-		if (m_hWnd && IsWindow(m_hWnd))
+		if (m_hWnd && IsWindow(m_hWnd)) SetImageList(nullptr);
+
+		if (_image_list)
 		{
-			const auto image_list = SetImageList(nullptr);
-			if (image_list) ImageList_Destroy(image_list);
+			ImageList_Destroy(_image_list);
+			_image_list = nullptr;
 		}
 	}
 
+	// Replaces the list the toolbar draws from, releasing the one it replaces.
+	void attach_image_list()
+	{
+		const auto previous = _image_list;
+		_image_list = create_image_list();
+		SetImageList(_image_list);
+		if (previous) ImageList_Destroy(previous);
+	}
+
+	HIMAGELIST _image_list = nullptr;
 	df::hash_map<uintptr_t, std::shared_ptr<ui::command>> _commands;
 	ui::toolbar_styles _styles;
 	control_host_impl* _parent;
@@ -7366,7 +7383,7 @@ public:
 
 		_ctx->set_window_font(m_hWnd, ui::style::font_face::dialog);
 		SetButtonStructSize();
-		SetImageList(create_image_list());
+		attach_image_list();
 		AddButtons(static_cast<int>(toolbar_buttons.size()), toolbar_buttons.data());
 
 		for (auto i = 0u; i < buttons.size(); i++)
@@ -7522,7 +7539,7 @@ public:
 	void dpi_changed() override
 	{
 		_ctx->set_window_font(m_hWnd, ui::style::font_face::dialog);
-		ImageList_Destroy(SetImageList(create_image_list()));
+		attach_image_list();
 		update_button_size();
 	}
 

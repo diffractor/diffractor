@@ -1571,7 +1571,9 @@ void view_element::set_style_bit(const view_element_style mask, const bool state
 
 					if (dd.abs_sum() > ui::color::color_epsilon)
 					{
-						e->_bg_color += dd * 0.2345f;
+						// Gated and timed as animate_alpha is: under the CPU renderer the colour is
+						// taken at once, and elsewhere the fade lasts as long at any refresh rate.
+						e->_bg_color += ui::animations_enabled ? dd * ui::animation_step_factor : dd;
 						view->invalidate_element(e);
 						invalidate = true;
 					}

@@ -2853,12 +2853,13 @@ void send_info(const view_state& s, const ui::control_frame_ptr& parent)
 		}
 
 		df::zip_file zip;
+		auto has_zip = false;
 
 		if (zip.create(crash_zip_path))
 		{
 			if (log_file_copy.exists()) zip.add(log_file_copy, "diffractor.log");
 			if (previous_log_path.exists()) zip.add(previous_log_path);
-			zip.close();
+			has_zip = zip.close();
 		}
 
 		platform::web_request req;
@@ -2870,9 +2871,15 @@ void send_info(const view_state& s, const ui::control_frame_ptr& parent)
 		req.form_data.emplace_back("build", g_app_build);
 		req.form_data.emplace_back("subject", "Diffractor LOG");
 		req.form_data.emplace_back("submit", "Send Report");
-		req.file_form_data_name = "ff";
-		req.file_name = "logs.zip";
-		req.file_path = crash_zip_path;
+
+		// As the crash report does: an archive that did not close is not attached, and the app
+		// information still goes, which is the part a report cannot do without.
+		if (has_zip)
+		{
+			req.file_form_data_name = "ff";
+			req.file_name = "logs.zip";
+			req.file_path = crash_zip_path;
+		}
 
 		const auto con = platform::connect_to_host("diffractor.com");
 		const auto response = send_request(con, req);

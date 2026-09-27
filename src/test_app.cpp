@@ -436,6 +436,9 @@ static void should_classify_mapi_results()
 struct recording_status final : df::status_i
 {
 	std::vector<std::pair<std::string, item_status>> items;
+	// The first completion only, as the views show it: a later one is ignored.
+	std::string completion;
+	bool completed = false;
 
 	void start_item(std::string_view) override
 	{
@@ -455,8 +458,11 @@ struct recording_status final : df::status_i
 	{
 	}
 
-	void complete(std::string_view) override
+	void complete(const std::string_view message) override
 	{
+		if (completed) return;
+		completion = message;
+		completed = true;
 	}
 
 	void show_errors() override
@@ -705,6 +711,10 @@ static void should_revalidate_import_rows(shared_test_context& stc)
 	assert_equal(true, status->status_of("changed.txt") == item_status::fail, "changed source is refused");
 	assert_equal(true, status->status_of("claimed.txt") == item_status::fail, "claimed destination is refused");
 	assert_equal(2, static_cast<int>(run.refused), "both refusals are reported so the run can say why");
+	// And it does say why, in the completion the view shows - which is the first one reported, so
+	// an explanation added by the caller after the copy had completed never reached the user.
+	assert_equal(true, str::contains(status->completion, tt.sync_analysis_changed.sv()),
+	             "the run explains that files changed since the review");
 
 	assert_equal(true, dest.combine_file("keep.txt").exists(), "unchanged row was imported");
 	assert_equal(false, dest.combine_file("changed.txt").exists(), "refused row wrote nothing");

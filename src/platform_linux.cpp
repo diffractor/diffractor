@@ -524,6 +524,23 @@ platform::file_op_result platform::move_file(const df::file_path existing, const
 
 	if (::rename(from.c_str(), to.c_str()) != 0)
 	{
+		// rename() cannot cross a filesystem boundary, which the Windows move crosses by copying. A
+		// move between two mounts is that copy, then the source removed once the copy is whole. A
+		// source that will not go leaves both in place rather than deleting the copy: under Replace
+		// the copy is all that remains of what stood at the destination.
+		if (errno == EXDEV)
+		{
+			const auto copied = copy_file(existing, destination, fail_if_exists, false);
+			if (copied.failed()) return copied;
+
+			if (::unlink(from.c_str()) != 0)
+			{
+				return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+			}
+
+			return {file_op_result_code::OK};
+		}
+
 		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
 	}
 

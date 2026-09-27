@@ -571,6 +571,26 @@ static void should_round_trip_a_movie_project()
 	             "and the sibling relative path resolves back");
 }
 
+// A '%' went into the project as it was and came back through the reader's percent decoding, so
+// "50% off.jpg" did not come back at all and "a%20b.jpg" came back naming "a b.jpg" instead.
+static void should_round_trip_percent_signs_in_clip_paths()
+{
+	const std::vector clips{make_photo("50% off.jpg", 5, {4000, 3000}), make_photo("a%20b.jpg", 5, {4000, 3000})};
+	const movie_settings settings;
+
+	const auto json = write_otio(clips, settings, movie_test_folder());
+	const auto read = read_otio(json, movie_test_folder());
+	assert_equal(2_z, read.clips.size(), "both clips come back");
+	assert_equal(clips[0].path.pack(), read.clips[0].path.pack(), "a bare percent sign survives");
+	assert_equal(clips[1].path.pack(), read.clips[1].path.pack(), "and so does one that reads like an escape");
+
+	// A project written before the sign was escaped still opens: a '%' that begins no escape is the
+	// character itself rather than a reason to drop the clip.
+	const auto legacy = read_otio(str::replace(json, "50%25", "50%"), movie_test_folder());
+	assert_equal(2_z, legacy.clips.size(), "an older project keeps both clips");
+	assert_equal(clips[0].path.pack(), legacy.clips[0].path.pack(), "with the name it was given");
+}
+
 static void should_read_a_movie_project_it_did_not_write()
 {
 	// One video track carrying a Gap, beside an audio track. Movie takes the clips it understands
@@ -912,6 +932,7 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	// The project file
 	//
 	tests.add("Should round trip a movie project"s, should_round_trip_a_movie_project);
+	tests.add("Should round trip percent signs in clip paths"s, should_round_trip_percent_signs_in_clip_paths);
 	tests.add("Should bound movie project durations"s, should_bound_movie_project_durations);
 	tests.add("Should read a movie project it did not write"s, should_read_a_movie_project_it_did_not_write);
 	tests.add("Should import a movie maker project"s, should_import_a_movie_maker_project);

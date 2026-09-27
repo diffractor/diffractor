@@ -286,6 +286,36 @@ static void should_toggle_fit_to_last_explicit_zoom()
 	assert_zoom_near(0.75, zoom.center().Y, "last explicit center y restored");
 }
 
+// Toggling Fit and back returned a Fit width or Fill as the fixed scale it had last computed, so the
+// restored view stopped following the window. The variant is what comes back, not its number.
+static void should_toggle_fit_back_to_a_fit_variant()
+{
+	df::zoom_view_state zoom;
+	constexpr sized source{4000, 3000};
+
+	zoom.fit_width(source, {1000, 500});
+	zoom.toggle_fit();
+	assert_equal(true, zoom.is_fit(), "the first toggle fits");
+
+	zoom.toggle_fit();
+	assert_equal(true, zoom.mode() == df::zoom_scale_mode::fit_width, "the second toggle restores fit width");
+
+	zoom.update_fit_variant(source, {2000, 500});
+	assert_zoom_near(0.5, zoom.effective_scale(0.1666666667), "which still follows the viewport");
+}
+
+// The five cells are whole divisions of the width, so a width that is not a multiple of five left a
+// few pixels past the last cell, and the inclusive right edge sits past it too. Both divided out to a
+// sixth star, which is a rating nothing can hold.
+static void should_hit_test_ratings_within_five_stars()
+{
+	const recti bounds(0, 0, 104, 20);
+	assert_equal(1, rating_control::to_rating(bounds, {0, 10}), "the left edge is one star");
+	assert_equal(5, rating_control::to_rating(bounds, {99, 10}), "the last cell is five stars");
+	assert_equal(5, rating_control::to_rating(bounds, {103, 10}), "and so are the pixels past it");
+	assert_equal(5, rating_control::to_rating(bounds, {104, 10}), "and the inclusive right edge");
+}
+
 static void should_keep_zoom_anchor_through_layout_change()
 {
 	df::zoom_view_state zoom;
@@ -2579,6 +2609,8 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should suspend carried zoom model below fit"s, should_suspend_carried_zoom_below_fit);
 	tests.add("Should clamp zoom model pan to edges"s, should_clamp_zoom_model_pan_to_edges);
 	tests.add("Should toggle zoom model fit to last explicit view"s, should_toggle_fit_to_last_explicit_zoom);
+	tests.add("Should toggle zoom model fit back to a fit variant"s, should_toggle_fit_back_to_a_fit_variant);
+	tests.add("Should hit test ratings within five stars"s, should_hit_test_ratings_within_five_stars);
 	tests.add("Should keep zoom model anchor through layout change"s,
 	          should_keep_zoom_anchor_through_layout_change);
 	tests.add("Should zoom model region to viewport"s, should_zoom_model_region_to_viewport);

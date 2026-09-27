@@ -2699,24 +2699,20 @@ platform::scan_result platform::scan(const df::folder_path save_path)
 static bool invoke_assoc(const ComPtr<IAssocHandler>& handler, const std::vector<df::file_path>& files,
                          const std::vector<df::folder_path>& folders)
 {
-	bool success = true;
 	const ComPtr<items_data_object> data = new items_data_object();
 	data->cache(files, folders);
 
+	// The invoker first, and the handler's own Invoke when the invoker cannot be made or will not run.
+	// An invoker that could not even be created used to leave nothing tried at all while the command
+	// reported that the application had opened.
 	ComPtr<IAssocHandlerInvoker> invoker;
 
-	if (SUCCEEDED(handler->CreateInvoker(data.Get(), &invoker)))
+	if (SUCCEEDED(handler->CreateInvoker(data.Get(), &invoker)) && SUCCEEDED(invoker->Invoke()))
 	{
-		if (FAILED(invoker->Invoke()))
-		{
-			if (FAILED(handler->Invoke(data.Get())))
-			{
-				success = false;
-			}
-		}
+		return true;
 	}
 
-	return success;
+	return SUCCEEDED(handler->Invoke(data.Get()));
 }
 
 std::vector<platform::open_with_entry> platform::assoc_handlers(const std::string_view ext)
@@ -3139,7 +3135,11 @@ void platform::set_clipboard(const std::string_view text)
 				text_copy[text_size] = static_cast<wchar_t>(0); // null character 
 				GlobalUnlock(hglbCopy);
 
-				SetClipboardData(CF_UNICODETEXT, hglbCopy);
+				// The clipboard owns the memory only once it has accepted it; refused, it is still ours.
+				if (!SetClipboardData(CF_UNICODETEXT, hglbCopy))
+				{
+					GlobalFree(hglbCopy);
+				}
 			}
 			else
 			{

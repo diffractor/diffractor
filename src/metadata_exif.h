@@ -38,6 +38,8 @@ enum exif_format
 
 inline df::blob make_orientation_exif(ui::orientation orientation)
 {
+	// One IFD and nothing after it. The block used to link an empty IFD1 whose next-IFD offset was
+	// cut to two of its four bytes, so every reader following the chain read past the end of it.
 	df::blob exif_block = {
 		0x49, 0x49,
 		0x2A, 0x00,
@@ -45,9 +47,7 @@ inline df::blob make_orientation_exif(ui::orientation orientation)
 		0x01, 0x00, // ifd0 entrycount
 		0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, static_cast<uint8_t>(orientation), 0x00, 0x00, 0x00,
 		// orientation
-		0x1a, 0x00, 0x00, 0x00, // ifd1 offset
-		0x00, 0x00, // ifd1 entry count
-		0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, // no next ifd
 	};
 
 	return exif_block;

@@ -815,6 +815,11 @@ class file_read_stream final : public read_stream
 	void load_buffer(uint64_t pos, size_t len);
 
 public:
+	file_read_stream() = default;
+	// It owns _buffer, which the destructor frees, so a copy would free it twice.
+	file_read_stream(const file_read_stream&) = delete;
+	file_read_stream& operator=(const file_read_stream&) = delete;
+
 	bool open(df::file_path path);
 	bool open(platform::file_ptr h);
 	void close();

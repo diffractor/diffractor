@@ -2184,6 +2184,27 @@ df::item_element_ptr df::item_group::drawable_from_layout_location(const pointi 
 }
 
 
+// Folds the duplicates bit into the published mask from the count as it stands now, with a
+// compare-exchange so a mask republished concurrently is not overwritten. Both writers finish here:
+// calc_search_presence republishes the whole mask from a count it read earlier, and a count that
+// update_duplicates published in between would otherwise be lost under that store - leaving a
+// duplicate out of a duplicates search, because the mask is a hard rejection filter.
+static void fold_duplicates_bit(std::atomic<search_presence_mask>& presence,
+                                const std::atomic<df::duplicate_info>& duplicates)
+{
+	auto existing = presence.load();
+	search_presence_mask updated;
+
+	do
+	{
+		updated = existing;
+
+		if (duplicates.load().count > 1) updated.types |= search_presence_mask::duplicates;
+		else updated.types &= ~search_presence_mask::duplicates;
+	}
+	while (!presence.compare_exchange_weak(existing, updated));
+}
+
 void df::index_file_item::update_duplicates(const index_folder_item_ptr& f, const duplicate_info dup_info) const
 {
 	const auto existing = duplicates.load();
@@ -2191,21 +2212,7 @@ void df::index_file_item::update_duplicates(const index_folder_item_ptr& f, cons
 	if (existing.count != dup_info.count || existing.group != dup_info.group)
 	{
 		duplicates = dup_info;
-
-		// calc_search_presence can republish the whole mask concurrently, so the duplicates bit
-		// has to be folded in with a compare-exchange rather than a read-modify-write.
-		auto existing_presence = search_presence.load();
-		search_presence_mask updated_presence;
-
-		do
-		{
-			updated_presence = existing_presence;
-
-			if (dup_info.count > 1) updated_presence.types |= search_presence_mask::duplicates;
-			else updated_presence.types &= ~search_presence_mask::duplicates;
-		}
-		while (!search_presence.compare_exchange_weak(existing_presence, updated_presence));
-
+		fold_duplicates_bit(search_presence, duplicates);
 		f->update_search_presence(*this);
 	}
 }
@@ -2228,6 +2235,7 @@ void df::index_file_item::calc_search_presence() const
 	}
 
 	search_presence = updated;
+	fold_duplicates_bit(search_presence, duplicates);
 }
 
 void df::item_element::render_bg(ui::draw_context& dc, const item_group&, const pointi element_offset) const
