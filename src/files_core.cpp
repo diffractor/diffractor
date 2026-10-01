@@ -618,7 +618,7 @@ void load_file_types()
 		}
 	}
 
-	av_initialise(s_config.types_by_name);
+	av_initialise();
 }
 
 static std::vector<file_map_link> s_map_links;

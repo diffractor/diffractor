@@ -623,27 +623,9 @@ static void term_join(std::string& result, const std::string_view term)
 	result += term_quote(term);
 }
 
-static void term_join(std::string& result, const char modifier, const std::string_view term)
-{
-	if (!result.empty()) result += ' ';
-	result += modifier;
-	result += term_quote(term);
-}
-
 static void term_join(std::string& result, const std::string_view scope, const std::string_view term)
 {
 	if (!result.empty()) result += ' ';
-	result += scope;
-	result += ':';
-	result += ' ';
-	result += term_quote(term);
-}
-
-static void term_join(std::string& result, const char modifier, const std::string_view scope,
-                      const std::string_view term)
-{
-	if (!result.empty()) result += ' ';
-	result += modifier;
 	result += scope;
 	result += ':';
 	result += ' ';
@@ -1836,8 +1818,6 @@ inline bool same_term(const std::string_view text, const df::search_term& term)
 
 df::search_result compare_text(const df::search_term& term, const df::index_file_item& file)
 {
-	const auto& text = term.text;
-
 	if (contains_term(file.name, term)) return {df::search_result_type::match_prop, prop::file_name};
 	if (same_term(prop::format_size(file.size), term)) return {df::search_result_type::match_prop, prop::file_size};
 

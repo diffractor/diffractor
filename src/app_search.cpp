@@ -6,8 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Main application implementation. Handles app initialization, window management,
-// command processing, toolbar/menu creation, and coordinates all background worker threads.
+// Purpose: The address box. Search editing, focus, Enter, Cancel and accepting a prediction, and
+// the auto-complete that ranks history, recent folders, tags, index vocabulary and scoped values
+// (tag:, with:, ...) on the auto-complete worker before publishing them to the prediction list.
 
 #include "pch.h"
 

@@ -70,9 +70,6 @@ public:
 
 	std::shared_ptr<view_base> _view;
 
-	int _fps_counter = 0;
-	int _fps_avg = 0;
-	int _fps_second = 0;
 	bool _control_down = false;
 
 	// Wheel accumulation happens once, here, rather than in each consumer. Two remainders per axis
@@ -108,8 +105,6 @@ public:
 		if (notch.steps == 0 && notch.delta == 0) return false;
 		return _view->mouse_wheel(loc, notch);
 	}
-
-	double frame_render_time = 0.0;
 
 	void init(const ui::control_frame_ptr& owner)
 	{
@@ -165,27 +160,6 @@ public:
 		update_controller(frame()->cursor_location());
 	}
 
-	int fps() const
-	{
-		return _fps_avg;
-	}
-
-	void calc_fps(const double time)
-	{
-		const auto sec = static_cast<int>(time);
-
-		if (sec == _fps_second)
-		{
-			_fps_counter += 1;
-		}
-		else
-		{
-			_fps_avg = (_fps_avg + _fps_counter + 1) / 2;
-			_fps_counter = 1;
-			_fps_second = sec;
-		}
-	}
-
 	void on_window_destroy() override
 	{
 	}
@@ -198,10 +172,7 @@ public:
 
 	void on_window_paint(ui::draw_context& dc) override
 	{
-		const auto time_now = df::now();
-
-		calc_fps(time_now);
-		dc.time_now = time_now;
+		dc.time_now = df::now();
 		dc.colors.alpha = 1.0;
 		dc.colors.overlay_alpha = 1.0;
 
@@ -222,8 +193,6 @@ public:
 			const auto pad = df::round(2 * dc.scale_factor);
 			dc.draw_border(_controller_bounds, _controller_bounds.inflate(pad), c, c);
 		}
-
-		frame_render_time = (frame_render_time + df::now() - time_now) / 2.0;
 	}
 
 	void on_mouse_wheel(const pointi loc, const int delta, const ui::key_state keys, bool& was_handled) override
@@ -606,8 +575,6 @@ public:
 	ui::toolbar_ptr _movie_commands;
 	ui::toolbar_ptr _busy_commands;
 
-	std::string _last_favorite_tags;
-
 	std::shared_ptr<ui::complete_strategy_t> _search_completes;
 	ui::list_window_ptr _search_predictions_frame;
 
@@ -778,7 +745,6 @@ public:
 	void display_changed() override;
 	void open_default_folder();
 	void view_changed(view_type m) override;
-	void play_state_changed(bool play) override;
 	void search_complete(const df::search_t& path, bool path_changed) override;
 	void save_options(bool search_only = false);
 	void reload();

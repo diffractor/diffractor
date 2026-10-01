@@ -28,7 +28,7 @@ The Linux implementation currently provides:
 | Files, mapping, enumeration, paths | `platform_linux_files.cpp` |
 | Copy, move, delete, and shell stand-ins | `platform_linux_desktop.cpp` |
 | INI settings | `platform_linux_settings.cpp` |
-| Style, key mapping, and UI-thread identity | `platform_linux_ui.cpp` |
+| System theme colours, key codes, and UI-thread identity | `platform_linux_ui.cpp` |
 
 Path identity follows the filesystem: case-insensitive on Windows and case-sensitive on Linux.
 Case-folded comparisons remain appropriate for media types, tags, and other vocabulary, but not for

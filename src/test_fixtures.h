@@ -122,10 +122,6 @@ public:
 	{
 	}
 
-	void play_state_changed(const bool play) override
-	{
-	}
-
 	void search_complete(const df::search_t& path, bool path_changed) override
 	{
 	}

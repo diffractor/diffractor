@@ -127,7 +127,6 @@ public:
 	std::unique_ptr<av_scaler> _display_scaler;
 	ui::surface_ptr _display_surface;
 	sizei _display_dims;
-	double _display_time = -1.0;
 	bool _display_valid = false;
 	bool _display_high_quality = false;
 
@@ -269,7 +268,6 @@ public:
 			_display_surface))
 		{
 			_display_dims = dst;
-			_display_time = _surface->time();
 			_display_high_quality = high_quality;
 			_display_valid = true;
 			return _display_surface;
@@ -611,7 +609,6 @@ public:
 	bool _scene_covers_damage = false;
 
 	ui::surface_ptr _shadow;
-	ui::surface_ptr _inverse_shadow;
 	// Decoding runs inside replay_scene, so a failure that is not latched is re-attempted once per
 	// shadow, per tile, per frame.
 	bool _shadow_art_loaded = false;
@@ -839,7 +836,6 @@ public:
 		_scene.clear();
 		_text_renderers.clear();
 		_shadow.reset();
-		_inverse_shadow.reset();
 		free_buffer();
 	}
 
@@ -931,14 +927,6 @@ public:
 		record_or_run([this, bounds, c] { _canvas.fill_rect(bounds, c); });
 	}
 
-	void draw_rect_gradient(const recti bounds, const ui::color c_centre, const ui::color c_corner) override
-	{
-		record_or_run([this, bounds, c_centre, c_corner]
-		{
-			_canvas.fill_rect_gradient(bounds, c_centre, c_corner);
-		});
-	}
-
 	// The hardware backend inflates by 2, fills the body with c.emphasize() and lets the circle
 	// pixel shader fade the outside away: the visible shape is a rounded rect whose edge sits at
 	// 0.833 * (radius + 2) from the corner centres, which is what is reproduced here. The four
@@ -983,7 +971,7 @@ public:
 				const auto r = vv->_rects[i];
 				const auto c = vv->_colors[i];
 
-				if (r.height() > 1) do_draw_shadow(r, 8, c.a / 2.0f, false);
+				if (r.height() > 1) do_draw_shadow(r, 8, c.a / 2.0f);
 				_canvas.fill_rect_gradient(r, c.emphasize(), c);
 			}
 		});
@@ -1146,47 +1134,28 @@ public:
 	}
 
 	// The shadow is drawn in the band of `width` pixels outside `bounds`, which is what the
-	// hardware backend's shadow vertices cover. `width` must be honoured - draw_edge_shadows and
-	// the audio visualizer both pass sizes other than the frame default.
+	// hardware backend's shadow vertices cover. `width` must be honoured - the audio visualizer and
+	// the bubble background each pass their own size.
 	void ensure_shadow_art()
 	{
 		if (_shadow_art_loaded) return;
 		_shadow_art_loaded = true;
 
 		_shadow = decode_png_resource_to_surface(IDB_SHADOW);
-		_inverse_shadow = decode_png_resource_to_surface(IDB_INVERSE_SHADOW);
 
-		if (!ui::is_valid(_shadow) || !ui::is_valid(_inverse_shadow))
+		if (!ui::is_valid(_shadow))
 		{
 			df::log(__FUNCTION__, "shadow art could not be decoded - shadows will not be drawn");
 		}
 	}
 
-	void do_draw_shadow(const recti bounds, const int width, const float alpha, const bool inverse)
+	void do_draw_shadow(const recti bounds, const int width, const float alpha)
 	{
 		if (width <= 0 || alpha <= 0.0f) return;
 
 		ensure_shadow_art();
 
-		const auto& s = inverse ? _inverse_shadow : _shadow;
-		if (ui::is_valid(s)) stretch_shadow(*s, bounds.inflate(width), width, alpha);
-	}
-
-	void draw_shadow(const recti bounds, const int width, const float alpha, const bool inverse) override
-	{
-		record_or_run([this, bounds, width, alpha, inverse] { do_draw_shadow(bounds, width, alpha, inverse); });
-	}
-
-	void do_edge_shadows(const float alpha)
-	{
-		// Same geometry as the hardware backend.
-		const auto size = std::min(std::min(_client_extent.cx / 2, _client_extent.cy / 2), 96);
-		do_draw_shadow(recti(0, 0, _client_extent.cx, _client_extent.cy).inflate(-size), size, alpha, true);
-	}
-
-	void draw_edge_shadows(const float alpha) override
-	{
-		record_or_run([this, alpha] { do_edge_shadows(alpha); });
+		if (ui::is_valid(_shadow)) stretch_shadow(*_shadow, bounds.inflate(width), width, alpha);
 	}
 
 	// bubble --------------------------------------------------------------------------------

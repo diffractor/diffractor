@@ -18,7 +18,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <utime.h>
 
 namespace
 {
@@ -30,12 +29,6 @@ namespace
 	{
 		return (static_cast<uint64_t>(ts.tv_sec) + ft_epoch_to_unix_seconds) * ft_ticks_per_second +
 			static_cast<uint64_t>(ts.tv_nsec) / 100u;
-	}
-
-	time_t to_unix_seconds(const df::date_t date)
-	{
-		if (!date.is_valid()) return 0;
-		return static_cast<time_t>(date._i / ft_ticks_per_second) - static_cast<time_t>(ft_epoch_to_unix_seconds);
 	}
 
 	platform::file_attributes_t attributes_from_stat(const std::string& path)
@@ -138,34 +131,6 @@ namespace
 		bool trunc(const uint64_t pos) const override
 		{
 			return ::ftruncate(_fd, static_cast<off_t>(pos)) == 0;
-		}
-
-		df::date_t get_created() override
-		{
-			struct stat st = {};
-			if (::fstat(_fd, &st) != 0) return {};
-			return df::date_t(to_ticks(st.st_ctim));
-		}
-
-		// A creation time cannot be set on Linux; birth time is not writable through any portable
-		// interface. Recorded as a no-op rather than silently writing the modified time instead.
-		void set_created(df::date_t) override
-		{
-		}
-
-		df::date_t get_modified() override
-		{
-			struct stat st = {};
-			if (::fstat(_fd, &st) != 0) return {};
-			return df::date_t(to_ticks(st.st_mtim));
-		}
-
-		void set_modified(const df::date_t date) override
-		{
-			timespec times[2] = {};
-			times[0].tv_nsec = UTIME_OMIT;
-			times[1].tv_sec = to_unix_seconds(date);
-			::futimens(_fd, times);
 		}
 
 		df::file_path path() const override

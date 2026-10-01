@@ -534,16 +534,6 @@ struct file_load_result
 };
 
 
-struct png_parts
-{
-	uint32_t width = 0;
-	uint32_t height = 0;
-	df::blob idat;
-	df::blob plte;
-
-	metadata_parts metadata;
-};
-
 struct webp_parts
 {
 	int width = 0;
@@ -639,7 +629,6 @@ void add_structure_section(metadata_kv_list& kv, std::string_view key, std::stri
                            bool open_by_default = false);
 void finish_structure_sections(metadata_kv_list& kv);
 
-png_parts split_png(read_stream& s);
 media_name_props scan_info_from_title(std::string_view name);
 
 // What a loader read from the header before it committed to decoding. Lets a caller tell "too big

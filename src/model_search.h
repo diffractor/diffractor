@@ -337,65 +337,7 @@ namespace df
 				end_group == 0;
 		}
 
-		friend bool operator==(const search_term_modifier& lhs, const search_term_modifier& rhs)
-		{
-			return lhs.positive == rhs.positive
-				&& lhs.logical_op == rhs.logical_op
-				&& lhs.less_than == rhs.less_than
-				&& lhs.greater_than == rhs.greater_than
-				&& lhs.equals == rhs.equals
-				&& lhs.begin_group == rhs.begin_group
-				&& lhs.end_group == rhs.end_group;
-		}
-
-		friend bool operator!=(const search_term_modifier& lhs, const search_term_modifier& rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const search_term_modifier& lhs, const search_term_modifier& rhs)
-		{
-			if (lhs.positive < rhs.positive)
-				return true;
-			if (rhs.positive < lhs.positive)
-				return false;
-			if (lhs.logical_op < rhs.logical_op)
-				return true;
-			if (rhs.logical_op < lhs.logical_op)
-				return false;
-			if (lhs.less_than < rhs.less_than)
-				return true;
-			if (rhs.less_than < lhs.less_than)
-				return false;
-			if (lhs.greater_than < rhs.greater_than)
-				return true;
-			if (rhs.greater_than < lhs.greater_than)
-				return false;
-			if (lhs.equals < rhs.equals)
-				return true;
-			if (rhs.equals < lhs.equals)
-				return false;
-			if (lhs.begin_group < rhs.begin_group)
-				return true;
-			if (rhs.begin_group < lhs.begin_group)
-				return false;
-			return lhs.end_group < rhs.end_group;
-		}
-
-		friend bool operator<=(const search_term_modifier& lhs, const search_term_modifier& rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const search_term_modifier& lhs, const search_term_modifier& rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const search_term_modifier& lhs, const search_term_modifier& rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const search_term_modifier&, const search_term_modifier&) = default;
 
 		void clear()
 		{
@@ -443,55 +385,7 @@ namespace df
 		{
 		}
 
-		friend bool operator==(const date_parts& lhs, const date_parts& rhs)
-		{
-			return lhs.age == rhs.age
-				&& lhs.year == rhs.year
-				&& lhs.month == rhs.month
-				&& lhs.day == rhs.day
-				&& lhs.target == rhs.target;
-		}
-
-		friend bool operator!=(const date_parts& lhs, const date_parts& rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const date_parts& lhs, const date_parts& rhs)
-		{
-			if (lhs.age < rhs.age)
-				return true;
-			if (rhs.age < lhs.age)
-				return false;
-			if (lhs.year < rhs.year)
-				return true;
-			if (rhs.year < lhs.year)
-				return false;
-			if (lhs.month < rhs.month)
-				return true;
-			if (rhs.month < lhs.month)
-				return false;
-			if (lhs.day < rhs.day)
-				return true;
-			if (rhs.day < lhs.day)
-				return false;
-			return lhs.target < rhs.target;
-		}
-
-		friend bool operator<=(const date_parts& lhs, const date_parts& rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const date_parts& lhs, const date_parts& rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const date_parts& lhs, const date_parts& rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const date_parts&, const date_parts&) = default;
 
 		bool is_empty() const
 		{

@@ -59,7 +59,6 @@ class db_statement
 {
 	sqlite3* _db;
 	sqlite3_stmt* _handle;
-	mutable int _last_step_result = SQLITE_OK;
 
 public:
 	db_statement(sqlite3* db, const std::string& sql) : _db(db), _handle(nullptr)
@@ -213,7 +212,7 @@ public:
 	{
 		if (_handle != nullptr)
 		{
-			const int result = _last_step_result = sqlite3_step(_handle);
+			const int result = sqlite3_step(_handle);
 
 			switch (result)
 			{
@@ -229,25 +228,11 @@ public:
 		return false;
 	}
 
-	bool read_complete() const
-	{
-		return _handle != nullptr && _last_step_result == SQLITE_DONE;
-	}
-
 	void exec() const
 	{
 		while (read())
 		{
 		}
-	}
-
-	bool exec_checked() const
-	{
-		if (_handle == nullptr) return false;
-		_last_step_result = sqlite3_step(_handle);
-		if (_last_step_result == SQLITE_DONE) return true;
-		db_trace_error(_db, "sqlite3_step");
-		return false;
 	}
 
 	int int32(const int i) const
@@ -266,11 +251,6 @@ public:
 			return sqlite3_column_int64(_handle, i);
 		}
 		return 0;
-	}
-
-	double double_value(const int i) const
-	{
-		return _handle != nullptr ? sqlite3_column_double(_handle, i) : 0.0;
 	}
 
 	std::string text(const int i) const

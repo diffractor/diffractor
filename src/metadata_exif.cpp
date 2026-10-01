@@ -558,9 +558,6 @@ class exif_parser
 	uint32_t _dir_offsets_size = 0;
 	uint32_t _dir_offsets[32] = {};
 
-	uint32_t _thumbnail_offset = 0;
-	uint32_t _thumbnail_length = 0;
-
 	str::cached _make = {};
 
 public:
@@ -719,12 +716,9 @@ private:
 			}
 			break;
 
+		// The embedded thumbnail is located by the photo scanner; these are not handed on as values.
 		case EXIF_TAG_JPEG_INTERCHANGE_FORMAT:
-			_thumbnail_offset = entry.get_uint32();
-			break;
-
 		case EXIF_TAG_JPEG_INTERCHANGE_FORMAT_LENGTH:
-			_thumbnail_length = entry.get_uint32();
 			break;
 
 		default:
@@ -1227,13 +1221,10 @@ public:
 		case MNOTE_CANON_TAG_SETTINGS_1:
 			if (entry._components > 27 && entry._components < 1000) // Often corrupt by windows
 			{
-				auto flash = entry.get_int16(4);
 				const auto lens = entry.get_int16(22);
 				const auto high_focal_len = entry.get_int16(23);
 				const auto low_focal_len = entry.get_int16(24);
 				const auto focal_units = entry.get_int16(25);
-				auto max_aperture = entry.get_int16(26);
-				auto min_aperture = entry.get_int16(27);
 
 				str::cached lens_text = {};
 

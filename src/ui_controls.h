@@ -1753,8 +1753,6 @@ class hex_control final : public std::enable_shared_from_this<hex_control>, publ
 	using hex_source = std::variant<display_state_ptr, std::vector<uint8_t>>;
 	hex_source _source;
 
-	mutable int _x_data = 0;
-	mutable int _x_text = 0;
 	mutable int _bytes_per_line = 0;
 	mutable int _chars_per_line = 0;
 	mutable int _line_height = 0;

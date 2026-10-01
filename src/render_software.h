@@ -336,7 +336,7 @@ namespace ui
 			}
 		}
 
-		// Matches the hardware backend's draw_rect_gradient, which draws a four-triangle fan from the
+		// Matches the hardware backend's audio visualizer bars, each a four-triangle fan from the
 		// centre vertex: the centre carries c_centre and all four corners c_corner, so the colour the
 		// rasteriser interpolates at a point is lerp(c_centre, c_corner, max(|dx|/hw, |dy|/hh)).
 		// Each row is split into a constant middle span (where the vertical term dominates) and a

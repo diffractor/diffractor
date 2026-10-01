@@ -709,32 +709,6 @@ public:
 		return SetEndOfFile(_h) != 0;
 	}
 
-	df::date_t get_created() override
-	{
-		FILETIME ftm{};
-		if (!GetFileTime(_h, &ftm, nullptr, nullptr)) return {};
-		return df::date_t(ft_to_ts(ftm));
-	}
-
-	void set_created(const df::date_t date) override
-	{
-		const auto ftm = ts_to_ft(date._i);
-		SetFileTime(_h, &ftm, nullptr, nullptr);
-	}
-
-	df::date_t get_modified() override
-	{
-		FILETIME ftm{};
-		if (!GetFileTime(_h, nullptr, nullptr, &ftm)) return {};
-		return df::date_t(ft_to_ts(ftm));
-	}
-
-	void set_modified(const df::date_t date) override
-	{
-		const auto ftm = ts_to_ft(date._i);
-		SetFileTime(_h, nullptr, nullptr, &ftm);
-	}
-
 	df::file_path path() const override
 	{
 		if (_h != INVALID_HANDLE_VALUE)

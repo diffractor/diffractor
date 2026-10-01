@@ -423,36 +423,16 @@ void import_view::run()
 	const auto detach = std::make_shared<detach_file_handles>(_state);
 	auto token = df::cancel_token(*cancel_source);
 	const auto view = shared_from_this();
-	const auto results = std::make_shared<view_command_status>(_state._async, cancel_source,
-	                                                           [view, processing_generation](const size_t index)
-	                                                           {
-		                                                           if (view->is_processing_generation(
-			                                                           processing_generation)) view->
-				                                                           processing_work_item(index);
-	                                                           },
-	                                                           [view, completion_status, processing_generation](
-	                                                           std::string message,
-	                                                           const std::vector<view_operation_result>& results)
-	                                                           {
-		                                                           if (!view->is_processing_generation(
-			                                                           processing_generation)) return;
-		                                                           view->end_processing();
-		                                                           const auto result_summary = view->show_results(
-			                                                           results);
-		                                                           // The counts state what the run did; the message
-		                                                           // states why some rows did nothing. A partial run
-		                                                           // needs both.
-		                                                           view->_status = result_summary.empty()
-			                                                           ? (message.empty()
-				                                                              ? completion_status
-				                                                              : std::move(message))
-			                                                           : (message.empty()
-				                                                              ? result_summary
-				                                                              : result_summary + "  " + message);
-		                                                           view->_state.invalidate_view(
-			                                                           view_invalid::status |
-			                                                           view_invalid::command_state);
-	                                                           });
+	// The counts state what the run did; the message states why some rows did nothing. A partial
+	// run needs both.
+	const auto results = make_run_status(view, processing_generation, cancel_source,
+	                                     [completion_status](std::string& status, std::string summary,
+	                                                         std::string message)
+	{
+		status = summary.empty()
+			         ? (message.empty() ? completion_status : std::move(message))
+			         : (message.empty() ? std::move(summary) : summary + "  " + message);
+	});
 
 	_state.queue_async(async_queue::work,
 	                   [&s = _state, results, view, analysis_result, options, token, detach, processing_generation]

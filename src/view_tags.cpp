@@ -195,31 +195,12 @@ void tags_view::run()
 	const auto cancel_source = processing_cancel_source();
 	_status = std::string(tt.processing.sv());
 
-	const auto view = shared_from_this();
-	const auto results = std::make_shared<view_command_status>(_state._async, cancel_source,
-	                                                           [view, processing_generation](const size_t index)
-	                                                           {
-		                                                           if (view->is_processing_generation(
-			                                                           processing_generation)) view->
-				                                                           processing_work_item(index);
-	                                                           },
-	                                                           [view, processing_generation](
-	                                                           std::string message,
-	                                                           const std::vector<view_operation_result>& results)
-	                                                           {
-		                                                           if (!view->is_processing_generation(
-			                                                           processing_generation)) return;
-		                                                           view->end_processing();
-		                                                           const auto result_summary = view->show_results(
-			                                                           results);
-		                                                           if (!message.empty()) view->_status = std::move(
-			                                                           message);
-		                                                           else if (!result_summary.empty()) view->_status =
-			                                                           result_summary;
-		                                                           view->_state.invalidate_view(
-			                                                           view_invalid::status |
-			                                                           view_invalid::command_state);
-	                                                           });
+	const auto results = make_run_status(shared_from_this(), processing_generation, cancel_source,
+	                                     [](std::string& status, std::string summary, std::string message)
+	{
+		if (!message.empty()) status = std::move(message);
+		else if (!summary.empty()) status = std::move(summary);
+	});
 
 	metadata_edits edits;
 	edits.add_tags = tag_set(_adds);

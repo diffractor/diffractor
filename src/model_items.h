@@ -2262,7 +2262,6 @@ namespace df
 
 		mutable std::vector<recti> _layout_bounds;
 		sort_by _sort_order = sort_by::def;
-		bool _reverse_sort = false;
 		bool _show_folder = true;
 		group_key _key;
 

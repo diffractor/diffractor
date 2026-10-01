@@ -59,6 +59,19 @@ static constexpr auto releases_url = "https://www.diffractor.com/releases";
 static constexpr auto support_url = "https://github.com/diffractor/diffractor/issues";
 static constexpr auto donate_url = "https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL";
 
+// A command that acts on the selection first asks whether it can. When it cannot it says why, under
+// the command's own title, rather than doing nothing.
+static bool can_process_selection_or_explain(const view_state& s, const view_host_base_ptr& view,
+                                             const ui::control_frame_ptr& parent, const std::string_view title,
+                                             const df::process_items_type type)
+{
+	const auto can_process = s.can_process_selection_and_mark_errors(view, type);
+	if (!can_process.fail()) return true;
+
+	make_dlg(parent)->show_message(icon_index::error, title, can_process.to_string());
+	return false;
+}
+
 static void zoom_invoke(const view_state& s, const ui::control_frame_ptr& parent)
 {
 	const auto display = s.display_state();
@@ -135,16 +148,8 @@ static void containing_folder_invoke(view_state& s, const ui::control_frame_ptr&
 static void open_in_file_browser_invoke(const view_state& s, const ui::control_frame_ptr& parent,
                                         const view_host_base_ptr& view)
 {
-	const auto title = tt.open_in_browser_title;
-	const auto dlg = make_dlg(parent);
-	const auto can_process = s.
-		can_process_selection_and_mark_errors(view, df::process_items_type::local_file_or_folder);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, tt.open_in_browser_title,
+	                                     df::process_items_type::local_file_or_folder))
 	{
 		const auto f = s.command_item();
 
@@ -195,16 +200,10 @@ static void burn_command_invoke(view_state& s, const ui::control_frame_ptr& pare
 {
 	const auto dlg = make_dlg(parent);
 	const auto title = tt.burn_title;
-	const auto can_process = s.
-		can_process_selection_and_mark_errors(view, df::process_items_type::local_file_or_folder);
 
 	pause_media pause(s);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file_or_folder))
 	{
 		const auto items = s.selected_items();
 		const std::vector<view_element_ptr> controls = {
@@ -227,15 +226,7 @@ static void burn_command_invoke(view_state& s, const ui::control_frame_ptr& pare
 
 static void print_invoke(const view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
 {
-	const auto dlg = make_dlg(parent);
-	const auto title = tt.print_title;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::local_file);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, tt.print_title, df::process_items_type::local_file))
 	{
 		const auto items = s.selected_items();
 		record_feature_use(features::print);
@@ -248,16 +239,10 @@ static void rename_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 	const auto title = tt.command_rename;
 	constexpr auto icon = icon_index::rename;
 	const auto dlg = make_dlg(parent);
-	const auto can_process = s.
-		can_process_selection_and_mark_errors(view, df::process_items_type::local_file_or_folder);
 
 	pause_media pause(s);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file_or_folder))
 	{
 		const auto& items = s.selected_items();
 
@@ -304,16 +289,8 @@ static void rename_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 static void file_properties_invoke(const view_state& s, const ui::control_frame_ptr& parent,
                                    const view_host_base_ptr& view)
 {
-	const auto title = tt.open_properties_title;
-	const auto dlg = make_dlg(parent);
-	const auto can_process = s.
-		can_process_selection_and_mark_errors(view, df::process_items_type::local_file_or_folder);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, tt.open_properties_title,
+	                                     df::process_items_type::local_file_or_folder))
 	{
 		const auto items = s.selected_items();
 		platform::show_file_properties(items.file_paths(false), items.folder_paths());
@@ -411,15 +388,10 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 	auto dlg = make_dlg(parent);
 	const auto title = t == simple_transform::rot_90 ? tt.command_rotate_clockwise : tt.command_rotate_anticlockwise;
 	const auto icon = t == simple_transform::rot_90 ? icon_index::rotate_clockwise : icon_index::rotate_anticlockwise;
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::can_save_pixels);
 
 	pause_media pause(s);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::can_save_pixels))
 	{
 		const auto& items = s.selected_items();
 		const auto is_single = items.size() == 1;
@@ -793,16 +765,9 @@ static void label_items_invoke(view_state& s, const ui::control_frame_ptr& paren
 static void cut_copy_invoke(const view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view,
                             const bool is_move)
 {
-	const auto dlg = make_dlg(parent);
 	const auto title = is_move ? tt.command_edit_cut : tt.command_edit_copy;
-	const auto can_process = s.can_process_selection_and_mark_errors(
-		view, is_move ? df::process_items_type::local_file_or_folder : df::process_items_type::local_file_or_folder);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file_or_folder))
 	{
 		const auto items = s.selected_items();
 		const auto item_paths = items.file_paths(true);
@@ -983,14 +948,7 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 
 	pause_media pause(s);
 
-	const auto can_process = s.can_process_selection_and_mark_errors(
-		view, is_move ? df::process_items_type::local_file_or_folder : df::process_items_type::local_file_or_folder);
-
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file_or_folder))
 	{
 		// Opening with an empty box means OK fails on the state the dialog itself started in,
 		// so it starts on the destination last used.
@@ -1410,16 +1368,10 @@ static void open_with_invoke(view_state& s, const ui::control_frame_ptr& parent,
 {
 	const auto title = tt.open_with_app_tool;
 	const auto dlg = make_dlg(parent);
-	const auto can_process = s.
-		can_process_selection_and_mark_errors(view, df::process_items_type::local_file_or_folder);
 
 	pause_media pause(s);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file_or_folder))
 	{
 		std::vector<command_info_ptr> cmds =
 		{
@@ -2591,6 +2543,55 @@ static void add_keyboard_section(std::vector<keyboard_ref_section>& sections, co
 	sections.emplace_back(std::move(section));
 }
 
+std::string_view keys::format(const int key)
+{
+	if (key == BACK) return tt.keyboard_back;
+	if (key == BROWSER_BACK) return tt.keyboard_browser_back;
+	if (key == BROWSER_FAVORITES) return tt.keyboard_browser_favorites;
+	if (key == BROWSER_FORWARD) return tt.keyboard_browser_forward;
+	if (key == BROWSER_HOME) return tt.keyboard_browser_home;
+	if (key == BROWSER_REFRESH) return tt.keyboard_browser_refresh;
+	if (key == BROWSER_SEARCH) return tt.keyboard_browser_search;
+	if (key == BROWSER_STOP) return tt.keyboard_browser_stop;
+	if (key == DEL) return tt.keyboard_del;
+	if (key == DOWN) return tt.keyboard_down;
+	if (key == END) return tt.keyboard_end;
+	if (key == ESCAPE) return tt.keyboard_escape;
+	if (key == F1) return tt.keyboard_f1;
+	if (key == F10) return tt.keyboard_f10;
+	if (key == F11) return tt.keyboard_f11;
+	if (key == F2) return tt.keyboard_f2;
+	if (key == F3) return tt.keyboard_f3;
+	if (key == F4) return tt.keyboard_f4;
+	if (key == F5) return tt.keyboard_f5;
+	if (key == F6) return tt.keyboard_f6;
+	if (key == F7) return tt.keyboard_f7;
+	if (key == F8) return tt.keyboard_f8;
+	if (key == F9) return tt.keyboard_f9;
+	if (key == HOME) return tt.keyboard_home;
+	if (key == INSERT) return tt.keyboard_insert;
+	if (key == LEFT) return tt.keyboard_left;
+	if (key == MEDIA_NEXT_TRACK) return tt.keyboard_media_next_track;
+	if (key == MEDIA_PLAY_PAUSE) return tt.keyboard_media_play_pause;
+	if (key == MEDIA_PREV_TRACK) return tt.keyboard_media_prev_track;
+	if (key == MEDIA_STOP) return tt.keyboard_media_stop;
+	if (key == NEXT) return tt.keyboard_next;
+	if (key == OEM_4) return tt.keyboard_oem_4;
+	if (key == OEM_6) return tt.keyboard_oem_6;
+	if (key == OEM_MINUS) return tt.keyboard_oem_minus;
+	if (key == OEM_PLUS) return tt.keyboard_oem_plus;
+	if (key == PRIOR) return tt.keyboard_prior;
+	if (key == RETURN) return tt.keyboard_enter;
+	if (key == RIGHT) return tt.keyboard_right;
+	if (key == SPACE) return tt.keyboard_space;
+	if (key == TAB) return tt.keyboard_tab;
+	if (key == UP) return tt.keyboard_up;
+	if (key == VOLUME_DOWN) return tt.keyboard_volume_down;
+	if (key == VOLUME_MUTE) return tt.keyboard_volume_mute;
+	if (key == VOLUME_UP) return tt.keyboard_volume_up;
+	return "?";
+}
+
 static bool is_not_virt_key(const int key)
 {
 	return (key >= '0' && key <= '9') ||
@@ -3358,15 +3359,10 @@ static void email_invoke(view_state& s, const ui::control_frame_ptr& parent, con
 	const auto title = tt.command_share_email;
 	constexpr auto icon = icon_index::mail;
 	auto dlg = make_dlg(parent);
-	const auto can_process = s.can_process_selection_and_mark_errors(view, df::process_items_type::local_file);
 
 	pause_media pause(s);
 
-	if (can_process.fail())
-	{
-		dlg->show_message(icon_index::error, title, can_process.to_string());
-	}
-	else
+	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file))
 	{
 		const auto& items = s.selected_items();
 
@@ -3777,14 +3773,8 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::keyboard, [this] { show_keyboard_reference(_state, _app_frame, _commands); });
 	add_command_invoke(commands::tool_locate, [this]
 	{
-		const auto can_process = _state.can_process_selection_and_mark_errors(
-			_view_frame, df::process_items_type::can_save_metadata);
-		if (can_process.fail())
-		{
-			const auto dlg = make_dlg(_app_frame);
-			dlg->show_message(icon_index::error, tt.command_locate, can_process.to_string());
-		}
-		else
+		if (can_process_selection_or_explain(_state, _view_frame, _app_frame, tt.command_locate,
+		                                     df::process_items_type::can_save_metadata))
 		{
 			_state.view_mode(view_type::locate);
 		}

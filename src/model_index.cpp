@@ -2997,7 +2997,6 @@ void index_histograms::record(const location_cache&, const df::index_file_item& 
 {
 	const auto year = _year;
 	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
-	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
 
 	const auto md = file.metadata.load();
 	auto created = file.file_created.system_to_local();
@@ -3079,7 +3078,6 @@ void index_histograms::record(const location_cache&, const df::index_file_item& 
 std::vector<map_location_area> index_histograms::map_locations(const int requested_cell_span) const
 {
 	constexpr auto map_width = static_cast<int>(df::location_heat_map::map_width);
-	constexpr auto map_height = static_cast<int>(df::location_heat_map::map_height);
 	const auto cell_span = std::clamp(std::bit_ceil(static_cast<unsigned>(std::max(requested_cell_span, 1))), 1u, 64u);
 
 	struct area_build

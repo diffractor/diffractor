@@ -6,8 +6,10 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Main application implementation. Handles app initialization, window management,
-// command processing, toolbar/menu creation, and coordinates all background worker threads.
+// Purpose: The application frame. Startup and shutdown, settings load and save, the frame layout,
+// draining view invalidation in dependency order, keyboard routing, switching views, update checks
+// and crash reporting. Command behavior, toolbars, workers and the address box live in
+// app_commands.cpp, app_toolbar.cpp, app_workers.cpp and app_search.cpp.
 
 #include "pch.h"
 
@@ -2326,12 +2328,6 @@ void app_frame::display_changed()
 			view_invalid::tooltip);
 	}
 };
-
-void app_frame::play_state_changed(const bool play)
-{
-	df::assert_true(ui::is_ui_thread());
-	invalidate_view(view_invalid::view_redraw | view_invalid::command_state);
-}
 
 void app_frame::reload()
 {

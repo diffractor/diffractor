@@ -271,7 +271,6 @@ struct state_strategy
 	// View state changes
 	virtual void display_changed() = 0;
 	virtual void view_changed(view_type m) = 0;
-	virtual void play_state_changed(bool play) = 0;
 
 	// Command handling
 	virtual void invoke(commands id) = 0;
@@ -868,7 +867,6 @@ public:
 	// falls back to a hex dump of the bytes, which at least says what the file really is.
 	bool _av_open_failed = false;
 
-	ui::vertices_ptr _verts;
 	texture_state_ptr _selected_texture1;
 	texture_state_ptr _selected_texture2;
 
@@ -935,7 +933,6 @@ public:
 	// than on the session because the session outlives every display: a read released with its
 	// display publishes nothing, and the next display is the thing that should ask again.
 	bool _panorama_read_queued = false;
-	mutable bool _preview_changed = false;
 
 	std::vector<ui::const_image_ptr> _images;
 	std::vector<ui::const_surface_ptr> _surfaces;

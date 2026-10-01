@@ -21,7 +21,6 @@ class sync_view final :
 {
 	bool _select_other_folder = false;
 	std::string _title;
-	std::string _status;
 	sync_analysis_result _analysis;
 	bool _analysis_valid = false;
 
@@ -56,11 +55,6 @@ public:
 	bool can_analyze() const;
 
 	bool can_run() const { return _analysis_valid && count_sync_actions(_analysis) > 0; }
-
-	std::string_view status() override
-	{
-		return _status;
-	}
 
 	void deactivate() override
 	{

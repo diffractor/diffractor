@@ -135,7 +135,6 @@ namespace ui
 	class frame_host;
 	class frame;
 	class measure_context;
-	class web_window;
 	class control_base;
 	class platform_app;
 
@@ -150,12 +149,9 @@ namespace ui
 	using toolbar_ptr = std::shared_ptr<toolbar>;
 	using trackbar_ptr = std::shared_ptr<trackbar>;
 	using date_time_control_ptr = std::shared_ptr<date_time_control>;
-	using frame_host_ptr = std::shared_ptr<frame_host>;
 	using frame_host_weak_ptr = std::weak_ptr<frame_host>;
 	using frame_ptr = std::shared_ptr<frame>;
 	using frame_weak_ptr = std::weak_ptr<frame>;
-	using measure_context_ptr = std::shared_ptr<measure_context>;
-	using web_window_ptr = std::shared_ptr<web_window>;
 	using control_base_ptr = std::shared_ptr<control_base>;
 	using plat_app_ptr = std::shared_ptr<platform_app>;
 
@@ -1039,6 +1035,18 @@ namespace ui
 			extern color32 rank_background;
 			extern color32 sidecar_background;
 			extern color32 duplicate_background;
+
+			// The colours a platform takes from the running theme. The rest of the palette is the
+			// product's own and identical on every platform.
+			struct system_colors
+			{
+				color32 edit_background = 0x00ffffff;
+				color32 edit_text = 0x00000000;
+				color32 desktop_background = 0x00000000;
+			};
+
+			// Installs the palette. The platform layer calls this once at startup, before anything draws.
+			void install(const system_colors& system);
 		};
 
 		enum class font_face
@@ -1423,14 +1431,11 @@ namespace ui
 
 		virtual void draw_rounded_rect(recti bounds, color c, int radius) = 0;
 		virtual void draw_rect(recti bounds, color c) = 0;
-		// Centre-to-corner gradient. Opt in explicitly; draw_rect and clear are flat.
-		virtual void draw_rect_gradient(recti bounds, color c_centre, color c_corner) = 0;
 		virtual void draw_text(std::string_view text, recti bounds, style::font_face font, style::text_style style,
 		                       color c, color bg) = 0;
 		virtual void draw_text(std::string_view text, const std::vector<text_highlight_t>& highlights, recti bounds,
 		                       style::font_face font, style::text_style style, color clr, color bg) = 0;
 		virtual void draw_text(const text_layout_ptr& tl, recti bounds, color clr, color bg) = 0;
-		virtual void draw_shadow(recti bounds, int width, float alpha, bool inverse = false) = 0;
 		virtual void draw_border(recti inside, recti outside, color c_inside, color c_outside) = 0;
 		virtual void draw_texture(const texture_ptr& t, recti dst, float alpha = 1.0f,
 		                          texture_sampler sampler = texture_sampler::point) = 0;
@@ -1450,7 +1455,6 @@ namespace ui
 			return false;
 		}
 		virtual void draw_vertices(const vertices_ptr& v) = 0;
-		virtual void draw_edge_shadows(float alpha) = 0;
 
 		sizei measure_text(std::string_view text, style::font_face font, style::text_style style, int width,
 		                   int height = 0) override = 0;
@@ -1606,7 +1610,6 @@ namespace ui
 	class edit : public control_base
 	{
 	public:
-		virtual void limit_text_len(int i) = 0;
 		virtual void replace_sel(std::string_view new_text, bool add_space_if_append) = 0;
 		virtual void select(int start, int end) = 0;
 		virtual void select_all() = 0;
@@ -1620,7 +1623,6 @@ namespace ui
 	public:
 		virtual int get_pos() const = 0;
 		virtual void SetPos(int val) = 0;
-		virtual void buddy(const edit_ptr& edit) = 0;
 	};
 
 	class button : public control_base
@@ -1631,19 +1633,6 @@ namespace ui
 
 	class date_time_control : public control_base
 	{
-	};
-
-	class web_events : public df::no_copy
-	{
-	public:
-		virtual void navigation_complete(std::string_view url) = 0;
-		virtual bool before_navigate(std::string_view url) = 0;
-	};
-
-	class web_window : public control_base
-	{
-	public:
-		virtual void eval_in_browser(std::string_view script) const = 0;
 	};
 
 	struct edit_styles
@@ -2040,7 +2029,6 @@ namespace ui
 			void update_button_state(bool, bool) override {}
 			recti button_bounds(const command_ptr&) const override { return {}; }
 
-			void limit_text_len(int) override {}
 			void replace_sel(std::string_view, bool) override {}
 			void select(int, int) override {}
 			void select_all() override {}
@@ -2050,7 +2038,6 @@ namespace ui
 
 			int get_pos() const override { return 0; }
 			void SetPos(int) override {}
-			void buddy(const edit_ptr&) override {}
 
 			void set_checked(bool) override {}
 		};
@@ -2224,7 +2211,6 @@ namespace ui
 		virtual void monitor_folders(const std::vector<df::folder_path>& vector) = 0;
 		virtual void enable_screen_saver(bool cond) = 0;
 		virtual void set_font_base_size(int i) = 0;
-		virtual int get_font_base_size() const = 0;
 	};
 
 	// False when the CPU software renderer is active, or the system asks for no client-area

@@ -1034,40 +1034,7 @@ namespace df
 			return result;
 		}
 
-		friend bool operator==(const xy16& lhs, const xy16& rhs)
-		{
-			return lhs.x == rhs.x
-				&& lhs.y == rhs.y;
-		}
-
-		friend bool operator!=(const xy16& lhs, const xy16& rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const xy16& lhs, const xy16& rhs)
-		{
-			if (lhs.x < rhs.x)
-				return true;
-			if (rhs.x < lhs.x)
-				return false;
-			return lhs.y < rhs.y;
-		}
-
-		friend bool operator<=(const xy16& lhs, const xy16& rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const xy16& lhs, const xy16& rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const xy16& lhs, const xy16& rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const xy16&, const xy16&) = default;
 	};
 
 	struct xy32
@@ -1108,40 +1075,7 @@ namespace df
 
 		std::string str() const;
 
-		friend bool operator==(const xy32& lhs, const xy32& rhs)
-		{
-			return lhs.x == rhs.x
-				&& lhs.y == rhs.y;
-		}
-
-		friend bool operator!=(const xy32& lhs, const xy32& rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const xy32& lhs, const xy32& rhs)
-		{
-			if (lhs.x < rhs.x)
-				return true;
-			if (rhs.x < lhs.x)
-				return false;
-			return lhs.y < rhs.y;
-		}
-
-		friend bool operator<=(const xy32& lhs, const xy32& rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const xy32& lhs, const xy32& rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const xy32& lhs, const xy32& rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const xy32&, const xy32&) = default;
 	};
 
 	class file_size
@@ -1238,35 +1172,7 @@ namespace df
 			return _i != 0;
 		}
 
-		friend bool operator==(const file_size& lhs, const file_size& rhs)
-		{
-			return lhs._i == rhs._i;
-		}
-
-		friend bool operator!=(const file_size& lhs, const file_size& rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const file_size& lhs, const file_size& rhs)
-		{
-			return lhs._i < rhs._i;
-		}
-
-		friend bool operator<=(const file_size& lhs, const file_size& rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const file_size& lhs, const file_size& rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const file_size& lhs, const file_size& rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const file_size&, const file_size&) = default;
 
 		constexpr int to_int() const
 		{
@@ -1311,16 +1217,7 @@ namespace df
 			size += s;
 		}
 
-		friend bool operator==(const count_and_size& lhs, const count_and_size& rhs)
-		{
-			return lhs.count == rhs.count
-				&& lhs.size == rhs.size;
-		}
-
-		friend bool operator!=(const count_and_size& lhs, const count_and_size& rhs)
-		{
-			return !(lhs == rhs);
-		}
+		friend bool operator==(const count_and_size&, const count_and_size&) = default;
 	};
 
 	// In-flight gauges answer "is anything of this kind running". Nothing reads the count itself, so
@@ -1376,40 +1273,7 @@ namespace df
 
 		version(std::string_view version);
 
-		friend bool operator==(const version& lhs, const version& rhs)
-		{
-			return lhs.major == rhs.major
-				&& lhs.minor == rhs.minor;
-		}
-
-		friend bool operator!=(const version& lhs, const version& rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const version& lhs, const version& rhs)
-		{
-			if (lhs.major < rhs.major)
-				return true;
-			if (rhs.major < lhs.major)
-				return false;
-			return lhs.minor < rhs.minor;
-		}
-
-		friend bool operator<=(const version& lhs, const version& rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const version& lhs, const version& rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const version& lhs, const version& rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const version&, const version&) = default;
 
 		version operator +(const int i) const
 		{

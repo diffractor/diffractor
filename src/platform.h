@@ -190,10 +190,6 @@ namespace platform
 		virtual uint64_t seek(uint64_t pos, whence w) const = 0;
 		virtual uint64_t pos() const = 0;
 		virtual bool trunc(uint64_t pos) const = 0;
-		virtual df::date_t get_created() = 0;
-		virtual void set_created(df::date_t date) = 0;
-		virtual df::date_t get_modified() = 0;
-		virtual void set_modified(df::date_t date) = 0;
 		virtual df::file_path path() const = 0;
 	};
 
@@ -474,8 +470,6 @@ namespace platform
 	file_op_result write_shell_tags(df::file_path path, const std::vector<std::string>& tags);
 	metadata_result read_shell_metadata(df::file_path path);
 
-	bool save_to_file(df::file_path path, df::cspan data);
-
 	df::count_and_size calc_folder_summary(df::folder_path folder, bool show_hidden, const df::cancel_token& token);
 	folder_contents iterate_file_items(df::folder_path folder, bool show_hidden);
 	std::vector<folder_info> select_folders(const df::item_selector& selector, bool show_hidden);
@@ -678,11 +672,6 @@ namespace platform
 
 	drop_effect perform_drag(const std::any& frame_handle, const std::vector<df::file_path>& files,
 	                         const std::vector<df::folder_path>& folders);
-
-	// Test-only probe of the drag/clipboard IDataObject. Lets tests inspect which formats
-	// are advertised (and in what order) and confirm that each file-bearing format
-	// independently resolves to the cached items exactly once. Used to reason about
-	// duplicate-import behaviour in third-party drop targets (e.g. Adobe Premiere).
 
 	// Test-only probe of the double-buffered paint applied to native common controls. The buffering
 	// relies on the control drawing itself on demand into a supplied device context. If a control

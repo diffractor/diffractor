@@ -62,7 +62,7 @@ static void av_log(void*, const int level, const char* format, va_list argList)
 #endif
 }
 
-void av_initialise(file_type_by_extension& file_types)
+void av_initialise()
 {
 	av_log_set_level(AV_LOG_WARNING);
 	av_log_set_callback(av_log);
@@ -1108,8 +1108,6 @@ int64_t av_format_decoder::bitrate() const
 
 void av_format_decoder::close()
 {
-	_is_open = false;
-
 	// The codec contexts are about to be freed, so there is nothing to gain from
 	// draining them first - and draining a hardware decoder is far from free.
 	avcodec_free_context(&_video_context);
@@ -1487,7 +1485,6 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	}
 
 	_has_multiple_audio_streams = audio_stream_count > 1;
-	_is_open = true;
 
 	return true;
 }

@@ -269,7 +269,6 @@ public:
 	recti _bounds;
 	pointi _last_loc;
 	pointi _start_loc;
-	int64_t _first_tic = 0;
 	float _alpha = 1.0f;
 
 	const recti bounds() const
@@ -289,7 +288,6 @@ public:
 	virtual void on_mouse_left_button_down(const pointi loc, const ui::key_state keys)
 	{
 		_last_loc = _start_loc = loc;
-		_first_tic = platform::tick_count();
 	}
 
 	virtual void on_mouse_move(const pointi loc)

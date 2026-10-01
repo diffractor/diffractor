@@ -522,11 +522,6 @@ ui::key_state ui::current_key_state()
 	return {};
 }
 
-std::string_view keys::format(int)
-{
-	return {};
-}
-
 // The crash-recovery backstop needs a real single-instance claim; without one a Linux build cannot
 // distinguish concurrent launches from repeated failed ones, so it always claims the scope.
 bool platform::claim_startup_scope()

@@ -6,8 +6,10 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Application commands, toolbars, initialization, and lifecycle management.
-// Contains command definitions, toolbar creation, app init/exit, and crash handling.
+// Purpose: Toolbars and how commands present. Builds the toolbars, decides each command's enabled,
+// checked and visible state and its disabled reason, sets command text and icons, owns the default
+// keyboard accelerators, and shows command tooltips. What a command does is registered in
+// app_commands.cpp.
 
 #include "pch.h"
 
@@ -36,6 +38,9 @@
 
 bool toggle_details_state = false;
 
+// The address bar shows the scope of the current search: a folder, a folder searched recursively,
+// or the kind of the first term. The star glyph is reserved for ratings, so fall back to the
+// generic search icon rather than showing it here.
 static icon_index address_icon(const df::search_t& search)
 {
 	if (search.has_recursive_selector()) return icon_index::recursive;

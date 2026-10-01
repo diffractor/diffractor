@@ -510,7 +510,6 @@ public:
 		_parent.blur_rendered_filter();
 		_tracking = true;
 		_cancel = false;
-		_first_tic = platform::tick_count();
 		_last_loc = _start_loc = loc;
 		_last_logical_loc = _start_logical_loc = _scroller.device_to_logical(loc);
 		update_state();
@@ -660,7 +659,6 @@ public:
 		_parent.blur_rendered_filter();
 		_tracking = true;
 		_cancel = false;
-		_first_tic = platform::tick_count();
 		_last_loc = _start_loc = loc;
 		_last_logical_loc = _start_logical_loc = _scroller.device_to_logical(loc);
 		_drag_started = false;
@@ -738,23 +736,6 @@ void items_view::deactivate()
 void items_view::refresh()
 {
 	_state.open(_host, _state.search(), {});
-}
-
-// The address bar shows the scope of the current search: a folder, a folder searched recursively,
-// or the kind of the first term. The star glyph is reserved for ratings, so fall back to the
-// generic search icon rather than showing it here.
-static icon_index address_icon(const df::search_t& search)
-{
-	if (search.has_recursive_selector()) return icon_index::recursive;
-	if (search.has_selector()) return icon_index::folder;
-
-	if (search.has_terms())
-	{
-		const auto icon = search.first_type()->icon;
-		if (icon != icon_index::star && icon != icon_index::none) return icon;
-	}
-
-	return icon_index::search;
 }
 
 items_view::items_view(view_state& s, view_host_ptr host) :

@@ -455,7 +455,9 @@ if (WIN32)
     # The .rc embeds these by name, and the generator only tracks the .rc itself: editing one of them
     # otherwise leaves the compiled resource stale and the binary silently running the old copy. That
     # failure is invisible - it builds clean and the application uses last week's schema.
-    file(GLOB _rc_embedded_resources
+    # CONFIGURE_DEPENDS re-globs on every build, so adding or deleting a resource cannot leave an
+    # existing build tree depending on a file that is no longer there.
+    file(GLOB _rc_embedded_resources CONFIGURE_DEPENDS
             "${CMAKE_SOURCE_DIR}/src/Res/*.sql"
             "${CMAKE_SOURCE_DIR}/src/Res/*.png"
             "${CMAKE_SOURCE_DIR}/src/Res/*.ico"

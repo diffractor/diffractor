@@ -68,31 +68,12 @@ void rename_view::run()
 	const auto processing_generation = this->processing_generation();
 	const auto cancel_source = processing_cancel_source();
 	_status = std::string(tt.processing.sv());
-	const auto view = shared_from_this();
-	const auto results = std::make_shared<view_command_status>(_state._async, cancel_source,
-	                                                           [view, processing_generation](const size_t index)
-	                                                           {
-		                                                           if (view->is_processing_generation(
-			                                                           processing_generation)) view->
-				                                                           processing_work_item(index);
-	                                                           },
-	                                                           [view, processing_generation, detach](
-	                                                           std::string message,
-	                                                           const std::vector<view_operation_result>&
-	                                                           operation_results)
-	                                                           {
-		                                                           if (!view->is_processing_generation(
-			                                                           processing_generation)) return;
-		                                                           view->end_processing();
-		                                                           const auto result_summary = view->show_results(
-			                                                           operation_results);
-		                                                           view->_status = !message.empty()
-			                                                           ? std::move(message)
-			                                                           : result_summary;
-		                                                           view->_state.invalidate_view(
-			                                                           view_invalid::status |
-			                                                           view_invalid::command_state);
-	                                                           });
+	// The file handles stay detached until the run reports back.
+	const auto results = make_run_status(shared_from_this(), processing_generation, cancel_source,
+	                                     [detach](std::string& status, std::string summary, std::string message)
+	{
+		status = !message.empty() ? std::move(message) : std::move(summary);
+	});
 
 	_state.queue_async(async_queue::work, [renames, results, &index = _state.item_index]
 	{

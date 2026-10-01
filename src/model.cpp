@@ -2261,16 +2261,6 @@ std::shared_ptr<text_element> make_rank_element(std::string text, const bool is_
 // The commands that act on the selection belong with the panel that describes it, so the command
 // and the thing it changes are always read together. Commands that cannot run dim in place rather
 // than disappearing, so the set stays stable as the selection changes.
-static void add_command_links(const view_state& s, const std::shared_ptr<group_title_control>& row,
-                              const std::initializer_list<commands> ids, const view_element_options& style_in)
-{
-	for (const auto id : ids)
-	{
-		auto command = s.find_command(id);
-		if (command) row->elements.emplace_back(std::make_shared<command_link_element>(std::move(command), style_in));
-	}
-}
-
 static void add_command_links(const view_state& s, const view_elements_ptr& row,
                               const std::initializer_list<commands> ids)
 {

@@ -2088,6 +2088,11 @@ static void should_run_a_rename_onto_vacated_names()
 	assert_equal(true, view->can_run(), "a chained rename can run");
 	view->run();
 
+	// The finished run replaces the plan's rows and status with what it did.
+	assert_equal(true, view->showing_results(), "the rows show the run, not the plan");
+	assert_equal(false, view->status().empty() || view->status() == tt.processing.sv(),
+	             "the status states the run's outcome");
+
 	assert_equal(false, root.combine_file("Item 001.jpg").exists(), "the vacated name is gone");
 	for (const auto& name : {"Item 002.jpg"s, "Item 003.jpg"s, "Item 004.jpg"s})
 		assert_equal(true, root.combine_file(name).exists(), std::format("{} was written", name));
@@ -2136,6 +2141,9 @@ static void should_refuse_a_rename_whose_source_changed_since_review()
 
 	assert_equal(true, source.exists(), "the changed source keeps its name");
 	assert_equal(false, root.combine_file("renamed.jpg").exists(), "and nothing was renamed");
+	// A run that did nothing says why, rather than leaving the processing status behind.
+	assert_equal(std::string(tt.sync_analysis_changed.sv()), std::string(view->status()),
+	             "the status names the stale review");
 }
 
 // Convert under Replace wrote over a colliding destination whatever had happened to it since the
@@ -2676,6 +2684,25 @@ static void should_not_claim_one_key_for_two_commands()
 	assert_equal(true, bound(commands::select_all, 'A', keyboard_accelerator_t::control), "Ctrl+A selects all");
 	assert_equal(true, bound(commands::tool_delete, keys::DEL, 0), "Delete deletes");
 	assert_equal(true, bound(commands::view_close, keys::ESCAPE, 0), "Escape closes");
+}
+
+// The keyboard reference and every command tooltip spell a binding through this one function, so a
+// key left without a name, or modifiers in another order, would show in both.
+static void should_spell_keyboard_accelerators()
+{
+	constexpr auto alt = keyboard_accelerator_t::alt;
+	constexpr auto control = keyboard_accelerator_t::control;
+	constexpr auto shift = keyboard_accelerator_t::shift;
+
+	assert_equal(std::string(tt.keyboard_f5.sv()), format_keyboard_accelerator({{keys::F5, 0}}), "a named key");
+	assert_equal(std::string(tt.keyboard_del.sv()), std::string(keys::format(keys::DEL)), "Delete has a name");
+	assert_equal(std::format("{}+{}+A", tt.keyboard_alt, tt.keyboard_shift),
+	             format_keyboard_accelerator({{U'A', alt | shift}}), "modifiers lead in a fixed order");
+	assert_equal(std::format("{}+'{}'", tt.keyboard_control, tt.keyboard_oem_plus),
+	             format_keyboard_accelerator({{keys::OEM_PLUS, control}}),
+	             "plus is quoted so it is not read as the separator");
+	assert_equal(std::format("{} {} {}", tt.keyboard_left, tt.keyboard_or, tt.keyboard_right),
+	             format_keyboard_accelerator({{keys::LEFT, 0}, {keys::RIGHT, 0}}), "alternatives are joined");
 }
 
 // The button reads as one label or two. design.md: "Shuffle is visibly exclusive with deterministic
@@ -3315,6 +3342,7 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should target only visible items when filtered"s, should_target_only_visible_items_when_filtered);
 	tests.add("Should keep shuffle exclusive with sorting"s, should_keep_shuffle_exclusive_with_sorting);
 	tests.add("Should not claim one key for two commands"s, should_not_claim_one_key_for_two_commands);
+	tests.add("Should spell keyboard accelerators"s, should_spell_keyboard_accelerators);
 	tests.add("Should label grouping and sorting"s, should_label_grouping_and_sorting);
 	// Discussion #251 - the filter toolbar scrolls away
 	tests.add("Should offer the items menu at every scroll position"s,

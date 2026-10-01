@@ -528,7 +528,6 @@ namespace prop
 
 	int64_t size_bucket(int64_t n);
 	double closest_fstop(double fs);
-	int megapixels_order(double val);
 	int64_t exp_round(double d);
 
 	struct size_rounded

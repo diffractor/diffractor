@@ -58,40 +58,7 @@ struct item_and_group
 	df::item_group_ptr g;
 	df::item_element_ptr i;
 
-	friend bool operator==(const item_and_group& lhs, const item_and_group& rhs)
-	{
-		return lhs.g == rhs.g
-			&& lhs.i == rhs.i;
-	}
-
-	friend bool operator!=(const item_and_group& lhs, const item_and_group& rhs)
-	{
-		return !(lhs == rhs);
-	}
-
-	friend bool operator<(const item_and_group& lhs, const item_and_group& rhs)
-	{
-		if (lhs.g < rhs.g)
-			return true;
-		if (rhs.g < lhs.g)
-			return false;
-		return lhs.i < rhs.i;
-	}
-
-	friend bool operator<=(const item_and_group& lhs, const item_and_group& rhs)
-	{
-		return !(rhs < lhs);
-	}
-
-	friend bool operator>(const item_and_group& lhs, const item_and_group& rhs)
-	{
-		return rhs < lhs;
-	}
-
-	friend bool operator>=(const item_and_group& lhs, const item_and_group& rhs)
-	{
-		return !(lhs < rhs);
-	}
+	friend auto operator<=>(const item_and_group&, const item_and_group&) = default;
 };
 
 // Discussion #251: the menu opened by the always-visible control in the scroller track. Only

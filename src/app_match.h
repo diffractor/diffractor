@@ -13,17 +13,6 @@
 #include "ui_controllers.h"
 #include "ui_dialog.h"
 
-static std::string_view strip_quotes(const std::string_view str)
-{
-	if (str.size() > 1 && str::is_quote(str[0]) && str[str.size() - 1] == str[0])
-	{
-		return str.substr(1, str.size() - 2);
-	}
-
-	return str;
-}
-
-
 inline bool find_auto_complete(const std::vector<std::string_view>& queries, const std::string_view text,
                                const bool is_path, ui::match_highlights& match)
 {

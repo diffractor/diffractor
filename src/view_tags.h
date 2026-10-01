@@ -45,7 +45,6 @@ class tags_view final :
 	ui::recommended_words_control::refresh_group _word_refresh;
 
 	std::string _title;
-	std::string _status;
 
 public:
 	tags_view(view_state& state, view_host_ptr host) : list_view(state, std::move(host))
@@ -77,11 +76,6 @@ public:
 	void run();
 	void refresh() override;
 	bool can_run() const;
-
-	std::string_view status() override
-	{
-		return _status;
-	}
 
 	void activate(const sizei extent) override
 	{

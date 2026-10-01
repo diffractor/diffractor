@@ -21,7 +21,6 @@ class import_view final :
 	bool _select_other_folder = false;
 	std::vector<import_source> _sources;
 	std::string _title;
-	std::string _status;
 	import_analysis_result _analysis;
 	import_options _analysis_options;
 	bool _analysis_valid = false;
@@ -60,11 +59,6 @@ public:
 	{
 		return _analysis_valid && count_imports(_analysis) > 0 &&
 			!(_analysis_options.collision == collision_policy::block_run && count_import_collisions(_analysis) > 0);
-	}
-
-	std::string_view status() override
-	{
-		return _status;
 	}
 
 	void deactivate() override

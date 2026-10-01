@@ -532,7 +532,6 @@ void metadata_edits::apply(SXMPMeta& meta) const
 	{
 		const auto position = location_coordinate.value();
 
-		XMP_OptionBits flags = 0;
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLatitude",
 		                 str::utf8_cast2(gps_coordinate::decimal_to_dms_str(position.latitude(), true)));
 		meta.SetProperty(kXMP_NS_EXIF, "GPSLongitude",

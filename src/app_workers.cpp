@@ -6,8 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Application frame management, layout, options, input handling, and queuing.
-// Contains UI layout, event processing, input handling, and async queue management.
+// Purpose: Background execution behind async_strategy. Starts the worker threads and their queues,
+// routes each queue_* request to its queue, runs the media read/decode and preview workers, and
+// records queue wait counters for diagnostics.
 
 #include "pch.h"
 

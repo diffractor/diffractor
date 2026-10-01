@@ -214,7 +214,6 @@ public:
 		if (!_tracking)
 		{
 			_tracking = true;
-			_first_tic = platform::tick_count();
 			_last_loc = _start_loc = loc;
 			_device_start = _parent.device_selection();
 			_existing_selection = _parent.selection();
@@ -262,7 +261,6 @@ class handle_move_controller final : public view_controller
 {
 public:
 	TParent& _parent;
-	rectd _handle_bounds;
 	rectd _device_start;
 	quadd _existing_selection;
 	bool _tracking;
@@ -274,7 +272,7 @@ public:
 
 	handle_move_controller(const view_host_ptr& host, TParent& parent, const rectd& start, const bool l, const bool t,
 	                       const bool r,
-	                       const bool b) : view_controller(host, start.round()), _parent(parent), _handle_bounds(start)
+	                       const bool b) : view_controller(host, start.round()), _parent(parent)
 	{
 		_left = l;
 		_top = t;
@@ -302,7 +300,6 @@ public:
 	{
 		if (!_tracking)
 		{
-			_first_tic = platform::tick_count();
 			_last_loc = _start_loc = loc;
 			_device_start = _parent.device_selection();
 			_existing_selection = _parent.selection();

@@ -6,8 +6,11 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: List view display mode. Renders items in a compact list format
-// with columns for metadata details.
+// Purpose: The row list the task views share (Rename, Import, Sync, Convert/Metadata/Date, Tags).
+// list_view lays out the column header and rows and tracks a run's progress and results;
+// view_command_status is the status a run reports through; view_controls_host pairs the list with
+// its controls panel; and the CollisionPolicy control is defined once here for every operation
+// that writes to a destination.
 
 #pragma once
 
@@ -19,6 +22,7 @@
 
 class list_view;
 class view_controls_host;
+class view_command_status;
 using view_controls_host_ptr = std::shared_ptr<view_controls_host>;
 
 struct view_operation_result
@@ -108,6 +112,9 @@ protected:
 	size_t _processing_generation = 0;
 	std::shared_ptr<std::atomic_int> _processing_cancel;
 
+	// The line under the rows: what the plan would do while it is reviewed, what the run did after.
+	std::string _status;
+
 	static constexpr int max_col_count = 4;
 	int col_count = 4;
 	int coll_offset = 0;
@@ -160,7 +167,6 @@ public:
 		void render(ui::draw_context& dc, const pointi element_offset) const override
 		{
 			const auto bg_alpha = dc.colors.alpha * dc.colors.bg_alpha;
-			const auto dir_color = ui::color(ui::style::color::dialog_selected_background, dc.colors.alpha);
 			const auto logical_bounds = bounds.offset(element_offset);
 
 			if (dc.clip_bounds().intersects(logical_bounds))
@@ -231,6 +237,11 @@ public:
 		return _progress;
 	}
 
+	std::string_view status() override
+	{
+		return _status;
+	}
+
 	void begin_processing(const size_t total)
 	{
 		++_processing_generation;
@@ -245,6 +256,20 @@ public:
 	size_t processing_generation() const { return _processing_generation; }
 	bool is_processing_generation(const size_t generation) const { return generation == _processing_generation; }
 	std::shared_ptr<std::atomic_int> processing_cancel_source() const { return _processing_cancel; }
+
+	// Sets the status line once a run ends, from the results summary and the run's own message -
+	// the reason some rows did nothing, when there is one.
+	using run_conclusion = std::function<void(std::string& status, std::string summary, std::string message)>;
+
+	// The status a run reports through. Progress highlights the row being worked on; completion
+	// swaps the reviewed rows for the results and lets `conclude` write the status line. Both are
+	// ignored once the view has moved past `generation`. The caller reads the generation and the
+	// cancel source straight after begin_processing: anything run in between can pump messages, and
+	// a view abandoned there must not have its next state mistaken for this run's.
+	static std::shared_ptr<view_command_status> make_run_status(const std::shared_ptr<list_view>& view,
+	                                                            size_t generation,
+	                                                            std::shared_ptr<std::atomic_int> cancel_source,
+	                                                            run_conclusion conclude);
 
 	void processing_item(const size_t row_index, const size_t work_position)
 	{
@@ -833,6 +858,28 @@ private:
 			});
 	}
 };
+
+inline std::shared_ptr<view_command_status> list_view::make_run_status(const std::shared_ptr<list_view>& view,
+                                                                       const size_t generation,
+                                                                       std::shared_ptr<std::atomic_int> cancel_source,
+                                                                       run_conclusion conclude)
+{
+	return std::make_shared<view_command_status>(
+		view->_state._async, std::move(cancel_source),
+		[view, generation](const size_t index)
+		{
+			if (view->is_processing_generation(generation)) view->processing_work_item(index);
+		},
+		[view, generation, conclude = std::move(conclude)](std::string message,
+		                                                   const std::vector<view_operation_result>& results)
+		{
+			if (!view->is_processing_generation(generation)) return;
+			view->end_processing();
+			auto summary = view->show_results(results);
+			conclude(view->_status, std::move(summary), std::move(message));
+			view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
+		});
+}
 
 class view_controls_host : public view_host, public std::enable_shared_from_this<view_controls_host>
 {

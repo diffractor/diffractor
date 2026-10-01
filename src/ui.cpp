@@ -30,6 +30,77 @@ bool ui::yuv_textures_enabled = false;
 // Matches alpha_fade_rate at 60Hz until the first frame recomputes it.
 float ui::animation_step_factor = 0.333f;
 
+ui::color32 ui::style::color::dialog_text = 0;
+ui::color32 ui::style::color::dialog_selected_text = 0;
+ui::color32 ui::style::color::dialog_background = 0;
+ui::color32 ui::style::color::dialog_selected_background = 0;
+ui::color32 ui::style::color::button_background = 0;
+ui::color32 ui::style::color::edit_background = 0;
+ui::color32 ui::style::color::edit_text = 0;
+
+ui::color32 ui::style::color::toolbar_background = 0;
+ui::color32 ui::style::color::bubble_background = 0;
+ui::color32 ui::style::color::sidebar_background = 0;
+ui::color32 ui::style::color::group_background = 0;
+ui::color32 ui::style::color::view_background = 0;
+ui::color32 ui::style::color::view_selected_background = 0;
+ui::color32 ui::style::color::view_text = 0;
+
+ui::color32 ui::style::color::menu_background = 0;
+ui::color32 ui::style::color::menu_text = 0;
+ui::color32 ui::style::color::menu_shortcut_text = 0;
+
+ui::color32 ui::style::color::important_background = 0;
+ui::color32 ui::style::color::warning_background = 0;
+ui::color32 ui::style::color::success_background = 0;
+ui::color32 ui::style::color::info_background = 0;
+ui::color32 ui::style::color::desktop_background = 0;
+
+ui::color32 ui::style::color::rank_background = 0;
+ui::color32 ui::style::color::sidecar_background = 0;
+ui::color32 ui::style::color::duplicate_background = 0;
+
+void ui::style::color::install(const system_colors& system)
+{
+	constexpr color32 red = 0xaa2211;
+	constexpr color32 green = 0x2E8B33;
+	constexpr color32 orange = 0xCC6611;
+	constexpr color32 blue = 0x0288D1;
+	constexpr color32 blue2 = 0x117799;
+
+	dialog_text = 0x00eeeeee;
+	dialog_selected_text = 0x00ffffff;
+	dialog_background = 0x00555555;
+	dialog_selected_background = bgr(0x005588EE);
+	button_background = 0x00444444;
+	edit_background = system.edit_background;
+	edit_text = system.edit_text;
+
+	sidebar_background = 0x00333333;
+	bubble_background = 0x00333333;
+	group_background = 0x00444444;
+	toolbar_background = 0x00666666;
+
+	important_background = bgr(orange);
+	warning_background = bgr(red);
+	success_background = bgr(green);
+	info_background = bgr(blue2);
+
+	view_background = 0x00333333;
+	view_selected_background = bgr(blue);
+	view_text = 0x00eeeeee;
+
+	menu_background = 0x00444444;
+	menu_text = 0x00eeeeee;
+	menu_shortcut_text = bgr(0x006699EE);
+
+	desktop_background = system.desktop_background;
+
+	rank_background = bgr(0x00997711);
+	sidecar_background = bgr(0x006677CC);
+	duplicate_background = bgr(0x007711AA);
+}
+
 std::vector<recti> ui::layout_collage(const recti draw_bounds, const std::vector<sizei>& dimensions)
 {
 	constexpr size_t max_cells = 24;
@@ -275,7 +346,6 @@ public:
 
 	view_state& _state;
 	recti _view_bounds;
-	recti _zoom_bounds;
 	pointi _element_offset;
 	bool _tracking = false;
 	bool _drawing_region = false;
@@ -292,7 +362,6 @@ public:
 		_element_offset(element_offset),
 		_start_zoom_state(_parent_element->_display->zoom_state())
 	{
-		_zoom_bounds = calc_zoom_bounds();
 	}
 
 	~zoom_controller() override
@@ -302,17 +371,6 @@ public:
 		if (_drawing_region) _parent_element->cancel_region_drag();
 		else if (_tracking && !_committed) _parent_element->_display->restore_zoom_state(_start_zoom_state);
 		_tracking = false;
-	}
-
-	recti calc_zoom_bounds() const
-	{
-		const auto media_bounds = _parent_element->bounds;
-		const auto zoom_dims = std::clamp(std::min(media_bounds.width(), media_bounds.height()), 80, 200);
-		const auto source_orientation = _parent_element->_display->_selected_texture1->display_orientation();
-		const auto source_dims = _parent_element->_display->_selected_texture1->display_dimensions();
-		const auto result_dims = ui::scale_dimensions(flips_xy(source_orientation) ? source_dims.flip() : source_dims,
-		                                              zoom_dims);
-		return recti(_view_bounds.top_left(), result_dims).clamp(_view_bounds);
 	}
 
 	ui::style::cursor cursor() const override

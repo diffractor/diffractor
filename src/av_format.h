@@ -67,7 +67,7 @@ inline bool is_key(const std::string_view l, const std::string_view r)
 
 class file_type;
 using file_type_by_extension = df::hash_map<std::string_view, file_type_ref, df::ihash, df::ieq>;
-void av_initialise(file_type_by_extension& file_types);
+void av_initialise();
 
 // Describes a single FFmpeg codec for documentation generation.
 enum class av_codec_media_type
@@ -490,7 +490,6 @@ private:
 
 	bool _has_video = false;
 	bool _has_audio = false;
-	bool _is_open = false;
 	bool _has_multiple_audio_streams = false;
 
 	int _video_stream_index = -1; // _pVideoStream->index

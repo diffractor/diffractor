@@ -1631,7 +1631,6 @@ namespace ui
 		{
 			const auto scroll_offset = element_offset - _scroller.scroll_offset();
 			const auto show_scroll = can_scroll && _scroller.can_scroll();
-			const auto clip_bounds = dc.clip_bounds();
 
 			if (show_scroll)
 			{
@@ -3166,7 +3165,6 @@ namespace ui
 			control_layouts positions;
 			const auto text_height = mc.text_line_height(style::font_face::dialog);
 			auto y = mc.padding2;
-			auto n = 0;
 
 			for (const auto& i : _results)
 			{

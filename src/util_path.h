@@ -340,12 +340,6 @@ namespace df
 			return is_root(_s);
 		}
 
-		bool is_unc_path() const
-		{
-			if (_s.is_empty()) return false;
-			return is_path_sep(_s[0]) && is_path_sep(_s[1]); // unc path
-		}
-
 		bool exists() const
 		{
 			return platform::exists(*this);

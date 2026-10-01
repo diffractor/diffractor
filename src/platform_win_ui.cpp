@@ -460,77 +460,6 @@ static bool cursor_icon(const ui::style::cursor cursor, HICON& icon)
 	}
 }
 
-ui::color32 ui::style::color::dialog_text = 0;
-ui::color32 ui::style::color::dialog_selected_text = 0;
-ui::color32 ui::style::color::dialog_background = 0;
-ui::color32 ui::style::color::dialog_selected_background = 0;
-ui::color32 ui::style::color::button_background = 0;
-ui::color32 ui::style::color::edit_background = 0;
-ui::color32 ui::style::color::edit_text = 0;
-
-ui::color32 ui::style::color::toolbar_background = 0;
-ui::color32 ui::style::color::bubble_background = 0;
-ui::color32 ui::style::color::sidebar_background = 0;
-ui::color32 ui::style::color::group_background = 0;
-ui::color32 ui::style::color::view_background = 0;
-ui::color32 ui::style::color::view_selected_background = 0;
-ui::color32 ui::style::color::view_text = 0;
-
-ui::color32 ui::style::color::menu_background = 0;
-ui::color32 ui::style::color::menu_text = 0;
-ui::color32 ui::style::color::menu_shortcut_text = 0;
-
-ui::color32 ui::style::color::important_background = 0;
-ui::color32 ui::style::color::warning_background = 0;
-ui::color32 ui::style::color::success_background = 0;
-ui::color32 ui::style::color::info_background = 0;
-ui::color32 ui::style::color::desktop_background = 0;
-
-ui::color32 ui::style::color::rank_background = 0;
-ui::color32 ui::style::color::sidecar_background = 0;
-ui::color32 ui::style::color::duplicate_background = 0;
-
-static constexpr ui::color32 red = 0xaa2211;
-static constexpr ui::color32 green = 0x2E8B33;
-static constexpr ui::color32 orange = 0xCC6611; // 0xCC7711; // 0x995511; 0xF57C00
-static constexpr ui::color32 blue = 0x0288D1;
-static constexpr ui::color32 blue2 = 0x117799;
-
-static void init_color_styles()
-{
-	ui::style::color::dialog_text = 0x00eeeeee; // 0x00222222;
-	ui::style::color::dialog_selected_text = 0x00ffffff; // 0x00222222;
-	ui::style::color::dialog_background = 0x00555555; //  0x00BBBBBB;
-	ui::style::color::dialog_selected_background = ui::bgr(0x005588EE);
-	ui::style::color::button_background = 0x00444444;
-	ui::style::color::edit_background = GetSysColor(COLOR_WINDOW);
-	ui::style::color::edit_text = GetSysColor(COLOR_WINDOWTEXT);
-
-	ui::style::color::sidebar_background = 0x00333333;
-	ui::style::color::bubble_background = 0x00333333;
-	ui::style::color::group_background = 0x00444444;
-	ui::style::color::toolbar_background = 0x00666666;
-
-	ui::style::color::important_background = ui::bgr(orange);
-	ui::style::color::warning_background = ui::bgr(red);
-	ui::style::color::success_background = ui::bgr(green);
-	ui::style::color::info_background = ui::bgr(blue2);
-
-	ui::style::color::view_background = 0x00333333;
-	ui::style::color::view_selected_background = ui::bgr(blue);
-	ui::style::color::view_text = 0x00eeeeee;
-
-	ui::style::color::menu_background = 0x00444444;
-	ui::style::color::menu_text = 0x00eeeeee;
-	ui::style::color::menu_shortcut_text = ui::bgr(0x006699EE);
-
-	ui::style::color::desktop_background = GetSysColor(COLOR_DESKTOP);
-
-	ui::style::color::rank_background = ui::bgr(0x00997711);
-	ui::style::color::sidecar_background = ui::bgr(0x006677CC);
-	ui::style::color::duplicate_background = ui::bgr(0x007711AA);
-}
-
 char32_t keys::APPS = VK_APPS;
 char32_t keys::BACK = VK_BACK;
 char32_t keys::BROWSER_BACK = VK_BROWSER_BACK;
@@ -576,55 +505,6 @@ char32_t keys::VOLUME_MUTE = VK_VOLUME_MUTE;
 char32_t keys::VOLUME_UP = VK_VOLUME_UP;
 char32_t keys::HOME = VK_HOME;
 char32_t keys::END = VK_END;
-
-std::string_view keys::format(const int key)
-{
-	if (key == BACK) return tt.keyboard_back;
-	if (key == BROWSER_BACK) return tt.keyboard_browser_back;
-	if (key == BROWSER_FAVORITES) return tt.keyboard_browser_favorites;
-	if (key == BROWSER_FORWARD) return tt.keyboard_browser_forward;
-	if (key == BROWSER_HOME) return tt.keyboard_browser_home;
-	if (key == BROWSER_REFRESH) return tt.keyboard_browser_refresh;
-	if (key == BROWSER_SEARCH) return tt.keyboard_browser_search;
-	if (key == BROWSER_STOP) return tt.keyboard_browser_stop;
-	if (key == DEL) return tt.keyboard_del;
-	if (key == DOWN) return tt.keyboard_down;
-	if (key == END) return tt.keyboard_end;
-	if (key == ESCAPE) return tt.keyboard_escape;
-	if (key == F1) return tt.keyboard_f1;
-	if (key == F10) return tt.keyboard_f10;
-	if (key == F11) return tt.keyboard_f11;
-	if (key == F2) return tt.keyboard_f2;
-	if (key == F3) return tt.keyboard_f3;
-	if (key == F4) return tt.keyboard_f4;
-	if (key == F5) return tt.keyboard_f5;
-	if (key == F6) return tt.keyboard_f6;
-	if (key == F7) return tt.keyboard_f7;
-	if (key == F8) return tt.keyboard_f8;
-	if (key == F9) return tt.keyboard_f9;
-	if (key == HOME) return tt.keyboard_home;
-	if (key == INSERT) return tt.keyboard_insert;
-	if (key == LEFT) return tt.keyboard_left;
-	if (key == MEDIA_NEXT_TRACK) return tt.keyboard_media_next_track;
-	if (key == MEDIA_PLAY_PAUSE) return tt.keyboard_media_play_pause;
-	if (key == MEDIA_PREV_TRACK) return tt.keyboard_media_prev_track;
-	if (key == MEDIA_STOP) return tt.keyboard_media_stop;
-	if (key == NEXT) return tt.keyboard_next;
-	if (key == OEM_4) return tt.keyboard_oem_4;
-	if (key == OEM_6) return tt.keyboard_oem_6;
-	if (key == OEM_MINUS) return tt.keyboard_oem_minus;
-	if (key == OEM_PLUS) return tt.keyboard_oem_plus;
-	if (key == PRIOR) return tt.keyboard_prior;
-	if (key == RETURN) return tt.keyboard_enter;
-	if (key == RIGHT) return tt.keyboard_right;
-	if (key == SPACE) return tt.keyboard_space;
-	if (key == TAB) return tt.keyboard_tab;
-	if (key == UP) return tt.keyboard_up;
-	if (key == VOLUME_DOWN) return tt.keyboard_volume_down;
-	if (key == VOLUME_MUTE) return tt.keyboard_volume_mute;
-	if (key == VOLUME_UP) return tt.keyboard_volume_up;
-	return "?";
-}
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////
@@ -1281,14 +1161,11 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 	}
 
 	const uint32_t item_state = lpTBCustomDraw->nmcd.uItemState;
-	const bool is_selected = (item_state & ODS_SELECTED) != 0;
 	const bool is_hotlight = (item_state & ODS_HOTLIGHT) != 0;
 	const bool is_focus = is_hotlight && GetFocus() == tb;
 	const bool is_checked = (button_info.fsState & TBSTATE_CHECKED) != 0;
 	const bool is_pressed = (button_info.fsState & TBSTATE_PRESSED) != 0;
 	const bool is_disabled = (button_info.fsState & TBSTATE_ENABLED) == 0;
-	const bool is_drop_down = (button_info.fsStyle & TBSTYLE_DROPDOWN) != 0;
-	const bool is_drop_whole = (button_info.fsStyle & BTNS_WHOLEDROPDOWN) != 0;
 
 	const auto is_highlight = command && command->highlight && !is_disabled;
 	const auto accent_bg = ui::style::color::important_background;
@@ -2171,7 +2048,6 @@ class edit_impl final :
 	};
 
 	const ui::edit_styles _styles;
-	UINT_PTR _timerId = -1;
 	std::vector<unknown_word> _unknown_words;
 	icon_index _icon = icon_index::none;
 	ui::color32 _background = ui::style::color::edit_background;
@@ -2456,11 +2332,6 @@ public:
 	}
 
 	bool init_auto_complete_list();
-
-	void limit_text_len(const int max_len) override
-	{
-		::SendMessage(m_hWnd, EM_SETLIMITTEXT, max_len, 0L);
-	}
 
 	void replace_sel(const std::string_view new_text, const bool add_space_if_append) override
 	{
@@ -2930,8 +2801,6 @@ public:
 		const auto button_style = GetButtonStyle();
 		const auto button_state = pCustomDraw->uItemState;
 		const auto is_selected = (button_state & CDIS_SELECTED) != 0;
-		const auto is_hotlight = (button_state & CDIS_HOT) != 0;
-		const auto is_checked = (button_state & CDIS_CHECKED) != 0;
 		const auto is_focused = (button_state & CDIS_FOCUS) != 0;
 		const auto is_disabled = (button_state & CDIS_DISABLED) != 0;
 		const auto is_default = (button_style & BS_TYPEMASK) == BS_DEFPUSHBUTTON;
@@ -3133,7 +3002,6 @@ public:
 		if (pnmh->code == NM_CUSTOMDRAW)
 		{
 			const auto pCustomDraw = std::bit_cast<LPNMCUSTOMDRAW>(pnmh);
-			const auto from = pCustomDraw->hdr.hwndFrom;
 
 			if (pCustomDraw->dwDrawStage == CDDS_PREERASE)
 			{
@@ -3197,11 +3065,6 @@ public:
 	void SetPos(const int val) override
 	{
 		::SendMessage(m_hWnd, TBM_SETPOS, TRUE, val);
-	}
-
-	void buddy(const ui::edit_ptr& edit) override
-	{
-		::SendMessage(m_hWnd, TBM_SETBUDDY, TRUE, (LPARAM)std::any_cast<HWND>(edit->handle()));
 	}
 
 	void on_command(const ui::frame_host_weak_ptr& host, const int id, const int code) override
@@ -3330,8 +3193,6 @@ public:
 
 	LRESULT on_window_create(uint32_t /*uMsg*/, WPARAM /*wParam*/, LPARAM /*lParam*/)
 	{
-		auto* font = _ctx->dialog;
-
 		SYSTEMTIME st;
 		const auto ft = ts_to_ft(_val._i);
 		FileTimeToSystemTime(&ft, &st);
@@ -3553,7 +3414,6 @@ public:
 	sizei _extent;
 	// Allocated back buffer size, which is >= _extent and quantised. Only meaningful with a swap chain.
 	sizei _buffer_extent;
-	bool _is_occluded = false;
 	ui::control_frame_weak_ptr _owner;
 	owner_context_ptr _gdi_ctx;
 
@@ -3939,7 +3799,6 @@ protected:
 	int _alpha_target = 0;
 	recti _bounds;
 	view_elements_ptr _elements;
-	bool _horizontal = false;
 	pointi _focus_loc;
 
 public:
@@ -4931,7 +4790,6 @@ public:
 	LPARAM _last_mouse_move = 0;
 	wchar_t _pending_high_surrogate = 0;
 	bool _enable_screen_saver = true;
-	DWORD _dwAppBarState = 0;
 	factories_ptr _f;
 
 	win32_app() : _idle_event(false, false)
@@ -5012,11 +4870,6 @@ public:
 
 	void set_font_base_size(int i) override;
 
-	int get_font_base_size() const override
-	{
-		return global_base_font_size;
-	}
-
 	ui::control_frame_ptr
 	create_app_frame(const platform::setting_file_ptr& store, const ui::frame_host_weak_ptr& host) override;
 
@@ -5067,11 +4920,8 @@ public:
 	bool _is_full_screen = false;
 	bool _is_app_frame = false;
 	bool _has_focus = false;
-	int _main_thread_default_priority = 0;
-	int _main_thread_current_priority = 0;
 	mutable int _next_id = 2000;
 	int _def_id = IDOK;
-	int _cancel_id = IDCANCEL;
 
 	WINDOWPLACEMENT restore_window_placement{};
 	DWORD restore_style = 0;
@@ -5606,7 +5456,6 @@ public:
 
 	bool pre_translate_message(const LPMSG m) const
 	{
-		BOOL bHandled = 0;
 		if (!m_hWnd) return false;
 
 		return IsDialogMessage(m_hWnd, m) != 0;
@@ -6207,9 +6056,8 @@ public:
 	win_rect m_rcButton;
 
 
-	LRESULT on_menu_nc_calc_size(HWND hwnd, uint32_t /*uMsg*/, const WPARAM wParam, const LPARAM lParam) const
+	LRESULT on_menu_nc_calc_size(HWND hwnd, uint32_t /*uMsg*/, const WPARAM /*wParam*/, const LPARAM lParam) const
 	{
-		auto calc_valid_rects = static_cast<BOOL>(wParam);
 		const auto pr = std::bit_cast<LPRECT>(lParam);
 
 		if (pr)
@@ -6316,7 +6164,6 @@ public:
 
 	static LRESULT CALLBACK menu_create_hook_proc(const int nCode, const WPARAM wParam, const LPARAM lParam)
 	{
-		constexpr LRESULT lRet = 0;
 		wchar_t szClassName[7] = {0};
 
 		const auto current = _current;
@@ -8336,7 +8183,9 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 		// Does not improve performance but worth testing later
 
-		init_color_styles();
+		ui::style::color::install({
+			GetSysColor(COLOR_WINDOW), GetSysColor(COLOR_WINDOWTEXT), GetSysColor(COLOR_DESKTOP)
+		});
 
 #ifndef WINSTORE
 		unhandled_exception_filter exceptions;

@@ -123,7 +123,6 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	// double and to publish updates promptly across threads.
 	std::atomic<double> _last_seek = 0.0;
 	std::atomic<double> _time_offset = 0.0;
-	std::atomic<double> _audio_buffer_time = 0.0;
 
 	std::atomic<bool> _reset_time_offset = false;
 	std::atomic<bool> _pending_time_sync = false;
@@ -180,7 +179,6 @@ class av_session final : public std::enable_shared_from_this<av_session>
 
 	_Guarded_by_(_presentation_mutex)
 	av_frame_ptr _frame;
-	ui::orientation _default_orientation = ui::orientation::none;
 
 	std::atomic<std::shared_ptr<audio_resampler>> _playback_resampler;
 	std::atomic<std::shared_ptr<audio_resampler>> _vis_resampler;
@@ -325,7 +323,6 @@ public:
 			const auto start_time = _decoder.start_time();
 			const auto end_time = _decoder.end_time();
 
-			_audio_buffer_time = 0;
 			_end_time = end_time;
 			{
 				platform::exclusive_lock lock_present(_presentation_mutex);
@@ -346,8 +343,6 @@ public:
 			_video_eof_handled = false;
 			_audio_unavailable = false;
 			_seek_gen = 1;
-
-			_default_orientation = _decoder.calc_orientation();
 
 			_playback_resampler.store(nullptr);
 			_vis_resampler.store(nullptr);
@@ -467,16 +462,12 @@ public:
 					_decoder.receive_frames(_audio_packets, _audio_frames);
 				}
 
-				auto popped_frame = false;
-
 				if (playback_buffer.should_fill() || _seek_gen != playback_buffer.generation())
 				{
 					av_frame_ptr frame;
 
 					if (_audio_frames.pop(frame))
 					{
-						popped_frame = true;
-
 						const auto sv = av_seek_gen_from_frame(frame);
 						const auto is_current = sv == _seek_gen;
 						const auto eof = av_frame_is_eof(frame);
@@ -1364,7 +1355,6 @@ public:
 						need_create_device = true;
 					}
 
-					session->_audio_buffer_time = playback_buffer.start_time();
 					const auto audio_time = base_time + ds->time();
 					session->_audio_clock = audio_time;
 

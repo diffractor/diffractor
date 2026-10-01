@@ -1614,7 +1614,6 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 	auto has_iptc = false;
 	std::string components_text;
 	std::string subsampling_text;
-	uint64_t sos_offset = 0;
 
 	const auto add_segment = [&segment_rows, want_structure](const uint8_t marker, const uint64_t offset,
 	                                                         const uint64_t bytes,
@@ -1682,7 +1681,6 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 		{
 			// End of metadata - start of image data
 			add_segment(block_marker, block_offset, 2, {});
-			sos_offset = block_offset;
 			success = true;
 			break;
 		}

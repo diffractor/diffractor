@@ -6,9 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Linux side of the UI platform surface -- the style palette, the key table, and the
-// UI-thread identity. platform_win_ui.cpp owns the same three on Windows, along with the window
-// and message loop that have no counterpart here yet.
+// Purpose: Linux side of the UI platform surface -- the theme colours the palette takes from the
+// system, the key table, and the UI-thread identity. platform_win_ui.cpp owns the same three on
+// Windows, along with the window and message loop that have no counterpart here yet.
 
 #include "pch.h"
 
@@ -18,84 +18,16 @@
 // Style palette
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-ui::color32 ui::style::color::dialog_text = 0;
-ui::color32 ui::style::color::dialog_selected_text = 0;
-ui::color32 ui::style::color::dialog_background = 0;
-ui::color32 ui::style::color::dialog_selected_background = 0;
-ui::color32 ui::style::color::button_background = 0;
-
-ui::color32 ui::style::color::edit_background = 0;
-ui::color32 ui::style::color::edit_text = 0;
-
-ui::color32 ui::style::color::toolbar_background = 0;
-ui::color32 ui::style::color::bubble_background = 0;
-ui::color32 ui::style::color::sidebar_background = 0;
-ui::color32 ui::style::color::group_background = 0;
-ui::color32 ui::style::color::view_background = 0;
-ui::color32 ui::style::color::view_selected_background = 0;
-ui::color32 ui::style::color::view_text = 0;
-
-ui::color32 ui::style::color::menu_background = 0;
-ui::color32 ui::style::color::menu_text = 0;
-ui::color32 ui::style::color::menu_shortcut_text = 0;
-
-ui::color32 ui::style::color::important_background = 0;
-ui::color32 ui::style::color::warning_background = 0;
-ui::color32 ui::style::color::success_background = 0;
-ui::color32 ui::style::color::info_background = 0;
-ui::color32 ui::style::color::desktop_background = 0;
-
-ui::color32 ui::style::color::rank_background = 0;
-ui::color32 ui::style::color::sidecar_background = 0;
-ui::color32 ui::style::color::duplicate_background = 0;
-
 namespace
 {
-	constexpr ui::color32 red = 0xaa2211;
-	constexpr ui::color32 green = 0x2E8B33;
-	constexpr ui::color32 orange = 0xCC6611;
-	constexpr ui::color32 blue = 0x0288D1;
-	constexpr ui::color32 blue2 = 0x117799;
-
-	// The same palette platform_win_ui.cpp installs. The three values it reads from the system
-	// theme are given their Windows dark-mode equivalents; a desktop integration would replace
-	// them with whatever the running theme reports.
+	// The palette itself is portable (ui.cpp). The colours Windows reads from the system theme are
+	// given their Windows dark-mode equivalents; a desktop integration would replace them with
+	// whatever the running theme reports.
 	struct color_style_initialiser
 	{
 		color_style_initialiser()
 		{
-			ui::style::color::dialog_text = 0x00eeeeee;
-			ui::style::color::dialog_selected_text = 0x00ffffff;
-			ui::style::color::dialog_background = 0x00555555;
-			ui::style::color::dialog_selected_background = ui::bgr(0x005588EE);
-			ui::style::color::button_background = 0x00444444;
-
-			ui::style::color::edit_background = 0x00ffffff;
-			ui::style::color::edit_text = 0x00000000;
-
-			ui::style::color::sidebar_background = 0x00333333;
-			ui::style::color::bubble_background = 0x00333333;
-			ui::style::color::group_background = 0x00444444;
-			ui::style::color::toolbar_background = 0x00666666;
-
-			ui::style::color::important_background = ui::bgr(orange);
-			ui::style::color::warning_background = ui::bgr(red);
-			ui::style::color::success_background = ui::bgr(green);
-			ui::style::color::info_background = ui::bgr(blue2);
-
-			ui::style::color::view_background = 0x00333333;
-			ui::style::color::view_selected_background = ui::bgr(blue);
-			ui::style::color::view_text = 0x00eeeeee;
-
-			ui::style::color::menu_background = 0x00444444;
-			ui::style::color::menu_text = 0x00eeeeee;
-			ui::style::color::menu_shortcut_text = ui::bgr(0x006699EE);
-
-			ui::style::color::desktop_background = 0x00000000;
-
-			ui::style::color::rank_background = ui::bgr(0x00997711);
-			ui::style::color::sidecar_background = ui::bgr(0x006677CC);
-			ui::style::color::duplicate_background = ui::bgr(0x007711AA);
+			ui::style::color::install({0x00ffffff, 0x00000000, 0x00000000});
 		}
 	};
 

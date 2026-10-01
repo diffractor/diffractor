@@ -1026,15 +1026,10 @@ public:
 	// atom reuse it instead of allocating a 1KB curve per frame.
 	std::shared_ptr<const ui::texture_transform> _last_transform;
 
-
-	int _adapters_count = 0;
-	int _reset_device_count = 0;
-	bool _is_reset = false;
 	bool _is_valid = false;
 	int _base_font_size = 0;
 
 	texture_d3d11_ptr _shadow;
-	texture_d3d11_ptr _inverse_shadow;
 
 	std::map<ui::style::font_face, d3d11_text_renderer> _font;
 
@@ -1095,13 +1090,11 @@ public:
 	void clear(ui::color c) override;
 	void draw_rounded_rect(recti bounds, ui::color c, int radius) override;
 	void draw_rect(recti bounds, ui::color c) override;
-	void draw_rect_gradient(recti bounds, ui::color c_centre, ui::color c_corner) override;
 	void draw_text(std::string_view text, recti bounds, ui::style::font_face font, ui::style::text_style style,
 	               ui::color c, ui::color bg) override;
 	void draw_text(std::string_view text, const std::vector<ui::text_highlight_t>& highlights, recti bounds,
 	               ui::style::font_face font, ui::style::text_style style, ui::color clr, ui::color bg) override;
 	void draw_text(const ui::text_layout_ptr& tl, recti bounds, ui::color clr, ui::color bg) override;
-	void draw_shadow(recti bounds, int width, float alpha, bool inverse) override;
 	void draw_border(recti inside, recti outside, ui::color c_inside, ui::color c_outside) override;
 	void draw_texture(const ui::texture_ptr& t, recti dst, float alpha, ui::texture_sampler sampler) override;
 	void draw_texture(const ui::texture_ptr& t, recti dst, recti src, float alpha, ui::texture_sampler sampler,
@@ -1125,7 +1118,6 @@ public:
 	recti clip_bounds() const override;
 	void clip_bounds(recti) override;
 	void restore_clip() override;
-	void draw_edge_shadows(float alpha) override;
 
 private:
 	friend class render_font_d3d11;
@@ -1157,7 +1149,6 @@ void d3d11_draw_context_impl::destroy()
 	_is_valid = false;
 
 	_shadow.reset();
-	_inverse_shadow.reset();
 	_scene_atoms.clear();
 	_last_transform.reset();
 	_font.clear();
@@ -1261,7 +1252,6 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 		if (SUCCEEDED(hr))
 		{
 			_shadow = create_texture_from_resource(_f, IDB_SHADOW, L"PNG");
-			_inverse_shadow = create_texture_from_resource(_f, IDB_INVERSE_SHADOW, L"PNG");
 
 			const auto shader = load_resource(IDR_SHADER_VERTEX, L"SHADER");
 			hr = _f->d3d_device->CreateVertexShader(shader.data(), shader.size(), nullptr, &_vertex_shader);
@@ -3591,25 +3581,6 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void d3d11_draw_context_impl::draw_shadow(const recti dst, const int sxy, const float alpha, const bool inverse)
-{
-	df::scope_rendering_func rf(__FUNCTION__);
-	df::assert_true(ui::is_ui_thread());
-
-	vertex_2d vertices[4 * 8];
-	WORD indexes[6 * 8];
-	const auto& texture = inverse ? _inverse_shadow : _shadow;
-
-	// create_texture_from_resource always returns an object, so the decode has to be confirmed here:
-	// an unloaded texture reports zero dimensions and build_shadow_vertices would divide by them.
-	if (texture && texture->is_valid())
-	{
-		build_shadow_vertices(vertices, indexes, texture, dst, _client_extent, sxy, alpha);
-		add_scene_atom(texture->binding(), _pixel_shader_rgb, ui::texture_format::RGB, ui::texture_sampler::point,
-		               vertices, std::size(vertices), indexes, std::size(indexes));
-	}
-}
-
 void d3d11_draw_context_impl::draw_text(const std::string_view textA, const recti bounds,
                                         const ui::style::font_face font, const ui::style::text_style style,
                                         const ui::color clr, const ui::color bg)
@@ -3653,15 +3624,6 @@ void d3d11_draw_context_impl::draw_text(const ui::text_layout_ptr& tl, const rec
 			_font[t->_font].draw_text(t, bounds, clr, bg);
 		}
 	}
-}
-
-void d3d11_draw_context_impl::draw_edge_shadows(const float alpha)
-{
-	df::scope_rendering_func rf(__FUNCTION__);
-	df::assert_true(ui::is_ui_thread());
-	const auto client_extent = _client_extent;
-	const auto size = std::min(std::min(client_extent.cx / 2, client_extent.cy / 2), 96);
-	draw_shadow(recti(0, 0, client_extent.cx, client_extent.cy).inflate(-size), size, alpha, true);
 }
 
 
@@ -3846,43 +3808,6 @@ void d3d11_draw_context_impl::draw_rect(const recti bounds, const ui::color c)
 
 	add_scene_atom({}, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point, vertices,
 	               std::size(vertices), indexes, std::size(indexes));
-}
-
-// Four-triangle fan from the centre vertex: the rasteriser interpolates c_centre at the middle to
-// c_corner at the four corners. software_canvas::fill_rect_gradient reproduces this on the CPU.
-void d3d11_draw_context_impl::draw_rect_gradient(const recti bounds, const ui::color c_centre,
-                                                 const ui::color c_corner)
-{
-	df::scope_rendering_func rf(__FUNCTION__);
-	df::assert_true(ui::is_ui_thread());
-
-	const auto dst = static_cast<quadd>(bounds);
-
-	if (c_centre.a >= 0.01f || c_corner.a >= 0.01f)
-	{
-		const auto r = dst.scale(_client_extent);
-		const auto center = r.center_point();
-
-		const vertex_2d vertices[] = {
-
-			vertex_2d(r[0], c_corner),
-			vertex_2d(r[1], c_corner),
-			vertex_2d(center, c_centre),
-			vertex_2d(r[2], c_corner),
-			vertex_2d(r[3], c_corner),
-		};
-
-		constexpr WORD indexes[] = {
-
-			0, 1, 2,
-			1, 3, 2,
-			3, 4, 2,
-			4, 0, 2
-		};
-
-		add_scene_atom({}, _pixel_shader_solid, ui::texture_format::None, ui::texture_sampler::point, vertices,
-		               std::size(vertices), indexes, std::size(indexes));
-	}
 }
 
 void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const recti dst, const float alpha,

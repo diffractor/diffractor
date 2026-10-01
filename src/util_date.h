@@ -90,35 +90,7 @@ namespace df
 			return _i;
 		}
 
-		friend bool operator==(const date_t lhs, const date_t rhs)
-		{
-			return lhs._i == rhs._i;
-		}
-
-		friend bool operator!=(const date_t lhs, const date_t rhs)
-		{
-			return !(lhs == rhs);
-		}
-
-		friend bool operator<(const date_t lhs, const date_t rhs)
-		{
-			return lhs._i < rhs._i;
-		}
-
-		friend bool operator<=(const date_t lhs, const date_t rhs)
-		{
-			return !(rhs < lhs);
-		}
-
-		friend bool operator>(const date_t lhs, const date_t rhs)
-		{
-			return rhs < lhs;
-		}
-
-		friend bool operator>=(const date_t lhs, const date_t rhs)
-		{
-			return !(lhs < rhs);
-		}
+		friend auto operator<=>(const date_t&, const date_t&) = default;
 
 		constexpr void clear()
 		{
