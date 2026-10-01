@@ -615,6 +615,10 @@ file_scan_result scan_jpg(read_stream& s, scan_intent intent = scan_intent::inde
 file_scan_result scan_psd(read_stream& s);
 file_scan_result scan_heif(read_stream& s, scan_intent intent = scan_intent::index, bool want_thumbnail = false);
 file_scan_result scan_jxl(read_stream& s);
+file_scan_result scan_gif(read_stream& s);
+file_scan_result scan_bmp(read_stream& s);
+file_scan_result scan_tiff(read_stream& s, bool want_thumbnail, files* decoder);
+void scan_webp(file_scan_result& result, read_stream& s, scan_intent intent);
 webp_parts scan_webp(df::cspan data, bool decode_surface);
 
 // Shared by the format scanners to build the file-structure block: a leaf row, a section heading,
@@ -1250,11 +1254,50 @@ struct archive_item
 	df::date_t created;
 };
 
+// What a caller decoding in-memory bytes asks for: the extent the result has to fit, whether planar
+// YUV may come back, and whether it is for display or a thumbnail.
+struct still_decode_request
+{
+	sizei target_extent;
+	bool can_use_yuv = false;
+	decode_intent intent = decode_intent::display;
+};
+
+// Everything Diffractor knows about one still image format it recognises by its first bytes: the
+// file type it registers, how its signature is told apart, how its header is read without decoding,
+// and how it decodes. A format with no decoder of its own is decoded by ffmpeg. Supporting another is
+// one entry in files_formats.cpp, plus a still_file_type line at its place in the extension table.
+struct still_format
+{
+	detected_format format = detected_format::Unknown;
+	std::string_view extensions;
+	std::string_view description;
+	file_traits traits = file_traits::none;
+	// A loaded file keeps its encoded bytes in this form rather than decoding them.
+	ui::image_format encoded = ui::image_format::Unknown;
+	// True when the first bytes are this format.
+	bool (*matches)(df::cspan header) = nullptr;
+	// Dimensions, metadata and, when asked for, a thumbnail, read without decoding the frame.
+	file_scan_result (*scan)(read_stream& s, scan_intent intent, bool want_thumbnail, files* decoder) = nullptr;
+	// Decodes a whole file for a load. The diagnostic names a source refused for its size.
+	ui::surface_ptr (*load)(read_stream& s, load_diagnostic* diagnostic) = nullptr;
+	// Decodes in-memory bytes for display or a thumbnail.
+	ui::surface_ptr (*decode)(files& ff, df::cspan data, const still_decode_request& request) = nullptr;
+};
+
+// In detection order.
+std::span<const still_format> still_formats();
+const still_format* find_still_format(detected_format format);
+// The extension-table entry for a still format, built from its still_format.
+file_type still_file_type(detected_format format);
+// The JPEG entry's decoder. A friend of files, whose decoder state it uses.
+ui::surface_ptr decode_still_jpeg(files& ff, df::cspan data, const still_decode_request& request);
+
+// Formats whose loaded files stay encoded: the bytes are the image.
 inline bool is_image_format(const detected_format& format)
 {
-	return format == detected_format::JPEG ||
-		format == detected_format::PNG ||
-		format == detected_format::WEBP;
+	const auto* const still = find_still_format(format);
+	return still && still->encoded != ui::image_format::Unknown;
 }
 
 
@@ -1288,6 +1331,9 @@ class files final : df::no_copy
 	ui::surface_ptr decode_jpeg(df::cspan data, sizei target_extent, bool can_use_yuv,
 	                            std::optional<ui::orientation> orientation_override, bool& is_yuv,
 	                            const df::cancel_token& token, decode_intent intent);
+
+	// The still_format entry for JPEG decodes through the decoder state this object holds.
+	friend ui::surface_ptr decode_still_jpeg(files& ff, df::cspan data, const still_decode_request& request);
 
 	// Shared by the two fit_within overloads; defined in files_core.cpp, where both instantiate it.
 	template <typename Ptr>

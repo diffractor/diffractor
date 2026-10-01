@@ -213,7 +213,7 @@ void load_file_types()
 		{file_group::video, "avs2", {}, {}},
 		{file_group::video, "bcstm", {}, {}},
 		{file_group::video, "bfstm", {}, {}},
-		{file_group::photo, "bmp", "Microsoft Windows Bitmap", {}},
+		still_file_type(detected_format::BMP),
 		{file_group::video, "bmv", {}, {}},
 		{file_group::video, "brstm", "Binary Revolution Stream", {}},
 		{file_group::video, "caf", {}, {}},
@@ -270,10 +270,7 @@ void load_file_types()
 		{file_group::video, "g729", {}, {}},
 		{file_group::audio, "gdm", {}, {}},
 		{file_group::video, "genh", {}, {}},
-		{
-			file_group::photo, "gif,giff", "CompuServe's Graphics Interchange Format",
-			file_traits::embedded_xmp | file_traits::edit
-		},
+		still_file_type(detected_format::GIF),
 		{file_group::video, "gsm", "GSM Full Rate", {}},
 		{file_group::video, "gxf", {}, {}},
 		{file_group::video, "h261", "H.261 video", {}},
@@ -305,12 +302,9 @@ void load_file_types()
 		{file_group::photo, "jif", {}, {}},
 		{file_group::video, "jls", {}, {}},
 		{file_group::photo, "jp2", "JPEG2000", {}},
-		{
-			file_group::photo, "jpeg,jpg,jpe,jfif", "Joint Photographic Experts Group",
-			file_traits::embedded_xmp | file_traits::edit
-		},
+		still_file_type(detected_format::JPEG),
 		{file_group::photo, "jpx", "Jpeg 2000", file_traits::embedded_xmp | file_traits::edit},
-		{file_group::photo, "jxl", "JPEG XL", file_traits::embedded_xmp},
+		still_file_type(detected_format::JXL),
 		{file_group::video, "jss", {}, {}},
 		{file_group::photo, "koa", {}, {}},
 		{file_group::video, "kux", {}, {}},
@@ -383,10 +377,7 @@ void load_file_types()
 			file_traits::edit
 		},
 		{file_group::audio, "mpa,m2a", "MPEG", file_traits::embedded_xmp | file_traits::edit},
-		{
-			file_group::photo, "heif, heifs, heic, heics, avci, avcs, avif, avifs",
-			"High Efficiency Image File Format", file_traits::embedded_xmp
-		},
+		still_file_type(detected_format::HEIF),
 		{file_group::video, "avc1", "Advanced Video Coding", {}},
 		{file_group::audio, "mptm", {}, {}},
 		{file_group::video, "msbc", {}, {}},
@@ -432,15 +423,9 @@ void load_file_types()
 		{file_group::photo, "pict", "Apple Macintosh PICT image", {}},
 		{file_group::video, "pjs", {}, {}},
 		{file_group::audio, "plm", {}, {}},
-		{
-			file_group::photo, "png", "Portable Network Graphic",
-			file_traits::embedded_xmp | file_traits::edit
-		},
+		still_file_type(detected_format::PNG),
 		{file_group::photo, "ppm", "Portable Pixmap", {}},
-		{
-			file_group::photo, "psd", "Adobe Photoshop Drawing",
-			file_traits::embedded_xmp | file_traits::edit
-		},
+		still_file_type(detected_format::PSD),
 		{file_group::audio, "psm", {}, {}},
 		{file_group::video, "psp", "Paint Shop Pro image", {}},
 		{file_group::audio, "pt36", {}, {}},
@@ -499,10 +484,7 @@ void load_file_types()
 		{file_group::photo, "tga,targa", "Truevision TGA (Targa) image", {}},
 		{file_group::video, "tco", {}, {}},
 		{file_group::video, "thd", {}, {}},
-		{
-			file_group::photo, "tiff, tif", "Tagged Image File Format",
-			file_traits::embedded_xmp | file_traits::edit
-		},
+		still_file_type(detected_format::TIFF),
 		{file_group::photo, "cin", "Kodak Cineon Image", {}},
 		{file_group::photo, "dpx", "Digital Picture Exchange", {}},
 		{file_group::video, "tod", {}, {}},
@@ -529,7 +511,7 @@ void load_file_types()
 		{file_group::photo, "wbmp", {}, file_traits::embedded_xmp | file_traits::edit},
 		{file_group::video, "web", {}, {}},
 		{file_group::video, "webm", "WebM video", {}},
-		{file_group::photo, "webp", {}, file_traits::embedded_xmp | file_traits::edit},
+		still_file_type(detected_format::WEBP),
 		{
 			file_group::audio, "wma", "Windows Media Audio 9",
 			file_traits::embedded_xmp | file_traits::edit | file_traits::in_place_metadata
@@ -1298,136 +1280,12 @@ bool files::is_jpeg(const std::string_view name)
 	return str::icmp(ext, ".jpg") == 0 || str::icmp(ext, ".jpeg") == 0 || str::icmp(ext, ".jpe") == 0;
 }
 
-static bool is_heif(const df::cspan image_buffer_in)
-{
-	if (image_buffer_in.size < 12u)
-	{
-		return false;
-	}
-
-	constexpr std::array<uint8_t, 4> ftyp_header = {'f', 't', 'y', 'p'};
-	constexpr std::array<std::array<uint8_t, 4>, 10> brand = {
-		{
-			{'h', 'e', 'i', 'c'},
-			{'h', 'e', 'i', 'x'},
-			{'h', 'e', 'v', 'c'},
-			{'h', 'e', 'v', 'x'},
-			{'h', 'e', 'i', 'm'},
-			{'h', 'e', 'i', 's'},
-			{'h', 'e', 'v', 'm'},
-			{'h', 'e', 'v', 's'},
-			{'m', 'i', 'f', '1'},
-			{'m', 's', 'f', '1'},
-		}
-	};
-
-	if (!std::equal(std::begin(ftyp_header), std::end(ftyp_header), image_buffer_in.data + 4))
-		return false;
-
-	return std::any_of(std::begin(brand), std::end(brand), [image_buffer_in](const auto& b)
-	{
-		return std::equal(std::begin(b), std::end(b), image_buffer_in.data + 8);
-	});
-}
-
-inline bool is_avif(const df::cspan image_buffer_in)
-{
-	if (image_buffer_in.size < 12u)
-	{
-		return false;
-	}
-
-	constexpr std::array<unsigned char, 4> ftyp_header = {'f', 't', 'y', 'p'};
-	constexpr std::array<std::array<unsigned char, 4>, 2> brand = {
-		{
-			{'a', 'v', 'i', 'f'},
-			{'a', 'v', 'i', 's'},
-		}
-	};
-
-	if (!std::equal(std::begin(ftyp_header), std::end(ftyp_header), image_buffer_in.data + 4))
-		return false;
-
-	return std::any_of(std::begin(brand), std::end(brand), [image_buffer_in](const auto& b)
-	{
-		return std::equal(std::begin(b), std::end(b), image_buffer_in.data + 8);
-	});
-}
-
 detected_format files::detect_format(const df::cspan image_buffer_in)
 {
 	// https://en.wikipedia.org/wiki/List_of_file_signatures
-
-	// Read through memcpy: the span often points into the middle of another file - an embedded
-	// thumbnail sits at an offset taken straight from an IFD entry - so its alignment is never
-	// ours to assume. The signature constants below are little-endian host order throughout.
-	const auto* const data = image_buffer_in.data;
-
-	const auto read_u32 = [data](const size_t offset)
+	for (const auto& f : still_formats())
 	{
-		uint32_t n;
-		std::memcpy(&n, data + offset, sizeof(n));
-		return n;
-	};
-
-	if (image_buffer_in.size >= 4)
-	{
-		const auto header32 = read_u32(0);
-
-		if (header32 == 0x53504238)
-		{
-			return detected_format::PSD;
-		}
-
-		// 47 49 46 38 
-		if (header32 == 0x38464947)
-		{
-			return detected_format::GIF;
-		}
-
-		// JPEG XL container: 00 00 00 0C 'J' 'X' 'L' ' '
-		if (header32 == 0x0C000000 && image_buffer_in.size >= 8 && read_u32(4) == 0x204C584A)
-		{
-			return detected_format::JXL;
-		}
-
-		// RIFF containers ('RIFF' .... 'WEBP'): verify the WEBP FourCC at offset 8 so
-		// other RIFF payloads (WAV, AVI) are not misidentified as WebP.
-		if (header32 == 0x46464952 && image_buffer_in.size >= 12 && read_u32(8) == 0x50424557)
-		{
-			return detected_format::WEBP;
-		}
-
-		uint16_t header16;
-		std::memcpy(&header16, data, sizeof(header16));
-
-		switch (header16)
-		{
-		case 0xD8FF: return detected_format::JPEG;
-		case 0x4D42: return detected_format::BMP;
-		case 0x5089: return detected_format::PNG;
-		case 0x4949: // 'II' little-endian
-		case 0x4d4d: // 'MM' big-endian
-			{
-				// The byte-order mark alone matches any file starting with those two letters, so
-				// require the version word too: 42 for classic TIFF, 43 for BigTIFF.
-				const auto version = header16 == 0x4949
-					                     ? static_cast<uint16_t>(data[2] | data[3] << 8)
-					                     : static_cast<uint16_t>(data[2] << 8 | data[3]);
-
-				if (version == 42u || version == 43u)
-				{
-					return detected_format::TIFF;
-				}
-			}
-			break;
-		case 0x0AFF: return detected_format::JXL; // JPEG XL codestream: FF 0A
-		}
-	}
-
-	if (is_heif(image_buffer_in) || is_avif(image_buffer_in))
-	{
-		return detected_format::HEIF;
+		if (f.matches(image_buffer_in)) return f.format;
 	}
 
 	return detected_format::Unknown;
@@ -1866,98 +1724,11 @@ ui::surface_ptr files::image_to_surface(const df::cspan image_buffer_in, const s
 	{
 		if (!image_buffer_in.empty())
 		{
-			const auto format = detect_format(image_buffer_in);
+			const auto* const still = find_still_format(detect_format(image_buffer_in));
 
-			if (format == detected_format::JPEG)
+			if (still && still->decode)
 			{
-				bool is_yuv = false;
-				auto decoded = decode_jpeg(image_buffer_in, target_extent, can_use_yuv, {}, is_yuv, {}, intent);
-
-				if (is_valid(decoded))
-				{
-					// A display decode hands the planes straight to the sampler, which resizes at draw
-					// time. A thumbnail is about to be encoded, so it is reduced here - and stays planar,
-					// because that is the form VP8 wants.
-					surface_result = is_yuv && intent != decode_intent::thumbnail
-						                 ? std::move(decoded)
-						                 : fit_within(std::move(decoded), target_extent);
-				}
-			}
-			else if (format == detected_format::PSD)
-			{
-				mem_read_stream stream(image_buffer_in);
-				auto loaded = load_psd(stream);
-
-				if (is_valid(loaded))
-				{
-					surface_result = fit_within(std::move(loaded), target_extent);
-				}
-			}
-			else if (format == detected_format::PNG)
-			{
-				try
-				{
-					auto loaded = load_png(image_buffer_in);
-
-					if (is_valid(loaded))
-					{
-						surface_result = fit_within(std::move(loaded), target_extent);
-					}
-				}
-				catch (std::exception& e)
-				{
-					df::log(__FUNCTION__, e.what());
-				}
-			}
-			else if (format == detected_format::WEBP)
-			{
-				try
-				{
-					auto loaded = load_webp(image_buffer_in, can_use_yuv, target_extent);
-
-					if (is_valid(loaded))
-					{
-						surface_result = fit_within(std::move(loaded), target_extent);
-					}
-				}
-				catch (std::exception& e)
-				{
-					df::log(__FUNCTION__, e.what());
-				}
-			}
-			else if (format == detected_format::HEIF)
-			{
-				try
-				{
-					mem_read_stream stream(image_buffer_in);
-					auto loaded = load_heif(stream);
-
-					if (is_valid(loaded))
-					{
-						surface_result = fit_within(std::move(loaded), target_extent);
-					}
-				}
-				catch (std::exception& e)
-				{
-					df::log(__FUNCTION__, e.what());
-				}
-			}
-			else if (format == detected_format::JXL)
-			{
-				try
-				{
-					mem_read_stream stream(image_buffer_in);
-					auto loaded = load_jxl(stream);
-
-					if (is_valid(loaded))
-					{
-						surface_result = fit_within(std::move(loaded), target_extent);
-					}
-				}
-				catch (std::exception& e)
-				{
-					df::log(__FUNCTION__, e.what());
-				}
+				surface_result = still->decode(*this, image_buffer_in, {target_extent, can_use_yuv, intent});
 			}
 
 			if (is_empty(surface_result))
@@ -2444,21 +2215,8 @@ ui::image_ptr load_image_file(df::cspan file)
 			// thumbnail, so asking for one again would let a file of nested thumbnails recurse -
 			// and scan_jpg carries a 64K buffer per frame, so that ends in a blown stack.
 			const auto info = scan_photo(stream);
-			auto format = ui::image_format::Unknown;
-
-			switch (info.format)
-			{
-			case detected_format::JPEG:
-				format = ui::image_format::JPEG;
-				break;
-			case detected_format::PNG:
-				format = ui::image_format::PNG;
-				break;
-			case detected_format::WEBP:
-				format = ui::image_format::WEBP;
-				break;
-			default: ;
-			}
+			const auto* const still = find_still_format(info.format);
+			const auto format = still ? still->encoded : ui::image_format::Unknown;
 
 			result = std::make_shared<ui::image>(file, info.dimensions(), format, info.orientation);
 		}
@@ -2514,6 +2272,7 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 				if (stream.size() > 16)
 				{
 					const auto detected = detect_format(stream.peek128(0));
+					const auto* const still = find_still_format(detected);
 
 					if (is_image_format(detected))
 					{
@@ -2527,42 +2286,28 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 						// so here rather than looking like a corrupt file.
 						load_diagnostic diagnostic;
 
-						switch (detected)
+						if (still && still->load)
 						{
-						case detected_format::PSD:
-							result.s = load_psd(stream, &diagnostic);
-							break;
-
-						case detected_format::HEIF:
-							result.s = load_heif(stream, &diagnostic);
-							break;
-
-						case detected_format::JXL:
-							result.s = load_jxl(stream, &diagnostic);
-							break;
-
-						default:
+							result.s = still->load(stream, &diagnostic);
+						}
+						else
+						{
 							// GIF, BMP and TIFF, plus the bitmap types we recognise by extension but
 							// not by signature (TGA, SGI, PPM, DPX), are decoded by ffmpeg. scan_photo
 							// reads the geometry from the header without decoding - but only for the
 							// formats it has a branch for, so a refusal here is the one that can name the
 							// size in the diagnostic, not the one that makes the budget safe. That gate is
 							// inside av_decode_still, which sees every source this reaches.
+							const auto scanned = scan_photo(stream);
+							const sizei scanned_dimensions{
+								static_cast<int>(scanned.width), static_cast<int>(scanned.height)
+							};
+
+							if (scanned_dimensions.is_empty() ||
+								!reject_over_budget_source(&diagnostic, scanned_dimensions, "image"))
 							{
-								const auto scanned = scan_photo(stream);
-								const sizei scanned_dimensions{
-									static_cast<int>(scanned.width), static_cast<int>(scanned.height)
-								};
-
-								if (!scanned_dimensions.is_empty() &&
-									reject_over_budget_source(&diagnostic, scanned_dimensions, "image"))
-								{
-									break;
-								}
-
 								result.s = av_decode_still(file, {}, path.extension());
 							}
-							break;
 						}
 
 						result.success = is_valid(result.s);

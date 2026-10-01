@@ -197,6 +197,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/metadata_iptc.cpp
         src/files_commodore.cpp
         src/files_core.cpp
+        src/files_formats.cpp
         src/files_psd.cpp
         src/files_scan_photo.cpp
         src/files_jpeg.cpp

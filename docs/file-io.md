@@ -111,6 +111,8 @@ items separately. It does not claim to undo completed writes.
 
 - [files_core.cpp](../src/files_core.cpp): `files::load`, `files::update`, staging, sidecars, and
   write result publication.
+- [files_formats.cpp](../src/files_formats.cpp): the still image formats recognised by signature,
+  one entry each for detection, header scanning, loading, and decoding.
 - [model.cpp](../src/model.cpp) and [model.h](../src/model.h): `texture_state` and
   `display_state_t`.
 - [model_index.cpp](../src/model_index.cpp): change discovery, scanning, and thumbnail scheduling.

@@ -262,7 +262,7 @@ static void scan_gif_blocks(read_stream& s, file_scan_result& result, uint64_t o
 	}
 }
 
-static file_scan_result scan_gif(read_stream& s)
+file_scan_result scan_gif(read_stream& s)
 {
 	file_scan_result result;
 	constexpr auto header_len = 11;
@@ -383,7 +383,7 @@ static void scan_webp_structure(file_scan_result& result, const df::cspan data)
 	result.structure_metadata = std::move(kv);
 }
 
-static void scan_webp(file_scan_result& result, read_stream& s, const scan_intent intent)
+void scan_webp(file_scan_result& result, read_stream& s, const scan_intent intent)
 {
 	// EXIF/XMP chunks trail the image data in a RIFF container, so the whole file is
 	// needed here; move the parsed blobs out rather than deep-copying them.
@@ -606,7 +606,7 @@ static std::string load_text(read_stream& s, const uint64_t pos, const unsigned 
 	return result;
 }
 
-static file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, files* const decoder)
+file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, files* const decoder)
 {
 	file_scan_result result;
 	uint8_t header[8];
@@ -885,6 +885,45 @@ static file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, fil
 	return result;
 }
 
+file_scan_result scan_bmp(read_stream& s)
+{
+	file_scan_result result;
+
+	constexpr auto bmp_header_bytes = sizeof(files_structs::BITMAPFILEHEADER) +
+		sizeof(files_structs::BITMAPINFOHEADER);
+
+	// detect_format only guarantees the 2-byte "BM" signature, so verify the file is long enough
+	// before reading the info header.
+	if (s.size() < bmp_header_bytes)
+	{
+		return result;
+	}
+
+	uint8_t header[sizeof(files_structs::BITMAPINFOHEADER)];
+	s.read(sizeof(files_structs::BITMAPFILEHEADER), header, sizeof(files_structs::BITMAPINFOHEADER));
+	files_structs::BITMAPINFOHEADER bmp_info;
+	std::memcpy(&bmp_info, header, sizeof(bmp_info));
+
+	// biWidth/biHeight are signed (a negative height means a top-down bitmap). Take the magnitude in
+	// 64-bit: abs(INT32_MIN) is undefined and would produce a bogus size.
+	const auto abs_width = std::abs(static_cast<int64_t>(bmp_info.biWidth));
+	const auto abs_height = std::abs(static_cast<int64_t>(bmp_info.biHeight));
+
+	if (bmp_info.biSize < sizeof(files_structs::BITMAPINFOHEADER) ||
+		abs_width <= 0 || abs_height <= 0 ||
+		abs_width > max_image_dimension || abs_height > max_image_dimension)
+	{
+		return result;
+	}
+
+	result.width = static_cast<uint32_t>(abs_width);
+	result.height = static_cast<uint32_t>(abs_height);
+	result.pixel_format = str::cache(std::format("RGB{}", bmp_info.biBitCount));
+	result.format = detected_format::BMP;
+	result.success = true;
+	return result;
+}
+
 file_scan_result scan_photo(read_stream& s, const scan_intent intent, const bool want_thumbnail,
                             files* const decoder)
 {
@@ -898,83 +937,11 @@ file_scan_result scan_photo(read_stream& s, const scan_intent intent, const bool
 
 	try
 	{
-		const auto expected = files::detect_format(s.peek128(0));
+		const auto* const still = find_still_format(files::detect_format(s.peek128(0)));
 
-		if (expected == detected_format::BMP)
+		if (still && still->scan)
 		{
-			constexpr auto bmp_header_bytes = sizeof(files_structs::BITMAPFILEHEADER) +
-				sizeof(files_structs::BITMAPINFOHEADER);
-
-			// detect_format only guarantees the 2-byte "BM" signature, so verify the file is
-			// long enough before reading the info header.
-			if (s.size() < bmp_header_bytes)
-			{
-				return result;
-			}
-
-			uint8_t header[sizeof(files_structs::BITMAPINFOHEADER)];
-			s.read(sizeof(files_structs::BITMAPFILEHEADER), header, sizeof(files_structs::BITMAPINFOHEADER));
-			files_structs::BITMAPINFOHEADER bmp_info;
-			std::memcpy(&bmp_info, header, sizeof(bmp_info));
-
-			// biWidth/biHeight are signed (a negative height means a top-down bitmap). Take the
-			// magnitude in 64-bit: abs(INT32_MIN) is undefined and would produce a bogus size.
-			const auto abs_width = std::abs(static_cast<int64_t>(bmp_info.biWidth));
-			const auto abs_height = std::abs(static_cast<int64_t>(bmp_info.biHeight));
-
-			if (bmp_info.biSize < sizeof(files_structs::BITMAPINFOHEADER) ||
-				abs_width <= 0 || abs_height <= 0 ||
-				abs_width > max_image_dimension || abs_height > max_image_dimension)
-			{
-				return result;
-			}
-
-			result.width = static_cast<uint32_t>(abs_width);
-			result.height = static_cast<uint32_t>(abs_height);
-			result.pixel_format = str::cache(std::format("RGB{}", bmp_info.biBitCount));
-			result.format = detected_format::BMP;
-			result.success = true;
-		}
-		else if (expected == detected_format::GIF)
-		{
-			result = scan_gif(s);
-			result.format = detected_format::GIF;
-			result.pixel_format = "pal8"_c;
-		}
-		else if (expected == detected_format::JPEG) // && memcmp(p, sig_jpg, 3) == 0)
-		{
-			result = scan_jpg(s, intent, want_thumbnail);
-			result.format = detected_format::JPEG;
-		}
-		else if (expected == detected_format::PNG) // && memcmp(p, sig_png, 3) == 0)
-		{
-			result = scan_png(s);
-			result.format = detected_format::PNG;
-		}
-		else if (expected == detected_format::TIFF)
-		{
-			result = scan_tiff(s, want_thumbnail, decoder);
-			result.format = detected_format::TIFF;
-		}
-		else if (expected == detected_format::HEIF)
-		{
-			result = scan_heif(s, intent, want_thumbnail);
-			result.format = detected_format::HEIF;
-		}
-		else if (expected == detected_format::WEBP)
-		{
-			scan_webp(result, s, intent);
-			result.format = detected_format::WEBP;
-		}
-		else if (expected == detected_format::JXL)
-		{
-			result = scan_jxl(s);
-			result.format = detected_format::JXL;
-		}
-		else if (expected == detected_format::PSD)
-		{
-			result = scan_psd(s);
-			result.format = detected_format::PSD;
+			result = still->scan(s, intent, want_thumbnail, decoder);
 		}
 
 		if (!result.metadata.exif.empty())

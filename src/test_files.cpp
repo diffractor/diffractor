@@ -273,6 +273,33 @@ static void should_detect_tiff_by_version()
 	             detected_format::Unknown, "not tiff");
 }
 
+// Each still format is one entry in files_formats.cpp. Its file type still has to take its place in
+// the extension table, and its signature has to be the only one that claims it - a format added to
+// one and not the other is what this exists to catch.
+static void should_register_every_still_format()
+{
+	std::set<detected_format> seen;
+
+	for (const auto& still : still_formats())
+	{
+		const auto name = std::string(str::split(still.extensions, true).front());
+		assert_equal(true, seen.insert(still.format).second, std::format("{} has one entry", name));
+		assert_equal(true, still.matches != nullptr && still.scan != nullptr,
+		             std::format("{} is detected and scanned", name));
+		assert_equal(true, still.encoded == ui::image_format::Unknown || still.decode != nullptr,
+		             std::format("{} kept encoded can still be decoded", name));
+
+		for (const auto ext : str::split(still.extensions, true))
+		{
+			const auto* const ft = files::file_type_from_name(std::format("x.{}", ext));
+			assert_equal(true, ft->extension == still.extensions && ft->text == still.description &&
+			             ft->traits == still.traits, std::format("{} registers as its still format", ext));
+		}
+	}
+
+	assert_equal(true, find_still_format(detected_format::Unknown) == nullptr, "unknown is not a format");
+}
+
 static void should_scan_and_load_bitmap_psd()
 {
 	// A minimal uncompressed 1-bit-per-pixel bitmap-mode psd. Photoshop stores
@@ -1967,6 +1994,7 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should settle a transport stream extension by header"s,
 	          should_settle_transport_stream_extension_by_header);
 	tests.add("Should detect tiff by version"s, should_detect_tiff_by_version);
+	tests.add("Should register every still format"s, should_register_every_still_format);
 
 	//
 	// Containers
