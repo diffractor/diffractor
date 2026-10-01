@@ -313,6 +313,7 @@ if (WIN32)
             src/platform_win_software.cpp
             src/platform_win_sound.cpp
             src/platform_win_ui.cpp
+            src/platform_win_controls.cpp
             src/platform_win_process.cpp
             src/platform_win_web.cpp
             src/platform_win_wic.cpp
