@@ -13,7 +13,6 @@
 #include "test.h"
 #include "app_command_line.h"
 #include "crypto.h"
-#include "crypto_aes256.h"
 #include "util_base64.h"
 #include "crypto_sha.h"
 #include "util_json.h"
@@ -777,53 +776,6 @@ static void should_detect_wildcard()
 	assert_equal(false, str::is_wildcard("abc\\*ef"));
 }
 
-static void should_encrypt_password()
-{
-	const std::vector<uint8_t> test_key = {
-		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f
-	};
-
-	const std::vector<uint8_t> test_dec = {
-		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-		0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87, 0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed, 0xfe, 0x0f,
-		0x20, 0x31, 0x42, 0x53, 0x64, 0x75, 0x86, 0x97, 0xa8, 0xb9, 0xca, 0xdb, 0xec, 0xfd, 0x0e, 0x1f,
-		0x30, 0x41, 0x52, 0x63, 0x74, 0x85, 0x96, 0xa7, 0xb8, 0xc9, 0xda, 0xeb, 0xfc, 0x0d, 0x1e, 0x2f,
-		0x40, 0x51, 0x62, 0x73, 0x84, 0x95, 0xa6, 0xb7, 0xc8, 0xd9, 0xea, 0xfb, 0x0c, 0x1d, 0x2e, 0x3f,
-		0x50, 0x61, 0x72, 0x83, 0x94, 0xa5, 0xb6, 0xc7, 0xd8, 0xe9, 0xfa, 0x0b, 0x1c, 0x2d, 0x3e, 0x4f,
-		0x60, 0x71, 0x82, 0x93
-	};
-
-	// CBC mode uses random IV, so output is non-deterministic; verify round-trip instead
-	const auto encrypted = crypto::encrypt(test_dec, test_key);
-	std::vector<uint8_t> decrypted;
-	crypto::aes256::decrypt(test_key, encrypted, decrypted);
-	assert_equal(base64_encode(test_dec), base64_encode(decrypted), "encrypt using aes");
-
-	const std::vector<std::string_view> test_values =
-	{
-		{},
-		"This is a test.",
-		long_text
-	};
-
-	static constexpr auto password = "diffractor-hello";
-
-	for (const auto& val : test_values)
-	{
-		auto result = crypto::decrypt(crypto::encrypt(val, password), password);
-		assert_equal(val, std::string(result.begin(), result.end()), "Encode - Decode");
-	}
-
-	// Check for crash based on bad data
-	const std::vector<uint8_t> empty;
-	crypto::decrypt(empty, password);
-
-	std::vector<uint8_t> invalid;
-	for (auto i = 0; i < 8; i++) invalid.emplace_back(i);
-	crypto::decrypt(invalid, password);
-}
-
 static void should_parse_command_line()
 {
 	command_line_t cl1;
@@ -1506,7 +1458,6 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should detect wildcard"s, should_detect_wildcard);
 	tests.add("Should match wildcard"s, should_match_wildcard);
 	tests.add("Should compare versions"s, should_compare_versions);
-	tests.add("Should Encrypt Password"s, should_encrypt_password);
 	tests.add("Should parse command line"s, should_parse_command_line);
 	tests.add("Should trim strings"s, should_trim_strings);
 	tests.add("Should format text"s, should_format_text);

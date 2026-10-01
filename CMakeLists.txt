@@ -184,7 +184,6 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/util_geometry.cpp
         src/util_strings.cpp
         src/crypto.cpp
-        src/crypto_aes256.cpp
         src/crypto_md5.cpp
         src/crypto_sha.cpp
         src/app_text.cpp

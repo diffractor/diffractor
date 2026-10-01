@@ -29,28 +29,12 @@
 #include "app_command_status.h"
 #include "app_util.h"
 #include "app.h"
-#include "crypto.h"
-#include "util_base64.h"
 #include "view_import.h"
 #include "view_locate.h"
 #include "view_rename.h"
 #include "view_batch.h"
 #include "view_sync.h"
 #include "view_tags.h"
-
-static std::string decode_secret(const std::string_view input, const std::string_view password)
-{
-	const auto data = base64_decode(input);
-	auto decoded = crypto::decrypt(data, password);
-	return std::string(decoded.begin(), decoded.end());
-}
-
-#if __has_include("secrets.h")
-# include "secrets.h"
-#else
-static const std::string google_maps_api_key = "";
-static const std::string azure_maps_api_key = "";
-#endif
 
 extern bool toggle_details_state;
 
