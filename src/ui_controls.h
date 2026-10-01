@@ -15,6 +15,7 @@
 #include "ui_controllers.h"
 #include "ui_elements.h"
 #include "ui_text_edit.h"
+#include "model_display.h"
 
 class display_state_t;
 

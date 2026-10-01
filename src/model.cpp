@@ -11,6 +11,7 @@
 
 #include "pch.h"
 #include "model.h"
+#include "model_display.h"
 #include "model_index.h"
 
 #include "app_command_line.h"
@@ -2982,6 +2983,110 @@ uint64_t view_state::count_total(const file_group_ref fg) const
 	}
 
 	return 0;
+}
+
+df::item_element_ptr view_state::command_item() const
+{
+	const auto d = _display;
+
+	if (d && d->is_one())
+	{
+		return d->_item1;
+	}
+
+	return _focus;
+}
+
+view_state::selection_status_result view_state::selection_status() const
+{
+	selection_status_result result;
+
+	const auto d = _display;
+
+	if (d)
+	{
+		result.is_playing = d->is_playing();
+		result.is_playing_media = d->is_playing_media();
+		result.is_slideshow = d->is_slideshow();
+		result.can_play_media = d->can_play_media();
+		result.can_zoom = d->can_zoom();
+
+		if (d->is_one() && _selected.size() == 1)
+		{
+			const auto i = d->_item1;
+
+			if (i)
+			{
+				const auto ft = i->file_type();
+				result.has_single_media_selection = i->is_media();
+				result.showing_image = ft->has_trait(file_traits::bitmap) || d->player_has_video();
+			}
+		}
+	}
+
+	result.has_single_folder_selection = _selected.size() == 1 && _selected.has_folders();
+
+	return result;
+}
+
+bool view_state::can_edit_media() const
+{
+	const auto d = _display;
+
+	if (d && d->is_one() && _selected.size() == 1)
+	{
+		const auto i = d->_item1;
+		return i && i->file_type()->can_edit_photo();
+	}
+
+	return false;
+}
+
+bool view_state::should_show_overlays() const
+{
+	if (_display && _display->is_zoom_mode())
+	{
+		return ui::ticks_since_last_user_action < ui::default_ticks_per_second * 5 || df::command_active;
+	}
+
+	if (_selected.has_folders())
+	{
+		return true;
+	}
+
+	if (_selected.items().size() != 1 || _selected.size() != 1)
+	{
+		return true;
+	}
+
+	if (view_mode() == view_type::items)
+	{
+		return true;
+	}
+
+	if (!_selected.items()[0]->file_type()->has_trait(file_traits::hide_overlays))
+	{
+		return true;
+	}
+
+	// A playing video hides its chrome so the picture is alone. A paused one keeps it: the transport
+	// is both how the user resumes and the only thing saying where in the file they stopped.
+	if (_display && _display->can_play_media() && !_display->is_playing_media())
+	{
+		return true;
+	}
+
+	return ui::ticks_since_last_user_action < ui::default_ticks_per_second * 5 || df::command_active;
+}
+
+void view_state::stop_slideshow() const
+{
+	const auto d = _display;
+
+	if (d)
+	{
+		d->stop_slideshow();
+	}
 }
 
 void view_state::reset()

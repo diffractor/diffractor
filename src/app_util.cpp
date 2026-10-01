@@ -11,7 +11,7 @@
 
 #include "pch.h"
 #include "util_strings.h"
-#include "model.h"
+#include "model_display.h"
 #include "model_db.h"
 #include "app_command_status.h"
 #include "app_command_line.h"

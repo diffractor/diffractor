@@ -113,8 +113,8 @@ items separately. It does not claim to undo completed writes.
   write result publication.
 - [files_formats.cpp](../src/files_formats.cpp): the still image formats recognised by signature,
   one entry each for detection, header scanning, loading, and decoding.
-- [model.cpp](../src/model.cpp) and [model.h](../src/model.h): `texture_state` and
-  `display_state_t`.
+- [model.cpp](../src/model.cpp), [model.h](../src/model.h) and [model_display.h](../src/model_display.h):
+  `texture_state` and `display_state_t`.
 - [model_index.cpp](../src/model_index.cpp): change discovery, scanning, and thumbnail scheduling.
 - [platform_win_files.cpp](../src/platform_win_files.cpp): replacement and coherent file handles.
 - [metadata_xmp.cpp](../src/metadata_xmp.cpp): XMP packet and sidecar updates.

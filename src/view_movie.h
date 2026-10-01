@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "model.h"
+#include "model_display.h"
 #include "model_movie.h"
 #include "ui_view.h"
 #include "ui_dialog.h"

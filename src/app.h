@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model_display.h"
 #include "model_tile_cache.h"
 #include "app_search.h"
 

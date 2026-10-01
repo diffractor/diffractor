@@ -118,7 +118,8 @@ model's scale and center.
 - [model_zoom.h](../src/model_zoom.h): scale modes, ladder, source-space center, anchoring, bounds,
   panning, and navigator timing.
 - [view_media.h](../src/view_media.h) and [ui.cpp](../src/ui.cpp): media input and presentation.
-- [model.h](../src/model.h): display state, inspect zoom, zoom mode, and comparison coordination.
+- [model_display.h](../src/model_display.h): display state, inspect zoom, zoom mode, and comparison
+  coordination.
 - [ui_panorama.h](../src/ui_panorama.h) and
   [render_panorama.cpp](../src/render_panorama.cpp): panorama camera and software projection.
 - [render_surface.cpp](../src/render_surface.cpp): shared resampling.

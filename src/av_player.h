@@ -14,6 +14,7 @@
 #include "files.h"
 #include "model_items.h"
 #include "av_format.h"
+#include "av_host.h"
 #include "av_sound.h"
 #include "av_visualizer.h"
 
@@ -30,15 +31,6 @@ enum class render_valid
 	invalid,
 	present,
 	valid
-};
-
-class av_host
-{
-public:
-	virtual ~av_host() = default;
-
-	virtual void invalidate_view(view_invalid invalid) = 0;
-	virtual void queue_ui(std::function<void()> f) = 0;
 };
 
 // design.md: resume "applies to media longer than ten seconds only when the saved position is more
