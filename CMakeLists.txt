@@ -208,6 +208,8 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/model_db.cpp
         src/model_faces.cpp
         src/model_index.cpp
+        src/model_index_duplicates.cpp
+        src/model_index_summary.cpp
         src/model_items.cpp
         src/model_movie.cpp
         src/model_search.cpp

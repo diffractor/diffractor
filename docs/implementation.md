@@ -194,6 +194,9 @@ repository lint, build, embedded tests, and translation validation. Focused test
 - [model_index.cpp](../src/model_index.cpp), [model_search.cpp](../src/model_search.cpp),
   [model_postings.h](../src/model_postings.h), and [model_db.cpp](../src/model_db.cpp): index, search,
   candidate sets, and persistence.
+- [model_index_duplicates.cpp](../src/model_index_duplicates.cpp): duplicate prediction and presence;
+  [model_index_summary.cpp](../src/model_index_summary.cpp): the summary, its vocabulary, and
+  auto-complete.
 - [model_tile_cache.cpp](../src/model_tile_cache.cpp): separately owned map tile database.
 - [platform.h](../src/platform.h): operating-system abstraction.
 - [ui_view.h](../src/ui_view.h), [ui_elements.h](../src/ui_elements.h), and

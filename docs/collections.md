@@ -168,9 +168,9 @@ Presence wording and confidence values belong to [design.md](design.md#collectio
 | The declared collection folders, includes and excludes | [app_settings.h](../src/app_settings.h), [app_settings.cpp](../src/app_settings.cpp) |
 | Membership resolution, folder roots, the collection edge | [model_index.cpp](../src/model_index.cpp), [model_index.h](../src/model_index.h) — `index_state` |
 | The indexed record a member earns | [model_index.h](../src/model_index.h) — `df::index_file_item`, `df::index_folder_item` |
-| Duplicate grouping and the perceptual-hash stage | [model_index.cpp](../src/model_index.cpp) — `index_state::update_predictions`; [app_dup_report.cpp](../src/app_dup_report.cpp) measures it over a real library |
+| Duplicate grouping and the perceptual-hash stage | [model_index_duplicates.cpp](../src/model_index_duplicates.cpp) — `index_state::update_predictions`; [app_dup_report.cpp](../src/app_dup_report.cpp) measures it over a real library |
 | The bounded nearest-match sets a related search answers with | [model_related.h](../src/model_related.h) |
-| Presence evaluation for a file outside the collection | [model_index.cpp](../src/model_index.cpp), [model_search.cpp](../src/model_search.cpp) |
+| Presence evaluation for a file outside the collection | [model_index_duplicates.cpp](../src/model_index_duplicates.cpp) — `index_state::queue_update_presence`, [model_search.cpp](../src/model_search.cpp) |
 | Persistence of the cached index | [model_db.cpp](../src/model_db.cpp), [model_db_pack.h](../src/model_db_pack.h) |
 
 The three redundancy surfaces in [§7](#7-redundancy-one-relation-three-questions) read one relation,
