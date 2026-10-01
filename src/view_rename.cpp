@@ -62,18 +62,15 @@ void rename_view::run()
 	if (!can_run()) return;
 
 	const auto renames = _renames;
+	const auto review_status = _status;
 	_analysis_valid = false;
 	const auto detach = std::make_shared<detach_file_handles>(_state);
 	begin_processing(renames.size());
 	const auto processing_generation = this->processing_generation();
 	const auto cancel_source = processing_cancel_source();
 	_status = std::string(tt.processing.sv());
-	// The file handles stay detached until the run reports back.
-	const auto results = make_run_status(shared_from_this(), processing_generation, cancel_source,
-	                                     [detach](std::string& status, std::string summary, std::string message)
-	{
-		status = !message.empty() ? std::move(message) : std::move(summary);
-	});
+	const auto results = make_run_status(shared_from_this(), processing_generation, cancel_source, review_status,
+	                                     detach);
 
 	_state.queue_async(async_queue::work, [renames, results, &index = _state.item_index]
 	{

@@ -2146,6 +2146,17 @@ static void should_refuse_a_rename_whose_source_changed_since_review()
 	             "the status names the stale review");
 }
 
+// Every task view ends a run the same way: what it did, then why some rows did nothing. Rename used to
+// drop the counts whenever there was a reason, and Tags kept "Processing" when there was neither.
+static void should_conclude_a_run_with_what_it_did_and_why()
+{
+	assert_equal("2 renamed"s, list_view::conclude_run("2 renamed", {}, "review"), "the counts alone");
+	assert_equal("stale"s, list_view::conclude_run({}, "stale", "review"), "the reason alone");
+	assert_equal("2 renamed  stale"s, list_view::conclude_run("2 renamed", "stale", "review"),
+	             "a partial run states both");
+	assert_equal("review"s, list_view::conclude_run({}, {}, "review"), "nothing to report keeps the review");
+}
+
 // Convert under Replace wrote over a colliding destination whatever had happened to it since the
 // review. Replace was agreed to for the file the review showed, and one edited since is not that
 // file - the same test Import, Sync and Rename hold a replaced destination to.
@@ -2703,6 +2714,23 @@ static void should_spell_keyboard_accelerators()
 	             "plus is quoted so it is not read as the separator");
 	assert_equal(std::format("{} {} {}", tt.keyboard_left, tt.keyboard_or, tt.keyboard_right),
 	             format_keyboard_accelerator({{keys::LEFT, 0}, {keys::RIGHT, 0}}), "alternatives are joined");
+}
+
+// Feature use records one bit per view, so a view added without a bit is never counted as opened
+// - which is how opening the Movie view went unrecorded.
+static void should_record_a_bit_for_every_view()
+{
+	assert_equal(0_z, static_cast<size_t>(features::view_bit(view_type::none)), "no view records nothing");
+
+	uint64_t seen = 0;
+
+	for (auto v = static_cast<int>(view_type::items); v <= static_cast<int>(view_type::tags); ++v)
+	{
+		const auto bit = features::view_bit(static_cast<view_type>(v));
+		assert_equal(1, std::popcount(bit), std::format("view {} records one bit", v));
+		assert_equal(0_z, static_cast<size_t>(seen & bit), std::format("view {} has its own bit", v));
+		seen |= bit;
+	}
 }
 
 // The button reads as one label or two. design.md: "Shuffle is visibly exclusive with deterministic
@@ -3274,6 +3302,7 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should run a rename onto vacated names"s, should_run_a_rename_onto_vacated_names);
 	tests.add("Should refuse a rename whose source changed since review"s,
 	          should_refuse_a_rename_whose_source_changed_since_review);
+	tests.add("Should conclude a run with what it did and why"s, should_conclude_a_run_with_what_it_did_and_why);
 	tests.add("Should not convert over a destination changed since review"s,
 	          should_not_convert_over_a_destination_changed_since_review);
 #ifdef _WIN32
@@ -3343,6 +3372,7 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should keep shuffle exclusive with sorting"s, should_keep_shuffle_exclusive_with_sorting);
 	tests.add("Should not claim one key for two commands"s, should_not_claim_one_key_for_two_commands);
 	tests.add("Should spell keyboard accelerators"s, should_spell_keyboard_accelerators);
+	tests.add("Should record a bit for every view"s, should_record_a_bit_for_every_view);
 	tests.add("Should label grouping and sorting"s, should_label_grouping_and_sorting);
 	// Discussion #251 - the filter toolbar scrolls away
 	tests.add("Should offer the items menu at every scroll position"s,

@@ -347,16 +347,7 @@ void sync_view::run()
 	_status = std::string(tt.processing.sv());
 	const auto detach = std::make_shared<detach_file_handles>(_state);
 	const auto view = shared_from_this();
-	// The counts state what the run did; the message states why some rows did nothing. A partial
-	// run needs both.
-	const auto results = make_run_status(view, processing_generation, cancel_source,
-	                                     [completion_status](std::string& status, std::string summary,
-	                                                         std::string message)
-	{
-		status = summary.empty()
-			         ? (message.empty() ? completion_status : std::move(message))
-			         : (message.empty() ? std::move(summary) : summary + "  " + message);
-	});
+	const auto results = make_run_status(view, processing_generation, cancel_source, completion_status);
 
 	_state.queue_async(async_queue::work, [results, analysis_result, token, detach,
 		                   &index = _state.item_index]

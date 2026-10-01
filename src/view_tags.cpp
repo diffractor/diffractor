@@ -193,14 +193,10 @@ void tags_view::run()
 	begin_processing(item_list.size());
 	const auto processing_generation = this->processing_generation();
 	const auto cancel_source = processing_cancel_source();
+	const auto review_status = _status;
 	_status = std::string(tt.processing.sv());
 
-	const auto results = make_run_status(shared_from_this(), processing_generation, cancel_source,
-	                                     [](std::string& status, std::string summary, std::string message)
-	{
-		if (!message.empty()) status = std::move(message);
-		else if (!summary.empty()) status = std::move(summary);
-	});
+	const auto results = make_run_status(shared_from_this(), processing_generation, cancel_source, review_status);
 
 	metadata_edits edits;
 	edits.add_tags = tag_set(_adds);

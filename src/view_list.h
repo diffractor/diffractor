@@ -257,19 +257,27 @@ public:
 	bool is_processing_generation(const size_t generation) const { return generation == _processing_generation; }
 	std::shared_ptr<std::atomic_int> processing_cancel_source() const { return _processing_cancel; }
 
-	// Sets the status line once a run ends, from the results summary and the run's own message -
-	// the reason some rows did nothing, when there is one.
-	using run_conclusion = std::function<void(std::string& status, std::string summary, std::string message)>;
+	// The status line a finished run leaves: what it did (the result counts), then why some rows did
+	// nothing (the run's own message) - a partial run needs both. A run that reports neither leaves
+	// the status the review showed.
+	static std::string conclude_run(std::string summary, std::string message, std::string review_status)
+	{
+		if (summary.empty()) return message.empty() ? std::move(review_status) : std::move(message);
+		if (message.empty()) return summary;
+		return summary + "  " + message;
+	}
 
 	// The status a run reports through. Progress highlights the row being worked on; completion
-	// swaps the reviewed rows for the results and lets `conclude` write the status line. Both are
+	// swaps the reviewed rows for the results and concludes the status line from them. Both are
 	// ignored once the view has moved past `generation`. The caller reads the generation and the
 	// cancel source straight after begin_processing: anything run in between can pump messages, and
-	// a view abandoned there must not have its next state mistaken for this run's.
+	// a view abandoned there must not have its next state mistaken for this run's. `hold` lives
+	// until the run reports back - the file handles a run detaches stay detached until then.
 	static std::shared_ptr<view_command_status> make_run_status(const std::shared_ptr<list_view>& view,
 	                                                            size_t generation,
 	                                                            std::shared_ptr<std::atomic_int> cancel_source,
-	                                                            run_conclusion conclude);
+	                                                            std::string review_status,
+	                                                            std::shared_ptr<void> hold = {});
 
 	void processing_item(const size_t row_index, const size_t work_position)
 	{
@@ -862,7 +870,8 @@ private:
 inline std::shared_ptr<view_command_status> list_view::make_run_status(const std::shared_ptr<list_view>& view,
                                                                        const size_t generation,
                                                                        std::shared_ptr<std::atomic_int> cancel_source,
-                                                                       run_conclusion conclude)
+                                                                       std::string review_status,
+                                                                       std::shared_ptr<void> hold)
 {
 	return std::make_shared<view_command_status>(
 		view->_state._async, std::move(cancel_source),
@@ -870,13 +879,12 @@ inline std::shared_ptr<view_command_status> list_view::make_run_status(const std
 		{
 			if (view->is_processing_generation(generation)) view->processing_work_item(index);
 		},
-		[view, generation, conclude = std::move(conclude)](std::string message,
-		                                                   const std::vector<view_operation_result>& results)
+		[view, generation, review_status = std::move(review_status), hold = std::move(hold)](
+		std::string message, const std::vector<view_operation_result>& results)
 		{
 			if (!view->is_processing_generation(generation)) return;
 			view->end_processing();
-			auto summary = view->show_results(results);
-			conclude(view->_status, std::move(summary), std::move(message));
+			view->_status = conclude_run(view->show_results(results), std::move(message), review_status);
 			view->_state.invalidate_view(view_invalid::status | view_invalid::command_state);
 		});
 }

@@ -84,6 +84,7 @@ namespace features
 	constexpr uint64_t view_sync = 1ull << 54;
 	constexpr uint64_t view_locate = 1ull << 55;
 	constexpr uint64_t view_tags = 1ull << 56;
+	constexpr uint64_t view_movie = 1ull << 57;
 
 	constexpr uint64_t view_bit(const view_type v)
 	{
@@ -92,6 +93,7 @@ namespace features
 		case view_type::items: return view_items;
 		case view_type::media: return view_media;
 		case view_type::edit: return view_edit;
+		case view_type::movie: return view_movie;
 		case view_type::rename: return view_rename;
 		case view_type::batch: return view_batch;
 		case view_type::import: return view_import;

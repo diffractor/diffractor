@@ -179,6 +179,9 @@ Import, Sync, Convert, Metadata, Date, and batch Rename follow one state grammar
 6. Revalidate and Run the approved snapshot.
 7. Retain per-item Succeeded, Failed, Skipped, and Canceled results.
 
+A finished run's status states what it did, then why any rows did nothing; a run that reports neither
+leaves the review's status.
+
 Changing scope, target, options, destination, or relevant files invalidates the analysis. Cancellation
 stops future work and reports partial completion without claiming rollback. Import history is not
 duplicate proof; Sync names both endpoints and direction.
