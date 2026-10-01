@@ -241,6 +241,8 @@ static str::cached extract_pixel_format(const heif_image_handle* image_handle)
 		case heif_chroma_interleaved_RRGGBBAA_LE:
 			result = "rgba64"_c;
 			break;
+		default:
+			break;
 		}
 	}
 

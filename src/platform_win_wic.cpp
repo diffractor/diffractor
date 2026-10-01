@@ -518,7 +518,8 @@ ui::const_surface_ptr platform::create_icon_surface(const char32_t ch)
 	{
 		hr = dwrite_factory->CreateTextFormat(icon_font_family(), icon_collection.Get(), DWRITE_FONT_WEIGHT_NORMAL,
 		                                      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-		                                      df::mul_div(148, icon_font_scale_num, icon_font_scale_den), L"",
+		                                      static_cast<FLOAT>(df::mul_div(148, icon_font_scale_num,
+		                                                                     icon_font_scale_den)), L"",
 		                                      &text_format);
 	}
 

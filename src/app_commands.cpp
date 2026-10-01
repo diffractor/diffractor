@@ -2527,7 +2527,7 @@ static void add_keyboard_section(std::vector<keyboard_ref_section>& sections, co
 	sections.emplace_back(std::move(section));
 }
 
-std::string_view keys::format(const int key)
+std::string_view keys::format(const char32_t key)
 {
 	if (key == BACK) return tt.keyboard_back;
 	if (key == BROWSER_BACK) return tt.keyboard_browser_back;

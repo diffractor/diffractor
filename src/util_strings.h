@@ -324,20 +324,20 @@ namespace str
 		else if (ch < 0x800)
 		{
 			*inserter++ = static_cast<uint8_t>(0xC0 | ch >> 6);
-			*inserter++ = static_cast<uint8_t>(0x80 | ch >> 0 & 0x3F);
+			*inserter++ = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
 		}
 		else if (ch < 0x10000)
 		{
 			*inserter++ = static_cast<uint8_t>(0xE0 | ch >> 12);
-			*inserter++ = static_cast<uint8_t>(0x80 | ch >> 6 & 0x3F);
-			*inserter++ = static_cast<uint8_t>(0x80 | ch >> 0 & 0x3F);
+			*inserter++ = static_cast<uint8_t>(0x80 | ((ch >> 6) & 0x3F));
+			*inserter++ = static_cast<uint8_t>(0x80 | ((ch >> 0) & 0x3F));
 		}
 		else
 		{
 			*inserter++ = static_cast<uint8_t>(ch >> 18 | 0xf0);
-			*inserter++ = static_cast<uint8_t>(ch >> 12 & 0x3f | 0x80);
-			*inserter++ = static_cast<uint8_t>(ch >> 6 & 0x3f | 0x80);
-			*inserter++ = static_cast<uint8_t>(ch & 0x3f | 0x80);
+			*inserter++ = static_cast<uint8_t>(((ch >> 12) & 0x3f) | 0x80);
+			*inserter++ = static_cast<uint8_t>(((ch >> 6) & 0x3f) | 0x80);
+			*inserter++ = static_cast<uint8_t>((ch & 0x3f) | 0x80);
 		}
 	}
 

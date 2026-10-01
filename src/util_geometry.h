@@ -97,7 +97,7 @@ public:
 		return {cx * i, cy * i};
 	}
 
-	constexpr sizei operator *(const double d) const noexcept
+	sizei operator *(const double d) const noexcept
 	{
 		return {df::round(cx * d), df::round(cy * d)};
 	}
@@ -577,7 +577,7 @@ public:
 		return Width == 0.0 && Height == 0.0;
 	}
 
-	constexpr sizei round() const noexcept
+	sizei round() const noexcept
 	{
 		return {df::round(Width), df::round(Height)};
 	}
@@ -635,7 +635,7 @@ public:
 		return {X + x, Y + y};
 	}
 
-	constexpr pointi round() const noexcept
+	pointi round() const noexcept
 	{
 		return {df::round(X), df::round(Y)};
 	}
@@ -759,7 +759,7 @@ public:
 	constexpr rectd(const rectd& other) noexcept = default;
 	constexpr rectd& operator=(const rectd& other) noexcept = default;
 
-	constexpr recti round() const noexcept
+	recti round() const noexcept
 	{
 		return {df::round(X), df::round(Y), df::round(X + Width), df::round(Y + Height)};
 	}

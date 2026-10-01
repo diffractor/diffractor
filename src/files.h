@@ -169,7 +169,8 @@ public:
 	static file_group archive;
 	static file_group commodore;
 
-	static constexpr size_t max_count = 7;
+	// An int because it bounds the int indexes file_group_from_index takes.
+	static constexpr int max_count = 7;
 
 	std::string display_name(bool is_plural) const;
 

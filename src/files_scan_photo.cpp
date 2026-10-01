@@ -464,6 +464,8 @@ static void scan_exif(file_scan_result& result, const df::cspan data, const bool
 						result.orientation = static_cast<ui::orientation>(get_uint16(data.data + pos + 8, order));
 						orientation_from_primary = true;
 						break;
+					default:
+						break;
 					}
 				}
 
@@ -529,6 +531,8 @@ static void scan_exif(file_scan_result& result, const df::cspan data, const bool
 									result.orientation = static_cast<ui::orientation>(get_uint16(
 										data.data + pos + 8, order));
 								}
+								break;
+							default:
 								break;
 							}
 						}
@@ -759,6 +763,8 @@ static file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, fil
 											}
 										}
 										break;
+									default:
+										break;
 									}
 								}
 							}
@@ -766,6 +772,8 @@ static file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, fil
 							result.gps = coordinate.build();
 						}
 					}
+					break;
+				default:
 					break;
 				}
 			}
@@ -823,6 +831,8 @@ static file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, fil
 							case EXIF_TAG_ORIENTATION:
 								result.orientation = static_cast<ui::orientation>(get_uint16(
 									s.peek16(pos + 8), order));
+								break;
+							default:
 								break;
 							}
 						}

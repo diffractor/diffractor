@@ -126,7 +126,7 @@ private:
 	{
 		uint32_t result = 0;
 
-		for (auto loop = 0; loop < FFT_BUFFER_SIZE_LOG; loop++)
+		for (uint32_t loop = 0; loop < FFT_BUFFER_SIZE_LOG; loop++)
 		{
 			result <<= 1;
 			result += initial & 1;
@@ -138,13 +138,13 @@ private:
 public:
 	fast_fft()
 	{
-		for (auto i = 0; i < FFT_BUFFER_SIZE; i++)
+		for (uint32_t i = 0; i < FFT_BUFFER_SIZE; i++)
 		{
 			reversed[i] = reverse_bits(i);
 			window[i] = static_cast<float>(0.5 - 0.5 * cos(2.0 * M_PI * i / (FFT_BUFFER_SIZE - 1)));
 		}
 
-		for (auto i = 0; i < FFT_BUFFER_SIZE / 2; i++)
+		for (uint32_t i = 0; i < FFT_BUFFER_SIZE / 2; i++)
 		{
 			const auto j = 2 * M_PI * i / FFT_BUFFER_SIZE;
 			costable[i] = static_cast<float>(cos(j));
@@ -341,7 +341,7 @@ public:
 			auto* r = rBuffer;
 			const auto* p = std::bit_cast<const uint16_t*>(data);
 
-			for (auto i = 0; i < FFT_BUFFER_SIZE; i++)
+			for (uint32_t i = 0; i < FFT_BUFFER_SIZE; i++)
 			{
 				*l++ = *p++;
 				*r++ = *p++;

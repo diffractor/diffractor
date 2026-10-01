@@ -677,7 +677,7 @@ static int days_per_month(const int month, const int year = -1)
 
 	if (month == 2)
 	{
-		const auto leap_year = year >= 0 && year % 4 == 0 && year % 100 != 0 || year % 400 == 0;
+		const auto leap_year = (year >= 0 && year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
 		return leap_year ? 29 : 28;
 	}
 
@@ -1066,7 +1066,6 @@ void df::search_t::parse_part(const search_part& part)
 	date_t date;
 	auto n = str::to_int(part.term);
 	auto d = str::to_double(part.term);
-	auto probably_number = str::is_probably_num(part.term);
 	auto is_num = str::is_num(part.term);
 	auto is_date = date.parse(part.term) && date.is_valid();
 	double d1, d2;

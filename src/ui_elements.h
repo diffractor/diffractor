@@ -101,7 +101,7 @@ struct view_element_padding
 		return {cx, cy};
 	}
 
-	constexpr sizei operator *(const double d) const noexcept
+	sizei operator *(const double d) const noexcept
 	{
 		return {df::round(cx * d), df::round(cy * d)};
 	}

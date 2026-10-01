@@ -194,7 +194,7 @@ private:
 	recti _stability;
 };
 
-constexpr ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
+inline ui::color view_handle_color(const bool selected, const bool hover, const bool tracking,
                                       const bool view_has_focus, const bool text_over,
                                       const ui::color bg_clr = ui::color(ui::style::color::group_background))
 {

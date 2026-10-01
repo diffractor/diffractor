@@ -799,7 +799,7 @@ private:
 		constexpr int line_width = 3;
 		constexpr int half = line_width / 2;
 
-		const auto crosshair_color = ui::color(ui::style::color::important_background, 0.6);
+		const auto crosshair_color = ui::color(ui::style::color::important_background, 0.6f);
 		// A thin lighter underlay keeps the cross readable over both dark and pale tiles.
 		const auto outline_color = ui::color(1.0f, 1.0f, 1.0f, 0.35f);
 

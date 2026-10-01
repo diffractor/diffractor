@@ -872,7 +872,7 @@ void settings_t::read()
 
 	int last_run = 0;
 	store.read({}, s_last_run, last_run);
-	first_run_today = last_run != platform::now().to_days();
+	first_run_today = last_run != static_cast<int>(platform::now().to_days());
 	store.read({}, s_first_time, first_run_ever);
 
 	store.read(s_rename, s_template, rename.name_template);

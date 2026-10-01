@@ -70,7 +70,7 @@ public:
 		_state.recent_tags.count_strings(_known, 1);
 		if (!setting.write_folder.empty()) ++_known[str::cache(setting.write_folder)];
 
-		for (const auto ks : prop::key_scopes())
+		for (const auto& ks : prop::key_scopes())
 		{
 			++_known[str::cache(std::format("with:{}", ks.scope))];
 			++_known[str::cache(std::format("without:{}", ks.scope))];

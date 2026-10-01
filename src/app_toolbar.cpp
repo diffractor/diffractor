@@ -188,8 +188,10 @@ void app_frame::create_toolbars()
 	search_styles.rounded_corners = true;
 	search_styles.select_all_on_focus = true;
 	search_styles.bg_clr = ui::style::color::toolbar_background;
-	search_styles.capture_key_down = [this](const int key, const ui::key_state keys)
+	search_styles.capture_key_down = [this](const int key_code, const ui::key_state keys)
 	{
+		const auto key = static_cast<char32_t>(key_code);
+
 		if (key == keys::RETURN)
 		{
 			search_enter();

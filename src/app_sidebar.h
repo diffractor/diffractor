@@ -3023,7 +3023,7 @@ public:
 					                   item_elements.emplace_back(
 						                   std::make_shared<divider_element>());
 
-				                   for (const auto i : items_to_add)
+				                   for (const auto& i : items_to_add)
 				                   {
 					                   if (!added_elements.contains(i))
 					                   {

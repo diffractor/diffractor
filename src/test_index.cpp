@@ -2092,7 +2092,7 @@ static void should_index_offline_placeholder()
 	// the offline scan reads for free to help index non-downloaded files.
 	const std::string offline_tags(offline_md ? offline_md->tags.sv() : std::string_view{});
 	const auto offline_has_gps = offline_md && offline_md->coordinate.is_valid();
-	const auto offline_gps_ok = offline_has_gps &&
+	[[maybe_unused]] const auto offline_gps_ok = offline_has_gps &&
 		std::abs(offline_md->coordinate.latitude() - 50.08806) < 0.01 &&
 		std::abs(offline_md->coordinate.longitude() - 14.42083) < 0.01;
 	// Guards against re-indexing every startup: a scanned placeholder must not report that it
@@ -2160,7 +2160,6 @@ static void should_index_offline_placeholder()
 // reported identical to its untouched copy.
 static void should_keep_a_cached_checksum_the_bytes_still_describe()
 {
-	const auto index_path = _temps.next_path();
 	const auto file_path = _temps.next_path(".jpg");
 	platform::copy_file(test_files_folder.combine_file("Test.jpg"), file_path, false, true);
 

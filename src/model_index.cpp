@@ -994,9 +994,9 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 		std::unordered_multimap<std::string_view, str::cached, df::ihash, df::ieq> sidecars;
 		df::hash_set<std::string_view, df::ihash, df::ieq> sidecar_extensions;
 
-		auto less_ptr_name = [](const auto& a, const auto& b) { return str::icmp(a->name, b->name) < 0; };
+		[[maybe_unused]] auto less_ptr_name = [](const auto& a, const auto& b) { return str::icmp(a->name, b->name) < 0; };
 		auto less_name = [](const auto& a, const auto& b) { return str::icmp(a.name, b.name) < 0; };
-		auto less_id = [](const auto& a, const auto& b) { return str::icmp(a.name, b.name) < 0; };
+		[[maybe_unused]] auto less_id = [](const auto& a, const auto& b) { return str::icmp(a.name, b.name) < 0; };
 
 		auto contents = platform::iterate_file_items(folder_path, setting.show_hidden);
 
@@ -1158,8 +1158,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					const auto content_changed = old_modified.is_valid()
 						                             ? (old_modified != fs_modified ||
-							                             old_first->size.to_int64() !=
-							                             static_cast<int64_t>(file_first->attributes.size))
+							                             old_first->size.to_int64() != file_first->attributes.size)
 						                             : (old_first->metadata_scanned.load() < fs_modified);
 
 					if (content_changed)

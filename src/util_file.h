@@ -178,7 +178,7 @@ namespace df
 
 		bool seek_from_begin(const int64_t offset) const
 		{
-			return _h->seek(offset, platform::file::whence::begin) == offset;
+			return _h->seek(offset, platform::file::whence::begin) == static_cast<uint64_t>(offset);
 		}
 
 		uint64_t file_size() const

@@ -52,7 +52,7 @@ inline std::array<std::array<uint32_t, 256>, 4> create_crc32_precalc()
 		uint32_t x = i;
 
 		for (uint32_t j = 0; j < 8; j++)
-			x = x >> 1 ^ CRCPOLY & -static_cast<int32_t>(x & 1);
+			x = (x >> 1) ^ (CRCPOLY & -static_cast<int32_t>(x & 1));
 
 		result[0][i] = x;
 	}

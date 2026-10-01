@@ -159,7 +159,7 @@ static void should_format_rename()
 	assert_equal("photo-1000", format_sequence("original", "photo-###", 1000), "sequence does not truncate");
 	assert_equal("trip-0001", format_sequence("original", "trip-####", 1), "four digit sequence");
 	assert_equal("riginal", format_sequence("original", "???????", 0), "question mark substitution");
-	assert_equal("al-file", format_sequence("original", "??-file", 0), "mixed question mark substitution");
+	assert_equal("al-file", format_sequence("original", "?\?-file", 0), "mixed question mark substitution");
 }
 
 static void should_rename_name_token_without_extension()

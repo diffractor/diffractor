@@ -924,7 +924,7 @@ static bool is_flags_column(const std::string_view s)
 
 int location_cache::scan_entries(const std::string_view line, csv_entry* entries)
 {
-	memset(entries, 0, sizeof(csv_entry) * max_location_cols);
+	std::fill_n(entries, max_location_cols, csv_entry{});
 
 	auto col_count = 0;
 	auto* col = entries;

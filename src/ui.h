@@ -91,7 +91,7 @@ namespace keys
 	extern char32_t HOME;
 	extern char32_t END;
 
-	std::string_view format(int key);
+	std::string_view format(char32_t key);
 
 	// Numeric keypad digit virtual-key codes (VK_NUMPAD0..VK_NUMPAD9 = 0x60..0x69) are
 	// distinct from the top-row digit codes ('0'..'9' = 0x30..0x39). With NumLock on, the
@@ -512,12 +512,12 @@ namespace ui
 
 	constexpr color32 abgr(const color32 c, const uint32_t a = 0xFF) noexcept
 	{
-		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00 | static_cast<uint32_t>(a) << 24;
+		return ((c >> 16) & 0xFF) | ((c << 16) & 0xFF0000) | (c & 0x0000FF00) | (static_cast<uint32_t>(a) << 24);
 	}
 
 	constexpr color32 bgr(const color32 c) noexcept
 	{
-		return c >> 16 & 0xFF | c << 16 & 0xFF0000 | c & 0x0000FF00;
+		return ((c >> 16) & 0xFF) | ((c << 16) & 0xFF0000) | (c & 0x0000FF00);
 	}
 
 	constexpr color32 average(const color32 c1, const color32 c2) noexcept
@@ -547,12 +547,12 @@ namespace ui
 			ilerp(get_a(c1), get_a(c2), t));
 	}
 
-	constexpr color32 lerp(const color32 c1, const color32 c2, const float t) noexcept
+	inline color32 lerp(const color32 c1, const color32 c2, const float t) noexcept
 	{
 		return lerp(c1, c2, df::round(t * 255.0f));
 	}
 
-	constexpr color32 lerp(const color32 c1, const color32 c2, const double t) noexcept
+	inline color32 lerp(const color32 c1, const color32 c2, const double t) noexcept
 	{
 		return lerp(c1, c2, df::round(t * 255.0));
 	}
@@ -561,7 +561,7 @@ namespace ui
 
 	constexpr int calc_stride(const int cx, const int bytes_per_pixel) noexcept
 	{
-		return cx * bytes_per_pixel + 15 & ~15;
+		return (cx * bytes_per_pixel + 15) & ~15;
 	}
 
 	inline double calc_mega_pixels(const double x, const double y) noexcept

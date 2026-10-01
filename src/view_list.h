@@ -898,8 +898,8 @@ public:
 	ui::frame_ptr _frame;
 	std::vector<view_element_ptr> _controls;
 	ui::color _clr = ui::color(ui::style::color::dialog_text);
-	long _layout_height = 0;
-	long _layout_width = 0;
+	int _layout_height = 0;
+	int _layout_width = 0;
 	ui::coll_widths _label_width;
 	// Set by a view whose panel exists to be typed into. Applied after the first layout because the
 	// child controls are not shown, and so cannot take focus, until their positions are applied.

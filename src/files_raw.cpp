@@ -1501,8 +1501,8 @@ file_load_result load_raw(const df::file_path path, const bool can_load_preview)
 								}
 								else
 								{
-									*bufp++ = color_curve[id[2]] >> 8 | 0xFF00 & color_curve[id[1]] | 0xFF0000 &
-										color_curve[id[0]] << 8;
+									*bufp++ = (color_curve[id[2]] >> 8) | (0xFF00 & color_curve[id[1]]) | (0xFF0000 &
+										(color_curve[id[0]] << 8));
 								}
 							}
 						}

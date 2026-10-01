@@ -2049,9 +2049,9 @@ bool app_frame::key_down(const char32_t key, const ui::key_state keys)
 				if (ac.key == normalized_key)
 				{
 					const auto key_state_match =
-						(ac.key_state & keyboard_accelerator_t::control) != 0 == keys.control &&
-						(ac.key_state & keyboard_accelerator_t::shift) != 0 == keys.shift &&
-						(ac.key_state & keyboard_accelerator_t::alt) != 0 == keys.alt;
+						((ac.key_state & keyboard_accelerator_t::control) != 0) == keys.control &&
+						((ac.key_state & keyboard_accelerator_t::shift) != 0) == keys.shift &&
+						((ac.key_state & keyboard_accelerator_t::alt) != 0) == keys.alt;
 
 					if (key_state_match && c.second->enable)
 					{

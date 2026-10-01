@@ -563,8 +563,9 @@ namespace df
 	// One slot per worker queue, claimed once by its worker thread at startup so the dispatch loop
 	// can account tasks without knowing which queue it is draining.
 	// Aligned because the slots are an array whose elements have different owners: unpadded, two
-	// queues share a line and every worker's per-task bump invalidates the other's copy.
-	struct alignas(std::hardware_destructive_interference_size) queue_counters
+	// queues share a line and every worker's per-task bump invalidates the other's copy. 64 bytes is
+	// the line on every target this builds for; the library constant is tuning-dependent on GCC.
+	struct alignas(64) queue_counters
 	{
 		std::string_view name;
 		std::atomic_uint64_t tasks = 0;

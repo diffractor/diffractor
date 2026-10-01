@@ -3023,7 +3023,7 @@ namespace ui
 		auto_complete_results _results;
 		complete_strategy_ptr _completes;
 		view_scroller _scroller;
-		uint32_t _height = 0;
+		int _height = 0;
 		bool _is_popup = false;
 		color_style _colors;
 
@@ -3190,7 +3190,7 @@ namespace ui
 			}
 			else
 			{
-				_height = _completes->max_predictions * (text_height + mc.padding1) + mc.padding2 *
+				_height = static_cast<int>(_completes->max_predictions) * (text_height + mc.padding1) + mc.padding2 *
 					2;
 			}
 
@@ -3435,8 +3435,10 @@ namespace ui
 			positions.emplace_back(_list->_frame, search_bounds, is_visible());
 		}
 
-		bool key_down(const int key, const key_state keys) const
+		bool key_down(const int key_code, const key_state keys) const
 		{
+			const auto key = static_cast<char32_t>(key_code);
+
 			if (key == keys::UP)
 			{
 				_list->step_selection(-1);

@@ -713,6 +713,8 @@ private:
 			case EXIF_DATA_TYPE_MAKER_NOTE_CANON:
 				parse_dir(entry.get_uint32(), tag_type::canon);
 				break;
+			default:
+				break;
 			}
 			break;
 

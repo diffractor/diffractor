@@ -409,7 +409,7 @@ namespace df
 			return compare_path_text(_s, other._s);
 		}
 
-		constexpr std::string_view::size_type find_last_slash() const
+		std::string_view::size_type find_last_slash() const
 		{
 			return df::find_last_slash(_s);
 		}

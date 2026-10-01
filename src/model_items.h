@@ -992,7 +992,7 @@ namespace df
 			update(id, info);
 		}
 
-		item_element(const folder_path path, index_folder_item_ptr info) noexcept : _path(path), _info(std::move(info))
+		item_element(const folder_path path, index_folder_item_ptr info) noexcept : _info(std::move(info)), _path(path)
 		{
 			_is_read_only = _info->is_read_only;
 			_name = path.name();
