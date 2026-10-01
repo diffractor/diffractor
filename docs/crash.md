@@ -16,7 +16,7 @@ document; this is only how to find out which one is at fault.
 
 The post is a `crash.zip` attachment plus form fields carrying `calc_app_info` — the
 same block the About tooltip shows with debug info on — under the subject
-`Diffractor CRASH report`. The **Support** command (`send_info`, src/app_commands.cpp)
+`Diffractor CRASH report`. The **Support** command (`send_info`, src/app_dialogs.cpp)
 posts to the same endpoint with the same app-info block, but as `logs.zip` under the
 subject `Diffractor LOG` and with no dump. Read the subject first: a `LOG` report is a
 user asking for help, not a fault.

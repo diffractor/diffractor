@@ -210,8 +210,8 @@ disable control. Aggregate feature-use diagnostics contain no stable user ID or 
 
 ## Where this lives
 
-- [model.cpp](../src/model.cpp) and [model.h](../src/model.h): scope, navigation, selection, display,
-  and view transitions.
+- [model.cpp](../src/model.cpp), [model.h](../src/model.h), and [model_display.h](../src/model_display.h):
+  scope, navigation, selection, display, and view transitions.
 - [app_commands.cpp](../src/app_commands.cpp) and [app_commands.h](../src/app_commands.h): command
   availability, targeting, and keyboard behavior.
 - [app_search.h](../src/app_search.h), [model_search.cpp](../src/model_search.cpp), and

@@ -225,6 +225,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/ui_controls.cpp
         src/ui_flex.cpp
         src/app_commands.cpp
+        src/app_dialogs.cpp
         src/app.cpp
         src/app_dup_report.cpp
         src/app_search.cpp

@@ -17,6 +17,14 @@ struct folder_scan_item;
 
 static constexpr auto doc_template_url = "https://www.diffractor.com/docs/template";
 
+// The encoding a command that rewrites pixels uses: the user's JPEG quality.
+inline file_encode_params make_file_encode_params()
+{
+	file_encode_params result;
+	result.jpeg_save_quality = setting.jpeg_save_quality;
+	return result;
+}
+
 class command_status;
 
 using item_results_ptr = std::shared_ptr<command_status>;
