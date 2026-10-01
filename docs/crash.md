@@ -163,7 +163,7 @@ that says this configuration took that path. Two out of three is a hypothesis.
 | Crash-handling subject | Source |
 |---|---|
 | Exception filter and report contents | [app.cpp](../src/app.cpp) |
-| Minidump writing | [platform_win_ui.cpp](../src/platform_win_ui.cpp) |
+| Minidump writing, and restart and recovery registration | [platform_win_process.cpp](../src/platform_win_process.cpp) |
 | The open-file list a fault records, and its bounds | [util_crash_files_db.h](../src/util_crash_files_db.h) |
 | The graphics crash guard and hardware-acceleration fallback | [platform_win_settings.cpp](../src/platform_win_settings.cpp) |
 | The degraded start after two unsettled launches | [app.cpp](../src/app.cpp), [app_settings.cpp](../src/app_settings.cpp) |
