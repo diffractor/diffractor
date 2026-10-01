@@ -1094,6 +1094,30 @@ static void should_step_search_distance()
 	assert_equal("loc:London, 500m", added.format_terms(), "a radius can be added to a bare place");
 }
 
+// locations.md 3.5: every location scope spelling is one entry in df::location_scopes, and completing,
+// parsing and writing a query all read it - so a spelling added there works everywhere at its level.
+static void should_read_every_location_scope_from_one_table()
+{
+	for (const auto& scope : df::location_scopes)
+	{
+		const auto query = std::format("{}:Paris", scope.name);
+
+		const auto completion = df::classify_search_scope(query);
+		assert_equal(true, completion.kind == df::search_scope_kind::location,
+		             std::format("{} completes as a location", scope.name));
+		assert_equal(true, completion.level == scope.level, std::format("{} completes at its level", scope.name));
+
+		const auto search = df::search_t::parse(query);
+		assert_equal(1_z, search.terms().size(), std::format("{} parses to one term", scope.name));
+		assert_equal(true, search.terms().front().type == df::search_term_type::location,
+		             std::format("{} parses to a location term", scope.name));
+		assert_equal(true, search.terms().front().level == scope.level,
+		             std::format("{} parses at its level", scope.name));
+		assert_equal(std::format("{}:Paris", df::location_scope_name(scope.level)), search.format_terms(),
+		             std::format("{} is written back in its level's spelling", scope.name));
+	}
+}
+
 static void should_resolve_location_vocabulary()
 {
 	auto& locations = test_locations();
@@ -1935,6 +1959,7 @@ void register_location_tests(view_state& state, test_registry& tests)
 	tests.add("Should defer height classes"s, should_defer_height_classes);
 	tests.add("Should step search distance"s, should_step_search_distance);
 	tests.add("Should resolve location vocabulary"s, should_resolve_location_vocabulary);
+	tests.add("Should read every location scope from one table"s, should_read_every_location_scope_from_one_table);
 	tests.add("Should complete locations as search terms"s, should_complete_locations_as_search_terms);
 	tests.add("Should match location radius and presence"s, should_match_location_radius_and_presence);
 

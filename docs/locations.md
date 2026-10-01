@@ -103,6 +103,8 @@ the UI applies them after lifetime, query, language, and generation checks.
   [model_locations.h](../src/model_locations.h): gazetteer and autocomplete.
 - [model_visits.cpp](../src/model_visits.cpp) and [model_visits.h](../src/model_visits.h): visit
   derivation.
+- [model_search.h](../src/model_search.h): `location_scopes`, the one list of location scope spellings
+  and the level each constrains to.
 - [model_search.cpp](../src/model_search.cpp): location query parsing and matching.
 - [app_sidebar.h](../src/app_sidebar.h), [ui_globe.h](../src/ui_globe.h), and
   [render_globe.cpp](../src/render_globe.cpp): sidebar globe and map actions.

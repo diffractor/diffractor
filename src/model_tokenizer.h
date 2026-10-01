@@ -83,7 +83,8 @@ class search_tokenizer
 	// comma is followed by a signed component rather than by another term.
 	static bool is_coordinate_component(const search_part& part)
 	{
-		if (str::icmp(part.scope, "loc") != 0 && str::icmp(part.scope, "near") != 0) return false;
+		const auto* const scope = df::find_location_scope(part.scope);
+		if (!scope || !scope->takes_centre) return false;
 
 		const std::string_view s = part.term;
 		auto i = size_t{0};

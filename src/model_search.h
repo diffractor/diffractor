@@ -96,6 +96,50 @@ namespace df
 		country,
 	};
 
+	// locations.md 3.5: every way to scope a term to a location, and the level each constrains to.
+	// `loc:` and `near:` take a centre - a place name or a coordinate - and an optional radius; the
+	// others name a place, region or country. Completing, tokenizing, coalescing, parsing and
+	// formatting a query all read this one table. The first entry for a level is the spelling a
+	// formatted query writes.
+	struct location_scope
+	{
+		std::string_view name; // without its colon
+		location_level level = location_level::any;
+		bool takes_centre = false;
+	};
+
+	inline constexpr location_scope location_scopes[] = {
+		{"loc", location_level::any, true},
+		{"near", location_level::any, true},
+		{"place", location_level::place, false},
+		{"city", location_level::place, false},
+		{"state", location_level::state, false},
+		{"country", location_level::country, false},
+		{"countries", location_level::country, false},
+	};
+
+	// The location scope spelled `scope`, compared without regard to case; null when it is not one.
+	inline const location_scope* find_location_scope(const std::string_view scope)
+	{
+		for (const auto& s : location_scopes)
+		{
+			if (str::icmp(scope, s.name) == 0) return &s;
+		}
+
+		return nullptr;
+	}
+
+	// The spelling a formatted query writes for a level.
+	constexpr std::string_view location_scope_name(const location_level level)
+	{
+		for (const auto& s : location_scopes)
+		{
+			if (s.level == level) return s.name;
+		}
+
+		return location_scopes[0].name;
+	}
+
 	struct search_result
 	{
 		search_result_type type = search_result_type::no_match;
@@ -238,29 +282,15 @@ namespace df
 
 		// locations.md 3.5: every location scope completes from the same vocabulary; only the
 		// level it constrains to differs.
-		struct location_scope
-		{
-			std::string_view prefix;
-			location_level level;
-		};
-
-		static constexpr location_scope location_scopes[] = {
-			{"loc:", location_level::any},
-			{"near:", location_level::any},
-			{"place:", location_level::place},
-			{"city:", location_level::place},
-			{"state:", location_level::state},
-			{"country:", location_level::country},
-			{"countries:", location_level::country},
-		};
-
 		for (const auto& scope : location_scopes)
 		{
-			if (str::starts(token, scope.prefix))
+			const auto prefix = std::string(scope.name) + ':';
+
+			if (str::starts(token, prefix))
 			{
 				result.kind = search_scope_kind::location;
 				result.level = scope.level;
-				result.value = std::string(token.substr(scope.prefix.size()));
+				result.value = std::string(token.substr(prefix.size()));
 				return result;
 			}
 		}

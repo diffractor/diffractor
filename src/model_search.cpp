@@ -133,14 +133,6 @@ df::search_t df::search_t::parse_from_input(const std::string_view text) const
 
 namespace
 {
-	bool is_location_scope(const std::string_view scope)
-	{
-		return str::icmp(scope, "loc") == 0 || str::icmp(scope, "near") == 0 ||
-			str::icmp(scope, "place") == 0 || str::icmp(scope, "city") == 0 ||
-			str::icmp(scope, "state") == 0 || str::icmp(scope, "country") == 0 ||
-			str::icmp(scope, "countries") == 0;
-	}
-
 	bool is_distance_token(const std::string_view token)
 	{
 		auto i = size_t{0};
@@ -185,7 +177,7 @@ std::vector<search_part> df::coalesce_parts(std::vector<search_part> parts)
 			// absorb only what is recognisably part of the place, so that a following word such as
 			// "sunset" stays a separate text term; the first unrecognised token ends the location
 			// an explicitly quoted part is the user asking for a distinct thing, so it is never absorbed
-			if (is_location_scope(location.scope) && !part.literal &&
+			if (find_location_scope(location.scope) && !part.literal &&
 				(part.after_comma || is_distance_token(part.term) || is_country_code(part.term)))
 			{
 				location.term += ", ";
@@ -523,20 +515,7 @@ std::string df::format_term(const search_term& term)
 		}
 		else if (term.type == search_term_type::location)
 		{
-			std::string prefix;
-
-			switch (term.level)
-			{
-			case location_level::place: prefix = "place:";
-				break;
-			case location_level::state: prefix = "state:";
-				break;
-			case location_level::country: prefix = "country:";
-				break;
-			default: prefix = "loc:";
-				break;
-			}
-
+			const auto prefix = std::string(location_scope_name(term.level)) + ':';
 			result << prefix;
 
 			if (term.coord_val.is_valid())
@@ -1096,7 +1075,7 @@ void df::search_t::parse_part(const search_part& part)
 			result = search_term(found_flag->second, part.modifier);
 		}
 	}
-	else if (str::icmp(part.scope, "loc") == 0 || str::icmp(part.scope, "near") == 0)
+	else if (const auto* const location = find_location_scope(part.scope); location && location->takes_centre)
 	{
 		// locations.md 3.5: the guessable spelling of a built-in class is accepted and
 		// canonicalizes to the `@` form, so there is only ever one vocabulary to learn.
@@ -1124,23 +1103,15 @@ void df::search_t::parse_part(const search_part& part)
 			}
 		}
 	}
-	else if (str::icmp(part.scope, "place") == 0 || str::icmp(part.scope, "city") == 0 ||
-		str::icmp(part.scope, "state") == 0 ||
-		str::icmp(part.scope, "country") == 0 || str::icmp(part.scope, "countries") == 0)
+	else if (location)
 	{
 		// These resolve locations, not the raw stored field; `with:place` asks about the field.
-		const auto is_place = str::icmp(part.scope, "place") == 0 || str::icmp(part.scope, "city") == 0;
-		const auto is_state = str::icmp(part.scope, "state") == 0;
-
 		// Only place level takes a radius; a region or country has extent, not a centre.
+		const auto is_place = location->level == location_level::place;
 		const auto pq = is_place ? split_place_query(part.term) : place_query{std::string(part.term), 0.0};
 		result = search_term(search_term_type::location, pq.name, part.modifier);
 		result.float_val = pq.km;
-		result.level = is_state
-			               ? location_level::state
-			               : is_place
-			               ? location_level::place
-			               : location_level::country;
+		result.level = location->level;
 	}
 	else if (str::icmp(part.scope, "area") == 0)
 	{
