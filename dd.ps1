@@ -453,6 +453,18 @@ function Clear-IncrementalLink {
     }
 }
 
+function Copy-LicenceTexts {
+    # The released binary is LGPL-3.0-or-later, which must travel with every copy alongside the
+    # GPL-3.0 it incorporates by reference - so the installer, the zip and the Store package each
+    # carry both, renamed .txt so they open from Explorer.
+    param(
+        [string]$Destination
+    )
+
+    Copy-Item (Join-Path $ScriptDir "LICENSE") (Join-Path $Destination "LICENSE.txt") -Force
+    Copy-Item (Join-Path $ScriptDir "COPYING.GPLv3") (Join-Path $Destination "COPYING.GPLv3.txt") -Force
+}
+
 function Build-Desktop {
     # Auto-increment build number before building
     Invoke-BumpBuild
@@ -494,6 +506,9 @@ function Build-Desktop {
 
     Write-Host ""
     Invoke-SignTool -Description "desktop executables" -Files @($exe32, $exe64)
+
+    # Staged into exe\ before either package is made: the installer and the zip both take them from there.
+    Copy-LicenceTexts -Destination $SourceFilesDir
     
     # Build NSIS installer
     Write-Host ""
@@ -538,11 +553,6 @@ function Build-Desktop {
         exit 1
     }
     
-    # The LGPL requires the licence to travel with the binary, so it is staged into exe\ for the zip
-    # rather than left at the repo root. Both texts go: LGPL-3.0 incorporates GPL-3.0 by reference.
-    Copy-Item (Join-Path $ScriptDir "LICENSE") (Join-Path $SourceFilesDir "LICENSE.txt") -Force
-    Copy-Item (Join-Path $ScriptDir "COPYING.GPLv3") (Join-Path $SourceFilesDir "COPYING.GPLv3.txt") -Force
-
     $zipFiles = @(
         "diffractor32.exe",
         "diffractor64.exe",
@@ -727,6 +737,7 @@ function Build-Store {
     Copy-Item (Join-Path $SourceFilesDir "dictionaries\*.aff") (Join-Path $PackageRoot "dictionaries") -Force
     Copy-Item (Join-Path $SourceFilesDir "dictionaries\*.dic") (Join-Path $PackageRoot "dictionaries") -Force
     Copy-Item (Join-Path $SourceFilesDir "AppxManifest.xml") $PackageRoot -Force
+    Copy-LicenceTexts -Destination $PackageRoot
     
     # Generate resources.pri using MakePri (required for asset qualifiers like _altform-unplated)
     Write-Host ""

@@ -8,7 +8,8 @@ wrapper behavior belongs to the corresponding subject document.
 
 Diffractor source is LGPL-2.1-or-later. Released binaries are LGPL-3.0-or-later because they
 statically link libheif and libde265, which are LGPL-3.0-or-later. The repository root contains the
-LGPL and incorporated GPL texts.
+LGPL and incorporated GPL texts, and every release package - the installer, the portable zip and the
+Store package - carries both beside the executable, as the LGPL requires of each copy.
 
 FFmpeg is configured without GPL, version-3, or LGPL-v3-only components, so it remains usable under
 LGPL 2.1. Enabling a GPL component changes the outbound license of the combined binary and is not an
@@ -113,3 +114,5 @@ packaged data, not source dependencies, but the same redistribution rule applies
   wrappers.
 - `tools/compare_ffmpeg_config.py` and `tools/fluent_icons.py`:
   reproducible integration checks and generators.
+- `dd.ps1` (`Copy-LicenceTexts`) and `installer/diff.nsi`: the licence texts each release package
+  carries.
