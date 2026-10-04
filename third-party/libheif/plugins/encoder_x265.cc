@@ -21,6 +21,7 @@
 #include "libheif/heif.h"
 #include "libheif/heif_plugin.h"
 #include "encoder_x265.h"
+#include "encoder_input_check.h"
 #include <memory>
 #include <sstream>
 #include <string>
@@ -970,6 +971,23 @@ static heif_error x265_start_sequence_encoding_intern(void* encoder_raw, const h
     }
   }
 
+  // Write the pixel aspect ratio into the VUI. Extended_SAR stores sar_width/sar_height
+  // as u(16), so ratios that do not fit are only signalled through the pasp property.
+  // A 1:1 ratio is omitted (VUI absence already means unspecified/square).
+  // Set before the user parameters below so that an explicit "x265:sar" takes precedence.
+
+  uint32_t aspect_h = 1, aspect_v = 1;
+  heif_image_get_pixel_aspect_ratio(image, &aspect_h, &aspect_v);
+  if ((input_class == heif_image_input_class_normal ||
+       input_class == heif_image_input_class_thumbnail) &&
+      aspect_h != aspect_v &&
+      aspect_h > 0 && aspect_v > 0 &&
+      aspect_h <= 0xFFFF && aspect_v <= 0xFFFF) {
+    std::stringstream sstr;
+    sstr << aspect_h << ':' << aspect_v;
+    api->param_parse(param, "sar", sstr.str().c_str());
+  }
+
   for (const auto& p : encoder->parameters) {
     if (p.name == heif_encoder_parameter_name_quality) {
       // quality=0   -> crf=50
@@ -1025,12 +1043,32 @@ static heif_error x265_start_sequence_encoding_intern(void* encoder_raw, const h
   param->sourceWidth = rounded_size(param->sourceWidth);
   param->sourceHeight = rounded_size(param->sourceHeight);
 
+  // x265 sizes some of its internal picture buffers with 32-bit arithmetic and, up to at least
+  // v3.5, neither validates the picture size nor the result of these allocations. Pictures of
+  // roughly 700 Mpixel or more make it crash in one of its worker threads (GHSA-2c3g-p585-8rpq).
+  // Newer x265 versions refuse pictures above the HEVC Level 7.2 maximum of 142,606,336 luma
+  // samples (16384x8704) in x265_check_params() unless non-conformance is explicitly allowed.
+  // Apply the same limit here, so that the behavior is the same with all x265 versions and the
+  // encoder is never opened with a picture it cannot handle.
+  const uint64_t max_luma_samples = 142606336;
+  if (static_cast<uint64_t>(param->sourceWidth) * static_cast<uint64_t>(param->sourceHeight) > max_luma_samples) {
+    return {heif_error_Encoding_error,
+            heif_suberror_Encoder_encoding,
+            "Image too large for x265: at most 142,606,336 luma samples (HEVC Level 7.2) are supported"};
+  }
+
   param->fpsNum = framerate_num;
   param->fpsDenom = framerate_denom;
 
   encoder->bit_depth = bit_depth;
 
   encoder->encoder = api->encoder_open(param);
+  if (encoder->encoder == nullptr) {
+    // x265 rejected the parameters (e.g. newer versions refuse oversized pictures).
+    return {heif_error_Encoding_error,
+            heif_suberror_Encoder_initialization,
+            "x265 encoder could not be opened with the given parameters"};
+  }
 
   if (image_sequence) {
     x265_nal* nals = nullptr;
@@ -1074,6 +1112,24 @@ static heif_error x265_encode_sequence_frame(void* encoder_raw, const heif_image
     };
   }
 
+  // HEVC can signal different luma and chroma bit depths, but x265 has a
+  // single internal bit depth and cannot produce such a stream. Whether this
+  // build of libx265 has 10 or 12 bit support is checked separately via
+  // x265_api_get().
+  heif_error input_error = check_encoder_input_image(image, /*supports_monochrome=*/true,
+                                                    {8, 10, 12});
+  if (input_error.code != heif_error_Ok) {
+    return input_error;
+  }
+
+  // pic->bitDepth below is the depth the encoder was opened with, while the plane
+  // pointers are this frame's. A deeper first frame would make libx265 read the
+  // planes of a shallower later frame at two bytes per sample.
+  input_error = check_sequence_frame_bit_depth(image, encoder->bit_depth);
+  if (input_error.code != heif_error_Ok) {
+    return input_error;
+  }
+
   const x265_api* api = encoder->api;
 
   heif_error err;
@@ -1104,7 +1160,8 @@ static heif_error x265_encode_sequence_frame(void* encoder_raw, const heif_image
   }
 
   pic->bitDepth = encoder->bit_depth;
-  pic->userData = reinterpret_cast<void*>(frame_nr);
+  // The codec hands this opaque pointer back unchanged; it carries an integer, not an address.
+  pic->userData = reinterpret_cast<void*>(frame_nr); // NOLINT(performance-no-int-to-ptr)
 
   x265_nal* nals = nullptr;
   uint32_t num_nals = 0;

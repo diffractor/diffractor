@@ -169,10 +169,13 @@ heif_error heif_item_add_property_camera_intrinsic_matrix(const heif_context* co
   auto cmin = std::make_shared<Box_cmin>();
   cmin->set_intrinsic_matrix(matrix->matrix);
 
-  heif_property_id id = context->context->add_property(itemId, cmin, false);
+  auto id = context->context->add_property(itemId, cmin, false);
+  if (!id) {
+    return id.error_struct(context->context.get());
+  }
 
   if (out_propertyId) {
-    *out_propertyId = id;
+    *out_propertyId = *id;
   }
 
   return heif_error_success;
@@ -286,7 +289,7 @@ heif_error heif_context_add_pyramid_entity_group(struct heif_context* ctx,
 
   if (result) {
     if (out_group_id) {
-      *out_group_id = result;
+      *out_group_id = *result;
     }
     return heif_error_success;
   }

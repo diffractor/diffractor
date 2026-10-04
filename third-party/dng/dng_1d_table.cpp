@@ -47,7 +47,19 @@ void dng_1d_table::SubDivide (const dng_1d_function &function,
 							  uint32 upper,
 							  real32 maxDelta)
 	{
-	
+
+	// CR-4208475 M-L8: Reject a zero-width range. Current call sites
+	// (Initialize and recursive SubDivide gated by range > 2) cannot
+	// produce range == 0, but the linear-fill else branch below
+	// otherwise divides (y1 - y0) by range and yields 0.0 / 0.0 = NaN
+	// in the unused delta. Bail early to keep the helper safe under
+	// any future caller.
+
+	if (upper <= lower)
+		{
+		return;
+		}
+
 	uint32 range = upper - lower;
 		
 	bool subDivide = (range > (fTableCount >> 8));
@@ -112,8 +124,15 @@ void dng_1d_table::Initialize (dng_memory_allocator &allocator,
 							   const dng_1d_function &function,
 							   bool subSample)
 	{
+
+	// CR-4208475 O-L3: Keep the allocation size in checked uint32
+	// arithmetic before writing fTable [0 .. fTableCount + 1].
+
+	const uint32 tableBytes =
+		SafeUint32Mult (SafeUint32Add (fTableCount, 2u),
+						static_cast<uint32> (sizeof (real32)));
 	
-	fBuffer.Reset (allocator.Allocate ((fTableCount + 2) * sizeof (real32)));
+	fBuffer.Reset (allocator.Allocate (tableBytes));
 	
 	fTable = fBuffer->Buffer_real32 ();
 	

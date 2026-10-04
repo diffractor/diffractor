@@ -25,6 +25,7 @@
 #include "api_structs.h"
 
 #include <string>
+#include <utility>
 
 #include "plugins/nalu_utils.h"
 
@@ -170,16 +171,14 @@ Error Encoder_HEVC::encode_sequence_flush(heif_encoder* encoder)
 }
 
 
-std::optional<Encoder::CodedImageData> Encoder_HEVC::encode_sequence_get_data()
+std::optional<Encoder::CodedImageData> Encoder_HEVC::encode_sequence_extract_data()
 {
-  return std::move(m_current_output_data);
+  return std::exchange(m_current_output_data, std::nullopt);
 }
 
 Error Encoder_HEVC::get_data(heif_encoder* encoder)
 {
   //CodedImageData codedImage;
-
-  bool got_some_data = false;
 
   for (;;) {
     uint8_t* data;
@@ -195,8 +194,6 @@ Error Encoder_HEVC::get_data(heif_encoder* encoder)
     if (data == nullptr) {
       break;
     }
-
-    got_some_data = true;
 
     const uint8_t nal_type = (data[0] >> 1);
     const bool is_sync = (nal_type == 19 || nal_type == 20 || nal_type == 21);
@@ -243,7 +240,11 @@ Error Encoder_HEVC::get_data(heif_encoder* encoder)
     }
   }
 
-  if (!got_some_data) {
+  // No coded image to report when the encoder returned no NALs, or only parameter sets.
+  // x265, for example, emits VPS/SPS/PPS from encoder_headers() as soon as the sequence
+  // encoder is opened, so the first get_data() after start_sequence_encoding() sees only
+  // headers. Those went into m_hvcC above and m_current_output_data stays disengaged.
+  if (!m_current_output_data) {
     return {};
   }
 
@@ -257,8 +258,7 @@ Error Encoder_HEVC::get_data(heif_encoder* encoder)
   //     TODO: it's maybe better to return this at the end so that we are sure to have all headers
   //           and also complete codingConstraints.
 
-  if (!m_current_output_data->bitstream.empty() &&
-      m_hvcC_has_VPS && m_hvcC_has_SPS && m_hvcC_has_PPS && !m_hvcC_sent) {
+  if (m_hvcC_has_VPS && m_hvcC_has_SPS && m_hvcC_has_PPS && !m_hvcC_sent) {
   //if (/*m_end_of_sequence_reached &&*/ m_hvcC && !m_hvcC_sent) {
     m_current_output_data->properties.push_back(m_hvcC);
     m_hvcC = nullptr;
@@ -297,7 +297,7 @@ std::shared_ptr<Box_VisualSampleEntry> Encoder_HEVC::get_sample_description_box(
   auto hvc1 = std::make_shared<Box_hvc1>();
   hvc1->get_VisualSampleEntry().compressorname = "HEVC";
 
-  for (auto prop : data.properties) {
+  for (const auto& prop : data.properties) {
     if (prop->get_short_type() == fourcc("hvcC")) {
       hvc1->append_child_box(prop);
       return hvc1;

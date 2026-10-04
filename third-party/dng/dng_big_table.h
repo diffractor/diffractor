@@ -25,6 +25,12 @@
 
 /*****************************************************************************/
 
+// TODO(erichan): rename this
+
+#define qDebugMaskedRGBTableRender (qDNGValidate && 0)
+
+/*****************************************************************************/
+
 void dng_big_table_cache_flush ();
 
 void dng_big_table_cache_clear ();
@@ -109,8 +115,7 @@ class dng_big_table
 		
 		dng_memory_block * EncodeAsString (dng_memory_allocator &allocator) const;
 
-		bool ExtractFromCache (const dng_fingerprint &fingerprint);
-
+		virtual bool ExtractFromCache (const dng_fingerprint &fingerprint);
 		
 		#if qDNGUseXMP
 		
@@ -146,11 +151,21 @@ class dng_big_table
 		virtual dng_fingerprint ComputeFingerprint () const;
 
 		void RecomputeFingerprint ();
+
+		// Use this only in very specific cases (e.g., for custom cache
+		// extraction).
+
+		void SetFingerprintDirect (const dng_fingerprint &digest)
+			{
+			fFingerprint = digest;
+			}
 		
 		virtual bool UseCompression () const
 			{
 			return true;
 			}
+
+		virtual uint32 MaxCompressedDecodedStreamSize () const;
 
 		virtual bool GetStream (dng_stream &stream) = 0;
 
@@ -590,9 +605,22 @@ class dng_rgb_table : public dng_big_table
 			kMaxDivisions1D = 4096,
 
 			kMinDivisions3D = 2,
+
+			// Default resample resolution used when baking a 3D color table
+			// into a Look/preset (cr_output_look_params::fMaxRGBTableDivisions
+			// defaults to this). This is NOT the maximum a 3D table may have --
+			// the real create/read/write/import ceiling is
+			// kMaxDivisions3D_InMemory below.
+
 			kMaxDivisions3D = 32,
 
-			kMaxDivisions3D_InMemory = 130
+			// Maximum 3D divisions the SDK will create (Set), read (GetStream),
+			// write (PutStream), or import from a .cube. Despite the
+			// "_InMemory" name this also bounds the serialized form: read and
+			// write are held to the same limit so any table that can be created
+			// round-trips. Raised from 32 so common 64-cube LUTs persist.
+
+			kMaxDivisions3D_InMemory = 64
 
 			};
 
@@ -726,7 +754,9 @@ class dng_rgb_table : public dng_big_table
 				
 				fMonochrome = true;
 				
-				uint32 count = fDivisions * fDivisions * fDivisions;
+				uint32 count = SafeUint32Mult (fDivisions,
+											   fDivisions,
+											   fDivisions);
 
 				const uint16 * sample = fSamples.Buffer_uint16 ();
 				
@@ -1170,6 +1200,11 @@ class dng_packed_image_table : public dng_big_table
 
 	public:
 
+		const dng_fingerprint & TableDigest () const
+			{
+			return fTableDigest;
+			}
+
 		const dng_image_table & Table () const;
 
 		const dng_image & Image () const
@@ -1345,11 +1380,12 @@ class dng_masked_rgb_table: private dng_uncopyable
 		void Validate () const;
 		
 		void GetStream (dng_host &host,
-						dng_stream &stream);
+						dng_stream &stream,
+						uint64 tagEnd);
 		
 		void PutStream (dng_stream &stream) const;
 
-		void AddDigest (dng_md5_printer &printer) const;
+		void AddDigest (dng_md5_printer_stream &printer) const;
 
 		const dng_string & SemanticName () const
 			{
@@ -1424,13 +1460,14 @@ class dng_masked_rgb_tables: private dng_uncopyable
 
 		void Validate () const;
 
-		void AddDigest (dng_md5_printer &printer) const;
+		void AddDigest (dng_md5_printer_stream &printer) const;
 
 		void PutStream (dng_stream &stream) const;
 
 		static dng_masked_rgb_tables * GetStream (dng_host &host,
 												  dng_stream &stream,
-												  bool isDraft);
+												  bool isDraft,
+												  uint32 tagCount);
 
 		composite_method CompositeMethod () const
 			{
@@ -1491,7 +1528,7 @@ class dng_rgb_to_rgb_table_data
 								 uint32 bufferStartPlane,
 								 bool needOverrange);
 
-		void AddDigest (dng_md5_printer &printer) const;
+		void AddDigest (dng_md5_printer_stream &printer) const;
 
 	};
 
@@ -1529,6 +1566,14 @@ class dng_masked_rgb_table_render_data
 		// background table.
 
 		uint32 fBackgroundTableIndex = 0;
+
+		// Digest representing the inputs used to compute the masks and tables.
+		// In cases where the masks and tables are loaded from the negative,
+		// this fingerprint can be set to null. It is intended for cases where
+		// the tables and/or masks are computed dynamically based on other settings.
+		// This digest represents those other settings.
+
+		dng_fingerprint fInputDigest;
 
 	public:
 

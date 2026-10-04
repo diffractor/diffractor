@@ -185,7 +185,9 @@ class dng_piecewise_linear: public dng_1d_function
 
 		bool IsValid () const
 			{
-			return (X.size () >= 2) && (X.size () == Y.size ());
+			return (X.size () >= 2) &&
+				   (X.size () == Y.size ()) &&
+				   (X.size () <= (size_t) 0x7FFFFFFF);
 			}
 
 		bool NotValid () const

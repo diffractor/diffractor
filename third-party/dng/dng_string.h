@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <set>
 
 /*****************************************************************************/
 
@@ -187,6 +188,22 @@ class dng_string_hash
 
 typedef std::unordered_set<dng_string,
 						   dng_string_hash> dng_string_table;
+
+/*****************************************************************************/
+
+struct dng_string_less
+	{
+
+	bool operator () (const dng_string& a, const dng_string& b) const
+		{
+		return (strcmp (a.Get(), b.Get()) < 0);
+		}
+
+	};
+
+/*****************************************************************************/
+
+typedef std::set<dng_string, dng_string_less> dng_string_ordered_table;
 
 /*****************************************************************************/
 

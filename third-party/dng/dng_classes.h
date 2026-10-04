@@ -18,6 +18,7 @@
 /*****************************************************************************/
 
 #include <memory>
+#include <vector>
 
 /*****************************************************************************/
 
@@ -75,6 +76,8 @@ class dng_matrix;
 class dng_matrix_3by3;
 class dng_matrix_4by3;
 class dng_md5_printer;
+class dng_md5_printer_le_stream;
+class dng_md5_printer_stream;
 class dng_memory_allocator;
 class dng_memory_block;
 class dng_memory_data;
@@ -137,7 +140,13 @@ typedef std::shared_ptr<dng_masked_rgb_table> dng_masked_rgb_table_sptr;
 typedef std::shared_ptr<dng_rgb_to_rgb_table_data> dng_rgb_to_rgb_table_data_sptr;
 typedef std::shared_ptr<dng_masked_rgb_table_render_data> dng_masked_rgb_table_render_data_sptr;
 
+typedef std::shared_ptr<dng_image> dng_image_sptr;
+typedef std::weak_ptr<dng_image>   dng_image_wptr;
+
 typedef std::shared_ptr<const dng_image> const_dng_image_sptr;
+
+typedef std::shared_ptr<dng_pixel_buffer> dng_pixel_buffer_sptr;
+typedef std::vector<dng_pixel_buffer_sptr> dng_pixel_buffer_vec;
 
 typedef std::shared_ptr<const dng_memory_block> const_dng_memory_block_sptr;
 

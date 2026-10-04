@@ -10,6 +10,7 @@
 
 #include "dng_assertions.h"
 #include "dng_exceptions.h"
+#include "dng_fingerprint.h"
 #include "dng_utils.h"
 
 /*****************************************************************************/
@@ -349,6 +350,28 @@ bool dng_matrix::AlmostIdentity (real64 slop) const
 	
 	return AlmostEqual (m, slop);
 	
+	}
+
+/*****************************************************************************/
+
+void dng_matrix::Process (dng_md5_printer_stream &printer) const
+	{
+
+	printer.Put_uint32 (fRows);
+	printer.Put_uint32 (fCols);
+
+	for (uint32 j = 0; j < Rows (); j++)
+		{
+
+		for (uint32 k = 0; k < Cols (); k++)
+			{
+
+			printer.Put_real64 (fData [j] [k]);
+
+			}
+
+		}
+
 	}
 
 /*****************************************************************************/
@@ -800,6 +823,22 @@ dng_matrix dng_vector::AsColumn () const
 		
 	return M;
 	
+	}
+
+/*****************************************************************************/
+
+void dng_vector::Process (dng_md5_printer_stream &printer) const
+	{
+
+	printer.Put_uint32 (fCount);
+
+	for (uint32 j = 0; j < Count (); j++)
+		{
+
+		printer.Put_real64 (fData [j]);
+
+		}
+
 	}
 
 /******************************************************************************/

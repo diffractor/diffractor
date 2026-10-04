@@ -11,6 +11,7 @@
 #include "dng_date_time.h"
 #include "dng_globals.h"
 #include "dng_ifd.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_codes.h"
 #include "dng_tag_types.h"
 #include "dng_tag_values.h"
@@ -109,6 +110,7 @@ const char * LookupParentCode (uint32 parentCode)
 		{	tcHEIC,						"HEIC"							},
 		{	tcJXL,						"JXL"							},
 		{	tcAVIF,						"AVIF"							},
+		{	tcEXR,						"EXR"							},
 		{	tcAppleMakerNote,			"Apple MakerNote"				},
 		};
 
@@ -435,6 +437,7 @@ const char * LookupTagCode (uint32 parentCode,
 		{	tcEnhanceParams,					"EnhanceParams"					},
 		{	tcProfileGainTableMap,				"ProfileGainTableMap"			},
 		{	tcProfileGainTableMap2,				"ProfileGainTableMap2"			},
+		{	tcC2PAManifest,						"C2PAManifest"					},
 		{	tcRGBTablesDraft,					"RGBTablesDraft"				},
 		{	tcRGBTables,						"RGBTables"						},
 		{	tcBigTableDigests,					"BigTableDigests"				},
@@ -2328,8 +2331,15 @@ void DumpTagValues (dng_stream &stream,
 		default:
 			{
 			
-			uint32 tagSize = tagCount * TagTypeSize (tagType);
-			
+			// CR-4208475 M-L9: Diagnostic dump previously multiplied
+			// tagCount by TagTypeSize as a raw uint32. A pathological
+			// IFD entry could wrap the product, causing tagSize to
+			// understate the bytes DumpHexAscii subsequently consumed
+			// from the stream. Use SafeUint32Mult so the dumper throws
+			// cleanly instead.
+
+			uint32 tagSize = SafeUint32Mult (tagCount, TagTypeSize (tagType));
+
 			if (tagCount == 1 && (tagType == ttByte ||
 								  tagType == ttUndefined))
 				{
@@ -2455,7 +2465,7 @@ void DumpFingerprint (const dng_fingerprint &p)
 	
 	for (uint32 j = 0; j < 16; j++)
 		{
-		printf ("%02x", p.data [j]);
+		printf ("%02x", p.Data () [j]);
 		}
 
 	printf (">");

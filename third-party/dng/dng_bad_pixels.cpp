@@ -99,12 +99,15 @@ dng_rect dng_opcode_FixBadPixelsConstant::SrcArea (const dng_rect &dstArea,
 	{
 	
 	dng_rect srcArea = dstArea;
+
+	// CR-4208475 Q-L3: Public callers may use translated image coordinates,
+	// so reject padding that would cross the int32 coordinate limits.
 	
-	srcArea.t -= 2;
-	srcArea.l -= 2;
+	srcArea.t = SafeInt32Sub (srcArea.t, 2);
+	srcArea.l = SafeInt32Sub (srcArea.l, 2);
 	
-	srcArea.b += 2;
-	srcArea.r += 2;
+	srcArea.b = SafeInt32Add (srcArea.b, 2);
+	srcArea.r = SafeInt32Add (srcArea.r, 2);
 	
 	return srcArea;
 	
@@ -302,7 +305,72 @@ void dng_bad_pixel_list::AddRect (const dng_rect &r)
 	fBadRects.push_back (r);
 	
 	}
-		
+
+/*****************************************************************************/
+
+static bool AbsDiffLessEqual (int32 a,
+							  int32 b,
+							  uint32 limit)
+	{
+
+	int64 delta = (int64) a - (int64) b;
+	uint64 absDelta = delta < 0 ? (uint64) -delta : (uint64) delta;
+
+	return absDelta <= (uint64) limit;
+
+	}
+
+/*****************************************************************************/
+
+static dng_rect ExpandBadPixelRect (const dng_rect &rect,
+									uint32 radius)
+	{
+
+	const int32 r = ConvertUint32ToInt32 (radius);
+
+	dng_rect result = rect;
+
+	result.t = SafeInt32Sub (result.t, r);
+	result.l = SafeInt32Sub (result.l, r);
+	result.b = SafeInt32Add (result.b, r);
+	result.r = SafeInt32Add (result.r, r);
+
+	return result;
+
+	}
+
+/*****************************************************************************/
+
+static dng_rect ExpandBadPixelPoint (const dng_point &pt,
+									 uint32 radius)
+	{
+
+	const int32 r = ConvertUint32ToInt32 (radius);
+
+	return dng_rect (SafeInt32Sub (pt.v, r),
+					 SafeInt32Sub (pt.h, r),
+					 SafeInt32Add (SafeInt32Add (pt.v, r), 1),
+					 SafeInt32Add (SafeInt32Add (pt.h, r), 1));
+
+	}
+
+/*****************************************************************************/
+
+static dng_rect PadBadPixelArea (const dng_rect &area,
+								 int32 padding)
+	{
+
+	dng_rect result = area;
+
+	result.t = SafeInt32Sub (result.t, padding);
+	result.l = SafeInt32Sub (result.l, padding);
+	result.b = SafeInt32Add (result.b, padding);
+	result.r = SafeInt32Add (result.r, padding);
+
+	return result;
+
+	}
+
 /*****************************************************************************/
 
 static bool SortBadPoints (const dng_point &a,
@@ -379,6 +447,8 @@ bool dng_bad_pixel_list::IsPointIsolated (uint32 index,
 	{
 	
 	dng_point pt = Point (index);
+
+	const int32 radius32 = ConvertUint32ToInt32 (radius);
 	
 	// Search backward through bad point list.
 	
@@ -387,12 +457,12 @@ bool dng_bad_pixel_list::IsPointIsolated (uint32 index,
 		
 		const dng_point &pt2 = Point (j);
 		
-		if (pt2.v < pt.v - (int32) radius)
+		if (pt2.v < SafeInt32Sub (pt.v, radius32))
 			{
 			break;
 			}
 			
-		if (Abs_int32 (pt2.h - pt.h) <= radius)
+		if (AbsDiffLessEqual (pt2.h, pt.h, radius))
 			{
 			return false;
 			}
@@ -406,24 +476,24 @@ bool dng_bad_pixel_list::IsPointIsolated (uint32 index,
 		
 		const dng_point &pt2 = Point (k);
 		
-		if (pt2.v > pt.v + (int32) radius)
+		if (pt2.v > SafeInt32Add (pt.v, radius32))
 			{
 			break;
 			}
 			
-		if (Abs_int32 (pt2.h - pt.h) <= radius)
+		if (AbsDiffLessEqual (pt2.h, pt.h, radius))
 			{
 			return false;
 			}
 		
 		}
-		
+	
 	// Search through bad rectangle list.
 	
-	dng_rect testRect (pt.v - radius,
-					   pt.h - radius,
-					   pt.v + radius + 1,
-					   pt.h + radius + 1);
+	// CR-4208475 P-L2: Bad-pixel opcode coordinates are file data. Keep
+	// the small isolation padding checks overflow-safe before overlap tests.
+
+	dng_rect testRect = ExpandBadPixelPoint (pt, radius);
 	
 	for (uint32 n = 0; n < RectCount (); n++)
 		{
@@ -447,12 +517,7 @@ bool dng_bad_pixel_list::IsRectIsolated (uint32 index,
 										 uint32 radius) const
 	{
 	
-	dng_rect testRect = Rect (index);
-	
-	testRect.t -= radius;
-	testRect.l -= radius;
-	testRect.b += radius;
-	testRect.r += radius;
+	dng_rect testRect = ExpandBadPixelRect (Rect (index), radius);
 	
 	for (uint32 n = 0; n < RectCount (); n++)
 		{
@@ -696,8 +761,20 @@ void dng_opcode_FixBadPixelsList::PutData (dng_stream &stream) const
 	
 	uint32 pCount = fList->PointCount ();
 	uint32 rCount = fList->RectCount  ();
-	
-	stream.Put_uint32 (12 + pCount * 8 + rCount * 16);
+
+	// CR-4208475 M-L5: Mirror the parser-side SafeUint32Add /
+	// SafeUint32Mult preflight used by GetData on the same payload
+	// layout (12 + pCount * 8 + rCount * 16). The write path
+	// previously used raw uint32 arithmetic, so a list whose
+	// (pCount, rCount) wrapped uint32 would have written a truncated
+	// size header that no longer matched the bytes actually emitted.
+
+	uint32 payloadSize =
+		SafeUint32Add (12,
+					   SafeUint32Add (SafeUint32Mult (pCount, 8),
+									  SafeUint32Mult (rCount, 16)));
+
+	stream.Put_uint32 (payloadSize);
 	
 	stream.Put_uint32 (fBayerPhase);
 	
@@ -749,12 +826,11 @@ dng_rect dng_opcode_FixBadPixelsList::SrcArea (const dng_rect &dstArea,
 		}
 	
 	dng_rect srcArea = dstArea;
-	
-	srcArea.t -= padding;
-	srcArea.l -= padding;
-	
-	srcArea.b += padding;
-	srcArea.r += padding;
+
+	if (padding)
+		{
+		srcArea = PadBadPixelArea (dstArea, padding);
+		}
 	
 	return srcArea;
 	
@@ -1739,10 +1815,7 @@ void dng_opcode_FixBadPixelsList::ProcessArea (dng_negative & /* negative */,
 		
 	if (rectCount)
 		{
-		fixArea.t -= kBadRectPadding;
-		fixArea.l -= kBadRectPadding;
-		fixArea.b += kBadRectPadding;
-		fixArea.r += kBadRectPadding;
+		fixArea = PadBadPixelArea (fixArea, kBadRectPadding);
 		}
 		
 	bool didFixPoint = false;
@@ -1765,10 +1838,10 @@ void dng_opcode_FixBadPixelsList::ProcessArea (dng_negative & /* negative */,
 														  kBadPointPadding);
 				
 				if (isIsolated &&
-					badPoint.v >= imageBounds.t + kBadPointPadding &&
-					badPoint.h >= imageBounds.l + kBadPointPadding &&
-					badPoint.v <  imageBounds.b - kBadPointPadding &&
-					badPoint.h <  imageBounds.r - kBadPointPadding)
+					badPoint.v >= SafeInt32Add (imageBounds.t, kBadPointPadding) &&
+					badPoint.h >= SafeInt32Add (imageBounds.l, kBadPointPadding) &&
+					badPoint.v <  SafeInt32Sub (imageBounds.b, kBadPointPadding) &&
+					badPoint.h <  SafeInt32Sub (imageBounds.r, kBadPointPadding))
 					{
 					
 					FixIsolatedPixel (srcBuffer,
@@ -1819,9 +1892,9 @@ void dng_opcode_FixBadPixelsList::ProcessArea (dng_negative & /* negative */,
 														 kBadRectPadding);
 														 
 				if (isIsolated &&
-					badRect.r == badRect.l + 1 &&
-					badRect.l >= imageBounds.l + SrcRepeat ().h &&
-					badRect.r <= imageBounds.r - SrcRepeat ().v)
+					badRect.r == SafeInt32Add (badRect.l, 1) &&
+					badRect.l >= SafeInt32Add (imageBounds.l, SrcRepeat ().h) &&
+					badRect.r <= SafeInt32Sub (imageBounds.r, SrcRepeat ().v))
 					{
 					
 					FixSingleColumn (srcBuffer,
@@ -1830,9 +1903,9 @@ void dng_opcode_FixBadPixelsList::ProcessArea (dng_negative & /* negative */,
 					}
 					
 				else if (isIsolated &&
-						 badRect.b == badRect.t + 1 &&
-						 badRect.t >= imageBounds.t + SrcRepeat ().h &&
-						 badRect.b <= imageBounds.b - SrcRepeat ().v)
+						 badRect.b == SafeInt32Add (badRect.t, 1) &&
+						 badRect.t >= SafeInt32Add (imageBounds.t, SrcRepeat ().h) &&
+						 badRect.b <= SafeInt32Sub (imageBounds.b, SrcRepeat ().v))
 					{
 					
 					FixSingleRow (srcBuffer,

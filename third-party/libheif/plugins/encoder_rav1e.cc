@@ -21,6 +21,7 @@
 #include "libheif/heif.h"
 #include "libheif/heif_plugin.h"
 #include "encoder_rav1e.h"
+#include "encoder_input_check.h"
 #include <vector>
 #include <memory>
 #include <cstring>
@@ -59,6 +60,9 @@ struct encoder_struct_rav1e
 
   RaContext* rav1eContextRaw = nullptr;
   uint8_t yShift = 0;
+
+  // bit depth the context was created with, to check the later frames of a sequence against
+  int bit_depth = 8;
 
   // --- output
 
@@ -561,7 +565,7 @@ heif_error rav1e_start_sequence_encoding_intern(void* encoder_raw, const heif_im
     rav1eRange = nclx->full_range_flag ? RA_PIXEL_RANGE_FULL : RA_PIXEL_RANGE_LIMITED;
   }
 
-  int bitDepth = heif_image_get_bits_per_pixel(image, heif_channel_Y);
+  int bitDepth = heif_image_get_bits_per_pixel_range(image, heif_channel_Y);
 
   auto rav1eConfigRaw = rav1e_config_default();
   auto rav1eConfig = std::shared_ptr<RaConfig>(rav1eConfigRaw, [](RaConfig* c) { rav1e_config_unref(c); });
@@ -658,6 +662,8 @@ heif_error rav1e_start_sequence_encoding_intern(void* encoder_raw, const heif_im
     return heif_error_codec_library_error;
   }
 
+  encoder->bit_depth = bitDepth;
+
   return {};
 }
 
@@ -674,10 +680,26 @@ heif_error rav1e_start_sequence_encoding(void* encoder_raw, const heif_image* im
 
 heif_error rav1e_encode_sequence_frame(void* encoder_raw, const heif_image* image, uintptr_t frame_nr)
 {
+  // AV1 signals one bit depth for all planes. rav1e always requests YCbCr
+  // input, so a monochrome image would be missing the Cb/Cr planes read below.
+  heif_error input_error = check_encoder_input_image(image, /*supports_monochrome=*/false,
+                                                    {8, 10, 12});
+  if (input_error.code != heif_error_Ok) {
+    return input_error;
+  }
+
   auto* encoder = (encoder_struct_rav1e*) encoder_raw;
   auto& rav1eContext = encoder->rav1eContextRaw;
 
-  int bitDepth = heif_image_get_bits_per_pixel(image, heif_channel_Y);
+  // rav1e_frame_new() below builds a frame for the pixel format the context was
+  // created with, from the first frame of the sequence, while byteWidth is this
+  // frame's.
+  input_error = check_sequence_frame_bit_depth(image, encoder->bit_depth);
+  if (input_error.code != heif_error_Ok) {
+    return input_error;
+  }
+
+  int bitDepth = heif_image_get_bits_per_pixel_range(image, heif_channel_Y);
 
   int yShift = encoder->yShift;
 

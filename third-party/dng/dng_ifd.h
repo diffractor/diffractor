@@ -265,6 +265,10 @@ class dng_ifd
 		real32 fJXLDistance    = -1.0f;
 		int32  fJXLEffort      = -1;
 		int32  fJXLDecodeSpeed = -1;
+
+		// Metadata for ISO 21496-1.
+		
+		std::shared_ptr<const dng_memory_block> fGainMapMetadata;
 		
 	public:
 	

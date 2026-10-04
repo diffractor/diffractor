@@ -88,6 +88,10 @@ public:
 
   void init_for_image();
 
+  // Create the 'iprp'/'ipco'/'ipma' boxes if they do not exist yet. Unlike init_for_image(),
+  // this does not turn the file into an image file (no 'pict' handler, no 'pitm').
+  void init_for_item_properties();
+
   void init_for_sequence();
 
   void set_hdlr_box(std::shared_ptr<Box_hdlr> box) { m_hdlr_box = std::move(box); }
@@ -141,7 +145,7 @@ public:
 
   std::shared_ptr<Box_infe> get_infe_box(heif_item_id imageID);
 
-  void set_iref_box(std::shared_ptr<Box_iref>);
+  void set_iref_box(const std::shared_ptr<Box_iref>&);
 
   std::shared_ptr<Box_iref> get_iref_box() { return m_iref_box; }
 
@@ -149,11 +153,11 @@ public:
 
   std::shared_ptr<Box_ipco> get_ipco_box() { return m_ipco_box; }
 
-  void set_ipco_box(std::shared_ptr<Box_ipco>);
+  void set_ipco_box(const std::shared_ptr<Box_ipco>&);
 
   std::shared_ptr<Box_ipco> get_ipco_box() const { return m_ipco_box; }
 
-  void set_ipma_box(std::shared_ptr<Box_ipma>);
+  void set_ipma_box(const std::shared_ptr<Box_ipma>&);
 
   std::shared_ptr<Box_ipma> get_ipma_box() { return m_ipma_box; }
 
@@ -205,10 +209,10 @@ public:
 
   Result<std::shared_ptr<Box_infe>> add_new_meta_infe_box(uint32_t item_type);
 
-  void add_ispe_property(heif_item_id id, uint32_t width, uint32_t height, bool essential);
+  Error add_ispe_property(heif_item_id id, uint32_t width, uint32_t height, bool essential);
 
   // set irot/imir according to heif_orientation
-  void add_orientation_properties(heif_item_id id, heif_orientation);
+  Error add_orientation_properties(heif_item_id id, heif_orientation);
 
   // TODO: can we remove the 'essential' parameter and take this from the box? Or is that depending on the context?
   heif_property_id add_property(heif_item_id id, const std::shared_ptr<Box>& property, bool essential);
@@ -221,19 +225,19 @@ public:
 
   Result<heif_item_id> add_infe_mime(const char* content_type, heif_metadata_compression content_encoding, const uint8_t* data, size_t size);
 
-  Result<heif_item_id> add_precompressed_infe_mime(const char* content_type, std::string content_encoding, const uint8_t* data, size_t size);
+  Result<heif_item_id> add_precompressed_infe_mime(const char* content_type, const std::string& content_encoding, const uint8_t* data, size_t size);
 
   Result<heif_item_id> add_infe_uri(const char* item_uri_type, const uint8_t* data, size_t size);
 
   Error set_item_data(const std::shared_ptr<Box_infe>& item, const uint8_t* data, size_t size, heif_metadata_compression compression);
 
-  Error set_precompressed_item_data(const std::shared_ptr<Box_infe>& item, const uint8_t* data, size_t size, std::string content_encoding);
+  Error set_precompressed_item_data(const std::shared_ptr<Box_infe>& item, const uint8_t* data, size_t size, const std::string& content_encoding);
 
   void append_iloc_data(heif_item_id id, const std::vector<uint8_t>& nal_packets, uint8_t construction_method);
 
   void replace_iloc_data(heif_item_id id, uint64_t offset, const std::vector<uint8_t>& data, uint8_t construction_method = 0);
 
-  void set_iloc_box(std::shared_ptr<Box_iloc>);
+  void set_iloc_box(const std::shared_ptr<Box_iloc>&);
 
   std::shared_ptr<Box_iloc> get_iloc_box() { return m_iloc_box; }
 
@@ -246,7 +250,7 @@ public:
 
   void add_entity_group_box(const std::shared_ptr<Box>& entity_group_box);
 
-  void set_auxC_property(heif_item_id id, const std::string& type);
+  Error set_auxC_property(heif_item_id id, const std::string& type);
 
 #if defined(__MINGW32__) || defined(__MINGW64__) || defined(_MSC_VER)
   static std::wstring convert_utf8_path_to_utf16(std::string pathutf8);
@@ -304,16 +308,16 @@ private:
 
   Error parse_heif_file();
 
+  // Advance the ID creator past all item, track and entity-group IDs found in the parsed
+  // file, so that IDs allocated for new items cannot collide with existing ones.
+  void seed_id_creator();
+
+  // Undo add_new_infe_box() / add_new_meta_infe_box() when the item could not be completed.
+  void remove_infe_box(const std::shared_ptr<Box_infe>& infe);
+
   Error parse_heif_images();
 
   Error parse_heif_sequences();
-
-  Error check_for_ref_cycle(heif_item_id ID,
-                            const std::shared_ptr<Box_iref>& iref_box) const;
-
-  Error check_for_ref_cycle_recursion(heif_item_id ID,
-                                      const std::shared_ptr<Box_iref>& iref_box,
-                                      std::unordered_set<heif_item_id>& parent_items) const;
 };
 
 #endif

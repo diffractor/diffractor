@@ -27,11 +27,20 @@ real64 dng_srational::As_real64 () const
 
 void dng_srational::Set_real64 (real64 x, int32 dd)
 	{
-	
+
+	// CR-4208475 M-L2: Canonicalize the zero case and return. The
+	// previous code set *this to (0, 1) and then fell through to the
+	// dd-defaulting + Round_int32(x * dd) path, immediately overwriting
+	// the canonical zero with (0, large_dd). Both represent the same
+	// real value but the fall-through made the dedicated zero branch
+	// dead code.
+
 	if (x == 0.0)
 		{
-		
+
 		*this = dng_srational (0, 1);
+
+		return;
 
 		}
 	
@@ -65,6 +74,12 @@ void dng_srational::Set_real64 (real64 x, int32 dd)
 
 void dng_srational::ReduceByFactor (int32 factor)
 	{
+
+	// CR-4208475 Q-L9: Zero and one cannot reduce a rational safely or make
+	// progress; negative factors are outside this helper's contract.
+
+	if (factor < 2)
+		return;
 	
 	while (n % factor == 0 &&
 		   d % factor == 0 &&
@@ -93,11 +108,18 @@ real64 dng_urational::As_real64 () const
 
 void dng_urational::Set_real64 (real64 x, uint32 dd)
 	{
-	
+
+	// CR-4208475 M-L2: Mirror the srational fix. The previous code set
+	// *this to (0, 1) on x <= 0.0 and then fell through to the
+	// dd-defaulting + Round_uint32(x * dd) path, immediately overwriting
+	// the canonical zero. Return after the zero branch.
+
 	if (x <= 0.0)
 		{
-		
+
 		*this = dng_urational (0, 1);
+
+		return;
 
 		}
 	
@@ -129,6 +151,9 @@ void dng_urational::Set_real64 (real64 x, uint32 dd)
 
 void dng_urational::ReduceByFactor (uint32 factor)
 	{
+
+	if (factor < 2)
+		return;
 	
 	while (n % factor == 0 &&
 		   d % factor == 0 &&

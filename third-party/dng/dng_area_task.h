@@ -369,6 +369,7 @@ class dng_range_parallel_task: public dng_area_task, dng_uncopyable
 			int32 fBegin;
 			int32 fEnd;
 			dng_abort_sniffer *fSniffer;
+			dng_memory_allocator *fAllocator;
 			};
 		
 		typedef std::function<void(const range &)> function_t;

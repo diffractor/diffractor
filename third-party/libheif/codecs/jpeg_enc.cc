@@ -79,9 +79,11 @@ Result<Encoder::CodedImageData> Encoder_JPEG::encode(const std::shared_ptr<HeifP
       break;
     }
 
-    size_t oldsize = vec.size();
-    vec.resize(oldsize + size);
-    memcpy(vec.data() + oldsize, data, size);
+    if (size > 0) { // memcpy() with a NULL pointer is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read()
+      size_t oldsize = vec.size();
+      vec.resize(oldsize + size);
+      memcpy(vec.data() + oldsize, data, size);
+    }
   }
 
 #if 0
@@ -124,7 +126,7 @@ std::shared_ptr<class Box_VisualSampleEntry> Encoder_JPEG::get_sample_descriptio
   auto mjpg = std::make_shared<Box_mjpg>();
   mjpg->get_VisualSampleEntry().compressorname = "JPEG";
 
-  for (auto prop : data.properties) {
+  for (const auto& prop : data.properties) {
     if (prop->get_short_type() == fourcc("jpgC")) {
       mjpg->append_child_box(prop);
     }

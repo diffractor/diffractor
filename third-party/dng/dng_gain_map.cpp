@@ -95,8 +95,8 @@ dng_gain_map_interpolator::dng_gain_map_interpolator (const dng_gain_map &map,
 
 	:	fMap (map)
 	
-	,	fScale (1.0 / mapBounds.H (),
-				1.0 / mapBounds.W ())
+	,	fScale (mapBounds.H () > 0 ? 1.0 / mapBounds.H () : 0.0,
+				mapBounds.W () > 0 ? 1.0 / mapBounds.W () : 0.0)
 	
 	,	fOffset (0.5 - mapBounds.t,
 				 0.5 - mapBounds.l)
@@ -115,10 +115,31 @@ dng_gain_map_interpolator::dng_gain_map_interpolator (const dng_gain_map &map,
 	,	fValueIndex (0.0f)
 	
 	{
-	
+
+	// CR-4208475 B2-10: Empty bounds produce zero interpolation scales and
+	// later require division by those scales when resetting a column.
+
+	if (mapBounds.IsEmpty ())
+		{
+		ThrowProgramError ("Empty gain map bounds");
+		}
+
+	if (!(fMap.Spacing ().v > 0.0) ||
+		!(fMap.Spacing ().h > 0.0))
+		{
+		ThrowBadFormat ("Invalid gain map spacing");
+		}
+
 	real64 rowIndexF = (fScale.v * (row + fOffset.v) -
 						fMap.Origin ().v) / fMap.Spacing ().v;
 	
+	// NaN fails both <= and >= comparisons, falling through to the
+	// cast at line below with undefined results. Treat NaN or infinite
+	// values as 0.
+
+	if (!std::isfinite (rowIndexF))
+		rowIndexF = 0.0;
+
 	if (rowIndexF <= 0.0)
 		{
 		
@@ -187,14 +208,27 @@ void dng_gain_map_interpolator::ResetColumn ()
 	real64 colIndexF = ((fScale.h * (fColumn + fOffset.h)) - 
 						fMap.Origin ().h) / fMap.Spacing ().h;
 	
+	// NaN fails both <= and >= comparisons, falling through to the
+	// cast at line below with undefined results. Treat NaN or infinite
+	// values as 0.
+
+	if (!std::isfinite (colIndexF))
+		colIndexF = 0.0;
+
 	if (colIndexF <= 0.0)
 		{
 		
 		fValueBase = InterpolateEntry (0);
 		
 		fValueStep = 0.0f;
-		
-		fResetColumn = (int32) ceil (fMap.Origin ().h / fScale.h - fOffset.h);
+
+		// CR-4208475 Q-M7: Parsed origins can be finite but far outside the
+		// int32 image domain. Use the checked conversion used by the interior
+		// interpolation path.
+
+		fResetColumn =
+			ConvertDoubleToInt32 (ceil (fMap.Origin ().h / fScale.h -
+									   fOffset.h));
 
 		}
 		
@@ -297,7 +331,11 @@ real32 dng_gain_map::Interpolate (int32 row,
 uint32 dng_gain_map::PutStreamSize () const
 	{
 	
-	return 44 + fPoints.v * fPoints.h * fPlanes * 4;
+	return SafeUint32Add (44,
+						  SafeUint32Mult (fPoints.v,
+										  fPoints.h,
+										  fPlanes,
+										  4));
 	
 	}
 					  
@@ -397,10 +435,24 @@ dng_gain_map * dng_gain_map::GetStream (dng_host &host,
 		mapOrigin.h	 = 0.0;
 		}
 		
+	// Downcast spacing and origin to real32 for validation. Checking the
+	// real32 downcasts ensures both the real64 originals and any subsequent
+	// real32 uses of these values are free from NaN, infinity, and
+	// underflow-to-zero problems.
+
+	real32 mapSpacingV32 = (real32) mapSpacing.v;
+	real32 mapSpacingH32 = (real32) mapSpacing.h;
+	real32 mapOriginV32  = (real32) mapOrigin.v;
+	real32 mapOriginH32  = (real32) mapOrigin.h;
+
 	if (mapPoints.v < 1 ||
 		mapPoints.h < 1 ||
-		mapSpacing.v <= 0.0 ||
-		mapSpacing.h <= 0.0 ||
+		!std::isfinite (mapSpacingV32) ||
+		!std::isfinite (mapSpacingH32) ||
+		mapSpacingV32 <= 0.0f ||
+		mapSpacingH32 <= 0.0f ||
+		!std::isfinite (mapOriginV32) ||
+		!std::isfinite (mapOriginH32) ||
 		mapPlanes < 1)
 		{
 		ThrowBadFormat ();
@@ -427,9 +479,20 @@ dng_gain_map * dng_gain_map::GetStream (dng_host &host,
 			
 			for (uint32 plane = 0; plane < mapPlanes; plane++)
 				{
-				
+
 				real32 x = stream.Get_real32 ();
-				
+
+				// CR-4208475 N-M3: reject NaN / Inf at the parser boundary so
+				// non-finite entries cannot reach downstream interpolation,
+				// Round_int32 (real32), or the writer Put path. Matches the
+				// finiteness discipline already applied to mapSpacing /
+				// mapOrigin above.
+
+				if (!std::isfinite (x))
+					{
+					ThrowBadFormat ();
+					}
+
 				map->Entry (rowIndex, colIndex, plane) = x;
 				
 				#if qDNGValidate
@@ -497,7 +560,7 @@ dng_gain_table_map::dng_gain_table_map (dng_memory_allocator &allocator,
 	,	fOrigin	 (origin)
 	,	fNumTablePoints (numTablePoints)
 	
-	,	fRowStep (fNumTablePoints * points.h)
+	,	fRowStep (SafeUint32Mult (fNumTablePoints, points.h))
 	,	fColStep (fNumTablePoints)
 
 	,	fNumSamples (SafeUint32Mult (points.h,
@@ -566,7 +629,8 @@ uint32 dng_gain_table_map::RawTableNumBytes () const
 
 	// This is a real32 table.
 
-	return fNumSamples * sizeof (real32);
+	return SafeUint32Mult (fNumSamples,
+						   static_cast<uint32> (sizeof (real32)));
 
 	}
 
@@ -588,18 +652,18 @@ uint32 dng_gain_table_map::PutStreamSize () const
 
 /*****************************************************************************/
 
-void dng_gain_table_map::AddDigest (dng_md5_printer &printer) const
+void dng_gain_table_map::AddDigest (dng_md5_printer_stream &printer) const
 	{
 
 	if (SupportsVersion1 ())
-		printer.Process ("ProfileGainTableMap", 19);
+		printer.ProcessPtr ("ProfileGainTableMap", 19);
 
 	else
-		printer.Process ("ProfileGainTableMap2", 20);
+		printer.ProcessPtr ("ProfileGainTableMap2", 20);
 		
 	EnsureFingerprint ();
 
-	printer.Process (fFingerprint.data, dng_fingerprint::kDNGFingerprintSize);
+	printer.Process (fFingerprint);
 
 	}
 
@@ -611,7 +675,7 @@ void dng_gain_table_map::EnsureFingerprint () const
 	if (fFingerprint.IsNull ())
 		{
 
-		dng_md5_printer_stream stream;
+		dng_md5_printer_le_stream stream;
 
 		PutStream (stream);
 
@@ -814,8 +878,16 @@ void dng_gain_table_map::PutStream (dng_stream &stream,
 
 dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 													dng_stream &stream,
-													const bool useVersion2)
+													const bool useVersion2,
+													uint32 tagByteCount)
 	{
+
+	const uint32 headerByteCount = useVersion2 ? 80u : 64u;
+
+	if (tagByteCount < headerByteCount)
+		{
+		ThrowBadFormat ("ProfileGainTableMap tag is truncated");
+		}
 	
 	dng_point mapPoints;
 	
@@ -854,7 +926,11 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 		gainMin  = stream.Get_real32 ();
 		gainMax  = stream.Get_real32 ();
 
-		if (gamma < kProfileGainTableMap_MinGamma ||
+		// NaN values bypass standard range comparisons (all comparisons
+		// with NaN return false). Check finiteness first.
+
+		if (!std::isfinite (gamma) ||
+			gamma < kProfileGainTableMap_MinGamma ||
 			gamma > kProfileGainTableMap_MaxGamma)
 			{
 			ThrowBadFormat ("Gamma out of range in ProfileGainTableMap2");
@@ -865,12 +941,14 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 			ThrowBadFormat ("Unsupported DataType in ProfileGainTableMap2");
 			}
 		
-		if (gainMin < kProfileGainTableMap_MinGainValue)
+		if (!std::isfinite (gainMin) ||
+			gainMin < kProfileGainTableMap_MinGainValue)
 			{
 			ThrowBadFormat ("GainMin out of range in ProfileGainTableMap2");
 			}
 		
-		if (gainMax > kProfileGainTableMap_MaxGainValue)
+		if (!std::isfinite (gainMax) ||
+			gainMax > kProfileGainTableMap_MaxGainValue)
 			{
 			ThrowBadFormat ("GainMax out of range in ProfileGainTableMap2");
 			}
@@ -927,13 +1005,53 @@ dng_gain_table_map * dng_gain_table_map::GetStream (dng_host &host,
 		mapOrigin.h	 = 0.0;
 		}
 		
+	// Downcast spacing and origin to real32 for validation. Checking the
+	// real32 downcasts ensures both the real64 originals and any subsequent
+	// real32 uses of these values are free from NaN, infinity, and
+	// underflow-to-zero problems.
+
+	real32 mapSpacingV32 = (real32) mapSpacing.v;
+	real32 mapSpacingH32 = (real32) mapSpacing.h;
+	real32 mapOriginV32  = (real32) mapOrigin.v;
+	real32 mapOriginH32  = (real32) mapOrigin.h;
+
 	if (mapPoints.v < 1 ||
 		mapPoints.h < 1 ||
-		mapSpacing.v <= 0.0 ||
-		mapSpacing.h <= 0.0 ||
+		!std::isfinite (mapSpacingV32) ||
+		!std::isfinite (mapSpacingH32) ||
+		mapSpacingV32 <= 0.0f ||
+		mapSpacingH32 <= 0.0f ||
+		!std::isfinite (mapOriginV32) ||
+		!std::isfinite (mapOriginH32) ||
 		numTablePoints < 1)
 		{
 		ThrowBadFormat ();
+		}
+
+	uint32 bytesPerEntry = 4;
+
+	if (dataType == 0)
+		{
+		bytesPerEntry = 1;
+		}
+
+	else if (dataType <= 2)
+		{
+		bytesPerEntry = 2;
+		}
+
+	const uint32 dataByteCount =
+		SafeUint32Mult ((uint32) mapPoints.v,
+						(uint32) mapPoints.h,
+						numTablePoints,
+						bytesPerEntry);
+
+	const uint32 requiredByteCount =
+		SafeUint32Add (headerByteCount, dataByteCount);
+
+	if (requiredByteCount > tagByteCount)
+		{
+		ThrowBadFormat ("ProfileGainTableMap table data is truncated");
 		}
 
 	// Read the weights.
@@ -1271,8 +1389,47 @@ dng_opcode_GainMap::dng_opcode_GainMap (dng_host &host,
 	uint32 byteCount = stream.Get_uint32 ();
 	
 	uint64 startPosition = stream.Position ();
+
+	if (startPosition > 0xFFFFFFFFFFFFFFFFull - byteCount)
+		{
+		ThrowBadFormat ("Invalid GainMap opcode byte count");
+		}
+
+	const uint64 endPosition = startPosition + byteCount;
 	
 	fAreaSpec.GetData (stream);
+
+	if (stream.Position () > endPosition ||
+		44 > endPosition - stream.Position ())
+		{
+		ThrowBadFormat ("Truncated GainMap opcode data");
+		}
+
+	const uint64 gainMapPosition = stream.Position ();
+
+	const uint32 mapPointsV = stream.Get_uint32 ();
+	const uint32 mapPointsH = stream.Get_uint32 ();
+
+	(void) stream.Get_real64 ();
+	(void) stream.Get_real64 ();
+	(void) stream.Get_real64 ();
+	(void) stream.Get_real64 ();
+
+	const uint32 mapPlanes = stream.Get_uint32 ();
+
+	const uint32 gainMapBytes =
+		SafeUint32Add (44,
+					   SafeUint32Mult (mapPointsV,
+										mapPointsH,
+										mapPlanes,
+										(uint32) sizeof (real32)));
+
+	if (gainMapBytes > endPosition - gainMapPosition)
+		{
+		ThrowBadFormat ("Invalid GainMap opcode payload size");
+		}
+
+	stream.SetReadPosition (gainMapPosition);
 	
 	fGainMap.Reset (dng_gain_map::GetStream (host, stream));
 	
@@ -1306,7 +1463,7 @@ void dng_opcode_GainMap::ProcessArea (dng_negative &negative,
 									  const dng_rect &imageBounds)
 	{
 
-	dng_rect overlap = fAreaSpec.ScaledOverlap (dstArea);
+	const dng_rect overlap = fAreaSpec.ScaledOverlap (dstArea);
 	
 	if (overlap.NotEmpty ())
 		{
@@ -1323,17 +1480,17 @@ void dng_opcode_GainMap::ProcessArea (dng_negative &negative,
 			
 			blackOffset2 = ((real32) blackLevel) / 65535.0f;
 			blackScale2	 = 1.0f - blackOffset2;
-			blackScale1	 = 1.0f / blackScale2;
+			blackScale1	 = (blackScale2 != 0.0) ? 1.0f / blackScale2 : 0.0;
 			blackOffset1 = 1.0f - blackScale1;
 			
 			}
 		
-		uint32 cols = overlap.W ();
-		
-		uint32 colPitch = fAreaSpec.ColPitch ();
-		
-		colPitch = Min_uint32 (colPitch, cols);
-		
+		const uint32 rowPitch = Min_uint32 (fAreaSpec.RowPitch (), overlap.H ());
+		const uint32 colPitch = Min_uint32 (fAreaSpec.ColPitch (), overlap.W ());
+
+		const uint32 rows = (overlap.H () + rowPitch - 1) / rowPitch;
+		const uint32 cols = (overlap.W () + colPitch - 1) / colPitch;
+
 		for (uint32 plane = fAreaSpec.Plane ();
 			 plane < fAreaSpec.Plane () + fAreaSpec.Planes () &&
 			 plane < buffer.Planes ();
@@ -1341,8 +1498,10 @@ void dng_opcode_GainMap::ProcessArea (dng_negative &negative,
 			{
 			
 			uint32 mapPlane = Min_uint32 (plane, fGainMap->Planes () - 1);
-			
-			for (int32 row = overlap.t; row < overlap.b; row += fAreaSpec.RowPitch ())
+
+			int32 row = overlap.t;
+
+			for (uint32 rowIdx = 0; rowIdx < rows; rowIdx++)
 				{
 				
 				real32 *dPtr = buffer.DirtyPixel_real32 (row, overlap.l, plane);
@@ -1355,17 +1514,19 @@ void dng_opcode_GainMap::ProcessArea (dng_negative &negative,
 			  
 				if (blackLevel != 0)
 					{
-					
-					for (uint32 col = 0; col < cols; col += colPitch)
+
+					for (uint32 colIdx = 0, col = 0; colIdx < cols; colIdx++)
 						{
 
 						dPtr [col] = dPtr [col] * blackScale1 + blackOffset1;
 								
+						col += colPitch;
+
 						}
 						
 					}
 					
-				for (uint32 col = 0; col < cols; col += colPitch)
+				for (uint32 colIdx = 0, col = 0; colIdx < cols; colIdx++)
 					{
 					
 					real32 gain = interp.Interpolate ();
@@ -1377,25 +1538,31 @@ void dng_opcode_GainMap::ProcessArea (dng_negative &negative,
 						interp.Increment ();
 						}
 					
+					col += colPitch;
+
 					}
 				
 				if (blackLevel != 0)
 					{
 					
-					for (uint32 col = 0; col < cols; col += colPitch)
+					for (uint32 colIdx = 0, col = 0; colIdx < cols; colIdx++)
 						{
 
 						dPtr [col] = dPtr [col] * blackScale2 + blackOffset2;
 							
+						col += colPitch;
+
 						}
 						
 					}
-					
-				}
+
+				row += rowPitch;
+
+				} // rows
 			
-			}
+			} // planes
 		
-		}
+		} // overlap not empty
 
 	}
 	

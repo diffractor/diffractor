@@ -523,7 +523,7 @@ static const heif_error &ojph_set_codestream_comment(encoder_struct_ojph *encode
 static const heif_error &ojph_set_tile_size(encoder_struct_ojph *encoder, const char *value)
 {
   std::string valueStr(value);
-  size_t commaOffset = valueStr.find(",");
+  size_t commaOffset = valueStr.find(',');
   if (commaOffset == std::string::npos) {
     return heif_error_invalid_parameter_value;
   }
@@ -594,7 +594,7 @@ static const int log_base_2(unsigned long v)
 static const heif_error &ojph_set_block_dimensions(encoder_struct_ojph *encoder, const char *value)
 {
   std::string valueStr(value);
-  size_t commaOffset = valueStr.find(",");
+  size_t commaOffset = valueStr.find(',');
   if (commaOffset == std::string::npos) {
     return heif_error_invalid_parameter_value;
   }
@@ -809,12 +809,21 @@ heif_error ojph_encode_image(void *encoder_raw, const heif_image *image, heif_im
     size_t stride;
     const uint8_t *data = heif_image_get_plane_readonly2(image, sourceChannel, &stride);
     uint32_t component_height = heif_image_get_height(image, sourceChannel);
+    int bit_depth = heif_image_get_bits_per_pixel_range(image, sourceChannel);
     for (uint32_t y = 0; y < component_height; y++) {
-      const uint8_t *sourceLine = data + y * stride;
       size_t outputWidth = cur_line->size;
       ojph::si32 *targetLine = cur_line->i32;
-      for (uint32_t x = 0; x < outputWidth; x++) {
-        targetLine[x] = sourceLine[x];
+      if (bit_depth > 8) {
+        const uint16_t *sourceLine = (const uint16_t*) (data + y * stride);
+        for (uint32_t x = 0; x < outputWidth; x++) {
+          targetLine[x] = sourceLine[x];
+        }
+      }
+      else {
+        const uint8_t *sourceLine = data + y * stride;
+        for (uint32_t x = 0; x < outputWidth; x++) {
+          targetLine[x] = sourceLine[x];
+        }
       }
       cur_line = encoder->codestream.exchange(cur_line, next_comp);
     }

@@ -59,6 +59,8 @@ class dng_info: private dng_uncopyable
 			
 		int32 fEnhancedIndex;
 
+		int32 fGainMapIndex = -1;			 // ISO 21496-1 Gain Map.
+
 		std::vector<uint32> fSemanticMaskIndices;
 		
 		std::vector <dng_ifd *> fIFD;

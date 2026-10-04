@@ -278,7 +278,7 @@ class dng_metadata
 		
 		bool fXMPisNewer;
 		
-		// Source file mimi-type, if known.
+		// Source file mime-type, if known.
 		
 		dng_string fSourceMIME;
 		
@@ -1081,7 +1081,7 @@ class dng_negative
 			
 		/// Getter for metadata
 			
-		dng_metadata &Metadata ()
+		dng_metadata & Metadata ()
 			{
 			return fMetadata;
 			}
@@ -1123,7 +1123,7 @@ class dng_negative
 		
 		#if qMetadataOnConst
 			
-		const dng_metadata &Metadata () const
+		const dng_metadata & Metadata () const
 			{
 			return fMetadata;
 			}
@@ -1540,7 +1540,7 @@ class dng_negative
 		
 		/// Default cropped image aspect ratio.
 		
-		real64 AspectRatio () const
+		real64 BaseAspectRatio () const
 			{
 			return SquareWidth	() /
 				   SquareHeight ();
@@ -2128,7 +2128,8 @@ class dng_negative
 		// Returns the camera profile to embed when saving to DNG.
 		
 		bool GetProfileToEmbed (const dng_metadata &metadata,
-								dng_camera_profile &foundProfile) const;
+								dng_camera_profile &foundProfile,
+								bool skipAdobeStandard = false) const;
 		
 		// API for AsShotProfileName.
 			
@@ -2464,13 +2465,18 @@ class dng_negative
 			
 		#endif	// qDNGUseXMP
 		
-		// API for source MIME type.
+		// Routines to set and get the source file MIME type.
 		
 		void SetSourceMIME (const char *s)
 			{
 			Metadata ().SetSourceMIME (s);
 			}
 		
+		const dng_string & SourceMIME () const
+			{
+			return fMetadata.SourceMIME ();
+			}
+
 		// API for linearization information:
 			
 		const dng_linearization_info * GetLinearizationInfo () const
@@ -2698,6 +2704,13 @@ class dng_negative
 		// Returns the raw image data.
 		
 		const dng_image & RawImage () const;
+		
+		// Clears any saved raw image.
+		
+		void ClearRawImage ()
+			{
+			fRawImage.Reset ();
+			}
   
 		// Returns the raw image black level in 16-bit space.
 		
@@ -3139,7 +3152,8 @@ class dng_negative
 		
 		virtual bool GetProfileToEmbedFromList (const dng_profile_metadata_list &list,
 												const dng_metadata &metadata,
-												dng_camera_profile &foundProfile) const;
+												dng_camera_profile &foundProfile,
+												bool skipAdobeStandard = false) const;
 
 		void CompressTransparencyMaskJXL (dng_host &host,
 										  dng_image_writer &writer,

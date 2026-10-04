@@ -302,7 +302,7 @@ void Box_avcC::append_pps_nal(const uint8_t* data, size_t size)
   m_pps.emplace_back(std::move(vec));
 }
 
-void skip_scaling_list(BitReader& reader, int sizeOfScalingList)
+static bool skip_scaling_list(BitReader& reader, int sizeOfScalingList)
 {
   int lastScale = 8;
   int nextScale = 8;
@@ -314,8 +314,10 @@ void skip_scaling_list(BitReader& reader, int sizeOfScalingList)
   // original version
   for (int j = 0; j < sizeOfScalingList; j++) {
     if (nextScale != 0) {
-      int delta_scale;
-      reader.get_svlc(&delta_scale);
+      int32_t delta_scale;
+      if (!reader.get_svlc(&delta_scale)) {
+        return false;
+      }
       nextScale = (lastScale + delta_scale + 256) % 256;
     }
 
@@ -325,7 +327,9 @@ void skip_scaling_list(BitReader& reader, int sizeOfScalingList)
   // fast version
   for (int j = 0; j < sizeOfScalingList; j++) {
     int32_t delta_scale;
-    reader.get_svlc(&delta_scale);
+    if (!reader.get_svlc(&delta_scale)) {
+      return false;
+    }
     nextScale = (lastScale + delta_scale + 256) % 256;
 
     if (nextScale == 0) {
@@ -335,6 +339,8 @@ void skip_scaling_list(BitReader& reader, int sizeOfScalingList)
     lastScale = nextScale;
   }
 #endif
+
+  return true;
 }
 
 
@@ -371,12 +377,20 @@ Error parse_sps_for_avcC_configuration(const uint8_t* sps, size_t size,
   uint32_t value;
   if (!reader.get_uvlc(&value)) { return invalidUVLC; } // SPS ID
 
-  if (std::set<int>{100, 110, 122, 244, 44, 83, 86}.contains(config->AVCProfileIndication)) {
+  if (std::set<int>{100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135}.contains(config->AVCProfileIndication)) {
     if (!reader.get_uvlc(&value)) {
       return invalidUVLC;
     }
 
-    config->chroma_format = (heif_chroma) value;
+    if (value > heif_chroma_444) {
+      return {
+        heif_error_Invalid_input,
+        heif_suberror_Unspecified,
+        "Invalid chroma format in AVC SPS header"
+      };
+    }
+
+    config->chroma_format = static_cast<heif_chroma>(value);
     if (config->chroma_format == heif_chroma_444) {
       reader.skip_bits(1);
     }
@@ -397,11 +411,8 @@ Error parse_sps_for_avcC_configuration(const uint8_t* sps, size_t size,
       for (int i = 0; i < ((config->chroma_format != heif_chroma_444) ? 8 : 12); i++) {
         int scaling_list_present_flag = reader.get_bits(1);
         if (scaling_list_present_flag) {
-          if (i < 6) {
-            skip_scaling_list(reader, 16);
-          }
-          else {
-            skip_scaling_list(reader, 64);
+          if (!skip_scaling_list(reader, i < 6 ? 16 : 64)) {
+            return invalidUVLC;
           }
         }
       }
@@ -435,32 +446,37 @@ Error parse_sps_for_avcC_configuration(const uint8_t* sps, size_t size,
   reader.skip_bits(1);
 
   uint32_t pic_width_in_mbs_minus1;
-  uint32_t pic_height_in_mbs_minus1;
+  uint32_t pic_height_in_map_units_minus1;
   if (!reader.get_uvlc(&pic_width_in_mbs_minus1) ||
-      !reader.get_uvlc(&pic_height_in_mbs_minus1)) {
+      !reader.get_uvlc(&pic_height_in_map_units_minus1)) {
     return invalidUVLC;
   }
 
-  if (pic_width_in_mbs_minus1 > (UINT32_MAX / 16) - 1 ||
-      pic_height_in_mbs_minus1 > (UINT32_MAX / 16) - 1) {
+  uint32_t frame_mbs_only_flag = reader.get_bits(1);
+  if (!frame_mbs_only_flag) {
+    reader.skip_bits(1); // mb_adaptive_frame_field_flag
+  }
+  reader.skip_bits(1); // direct_8x8_inference_flag
+
+  // for interlaced content, a map unit covers two macroblock rows
+
+  uint64_t width64 = (static_cast<uint64_t>(pic_width_in_mbs_minus1) + 1) * 16;
+  uint64_t height64 = (static_cast<uint64_t>(pic_height_in_map_units_minus1) + 1) * 16 * (2 - frame_mbs_only_flag);
+
+  if (width64 > UINT32_MAX || height64 > UINT32_MAX) {
     return {heif_error_Invalid_input,
             heif_suberror_Invalid_image_size,
             "AVC SPS image size too large"};
   }
 
-  *width = (pic_width_in_mbs_minus1 + 1) * 16;
-  *height = (pic_height_in_mbs_minus1 + 1) * 16;
+  *width = static_cast<uint32_t>(width64);
+  *height = static_cast<uint32_t>(height64);
 
   if (coded_size) {
     coded_size->width = *width;
     coded_size->height = *height;
   }
 
-  uint32_t frame_mbs_only_flag = reader.get_bits(1);
-  if (!frame_mbs_only_flag) {
-    reader.skip_bits(1);
-  }
-  reader.skip_bits(1);
   uint32_t frame_cropping_flag = reader.get_bits(1);
   if (frame_cropping_flag) {
     uint32_t left, right, top, bottom;
@@ -471,9 +487,16 @@ Error parse_sps_for_avcC_configuration(const uint8_t* sps, size_t size,
       return invalidUVLC;
     }
 
-    uint64_t crop_horizontal = static_cast<uint64_t>(left) + right;
-    uint64_t crop_vertical = static_cast<uint64_t>(top) + bottom;
-    if (crop_horizontal > *width || crop_vertical > *height) {
+    // The crop offsets are not in luma samples, but in crop units, which depend on the
+    // chroma format and the frame_mbs_only_flag (CropUnitX/CropUnitY, H.264 7.4.2.1.1).
+
+    uint32_t crop_unit_x = (config->chroma_format == heif_chroma_420 ||
+                            config->chroma_format == heif_chroma_422) ? 2 : 1;
+    uint32_t crop_unit_y = ((config->chroma_format == heif_chroma_420) ? 2 : 1) * (2 - frame_mbs_only_flag);
+
+    uint64_t crop_horizontal = (static_cast<uint64_t>(left) + right) * crop_unit_x;
+    uint64_t crop_vertical = (static_cast<uint64_t>(top) + bottom) * crop_unit_y;
+    if (crop_horizontal >= *width || crop_vertical >= *height) {
       return {heif_error_Invalid_input,
               heif_suberror_Invalid_image_size,
               "AVC SPS cropping exceeds image size"};

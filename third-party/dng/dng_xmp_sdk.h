@@ -29,6 +29,7 @@ extern const char *XMP_NS_PHOTOSHOP;
 extern const char *XMP_NS_XAP;
 extern const char *XMP_NS_XAP_RIGHTS;
 extern const char *XMP_NS_DC;
+extern const char *XMP_NS_DC_TERMS;
 extern const char *XMP_NS_XMP_NOTE;
 extern const char *XMP_NS_MM;
 
@@ -36,6 +37,10 @@ extern const char *XMP_NS_CRS;
 extern const char *XMP_NS_CRSS;
 extern const char *XMP_NS_CRD;
 extern const char *XMP_NS_CRLCP;
+extern const char *XMP_NS_CRGI;
+extern const char *XMP_NS_CRVC;
+
+extern const char *XMP_NS_VFS;
 
 extern const char *XMP_NS_LR;
 
@@ -45,6 +50,8 @@ extern const char *XMP_NS_AUX;
 
 extern const char *XMP_NS_IPTC;
 extern const char *XMP_NS_IPTC_EXT;
+
+extern const char *XMP_NS_PLUS;
 
 extern const char *XMP_NS_CRX;
 

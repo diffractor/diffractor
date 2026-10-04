@@ -64,6 +64,21 @@ void dng_spline_solver::Solve ()
 	int32 count = (int32) X.size ();
 	
 	DNG_REQUIRE (count >= 2, "Too few points");
+
+	// CR-4208475 M-M6: Spline construction below divides by per-segment
+	// X spacings (A = X[start+1] - X[start], C = X[j] - X[j-1], and
+	// later (X[j+1] - X[j-1]) * 2). Each of these requires strictly
+	// increasing knots; otherwise we silently produce NaN/Inf in S[].
+	// Reject any degenerate or out-of-order knot here so callers fail
+	// fast on bad input instead of corrupting the spline state.
+
+	for (int32 k = 1; k < count; ++k)
+		{
+
+		DNG_REQUIRE (X [k] > X [k - 1],
+					 "Spline knots must be strictly increasing");
+
+		}
 	
 	int32 start = 0;
 	int32 end	= count;

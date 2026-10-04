@@ -52,8 +52,17 @@ void dng_ref_counted_block::Allocate (uint32 size)
 	
 	if (size)
 		{
-		
-		fBuffer = malloc (size + sizeof (header));
+
+		size_t mallocSize = size + sizeof (header);
+
+		if (mallocSize <= size)
+			{
+
+			ThrowOverflow ();
+
+			}
+
+		fBuffer = malloc (mallocSize);
 		
 		if (!fBuffer)
 			{
@@ -173,15 +182,19 @@ void dng_ref_counted_block::EnsureWriteable ()
 			if (possiblySharedHeader->fRefCount > 1)
 				{
 
-				fBuffer = NULL;
+				uint32 copySize = (uint32) possiblySharedHeader->fSize;
 
-				Allocate ((uint32)possiblySharedHeader->fSize);
-
-				memcpy (Buffer (),
-					((char *)possiblySharedHeader) + sizeof (struct header), // could just do + 1 w/o cast, but this makes the type mixing more explicit
-					possiblySharedHeader->fSize);
+				const void *srcData =
+					((const char *) possiblySharedHeader) +
+					sizeof (struct header);
 
 				possiblySharedHeader->fRefCount--;
+
+				fBuffer = NULL;
+
+				Allocate (copySize);
+
+				memcpy (Buffer (), srcData, copySize);
 
 				}
 

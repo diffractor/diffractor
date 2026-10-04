@@ -76,7 +76,7 @@ dng_preview_tag_set::dng_preview_tag_set (dng_tiff_directory &directory,
 	,	fSettingsDigest (preview.fInfo.fSettingsDigest)
 	
 	,	fSettingsDigestTag (tcPreviewSettingsDigest,
-							fSettingsDigest.data,
+							fSettingsDigest.Data (),
 							16)
 							
 	,	fColorSpaceTag (tcPreviewColorSpace,
@@ -582,7 +582,12 @@ dng_raw_preview_tag_set::dng_raw_preview_tag_set (dng_tiff_directory &directory,
 						preview.SamplesPerPixel ())
 						
 	{
-									 
+
+	if (preview.SamplesPerPixel () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	if (preview.fOpcodeList2Data.Get ())
 		{
 		
@@ -763,6 +768,78 @@ dng_basic_tag_set * dng_raw_preview::AddTagSet (dng_host & /* host */,
 	
 	}
 		
+/*****************************************************************************/
+/*****************************************************************************/
+/*****************************************************************************/
+
+class dng_hdr_gain_map_preview_tag_set: public dng_preview_tag_set
+	{
+	
+	private:
+	
+		tag_data_ptr fGainMapMetadataTag;
+		
+	public:
+	
+		dng_hdr_gain_map_preview_tag_set (dng_tiff_directory &directory,
+										  const dng_hdr_gain_map_preview &preview,
+										  const dng_ifd &ifd)
+
+			:	dng_preview_tag_set (directory, preview, ifd)
+
+			,	fGainMapMetadataTag (tcGainMapMetadata_ISO_21496_1,
+									 ttUndefined, // type
+									 0,			  // count
+									 nullptr)	  // data
+		
+			{
+
+			if (preview.fGainMapMetadata)
+				{
+
+				const auto &block = *preview.fGainMapMetadata;
+
+				auto &tag = fGainMapMetadataTag;
+				
+				tag.SetData	 (block.Buffer		());
+				tag.SetCount (block.LogicalSize ());
+
+				directory.Add (&tag);
+				
+				}
+
+			}
+		
+	};
+
+/*****************************************************************************/
+
+void dng_hdr_gain_map_preview::SetIFDInfo (dng_host &host,
+										   const dng_image &image)
+	{
+	
+	dng_raw_preview::SetIFDInfo (host, image);
+	
+	fIFD.fNewSubFileType = sfPreviewGainMap;
+	
+	fIFD.fPhotometricInterpretation = piGainMap;
+	
+	}
+		
+/*****************************************************************************/
+
+dng_basic_tag_set * dng_hdr_gain_map_preview::AddTagSet (dng_host & /* host */,
+														 dng_tiff_directory &directory) const
+	{
+	
+	return new dng_hdr_gain_map_preview_tag_set (directory,
+												 *this,
+												 fIFD);
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 void dng_mask_preview::SetIFDInfo (dng_host &host,

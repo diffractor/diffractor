@@ -35,7 +35,12 @@ dng_memory_stream::dng_memory_stream (dng_memory_allocator &allocator,
 	,	fLengthLimit (0)
 	
 	{
-	
+
+	if (fPageSize == 0)
+		{
+		ThrowProgramError ("Invalid dng_memory_stream page size");
+		}
+
 	}
 		
 /*****************************************************************************/
@@ -56,9 +61,17 @@ dng_memory_stream::~dng_memory_stream ()
 		free (fPageList);
 		
 		}
-	
+
+	#if qDNGStreamCheckForUnflushedStreams
+
+	// Clear fBufferDirty. This class allows stream to be destructed UNFLUSHED.
+
+	DestructionOfUnflushedInstancesIsAllowed ();
+
+	#endif
+
 	}
-		
+
 /*****************************************************************************/
 		
 uint64 dng_memory_stream::DoGetLength ()
@@ -75,7 +88,8 @@ void dng_memory_stream::DoRead (void *data,
 								uint64 offset)
 	{
 	
-	if (offset + count > fMemoryStreamLength)
+	if (count > fMemoryStreamLength ||
+		offset > fMemoryStreamLength - count)
 		{
 		
 		ThrowEndOfFile ();
@@ -90,6 +104,11 @@ void dng_memory_stream::DoRead (void *data,
 		uint32 pageIndex  = (uint32) (offset / fPageSize);
 		uint32 pageOffset = (uint32) (offset % fPageSize);
 		
+		if (pageIndex >= fPageCount)
+			{
+			ThrowProgramError ("Bad pageIndex in DoRead");
+			}
+
 		uint32 blockCount = Min_uint32 (fPageSize - pageOffset, count);
 		
 		const uint8 *sPtr = fPageList [pageIndex]->Buffer_uint8 () +
@@ -120,8 +139,25 @@ void dng_memory_stream::DoSetLength (uint64 length)
 						 true);
 		
 		}
+
+	uint32 requiredPageCount = 0;
+
+	if (length > 0)
+		{
+
+		const uint64 requiredPageCount64 = ((length - 1) /
+											(uint64) fPageSize) + 1;
+
+		if (requiredPageCount64 > 0xFFFFFFFFull)
+			{
+			ThrowOverflow ("Too many pages in DoSetLength");
+			}
+
+		requiredPageCount = (uint32) requiredPageCount64;
+
+		}
 	
-	while (length > fPageCount * (uint64) fPageSize)
+	while (fPageCount < requiredPageCount)
 		{
 		
 		if (fPageCount == fPagesAllocated)
@@ -201,6 +237,11 @@ void dng_memory_stream::DoWrite (const void *data,
 								 uint64 offset)
 	{
 	
+	if (offset > 0xFFFFFFFFFFFFFFFFull - count)
+		{
+		ThrowProgramError ("DoWrite offset+count overflow");
+		}
+
 	DoSetLength (Max_uint64 (fMemoryStreamLength,
 							 offset + count));
 	
@@ -211,7 +252,12 @@ void dng_memory_stream::DoWrite (const void *data,
 		
 		uint32 pageIndex  = (uint32) (offset / fPageSize);
 		uint32 pageOffset = (uint32) (offset % fPageSize);
-		
+
+		if (pageIndex >= fPageCount)
+			{
+			ThrowProgramError ("Bad pageIndex in DoWrite");
+			}
+
 		uint32 blockCount = Min_uint32 (fPageSize - pageOffset, count);
 		
 		const uint8 *sPtr = ((const uint8 *) data) + (uint32) (offset - baseOffset);
@@ -248,7 +294,7 @@ void dng_memory_stream::CopyToStream (dng_stream &dstStream,
 		
 		uint64 offset = Position ();
 		
-		if (offset + count > Length ())
+		if (count > Length () || offset > Length () - count)
 			{
 			
 			ThrowEndOfFile ();
@@ -260,7 +306,12 @@ void dng_memory_stream::CopyToStream (dng_stream &dstStream,
 			
 			uint32 pageIndex  = (uint32) (offset / fPageSize);
 			uint32 pageOffset = (uint32) (offset % fPageSize);
-			
+
+			if (pageIndex >= fPageCount)
+				{
+				ThrowProgramError ("Bad pageIndex in CopyToStream");
+				}
+
 			uint32 blockCount = (uint32) Min_uint64 (fPageSize - pageOffset, count);
 			
 			const uint8 *sPtr = fPageList [pageIndex]->Buffer_uint8 () +

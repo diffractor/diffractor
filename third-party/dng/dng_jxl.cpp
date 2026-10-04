@@ -31,6 +31,7 @@
 #include "dng_negative.h"
 #include "dng_parse_utils.h"
 #include "dng_pixel_buffer.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_codes.h"
 #include "dng_utils.h"
 #include "dng_xmp.h"
@@ -38,10 +39,7 @@
 
 #include <atomic>
 #include <memory>
-
-/*****************************************************************************/
-
-#define qLogJXL (qDNGValidate && 0)
+#include <unordered_map>
 
 /*****************************************************************************/
 
@@ -80,7 +78,23 @@ class jxl_memory_block
 
 				// See dng_memory_block::PhysicalSize.
 
-				fPhysicalBuffer = allocator.Malloc (160u + bytesNeeded);
+				size_t mallocSize = (size_t) (160u + bytesNeeded);
+
+				if (mallocSize <= bytesNeeded)
+					{
+
+					ThrowOverflow ();
+
+					}
+
+				fPhysicalBuffer = allocator.Malloc (mallocSize);
+
+				if (!fPhysicalBuffer)
+					{
+
+					ThrowMemoryFull ();
+
+					}
 
 				fLogicalBuffer = (void *) DNG_ALIGN_SIMD (fPhysicalBuffer);
 
@@ -316,7 +330,7 @@ static void CheckResult (JxlEncoderStatus status,
 
 /*****************************************************************************/
 
-static void * dng_jxl_alloc (void *opaque, size_t size)
+static void * dng_jxl_alloc (void *opaque, size_t size) // TODO(erichan): instrument
 	{
 
 	#if 0
@@ -494,6 +508,14 @@ class dng_jxl_io_buffer
 						size_t remaining)
 			{
 
+			if (stream.Position () > stream.Length () ||
+				fIndex > fMaxBufferSize				 ||
+				fDataSize > fMaxBufferSize			 ||
+				remaining > fDataSize)
+				{
+				ThrowBadFormat ("Invalid JXL IO buffer state");
+				}
+
 			size_t bytes_remaining_in_stream =
 				(size_t) (stream.Length () - stream.Position ());
 
@@ -519,22 +541,46 @@ class dng_jxl_io_buffer
 
 			// Update our pointer past the previously-consumed bytes.
 
+			if (prev_read_size > fMaxBufferSize - fIndex)
+				{
+				ThrowBadFormat ("Invalid JXL IO buffer state");
+				}
+
 			fIndex += prev_read_size;
 
-			// If reading the next chunk would spill beyond the end of our
-			// buffer, then reset to the beginning of our buffer. We need to
-			// move the remaining data. If our internal buffer is much larger
-			// than the chunk size, then this will be relatively rare.
+			if (remaining > fMaxBufferSize - fIndex)
+				{
+				ThrowBadFormat ("Invalid JXL IO buffer state");
+				}
 
-			if (fIndex + next_read_size > fMaxBufferSize)
+			// If reading the next chunk would spill beyond the end of our
+			// buffer, then reset to the beginning of our buffer. We need to move
+			// the remaining data. If our internal buffer is much larger than the
+			// chunk size, then this will be relatively rare.
+
+			size_t bytes_available_in_buffer = fMaxBufferSize - fIndex - remaining;
+
+			if (next_read_size > bytes_available_in_buffer && fIndex != 0)
 				{
 
 				memmove (fBlock->Buffer (),
 						 fBlock->Buffer_uint8 () + fIndex,
 						 remaining);
-						 
+
 				fIndex = 0;
-				
+
+				bytes_available_in_buffer = fMaxBufferSize - remaining;
+
+				}
+
+			if (next_read_size > bytes_available_in_buffer)
+				{
+				next_read_size = bytes_available_in_buffer;
+				}
+
+			if (next_read_size == 0)
+				{
+				ThrowBadFormat ("JXL decoder retained too much input");
 				}
 
 			// Read from the stream.
@@ -572,55 +618,738 @@ static void EnsureUseBoxes (JxlEncoder *enc,
 
 /*****************************************************************************/
 
-// Move to operator== ?
+#ifndef qLogStreamOutput
+#define qLogStreamOutput (qDNGValidate && 0)
+#endif
 
-static bool SamePixelBufferGeometry (const dng_pixel_buffer &a,
-									 const dng_pixel_buffer &b)
+#ifndef qLogStreamIntput
+#define qLogStreamIntput (qDNGValidate && 0)
+#endif
+
+/*****************************************************************************/
+
+// Simple output processor that writes all of the data to a single internal
+// byte stream (fOutput).
+
+class jxl_data_writer
+	{
+
+	public:
+
+		dng_host &fHost;
+
+		size_t fPosition = 0ULL;
+		
+		size_t fFinalizedPosition = 0ULL;
+
+		std::vector<uint8> fOutput;
+		
+	public:
+
+		jxl_data_writer (dng_host &host)
+			:	fHost (host)
+			{
+			}
+
+		void * get_buffer (size_t *size)
+			{
+
+			if (!size)
+				return nullptr;
+
+			if (*size == 0)
+				return nullptr;
+
+			// Deal with cancellation.
+
+			try
+				{
+				fHost.SniffForAbort ();
+				}
+
+			catch (...)
+				{
+				*size = 0;
+				return nullptr;
+				}
+
+			#if qLogStreamOutput
+
+			printf ("output: get_buffer (size %d)\n",
+					int (*size));
+
+			#endif
+
+			if (fPosition + *size > fOutput.size ())
+				fOutput.resize (fPosition + *size, 0xDA);
+			
+			*size = fOutput.size () - fPosition;
+
+			return fOutput.data () + fPosition;
+
+			}
+
+		void release_buffer (size_t written_bytes)
+			{
+
+			#if qLogStreamOutput
+			
+			printf ("output: release_buffer (wb=%d)\n",
+					int (written_bytes));
+
+			#endif
+
+			fPosition += written_bytes;
+			
+			}
+
+		void seek (size_t position)
+			{
+
+			#if qLogStreamOutput
+			
+			printf ("output: seek (pos=%d)\n",
+					int (position));
+
+			#endif
+			
+			fPosition = position;
+			
+			}
+
+		void set_finalized_position (size_t finalized_position)
+			{
+			
+			#if qLogStreamOutput
+			
+			printf ("output: set_finalized_position (pos=%d)\n",
+					int (finalized_position));
+			
+			#endif
+			
+			fFinalizedPosition = finalized_position;
+			
+			}
+		
+	};
+
+/*****************************************************************************/
+
+// Output processor that doesn't support arbitrary seeking but can write
+// smaller chunks to the given output stream in-sequence.
+
+class jxl_data_writer2
+	{
+
+	private:
+
+		static constexpr size_t kMaxSize = 1073741824;
+
+		dng_host &fHost;
+
+		dng_stream &fStream;
+
+		AutoPtr<dng_memory_block> fBlock;
+
+		size_t fBufferSize = 0ULL;
+
+		size_t fPosition = 0ULL;
+
+		size_t fFinalizedPosition = 0ULL;
+
+		size_t fStartPosition = 0ULL;
+
+	public:
+
+		jxl_data_writer2 (dng_host &host,
+						  dng_stream &stream)
+			:	fHost (host)
+			,	fStream (stream)
+			{
+			}
+
+		void * get_buffer (size_t *size)
+			{
+
+			if (!size)
+				return nullptr;
+
+			if (*size == 0)
+				return nullptr;
+
+			// Deal with cancellation.
+
+			try
+				{
+				fHost.SniffForAbort ();
+				}
+
+			catch (...)
+				{
+				*size = 0;
+				return nullptr;
+				}
+
+			#if qLogStreamOutput
+
+			printf ("output: get_buffer (size %d)\n",
+					int (*size));
+
+			#endif
+
+			if ((*size) > kMaxSize)
+				{
+				*size = 0;
+				return nullptr;
+				}
+
+			const uint32 requestedBytes = uint32 (*size);
+
+			if (!fBlock.Get () ||
+				(fBlock->LogicalSize () < requestedBytes))
+				{
+
+				// Round up to 1 MB.
+				
+				const uint32 roundedBytes = ((requestedBytes + 1048575) & uint32 (~1048575));
+
+				fBlock.Reset (fHost.Allocate (roundedBytes));
+				
+				}
+
+			fStartPosition = fPosition;
+
+			fBufferSize = (size_t) fBlock->LogicalSize ();
+
+			*size = fBufferSize;
+
+			return fBlock->Buffer ();
+
+			}
+
+		void release_buffer (size_t written_bytes)
+			{
+
+			#if qLogStreamOutput
+			
+			printf ("output: release_buffer (wb=%d)\n",
+					int (written_bytes));
+
+			#endif
+
+			if (written_bytes > fBufferSize)
+				{
+				ThrowBadFormat ("Invalid JXL output buffer state");
+				}
+
+			if (written_bytes > size_t (-1) - fPosition)
+				{
+				ThrowOverflow ("JXL output position overflow");
+				}
+
+			fPosition += written_bytes;
+
+			}
+		
+		void set_finalized_position (size_t finalized_position)
+			{
+
+			#if qLogStreamOutput
+			
+			printf ("output: set_finalized_position (sp=%d, pos=%d)\n",
+					int (fStartPosition),
+					int (finalized_position));
+
+			#endif
+
+			fFinalizedPosition = finalized_position;
+
+			if (finalized_position < fStartPosition)
+				{
+				ThrowBadFormat ("Invalid JXL finalized position");
+				}
+
+			size_t finalizedBytes = finalized_position - fStartPosition;
+
+			if (finalizedBytes > fBufferSize)
+				{
+				ThrowBadFormat ("Invalid JXL finalized byte count");
+				}
+
+			if (finalizedBytes > 0)
+				{
+
+				fStream.Put (fBlock->Buffer (),
+							 uint32 (finalizedBytes));
+
+				}
+			
+			fStartPosition = finalized_position;
+			
+			}
+
+	};
+
+/*****************************************************************************/
+
+static void * jxl_output_get_buffer (void *opaque,
+									 size_t *size)
 	{
 	
-	if (a.fArea		 != b.fArea)
-		return false;
+	auto writer = (jxl_data_writer2 *) opaque;
 
-	if (a.fPlane	 != b.fPlane ||
-		a.fPlanes	 != b.fPlanes)
-		return false;
-		
-	if (a.fRowStep	 != b.fRowStep	 ||
-		a.fColStep	 != b.fColStep	 ||
-		a.fPlaneStep != b.fPlaneStep)
-		return false;
-		
-	if (a.fPixelType != b.fPixelType   ||
-		a.fPixelSize != b.fPixelSize)
-		return false;
+	if (!writer)
+		{
+		*size = 0;
+		return nullptr;
+		}
 
-	// Ignore the fData and fDirty fields.
-
-	return true;
+	return writer->get_buffer (size);
 	
 	}
 
 /*****************************************************************************/
 
-static void EncodeJXL (dng_host &host,
-					   dng_stream &stream,
-					   const dng_pixel_buffer &inBuffer,
-					   const dng_jxl_encode_settings &settings,
-					   const bool useContainer,
-					   const dng_jxl_color_space_info &colorSpaceInfo,
-					   const dng_metadata *metadata,
-					   const bool includeExif,
-					   const bool includeXMP,
-					   const bool includeIPTC,
-					   const dng_bmff_box_list *additionalBoxes)
+static void jxl_output_release_buffer (void *opaque,
+									   size_t written_bytes)
+	{
+	
+	auto writer = (jxl_data_writer2 *) opaque;
+
+	if (writer)
+		writer->release_buffer (written_bytes);
+		
+	}
+
+/*****************************************************************************/
+
+static void output_set_finalized_position (void *opaque,
+										   uint64_t finalized_position)
+	{
+	
+	auto writer = (jxl_data_writer2 *) opaque;
+
+	if (writer)
+		writer->set_finalized_position (size_t (finalized_position));
+	
+	}
+
+/*****************************************************************************/
+
+class jxl_image_chunk_reader
 	{
 
-	#if qDNGValidate && 0
-	dng_timer timerOuter ("EncodeJXL");
-	#endif
+	private:
 
-	dng_pixel_buffer buffer = inBuffer;
+		dng_host &fHost;
 
+		const dng_image &fImage;
+
+		JxlPixelFormat fPixelFormat;
+
+		std::mutex fMutex;
+
+		std::unordered_map<const void *,
+						   std::shared_ptr<dng_memory_block> > fTable;
+
+	public:
+
+		jxl_image_chunk_reader (dng_host &host,
+								const dng_image &srcImage,
+								const JxlPixelFormat &pixelFormat)
+			:	fHost (host)
+			,	fImage (srcImage)
+			,	fPixelFormat (pixelFormat)
+			{
+			}
+
+		void get_color_channels_pixel_format (JxlPixelFormat *pixel_format)
+			{
+			if (pixel_format)
+				*pixel_format = fPixelFormat;
+			}
+		
+		const void * get_color_channel_data_at (size_t xpos,
+												size_t ypos,
+												size_t xsize,
+												size_t ysize,
+												size_t *row_offset)
+			{
+
+			#if qLogStreamIntput
+
+			printf ("input: get_color_channel_data_at (x=%zu, y=%zu, w=%zu, h=%zu)\n",
+					xpos,
+					ypos,
+					xsize,
+					ysize);
+
+			#endif
+
+			if (xpos  > 0x7fffffff ||
+				ypos  > 0x7fffffff ||
+				xsize > 0x7fffffff ||
+				ysize > 0x7fffffff)
+				{
+
+				ThrowOverflow ("coordinate too large");
+
+				}
+
+			dng_pixel_buffer buffer;
+
+			buffer.fArea.t = int32 (ypos);
+			buffer.fArea.l = int32 (xpos);
+			buffer.fArea.b = SafeInt32Add (int32 (ypos), int32 (ysize));
+			buffer.fArea.r = SafeInt32Add (int32 (xpos), int32 (xsize));
+
+			buffer.fPlanes = fImage.Planes ();
+
+			// Assume row-col-plane interleaved.
+
+			DNG_REQUIRE (buffer.fPlanes    <= 0x7fffffff, "planes too large");
+			DNG_REQUIRE (buffer.fArea.W () <= 0x7fffffff, "buffer too wide");
+
+			buffer.fPlaneStep = 1;
+			buffer.fColStep	  = buffer.fPlanes;
+			buffer.fRowStep	  = SafeInt32Mult (buffer.fPlanes,
+											   buffer.fArea.W ());
+
+			buffer.fPixelType = fImage.PixelType ();
+			buffer.fPixelSize = TagTypeSize (buffer.fPixelType);
+
+			const uint32 bytesNeeded = SafeUint32Mult (buffer.fRowStep,
+													   buffer.fArea.H (),
+													   buffer.fPixelSize);
+
+			std::shared_ptr<dng_memory_block> block (fHost.Allocate (bytesNeeded));
+			
+			buffer.fData = block->Buffer ();
+
+			const void *ptr = buffer.fData;
+
+			// Fetch the image.
+
+			fImage.Get (buffer);
+
+			// Store the row stride.
+
+			if (row_offset)
+				{
+				
+				*row_offset = (size_t) SafeUint32Mult ((uint32) buffer.fRowStep, buffer.fPixelSize);
+				
+				}
+
+			// Remember the allocation in our table.
+			
+				{
+				std::lock_guard<std::mutex> lock (fMutex);
+				fTable.insert
+					(std::pair<const void *, std::shared_ptr<dng_memory_block> >
+						 (ptr,
+						  block));
+				}
+
+			return ptr;
+
+			}
+
+		void release_buffer (const void *buf)
+			{
+
+			#if qLogStreamIntput
+
+			printf ("input: release (%llu)\n",
+					(unsigned long long) (buf));
+
+			#endif	// qLogStreamIntput
+			
+			// Remove it from our table.
+
+				{
+				std::lock_guard<std::mutex> lock (fMutex);
+				fTable.erase (buf);
+				}
+
+			}
+
+	public:
+
+		static void GetPixelFormat (void *opaque,
+									JxlPixelFormat *pixel_format)
+			{
+
+			auto reader = (jxl_image_chunk_reader *) opaque;
+
+			if (reader)
+				reader->get_color_channels_pixel_format (pixel_format);
+
+			}
+
+		static const void * GetData (void *opaque,
+									 size_t xpos,
+									 size_t ypos,
+									 size_t xsize,
+									 size_t ysize,
+									 size_t *row_offset)
+			{
+
+			auto reader = (jxl_image_chunk_reader *) opaque;
+
+			if (reader)
+				return reader->get_color_channel_data_at (xpos,
+														  ypos,
+														  xsize,
+														  ysize,
+														  row_offset);
+
+			return nullptr;
+
+			}
+
+		static void Release (void *opaque,
+							 const void *buf)
+			{
+
+			auto reader = (jxl_image_chunk_reader *) opaque;
+
+			if (reader)
+				reader->release_buffer (buf);
+
+			}
+		
+	};
+
+/*****************************************************************************/
+
+class jxl_buffer_chunk_reader
+	{
+
+	private:
+
+		dng_host &fHost;
+
+		const dng_pixel_buffer &fBuffer;
+
+		JxlPixelFormat fPixelFormat;
+
+		std::mutex fMutex;
+
+		std::unordered_map<const void *,
+						   std::shared_ptr<dng_memory_block> > fTable;
+
+	public:
+
+		jxl_buffer_chunk_reader (dng_host &host,
+								 const dng_pixel_buffer &srcBuffer,
+								 const JxlPixelFormat &pixelFormat)
+			:	fHost (host)
+			,	fBuffer (srcBuffer)
+			,	fPixelFormat (pixelFormat)
+			{
+
+			#if qLogStreamIntput
+
+			printf ("--- srcBuffer: t=%d, l=%d, b=%d, r=%d (w=%d, h=%d)\n",
+					srcBuffer.fArea.t,
+					srcBuffer.fArea.l,
+					srcBuffer.fArea.b,
+					srcBuffer.fArea.r,
+					int (srcBuffer.fArea.W ()),
+					int (srcBuffer.fArea.H ()));
+
+			#endif
+			
+			}
+
+		void get_color_channels_pixel_format (JxlPixelFormat *pixel_format)
+			{
+			if (pixel_format)
+				*pixel_format = fPixelFormat;
+			}
+		
+		const void * get_color_channel_data_at (size_t xpos,
+												size_t ypos,
+												size_t xsize,
+												size_t ysize,
+												size_t *row_offset)
+			{
+
+			#if qLogStreamIntput
+
+			printf ("input: get_color_channel_data_at (x=%zu, y=%zu, w=%zu, h=%zu)\n",
+					xpos,
+					ypos,
+					xsize,
+					ysize);
+
+			#endif
+
+			if (xpos  > 0x7fffffff ||
+				ypos  > 0x7fffffff ||
+				xsize > 0x7fffffff ||
+				ysize > 0x7fffffff)
+				{
+
+				ThrowOverflow ("coordinate too large");
+
+				}
+			
+			dng_pixel_buffer buffer = fBuffer;
+
+			buffer.fArea.t = SafeInt32Add (int32 (ypos),   fBuffer.fArea.t);
+			buffer.fArea.l = SafeInt32Add (int32 (xpos),   fBuffer.fArea.l);
+			buffer.fArea.b = SafeInt32Add (buffer.fArea.t, int32 (ysize));
+			buffer.fArea.r = SafeInt32Add (buffer.fArea.l, int32 (xsize));
+
+			// Assume row-col-plane interleaved.
+
+			DNG_REQUIRE (buffer.fPlanes    <= 0x7fffffff, "planes too large");
+			DNG_REQUIRE (buffer.fArea.W () <= 0x7fffffff, "buffer too wide");
+
+			buffer.fPlaneStep = 1;
+			buffer.fColStep	  = buffer.fPlanes;
+			buffer.fRowStep	  = SafeInt32Mult (buffer.fPlanes,
+											   buffer.fArea.W ());
+
+			const uint32 bytesNeeded = SafeUint32Mult (buffer.fRowStep,
+													   buffer.fArea.H (),
+													   buffer.fPixelSize);
+
+			std::shared_ptr<dng_memory_block> block (fHost.Allocate (bytesNeeded));
+			
+			buffer.fData = block->Buffer ();
+
+			const void *ptr = buffer.fData;
+
+			// Copy the data.
+
+			#if 0
+
+			dng_copy_buffer_task task (fBuffer,
+									   buffer);
+
+			fHost.PerformAreaTask (task,
+								   buffer.fArea);
+
+			#else
+
+			buffer.CopyArea (fBuffer,
+							 buffer.fArea,
+							 0,
+							 0,
+							 buffer.fPlanes);
+
+			#endif
+
+			// Store the row stride.
+
+			if (row_offset)
+				{
+				
+				*row_offset = (size_t) SafeUint32Mult ((uint32) buffer.fRowStep, buffer.fPixelSize);
+
+				}
+
+			// Remember the allocation in our table.
+			
+				{
+				std::lock_guard<std::mutex> lock (fMutex);
+				fTable.insert
+					(std::pair<const void *, std::shared_ptr<dng_memory_block> >
+						 (ptr,
+						  block));
+				}
+
+			return ptr;
+
+			}
+
+		void release_buffer (const void *buf)
+			{
+
+			#if qLogStreamIntput
+
+			printf ("input: release (%llu)\n",
+					(unsigned long long) (buf));
+
+			#endif	// qLogStreamIntput
+			
+			// Remove it from our table.
+
+				{
+				std::lock_guard<std::mutex> lock (fMutex);
+				fTable.erase (buf);
+				}
+
+			}
+
+	public:
+
+		static void GetPixelFormat (void *opaque,
+									JxlPixelFormat *pixel_format)
+			{
+
+			auto reader = (jxl_buffer_chunk_reader *) opaque;
+
+			if (reader)
+				reader->get_color_channels_pixel_format (pixel_format);
+
+			}
+
+		static const void * GetData (void *opaque,
+									 size_t xpos,
+									 size_t ypos,
+									 size_t xsize,
+									 size_t ysize,
+									 size_t *row_offset)
+			{
+
+			auto reader = (jxl_buffer_chunk_reader *) opaque;
+
+			if (reader)
+				return reader->get_color_channel_data_at (xpos,
+														  ypos,
+														  xsize,
+														  ysize,
+														  row_offset);
+
+			return nullptr;
+
+			}
+
+		static void Release (void *opaque,
+							 const void *buf)
+			{
+
+			auto reader = (jxl_buffer_chunk_reader *) opaque;
+
+			if (reader)
+				reader->release_buffer (buf);
+
+			}
+		
+	};
+
+/*****************************************************************************/
+
+static JxlEncoderPtr EncodeJXL_Common (dng_host &host,
+									   dng_pixel_buffer &buffer,
+									   const dng_jxl_encode_settings &settings,
+									   const bool useStreamingEncoder,
+									   const bool useContainer,
+									   const dng_jxl_color_space_info &colorSpaceInfo,
+									   const dng_metadata *metadata,
+									   const bool includeExif,
+									   const bool includeXMP,
+									   const bool includeIPTC,
+									   const dng_bmff_box_list *additionalBoxes,
+									   dng_jxl_parallel_runner_data &parallelData,
+									   JxlPixelFormat &outPixelFormat,
+									   JxlEncoderFrameSettings **outFrameSettings)
+	{
+	
 	const bool isLossless = (settings.Distance () <= 0.0f);
 
 	uint32 &srcPixelType = buffer.fPixelType;
@@ -657,7 +1386,7 @@ static void EncodeJXL (dng_host &host,
 
 	//printf ("srcPixelType: %u\n", srcPixelType);
 	//printf ("effort: %u\n", unsigned (settings.Effort ()));
-
+	
 	const uint32 planes = buffer.Planes ();
 
 	DNG_REQUIRE (planes == 1 ||				 // monochrome
@@ -680,9 +1409,9 @@ static void EncodeJXL (dng_host &host,
 
 	auto enc = encoder.get ();
 
-	// Hook into our thread pool.
+	DNG_REQUIRE (enc, "JXL encoder - JxlEncoderMake failed");
 
-	dng_jxl_parallel_runner_data parallelData;
+	// Hook into our thread pool.
 
 	parallelData.fHost = &host;
 
@@ -760,7 +1489,7 @@ static void EncodeJXL (dng_host &host,
 
 	// Add metadata if needed.
 
-	if (metadata && useContainer)
+	if ((metadata || additionalBoxes) && useContainer)
 		{
 
 		bool useBoxesOnceFlag = false;
@@ -769,7 +1498,7 @@ static void EncodeJXL (dng_host &host,
 		
 		// EXIF.
 
-		if (includeExif)
+		if (includeExif && metadata)
 			{
 
 			const dng_resolution *resolution = nullptr;
@@ -808,7 +1537,7 @@ static void EncodeJXL (dng_host &host,
 			
 		// XMP.
 
-		if (includeXMP && metadata->GetXMP ())
+		if (includeXMP && metadata && metadata->GetXMP ())
 			{
 
 			// TODO(erichan): Serialize routine has a forJPEG parameter. Does
@@ -848,7 +1577,7 @@ static void EncodeJXL (dng_host &host,
 
 		// IPTC.
 
-		if (includeIPTC)
+		if (includeIPTC && metadata)
 			{
 
 			auto iptcData = metadata->IPTCData   ();
@@ -932,7 +1661,7 @@ static void EncodeJXL (dng_host &host,
 			
 			}
 
-		} // metadata and container
+		} // (metadata || additionalBoxes) and container
 
 	// Add color profile info.
 
@@ -1136,6 +1865,11 @@ static void EncodeJXL (dng_host &host,
 
 	auto frameSettings = JxlEncoderFrameSettingsCreate (enc, NULL);
 
+	DNG_REQUIRE (frameSettings,
+				 "JXL encoder - JxlEncoderFrameSettingsCreate failed");
+
+	*outFrameSettings = frameSettings;
+	
 	// Set quality.
 
 	if (isLossless)
@@ -1182,11 +1916,35 @@ static void EncodeJXL (dng_host &host,
 		 "JxlEncoderFrameSettingsSetOption",
 		 &parallelData);
 
+	// Set buffering.
+
+	if (useStreamingEncoder)
+		{
+
+		CheckResult
+			(JxlEncoderFrameSettingsSetOption (frameSettings,	
+											   JXL_ENC_FRAME_SETTING_BUFFERING,
+											   (int) 3),
+			 "JxlEncoderFrameSettingsSetOption - buffering",
+			 &parallelData);
+
+		}
+
 	// Set various parameters that affect the lossy case.
 
 	// Note that as of libjxl 0.7.0 (2022-9-21), enabling the Gaborish and
 	// Edge Preserving Filter params in the lossless case will cause the
 	// result not to be lossless!
+
+	#if 0
+
+	printf ("lossless: %s\n", isLossless ? "yes" : "no");
+
+	printf ("effort: %u\n", unsigned (settings.Effort ()));
+
+	printf ("distance: %f\n", float (settings.Distance ()));
+
+	#endif
 
 	if (!isLossless)
 		{
@@ -1249,7 +2007,7 @@ static void EncodeJXL (dng_host &host,
 	// TODO(erichan): For now it seems the encoder implementation requires the
 	// entire image to be allocated at once.
 
-	JxlPixelFormat pixelFormat;
+	auto &pixelFormat = outPixelFormat;
 
 	memset (&pixelFormat, 0, sizeof (pixelFormat));
 
@@ -1285,46 +2043,6 @@ static void EncodeJXL (dng_host &host,
 		
 		}
 
-	// Set up pixel buffer to hold data to hand off to encoder. As of version
-	// 0.7.0 libjxl requires starting from a single whole-image buffer
-	// (instead of reading chunks at a time). This is a chunky (row-col-plane
-	// interleaved) buffer.
-
-	dng_pixel_buffer pixelBuffer = buffer;
-
-	pixelBuffer.fPlaneStep = 1;
-	pixelBuffer.fColStep   = (int32) planes;
-	pixelBuffer.fRowStep   = (int32) planes * (int32) pixelBuffer.fArea.W ();
-
-	const uint64 bytesNeeded = (uint64 (pixelBuffer.fRowStep) *
-								uint64 (pixelBuffer.fArea.H ()) *
-								uint64 (pixelBuffer.fPixelSize)); 
-
-	AutoPtr<jxl_memory_block> block;
-
-	// If not already tightly-packed chunky, then allocate a temp buffer and
-	// convert to chunky layout.
-		
-	if (!SamePixelBufferGeometry (pixelBuffer, buffer))
-		{
-
-		#if qLogJXL
-		printf ("JXL copy step\n");
-		#endif
-
-		block.Reset (new jxl_memory_block (host.Allocator (),
-										   bytesNeeded));
-
-		pixelBuffer.fData = block->Buffer ();
-
-		dng_copy_buffer_task task (buffer,
-								   pixelBuffer);
-
-		host.PerformAreaTask (task,
-							  pixelBuffer.fArea);
-
-		}
-
 	// TODO(erichan): It seems that preview frames are not yet supported in
 	// libjxl 0.7.0, so turn this off for now.
 
@@ -1338,14 +2056,15 @@ static void EncodeJXL (dng_host &host,
 
 	previewPixelBuffer.fPlaneStep = 1;
 	previewPixelBuffer.fColStep   = (int32) planes;
-	previewPixelBuffer.fRowStep   = (int32) planes * (int32) previewPixelBuffer.fArea.W ();
+	previewPixelBuffer.fRowStep   = SafeInt32Mult ((int32) planes,
+												   (int32) previewPixelBuffer.fArea.W ());
 
 	previewPixelBuffer.fPixelType = srcPixelType;
 	previewPixelBuffer.fPixelSize = TagTypeSize (previewPixelBuffer.fPixelType);
 
-	uint32 previewBytesNeeded = (previewPixelBuffer.fRowStep *
-								 previewPixelBuffer.fArea.H () *
-								 previewPixelBuffer.fPixelSize); 
+	uint32 previewBytesNeeded = SafeUint32Mult (previewPixelBuffer.fRowStep,
+												previewPixelBuffer.fArea.H (),
+												previewPixelBuffer.fPixelSize);
 
 	AutoPtr<dng_memory_block> previewBlock (host.Allocate (previewBytesNeeded));
 
@@ -1355,6 +2074,9 @@ static void EncodeJXL (dng_host &host,
 
 	auto previewFrameSettings = JxlEncoderFrameSettingsCreate (enc,
 															   frameSettings);
+
+	DNG_REQUIRE (previewFrameSettings,
+				 "JXL encoder - JxlEncoderFrameSettingsCreate failed");
 
 	CheckResult
 		(JxlEncoderAddImageFrame (previewFrameSettings,
@@ -1379,120 +2101,15 @@ static void EncodeJXL (dng_host &host,
 
 	#endif
 
-	// Add the main image.
-
-	CheckResult
-		(JxlEncoderAddImageFrame (frameSettings,
-								  &pixelFormat,
-								  pixelBuffer.fData,
-								  bytesNeeded),
-		 "JxlEncoderAddImageFrame-main",
-		 &parallelData);
-
-	// Nothing more to encode.
-
-	JxlEncoderCloseInput (enc);
-
-	// Make temp buffer.
-
-	const uint32 tempSize = 64 * 1024;
-
-	AutoPtr<dng_memory_block> tempBlock (host.Allocate (tempSize));
-	 
-	uint8 *outBuffer = tempBlock->Buffer_uint8 ();
-
-	size_t outAvailableBytes = (size_t) tempSize;
-
-	uint8 *outBufferPtr = outBuffer;
-
-	// Main encode loop.
+	return encoder;
 	
-	for (;;)
-		{
-		
-		JxlEncoderStatus status = JxlEncoderProcessOutput (enc,
-														   &outBufferPtr,
-														   &outAvailableBytes);
-
-		// Handle errors.
-
-		if (status == JXL_ENC_ERROR)
-			{
-			if (parallelData.fErrorCode == dng_error_user_canceled)
-				{
-				ThrowUserCanceled ();
-				}
-			#if qLogJXL
-			printf ("Unknown jxl encoder error");
-			#endif
-			ThrowBadFormat ("JXL_ENC_ERROR");
-			}
-
-		// Check if we're done.
-
-		else if (status == JXL_ENC_SUCCESS)
-			{
-
-			uint32 bytesToFlush = (uint32) (outBufferPtr - outBuffer);
-
-			#if qLogJXL
-			printf ("jxl encoder success!! bytes to flush: %u\n",
-					bytesToFlush);
-			#endif
-					  
-			stream.Put (outBuffer, bytesToFlush);
-			
-			break;
-			
-			}
-
-		// Check if we need to update the output buffer.
-
-		else if (status == JXL_ENC_NEED_MORE_OUTPUT)
-			{
-			
-			uint32 bytesToFlush = (uint32) (outBufferPtr - outBuffer);
-
-			#if qLogJXL
-			printf ("--- jxl encoder need more output. bytes to flush: %u\n",
-					bytesToFlush);
-			#endif
-					  
-			// Copy encoded data to the stream.
-
-			stream.Put (outBuffer, bytesToFlush);
-
-			// Reset temp buffer.
-			
-			outBufferPtr = outBuffer;
-
-			outAvailableBytes = tempSize;
-			
-			}
-
-		else
-			{
-
-			#if qLogJXL
-			
-			printf ("Unexpected jxl encoder status 0x%x\n",
-					(unsigned) status);
-
-			#endif
-
-			ThrowNotYetImplemented ("unhandled jxl encoder status");
-			
-			}
-		
-		}
-
 	}
 
 /*****************************************************************************/
 
 static void EncodeJXL (dng_host &host,
 					   dng_stream &stream,
-					   const dng_image &image,
+					   const dng_image &srcImage,
 					   const dng_jxl_encode_settings &settings,
 					   const bool useContainer,
 					   const dng_jxl_color_space_info &colorSpaceInfo,
@@ -1503,72 +2120,173 @@ static void EncodeJXL (dng_host &host,
 					   const dng_bmff_box_list *additionalBoxes)
 	{
 
-	// Set up pixel buffer to hold data to hand off to encoder. As of version
-	// 0.7.0 libjxl requires starting from a single whole-image buffer
-	// (instead of reading chunks at a time). This is a chunky (row-col-plane
-	// interleaved) buffer.
-
-	const uint32 planes = image.Planes ();
-
-	DNG_REQUIRE (planes == 1 ||				 // monochrome
-				 planes == 2 ||				 // monochrome + alpha
-				 planes == 3 ||				 // RGB
-				 planes == 4,				 // RGB + alpha
-				 "Unsupported plane count in EncodeJXL");
-
-	dng_pixel_buffer pixelBuffer;
-
-	pixelBuffer.fArea	   = image.Bounds ();
-
-	pixelBuffer.fPlanes	   = planes;
-
-	pixelBuffer.fPlaneStep = 1;
-	pixelBuffer.fColStep   = (int32) planes;
-	pixelBuffer.fRowStep   = (int32) planes * (int32) pixelBuffer.fArea.W ();
-
-	pixelBuffer.fPixelType = image.PixelType ();
-	pixelBuffer.fPixelSize = TagTypeSize (pixelBuffer.fPixelType);
-
-	const uint64 bytesNeeded = (uint64 (pixelBuffer.fRowStep) *
-								uint64 (pixelBuffer.fArea.H ()) *
-								uint64 (pixelBuffer.fPixelSize));
-
-	jxl_memory_block block (host.Allocator (),
-							bytesNeeded);
-
-	pixelBuffer.fData = block.Buffer ();
-
-	// Doing a direct "dng_image::Get" is easy but slow because it's
-	// single-threaded. Using a pipe reduces time on a 10 megapixel image from
-	// 40 ms to 8 ms on a 2017 10-core iMac Pro.
-
-	// dng_timer timer2 ("EncodeJXL-image-get");
-		
-	#if 1
-		
-	dng_get_buffer_task task (image,
-							  pixelBuffer);
-
-	host.PerformAreaTask (task,
-						  image.Bounds ());
-
-	#else
-		
-	image.Get (pixelBuffer);
-		
+	#if qDNGValidate && 0
+	dng_timer timerOuter ("EncodeJXL-Image");
 	#endif
 
-	EncodeJXL (host,
-			   stream,
-			   pixelBuffer,
-			   settings,
-			   useContainer,
-			   colorSpaceInfo,
-			   metadata,
-			   includeExif,
-			   includeXMP,
-			   includeIPTC,
-			   additionalBoxes);
+	dng_pixel_buffer buffer;
+
+	buffer.fArea	  = srcImage.Bounds ();
+	buffer.fPlanes	  = srcImage.Planes ();
+	
+	buffer.fPixelType = srcImage.PixelType ();
+	buffer.fPixelSize = TagTypeSize (buffer.fPixelType);
+
+	dng_jxl_parallel_runner_data parallelData;
+
+	JxlPixelFormat pixelFormat;
+
+	JxlEncoderFrameSettings *frameSettings = nullptr;
+
+	// For now, always request streaming (input and output) for images with a
+	// long side over 2K.
+
+	const bool useStreamingEncoder = (srcImage.Bounds ().LongSide () > 2048);
+
+	auto encoder = EncodeJXL_Common (host,
+									 buffer,
+									 settings,
+									 useStreamingEncoder,
+									 useContainer,
+									 colorSpaceInfo,
+									 metadata,
+									 includeExif,
+									 includeXMP,
+									 includeIPTC,
+									 additionalBoxes,
+									 parallelData,
+									 pixelFormat,
+									 &frameSettings);
+
+	auto enc = encoder.get ();
+
+	jxl_data_writer2 writer (host, stream);
+
+	JxlEncoderOutputProcessor outputProcessor { };
+
+	outputProcessor.opaque                 = &writer;
+	outputProcessor.get_buffer             = jxl_output_get_buffer;
+	outputProcessor.release_buffer         = jxl_output_release_buffer;
+	outputProcessor.seek                   = nullptr;			 // no seeking
+	outputProcessor.set_finalized_position = output_set_finalized_position;
+
+	CheckResult (JxlEncoderSetOutputProcessor (enc,
+											   outputProcessor),
+				 "JxlEncoderSetOutputProcessor-main",
+				 &parallelData);
+
+	// Add the main image.
+
+	jxl_image_chunk_reader reader (host,
+								   srcImage,
+								   pixelFormat);
+
+	JxlChunkedFrameInputSource inputSource { };
+
+	inputSource.opaque							= &reader;
+	inputSource.get_color_channels_pixel_format = jxl_image_chunk_reader::GetPixelFormat;
+	inputSource.get_color_channel_data_at		= jxl_image_chunk_reader::GetData;
+	inputSource.release_buffer					= jxl_image_chunk_reader::Release;
+	
+	CheckResult (JxlEncoderAddChunkedFrame (frameSettings,
+											JXL_TRUE, // is_last_frame
+											inputSource),
+				 "JxlEncoderAddChunkedFrame-main",
+				 &parallelData);
+
+	stream.Flush ();
+
+	// Nothing more to encode.
+
+	JxlEncoderCloseInput (enc);
+
+	}
+
+/*****************************************************************************/
+
+static void EncodeJXL (dng_host &host,
+					   dng_stream &stream,
+					   const dng_pixel_buffer &inBuffer,
+					   const dng_jxl_encode_settings &settings,
+					   const bool useContainer,
+					   const dng_jxl_color_space_info &colorSpaceInfo,
+					   const dng_metadata *metadata,
+					   const bool includeExif,
+					   const bool includeXMP,
+					   const bool includeIPTC,
+					   const dng_bmff_box_list *additionalBoxes)
+	{
+
+	#if qDNGValidate && 0
+	dng_timer timerOuter ("EncodeJXL");
+	#endif
+
+	dng_pixel_buffer buffer = inBuffer;
+
+	dng_jxl_parallel_runner_data parallelData;
+
+	JxlPixelFormat pixelFormat;
+
+	JxlEncoderFrameSettings *frameSettings = nullptr;
+
+	const bool useStreamingEncoder = (inBuffer.Area ().LongSide () > 2048);
+
+	auto encoder = EncodeJXL_Common (host,
+									 buffer,
+									 settings,
+									 useStreamingEncoder,
+									 useContainer,
+									 colorSpaceInfo,
+									 metadata,
+									 includeExif,
+									 includeXMP,
+									 includeIPTC,
+									 additionalBoxes,
+									 parallelData,
+									 pixelFormat,
+									 &frameSettings);
+
+	auto enc = encoder.get ();
+
+	jxl_data_writer2 writer (host, stream);
+
+	JxlEncoderOutputProcessor outputProcessor { };
+
+	outputProcessor.opaque                 = &writer;
+	outputProcessor.get_buffer             = jxl_output_get_buffer;
+	outputProcessor.release_buffer         = jxl_output_release_buffer;
+	outputProcessor.seek                   = nullptr;			 // no seeking
+	outputProcessor.set_finalized_position = output_set_finalized_position;
+
+	CheckResult (JxlEncoderSetOutputProcessor (enc,
+											   outputProcessor),
+				 "JxlEncoderSetOutputProcessor-main",
+				 &parallelData);
+
+	// Add the main image.
+
+	jxl_buffer_chunk_reader reader (host,
+									buffer,
+									pixelFormat);
+
+	JxlChunkedFrameInputSource inputSource { };
+
+	inputSource.opaque							= &reader;
+	inputSource.get_color_channels_pixel_format = jxl_buffer_chunk_reader::GetPixelFormat;
+	inputSource.get_color_channel_data_at		= jxl_buffer_chunk_reader::GetData;
+	inputSource.release_buffer					= jxl_buffer_chunk_reader::Release;
+	
+	CheckResult (JxlEncoderAddChunkedFrame (frameSettings,
+											JXL_TRUE, // is_last_frame
+											inputSource),
+				 "JxlEncoderAddChunkedFrame-main",
+				 &parallelData);
+
+	stream.Flush ();
+
+	// Nothing more to encode.
+
+	JxlEncoderCloseInput (enc);
 
 	}
 
@@ -1576,6 +2294,14 @@ static void EncodeJXL (dng_host &host,
 
 class dng_jxl_box_reader
 	{
+
+	private:
+
+		enum
+			{
+			kInitialJXLBoxBufferSize = 4096,
+			kMaxJXLBoxDataSize	   = 128 * 1024 * 1024
+			};
 		
 	public:
 
@@ -1595,24 +2321,39 @@ class dng_jxl_box_reader
 
 		dng_jxl_decoder &fDecoder;
 
+		// Accumulated stream offset of the current box (advances after each
+		// box completes). Initialized to the stream position at decode start.
+
+		uint64 fCurrentOffset = 0;
+
+		// Raw on-disk size of the current box (header + payload), as reported
+		// by JxlDecoderGetBoxSizeRaw. Used to advance fCurrentOffset.
+
+		uint64 fCurrentRawSize = 0;
+
 	public:
 
 		dng_jxl_box_reader (dng_host &host,
 							JxlDecoder *dec,
-							dng_jxl_decoder &decoder)
+							dng_jxl_decoder &decoder,
+							uint64 startPosition)
 			:	fHost (host)
 			,	fDec (dec)
 			,	fInfo (decoder.fInfo)
 			,	fDecoder (decoder)
+			,	fCurrentOffset (startPosition)
 			{
 			}
 
 		void HandleDecBox ()
 			{
-		
-			// Wrap up any previous box.
+
+			// Finish the previous box before advancing the stream offset,
+			// so FinishBox sees fCurrentOffset at the previous box's start.
 
 			CheckFinishBox ();
+
+			fCurrentOffset += fCurrentRawSize;
 
 			// Read box type.
 
@@ -1629,6 +2370,8 @@ class dng_jxl_box_reader
 			CheckResult (JxlDecoderGetBoxSizeRaw (fDec, &size),
 						 "JxlDecoderGetBoxSizeRaw",
 						 nullptr);
+
+			fCurrentRawSize = uint64 (size);
 
 			#if qLogJXL
 
@@ -1655,11 +2398,12 @@ class dng_jxl_box_reader
 
 				}
 
-			// This check might be a problem for large gain maps.
+			// Apply the same metadata-box size policy before requesting
+			// decompressed output from libjxl.
 
 			#if 1
 
-			else if (size > 4 * 1024 * 1024)
+			else if (size > kMaxJXLBoxDataSize)
 				 {
 
 				 #if qLogJXL
@@ -1682,7 +2426,7 @@ class dng_jxl_box_reader
 
 				if (fData.empty ())
 					{
-					fData.resize (4096);
+					fData.resize (kInitialJXLBoxBufferSize);
 					}
 
 				CheckResult (JxlDecoderSetBoxBuffer (fDec,
@@ -1702,9 +2446,31 @@ class dng_jxl_box_reader
 		
 			size_t remaining = JxlDecoderReleaseBoxBuffer (fDec);
 
+			if (fData.empty () ||
+				remaining > fData.size ())
+				{
+				ThrowBadFormat ("Invalid JXL box buffer state");
+				}
+
 			fIndex = fData.size () - remaining;
 
-			size_t newSize = 2 * fData.size ();
+			if (fData.size () >= kMaxJXLBoxDataSize)
+				{
+				ThrowBadFormat ("JXL box too large");
+				}
+
+			size_t newSize = fData.size () * 2;
+
+			if (newSize <= fData.size () ||
+				newSize > kMaxJXLBoxDataSize)
+				{
+				newSize = kMaxJXLBoxDataSize;
+				}
+
+			if (newSize <= fIndex)
+				{
+				ThrowBadFormat ("JXL box too large");
+				}
 
 			fData.resize (newSize);
 
@@ -1731,6 +2497,11 @@ class dng_jxl_box_reader
 
 				size_t remaining = JxlDecoderReleaseBoxBuffer (fDec);
 
+				if (remaining > fData.size ())
+					{
+					ThrowBadFormat ("Invalid JXL box buffer state");
+					}
+
 				fData.resize (fData.size () - remaining);
 
 				fHasCurrentBox = false;
@@ -1748,6 +2519,12 @@ class dng_jxl_box_reader
 
 		void FinishBox ()
 			{
+
+			// Expose this box's stream position and raw size on the decoder
+			// so that ProcessBox overrides can read them as context.
+
+			fDecoder.fCurrentBoxStreamOffset = fCurrentOffset;
+			fDecoder.fCurrentBoxRawSize      = fCurrentRawSize;
 
 			#if qLogJXL
 
@@ -1932,6 +2709,8 @@ void dng_jxl_decoder::Decode (dng_host &host,
 
 	auto dec = decoder.get ();
 
+	DNG_REQUIRE (dec, "JXL decoder - JxlDecoderMake failed");
+
 	// Preserve orientation as-in-bitstream (do not reorient).
 
 	CheckResult (JxlDecoderSetKeepOrientation (dec, 1),
@@ -2022,7 +2801,7 @@ void dng_jxl_decoder::Decode (dng_host &host,
 
 	JxlFrameHeader frameHeader;
 
-	dng_jxl_box_reader boxReader (host, dec, *this);
+	dng_jxl_box_reader boxReader (host, dec, *this, startPosition);
 
 	dng_jxl_decoder_callback_data cbData;
 
@@ -2228,20 +3007,27 @@ void dng_jxl_decoder::Decode (dng_host &host,
 					if (extra.name_length)
 						{
 
-						std::vector<char> temp (extra.name_length + 1);
+						// CR-4208475 N-L1: clamp the libjxl-reported length
+						// before the diagnostic +1 so a pathological
+						// UINT32_MAX cannot wrap the vector size to 0.
+
+						const uint32 nameLen =
+							Min_uint32 (extra.name_length, 65535u);
+
+						std::vector<char> temp (nameLen + 1);
 
 						char *name = temp.data ();
-						
+
 						CheckResult (JxlDecoderGetExtraChannelName
 									 (dec,
 									  i,
 									  name,
-									  extra.name_length + 1),
+									  nameLen + 1),
 									 "JxlDecoderGetExtraChannelName",
 									 nullptr);
 
 						printf ("  name: %s\n", name);
-						
+
 						}
 					
 					if (extra.type == JXL_CHANNEL_ALPHA)
@@ -2278,7 +3064,7 @@ void dng_jxl_decoder::Decode (dng_host &host,
 			// TODO(erichan): Does the choice of this format unduly affect the
 			// result of JxlDecoderGetColorAsEncodedProfile?
 			
-			JxlPixelFormat format = { 3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0 };
+			//JxlPixelFormat format = { 3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0 };
 
 			#if qDNGValidate
 			if (gVerbose)
@@ -2439,7 +3225,7 @@ void dng_jxl_decoder::Decode (dng_host &host,
 				CheckResult (JxlDecoderGetICCProfileSize
 							 (dec,
 							  //&format,
-							  JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+							  JXL_COLOR_PROFILE_TARGET_DATA,
 							  &profile_size),
 							 "JxlDecoderGetICCProfileSize",
 							 nullptr);
@@ -2458,6 +3244,11 @@ void dng_jxl_decoder::Decode (dng_host &host,
 					
 					}
 
+				if (profile_size > 0xFFFFFFFF)
+					{
+					ThrowBadFormat ("ICC profile too large");
+					}
+
 				AutoPtr<dng_memory_block> profileBlock
 					(host.Allocate ((uint32) profile_size));
 
@@ -2466,7 +3257,7 @@ void dng_jxl_decoder::Decode (dng_host &host,
 				CheckResult (JxlDecoderGetColorAsICCProfile
 							 (dec,
 							  //&format,
-							  JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+							  JXL_COLOR_PROFILE_TARGET_DATA,
 							  profile,
 							  profile_size),
 							 "JxlDecoderGetColorAsICCProfile",
@@ -2512,13 +3303,20 @@ void dng_jxl_decoder::Decode (dng_host &host,
 				if (frameHeader.name_length)
 					{
 
-					std::vector<char> temp (frameHeader.name_length + 1);
+					// CR-4208475 N-L1: clamp the libjxl-reported length
+					// before the diagnostic +1 so a pathological
+					// UINT32_MAX cannot wrap the vector size to 0.
+
+					const uint32 nameLen =
+						Min_uint32 (frameHeader.name_length, 65535u);
+
+					std::vector<char> temp (nameLen + 1);
 
 					char *name = temp.data ();
 
 					CheckResult (JxlDecoderGetFrameName (dec,
 														 name,
-														 frameHeader.name_length + 1),
+														 nameLen + 1),
 								 "JxlDecoderGetFrameName",
 								 &parallelData);
 
@@ -2668,6 +3466,10 @@ void dng_jxl_decoder::Decode (dng_host &host,
 
 			dng_point size;
 
+			DNG_REQUIRE (basicInfo.xsize <= 0x7fffffff &&
+						 basicInfo.ysize <= 0x7fffffff,
+						 "Image size exceeds supported size.");
+
 			size.h = basicInfo.xsize;
 			size.v = basicInfo.ysize;
 
@@ -2681,7 +3483,8 @@ void dng_jxl_decoder::Decode (dng_host &host,
 			  
 			buffer.fPlaneStep = 1;
 			buffer.fColStep	  = totalPlanes;
-			buffer.fRowStep	  = buffer.fColStep * size.h;
+			buffer.fRowStep	  = SafeInt32Mult (buffer.fColStep,
+											   size.h);
 
 			buffer.fPixelType = pixelType;
 			buffer.fPixelSize = TagTypeSize (buffer.fPixelType);
@@ -2720,11 +3523,13 @@ void dng_jxl_decoder::Decode (dng_host &host,
 
 			wholeBuffer.fColStep   = 1;
 			wholeBuffer.fPlaneStep = size.h;
-			wholeBuffer.fRowStep   = wholeBuffer.fPlaneStep * totalPlanes;
+			wholeBuffer.fRowStep   = SafeInt32Mult (wholeBuffer.fPlaneStep,
+													totalPlanes);
 
-			const uint64 bytesNeeded = (uint64 (wholeBuffer.fRowStep) *
-										uint64 (wholeBuffer.fArea.H ()) *
-										uint64 (wholeBuffer.fPixelSize));
+			const uint64 bytesNeeded =
+				(uint64) SafeInt64Mult (int64 (wholeBuffer.fRowStep),
+										int64 (wholeBuffer.fArea.H ()),
+										int64 (wholeBuffer.fPixelSize));
 
 			cbData.fBlock.Reset (new jxl_memory_block (host.Allocator (),
 													   bytesNeeded));
@@ -2753,6 +3558,9 @@ void dng_jxl_decoder::Decode (dng_host &host,
 													   &size),
 						 "JxlDecoderImageOutBufferSize",
 						 &parallelData);
+
+			DNG_REQUIRE (size <= 0xffffffff,
+						 "JxlDecoderImageOutBufferSize too large");
 
 			block.Reset (host.Allocate ((uint32) size));
 
@@ -2871,6 +3679,18 @@ void dng_jxl_decoder::Decode (dng_host &host,
 				info.fShared.Reset (host.Make_dng_shared ());
 				}
 
+			// Flush any C2PA manifest location detected during box processing.
+			// Done here because fShared is now guaranteed to be initialized.
+
+			if (fC2PAManifestOffset &&
+				!info.fShared->fC2PAManifestOffset)
+				{
+
+				info.fShared->fC2PAManifestOffset = fC2PAManifestOffset;
+				info.fShared->fC2PAManifestCount  = fC2PAManifestRawSize;
+
+				}
+
 			if (info.IFDCount () == 0)
 				{
 				info.fIFD.push_back (host.Make_dng_ifd ());
@@ -2969,6 +3789,11 @@ void dng_jxl_decoder::ProcessExifBox (dng_host &host,
 	if (fInfo && (data.size () > 4))
 		{
 
+		if (data.size () - 4 > 0xFFFFFFFF)
+			{
+			ThrowBadFormat ("Exif box too large");
+			}
+
 		dng_stream exifStream ((&data [0]) + 4,
 							   uint32 (data.size () - 4));
 
@@ -2989,6 +3814,11 @@ void dng_jxl_decoder::ProcessXMPBox (dng_host &host,
 	if (gVerbose)
 		{
 
+		if (data.size () > 0xFFFFFFFF)
+			{
+			ThrowBadFormat ("XMP box too large");
+			}
+
 		dng_memory_stream temp (host.Allocator ());
 
 		uint32 count = (uint32) data.size ();
@@ -3008,6 +3838,11 @@ void dng_jxl_decoder::ProcessXMPBox (dng_host &host,
 
 		try
 			{
+
+			if (data.size () > 0xFFFFFFFF)
+				{
+				ThrowBadFormat ("XMP box too large");
+				}
 
 			dng_xmp xmp (host.Allocator ());
 
@@ -3044,10 +3879,34 @@ void dng_jxl_decoder::ProcessXMPBox (dng_host &host,
 /*****************************************************************************/
 
 void dng_jxl_decoder::ProcessBox (dng_host & /* host */,
-								  const dng_string & /* name */,
-								  const std::vector<uint8> & /* data */)
+								  const dng_string &name,
+								  const std::vector<uint8> &data)
 	{
-	
+
+	// Detect embedded C2PA manifest store. In JXL BMFF containers, C2PA
+	// uses native JUMBF support via the "jumb" box type. The jumb payload
+	// begins with a "jumd" description sub-box whose content-type identifier
+	// starts with "c2pa" for a C2PA manifest store. The memcmp checks bytes
+	// 4-11 of the payload for the concatenation "jumd" + "c2pa":
+	//
+	//   data[0..3]  = jumd sub-box size (big-endian uint32)
+	//   data[4..7]  = "jumd" (description box type)
+	//   data[8..11] = first 4 bytes of content-type identifier ("c2pa")
+
+	if (name.Matches ("jumb", true)                              &&
+		data.size () >= 12                                       &&
+		memcmp (data.data () + 4, "jumdc2pa", 8) == 0           &&
+		!fC2PAManifestOffset)
+		{
+
+		// Record into side fields; Decode flushes them to fShared after the
+		// decode loop, where fShared is guaranteed to be fully initialized.
+
+		fC2PAManifestOffset  = fCurrentBoxStreamOffset;
+		fC2PAManifestRawSize = (uint32) fCurrentBoxRawSize;
+
+		}
+
 	}
 
 /*****************************************************************************/

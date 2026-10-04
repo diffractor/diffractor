@@ -21,12 +21,14 @@ extern "C" {
 // skcms can leverage some C++ extensions when they are present.
 #define ARRAY_COUNT(arr) (int)(sizeof((arr)) / sizeof(*(arr)))
 
-#if defined(__clang__) && defined(__has_cpp_attribute)
+#if defined(__has_cpp_attribute)
     #if __has_cpp_attribute(clang::fallthrough)
         #define SKCMS_FALLTHROUGH [[clang::fallthrough]]
+    #elif __has_cpp_attribute(gnu::fallthrough)
+        #define SKCMS_FALLTHROUGH [[gnu::fallthrough]]
     #endif
 
-    #ifndef SKCMS_HAS_MUSTTAIL
+    #if defined(__clang__) && !defined(SKCMS_HAS_MUSTTAIL)
         // [[clang::musttail]] is great for performance, but it's not well supported and we run into
         // a variety of problems when we use it. Fortunately, it's an optional feature that doesn't
         // affect correctness, and usually the compiler will generate a tail-call even for us
@@ -39,6 +41,8 @@ extern "C" {
         // - Clang 18 runs into an ICE on armv7/androideabi with [[clang::musttail]].
         //   (http://crbug.com/1504548)
         // - Android RISC-V also runs into an ICE (b/314692534)
+        // - So does Linux ppc64le (https://github.com/llvm/llvm-project/issues/108014,
+        //   https://github.com/llvm/llvm-project/issues/98859)
         // - LoongArch developers indicate they had to turn it off
         // - Windows builds generate incorrect code with [[clang::musttail]] and crash mysteriously.
         //   (http://crbug.com/1505442)
@@ -47,9 +51,29 @@ extern "C" {
                                                  && !defined(__EMSCRIPTEN__) \
                                                  && !defined(__arm__) \
                                                  && !defined(__riscv) \
+                                                 && !defined(__powerpc__) \
                                                  && !defined(__loongarch__) \
                                                  && !defined(_WIN32) && !defined(__SYMBIAN32__)
             #define SKCMS_HAS_MUSTTAIL 1
+        #endif
+    #elif defined(__GNUC__) && !defined(SKCMS_HAS_MUSTTAIL)
+        // GCC on RISCV, MIPS, PowerPC, LoongArch, and Windows (MinGW)
+        // does not support our tail call functions
+        // (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=121784).
+        #if __has_cpp_attribute(clang::musttail) && !defined(__riscv) \
+                                                 && !defined(__mips__) \
+                                                 && !defined(__powerpc__) \
+                                                 && !defined(__loongarch__) \
+                                                 && !defined(_WIN32)
+            #define SKCMS_HAS_MUSTTAIL 1
+        #else
+            #define SKCMS_HAS_MUSTTAIL 0
+        #endif
+    #elif !defined(__clang__) && !defined(SKCMS_HAS_MUSTTAIL)
+        #if __has_cpp_attribute(clang::musttail)
+            #define SKCMS_HAS_MUSTTAIL 1
+        #else
+            #define SKCMS_HAS_MUSTTAIL 0
         #endif
     #endif
 #endif

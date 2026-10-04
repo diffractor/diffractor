@@ -83,7 +83,9 @@ bool dng_tone_curve::IsValid () const
 	for (uint32 j = 0; j < fCoord.size (); j++)
 		{
 		
-		if (fCoord [j] . h < 0.0 || fCoord [j] . h > 1.0 ||
+		if (!std::isfinite (fCoord [j] . h) ||
+			!std::isfinite (fCoord [j] . v) ||
+			fCoord [j] . h < 0.0 || fCoord [j] . h > 1.0 ||
 			fCoord [j] . v < 0.0 || fCoord [j] . v > 1.0)
 			{
 			

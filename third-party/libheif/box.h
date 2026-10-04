@@ -32,6 +32,7 @@
 
 #include <utility>
 #include <vector>
+#include <unordered_map>
 #include <string>
 #include <memory>
 #include <limits>
@@ -65,10 +66,15 @@ class Fraction
 public:
   Fraction() = default;
 
-  Fraction(int32_t num, int32_t den);
+  // Checked construction from externally supplied values (e.g. box fields or image
+  // sizes). Fails if a value does not fit into int32_t or if the denominator is zero.
+  static Result<Fraction> from_signed(int64_t num, int64_t den);
 
-  // may only use values up to int32_t maximum
-  Fraction(uint32_t num, uint32_t den);
+  static Result<Fraction> from_unsigned(uint32_t num, uint32_t den);
+
+  // The constructors are meant for arithmetic on values that are already known to be
+  // in range. They never fail: values are reduced in precision until they fit.
+  Fraction(int32_t num, int32_t den);
 
   // Values will be reduced until they fit into int32_t.
   Fraction(int64_t num, int64_t den);
@@ -829,8 +835,18 @@ public:
 
   bool is_property_essential_for_item(heif_item_id itemId, int propertyIndex) const;
 
-  void add_property_for_item_ID(heif_item_id itemID,
-                                PropertyAssociation assoc);
+  // Associates the property with the item and returns the 1-based position of the property
+  // within this item's property list, i.e. the 'heif_property_id' that the public API uses.
+  // Note that this is not the index of the property in the 'ipco' box, as one 'ipco' is shared
+  // by all items of the file. If the property is already associated with the item, the position
+  // of the existing association is returned.
+  heif_property_id add_property_for_item_ID(heif_item_id itemID,
+                                            PropertyAssociation assoc);
+
+  // Returns the 1-based position of the property with the given 'ipco' index within the item's
+  // property list, or 0 if the property is not associated with the item. This matches the
+  // indices into the vector filled by Box_ipco::get_properties_for_item_ID().
+  heif_property_id get_property_id_for_item_ID(heif_item_id itemID, uint16_t property_index) const;
 
   void derive_box_version() override;
 
@@ -1010,10 +1026,19 @@ public:
 
   const char* debug_box_name() const override { return "Clean Aperture"; }
 
-  int left_rounded(uint32_t image_width) const;  // first column
-  int right_rounded(uint32_t image_width) const; // last column that is part of the cropped image
-  int top_rounded(uint32_t image_height) const;   // first row
-  int bottom_rounded(uint32_t image_height) const; // last row included in the cropped image
+  // The clean aperture in pixel coordinates of an image with the given size.
+  // 'right' and 'bottom' are the last column/row that are part of the cropped image.
+  struct Crop
+  {
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+  };
+
+  // Fails if the clean aperture cannot be applied to an image of that size
+  // (zero size, or a size that exceeds the int32_t coordinate range).
+  Result<Crop> get_crop(uint32_t image_width, uint32_t image_height) const;
 
   double left(int image_width) const;
   double top(int image_height) const;
@@ -1022,8 +1047,10 @@ public:
 
   int get_height_rounded() const;
 
-  void set(uint32_t clap_width, uint32_t clap_height,
-           uint32_t image_width, uint32_t image_height);
+  // Set a clean aperture of size clap_width x clap_height at the top-left corner of an
+  // image of size image_width x image_height.
+  Error set(uint32_t clap_width, uint32_t clap_height,
+            uint32_t image_width, uint32_t image_height);
 
   [[nodiscard]] parse_error_fatality get_parse_error_fatality() const override { return parse_error_fatality::ignorable; }
 
@@ -1078,10 +1105,19 @@ protected:
 
   void derive_box_version() override;
 
-  Error check_for_double_references() const;
-
 private:
   std::vector<Reference> m_references;
+
+  // Index from 'from_item_ID' to the positions in m_references, so the
+  // reference queries run in O(matches) instead of O(m_references). It is kept
+  // in sync incrementally: parse() builds it, add_references() appends to it,
+  // and overwrite_reference() leaves it untouched (it only edits to_item_ID,
+  // not from_item_ID).
+  std::unordered_map<heif_item_id, std::vector<size_t>> m_from_id_index;
+
+  void build_index();
+
+  void add_to_index(size_t reference_index);
 };
 
 
@@ -1745,7 +1781,7 @@ public:
    * An RFC 5646 compliant language identifier for the language of the text contained in the other properties.
    * Examples: "en-AU", "de-DE", or "zh-CN“.
    */
-  void set_lang(const std::string lang) { m_lang = lang; }
+  void set_lang(const std::string& lang) { m_lang = lang; }
 
   /**
    * Name.
@@ -1760,7 +1796,7 @@ public:
   *
   * Human readable name for the item or group being described.
   */
-  void set_name(const std::string name) { m_name = name; }
+  void set_name(const std::string& name) { m_name = name; }
 
   /**
    * Description.
@@ -1775,7 +1811,7 @@ public:
    *
    * Human readable description for the item or group.
    */
-  void set_description(const std::string description) { m_description = description; }
+  void set_description(const std::string& description) { m_description = description; }
 
   /**
    * Tags.
@@ -1790,7 +1826,7 @@ public:
    *
    * Comma separated user defined tags applicable to the item or group.
    */
-  void set_tags(const std::string tags) { m_tags = tags; }
+  void set_tags(const std::string& tags) { m_tags = tags; }
 
   [[nodiscard]] parse_error_fatality get_parse_error_fatality() const override { return parse_error_fatality::optional; }
 
@@ -2025,7 +2061,7 @@ public:
    * An RFC 5646 (IETF BCP 47) compliant language identifier for the language of the text.
    * Examples: "en-AU", "de-DE", or "zh-CN“.
    */
-  void set_lang(const std::string lang) { m_lang = lang; }
+  void set_lang(const std::string& lang) { m_lang = lang; }
 
   [[nodiscard]] parse_error_fatality get_parse_error_fatality() const override { return parse_error_fatality::optional; }
 

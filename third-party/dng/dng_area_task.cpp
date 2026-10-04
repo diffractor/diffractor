@@ -16,6 +16,7 @@
 #include "dng_host.h"
 #include "dng_image.h"
 #include "dng_pixel_buffer.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_sdk_limits.h"
 #include "dng_tile_iterator.h"
 #include "dng_utils.h"
@@ -319,8 +320,17 @@ void dng_area_task::Perform (dng_area_task &task,
 		
 	task.Start (1, area, tileSize, allocator, sniffer);
 	
-	task.ProcessOnThread (0, area, tileSize, sniffer, progress);
-			
+	try
+		{
+		task.ProcessOnThread (0, area, tileSize, sniffer, progress);
+		}
+
+	catch (...)
+		{
+		task.Finish (1);
+		throw;
+		}
+
 	task.Finish (1);
 	
 	}
@@ -380,7 +390,14 @@ void dng_range_parallel_task::Run ()
 	threadCount = Min_uint32 (threadCount, 
 							  RecommendedThreadCount ());
 
-	const int32 items = fStopIndex - fStartIndex;
+	// CR-4208475 N-M6: the constructor's DNG_REQUIRE only checks the
+	// inequality, not the int32 representability of fStopIndex - fStartIndex.
+	// Spans crossing INT32_MIN..INT32_MAX (e.g. fStartIndex near INT32_MIN
+	// and fStopIndex near INT32_MAX) produce signed-integer UB here, which
+	// then feeds the scheduling math below. Route the subtraction through
+	// SafeInt32Sub so the failure is a clean throw on overflow.
+
+	const int32 items = SafeInt32Sub (fStopIndex, fStartIndex);
 
 	// Find minimum number of items (indices) for each task.
 
@@ -552,6 +569,7 @@ class dng_range_parallel_func_task: public dng_range_parallel_task
 			r.fBegin	   = startIndex;
 			r.fEnd		   = stopIndex;
 			r.fSniffer	   = sniffer;
+			r.fAllocator   = &fHost.Allocator ();
 
 			fFunc (r);
 

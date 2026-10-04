@@ -37,6 +37,10 @@
 
 /*****************************************************************************/
 
+#define qLogJXL (qDNGValidate && 0)
+
+/*****************************************************************************/
+
 // jxl requires exif data be prepended with a 4-byte TIFF offset which can be
 // all zero as long as the exif data comes immediately after.
 
@@ -294,6 +298,22 @@ class dng_jxl_decoder
 		//const_dng_image_sptr fPreviewImage;
 		
 		//const_dng_image_sptr fThumb;
+
+		// Set by dng_jxl_box_reader immediately before each ProcessBox
+		// dispatch. Provides the box's raw stream offset and on-disk size.
+
+		uint64 fCurrentBoxStreamOffset = 0;
+
+		uint64 fCurrentBoxRawSize = 0;
+
+		// Set by ProcessBox when a C2PA jumb box is detected. Copied to
+		// fShared after the decode loop, where fShared is guaranteed to
+		// exist. Using side fields avoids depending on fShared being
+		// allocated during box processing.
+
+		uint64 fC2PAManifestOffset = 0;
+
+		uint32 fC2PAManifestRawSize = 0;
 
 	public:
 

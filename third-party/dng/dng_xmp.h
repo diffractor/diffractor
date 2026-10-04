@@ -348,6 +348,15 @@ class dng_xmp
 		
 		#endif
 
+		// Other public XMP settings.
+
+		// Provenance:
+		// https://www.dublincore.org/specifications/dublin-core/dcmi-terms/terms/provenance/
+
+		dng_string GetProvenance () const;
+
+		void SetProvenance (const char *s);
+
 	protected:
 	
 		static void TrimDecimal (char *s);

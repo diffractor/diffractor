@@ -123,6 +123,11 @@ class dng_linearization_info
 								const dng_image &srcImage,
 								dng_image &dstImage);
 
+		/// Computes the stage3 black level.
+
+		uint16 Stage3BlackLevel (dng_negative &negative,
+								 uint32 numPlanes) const;
+
 		/// Compute black level for one coordinate and sample plane in the image.
 		/// \param row Row to compute black level for.
 		/// \param col Column to compute black level for.

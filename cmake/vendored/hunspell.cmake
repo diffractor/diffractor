@@ -16,6 +16,7 @@ add_library(diffractor_hunspell STATIC
         "${CMAKE_SOURCE_DIR}/third-party/hunspell/filemgr.cxx"
         "${CMAKE_SOURCE_DIR}/third-party/hunspell/hashmgr.cxx"
         "${CMAKE_SOURCE_DIR}/third-party/hunspell/hunspell.cxx"
+        "${CMAKE_SOURCE_DIR}/third-party/hunspell/hunspelltrace.cxx"
         "${CMAKE_SOURCE_DIR}/third-party/hunspell/hunzip.cxx"
         "${CMAKE_SOURCE_DIR}/third-party/hunspell/phonet.cxx"
         "${CMAKE_SOURCE_DIR}/third-party/hunspell/replist.cxx"

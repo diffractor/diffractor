@@ -49,25 +49,32 @@ Op_YCbCr_to_RGB<Pixel>::state_after_conversion(const ColorState& input_state,
   }
 
   int matrix = input_state.nclx.get_matrix_coefficients();
-  if (matrix == 11 || matrix == 14) {
+  if (matrix == 11 || matrix == 14 || matrix == 17) {
     return {};
   }
+  // TODO: matrix == 17 (YCgCo-Ro) is not implemented. Without the rejection above, it would
+  //   fall through to the Kr/Kb-based conversion and silently decode with BT.601 coefficients.
   // TODO: matrix == 10 (BT.2020 CL) currently falls through and is decoded as if it were
   //   BT.2020 NCL. A correct CL path needs EOTF inversion on Cb/Cr, not the linear matrix below.
 
 
-  bool hdr = !std::is_same<Pixel, uint8_t>::value;
-
-  if ((input_state.bits_per_pixel > 8) != hdr) {
+  // The three colour planes are read through the same 'Pixel' type, so they must be stored
+  // with sizeof(Pixel) bytes per sample, and the conversion derives its shifts and midpoints
+  // from one bit depth, so they must also share it ('unci' may declare a depth per plane).
+  // The alpha plane is copied through at its own width.
+  if (!input_state.color_channels_have_same_bpp() ||
+      !input_state.color_channels_have_bytes_per_sample(static_cast<int>(sizeof(Pixel)))) {
     return {};
   }
 
   // TODO: add support for <8 bpp
-  if (input_state.bits_per_pixel < 8) {
+  if (input_state.bits_per_pixel_Y < 8) {
     return {};
   }
 
-  if (input_state.bits_per_pixel > 14) {
+  // The YCgCo-Re conversion computes with int16_t intermediates. 14 bpp input is the
+  // maximum for which these cannot overflow.
+  if (matrix == 16 && input_state.bits_per_pixel_Y > 14) {
     return {};
   }
 
@@ -79,9 +86,8 @@ Op_YCbCr_to_RGB<Pixel>::state_after_conversion(const ColorState& input_state,
 
   output_state.colorspace = heif_colorspace_RGB;
   output_state.chroma = heif_chroma_444;
-  output_state.has_alpha = input_state.has_alpha;  // we simply keep the old alpha plane
-  output_state.bits_per_pixel = input_state.bits_per_pixel;
-  output_state.alpha_bits_per_pixel = input_state.alpha_bits_per_pixel;
+  output_state.set_color_bits_per_pixel(input_state.bits_per_pixel_Y);
+  output_state.bits_per_pixel_alpha = input_state.bits_per_pixel_alpha;  // we simply keep the old alpha plane
 
   states.emplace_back(output_state, SpeedCosts_Unoptimized);
 
@@ -98,8 +104,6 @@ Op_YCbCr_to_RGB<Pixel>::convert_colorspace(const std::shared_ptr<const HeifPixel
                                            const heif_color_conversion_options_ext& options_ext,
                                            const heif_security_limits* limits) const
 {
-  bool hdr = !std::is_same<Pixel, uint8_t>::value;
-
   heif_chroma chroma = input->get_chroma_format();
 
   int bpp_y = input->get_bits_per_pixel(heif_channel_Y);
@@ -113,19 +117,10 @@ Op_YCbCr_to_RGB<Pixel>::convert_colorspace(const std::shared_ptr<const HeifPixel
     bpp_a = input->get_bits_per_pixel(heif_channel_Alpha);
   }
 
-  if (!hdr) {
-    if (bpp_y != 8 ||
-        bpp_cb != 8 ||
-        bpp_cr != 8) {
-      return Error::InternalError;
-    }
-  }
-  else {
-    if (bpp_y == 8 ||
-        bpp_cb == 8 ||
-        bpp_cr == 8) {
-      return Error::InternalError;
-    }
+  if (bytes_per_sample_for_bit_depth(bpp_y) != static_cast<int>(sizeof(Pixel)) ||
+      bytes_per_sample_for_bit_depth(bpp_cb) != static_cast<int>(sizeof(Pixel)) ||
+      bytes_per_sample_for_bit_depth(bpp_cr) != static_cast<int>(sizeof(Pixel))) {
+    return Error::InternalError;
   }
 
 
@@ -193,14 +188,12 @@ Op_YCbCr_to_RGB<Pixel>::convert_colorspace(const std::shared_ptr<const HeifPixel
   int shiftH = chroma_h_subsampling(chroma) - 1;
   int shiftV = chroma_v_subsampling(chroma) - 1;
 
-  if (hdr) {
-    in_y_stride /= 2;
-    in_cb_stride /= 2;
-    in_cr_stride /= 2;
-    out_r_stride /= 2;
-    out_g_stride /= 2;
-    out_b_stride /= 2;
-  }
+  in_y_stride /= sizeof(Pixel);
+  in_cb_stride /= sizeof(Pixel);
+  in_cr_stride /= sizeof(Pixel);
+  out_r_stride /= sizeof(Pixel);
+  out_g_stride /= sizeof(Pixel);
+  out_b_stride /= sizeof(Pixel);
 
   int matrix_coeffs = 2;
   bool full_range_flag = true;
@@ -212,6 +205,11 @@ Op_YCbCr_to_RGB<Pixel>::convert_colorspace(const std::shared_ptr<const HeifPixel
     full_range_flag = colorProfile.get_full_range_flag();
     coeffs = get_YCbCr_to_RGB_coefficients(colorProfile.get_matrix_coefficients(),
                                            colorProfile.get_colour_primaries());
+  }
+
+  // The YCgCo-Re path below computes with int16_t intermediates, which overflow above 14 bpp.
+  if (matrix_coeffs == 16 && bpp_y > 14) {
+    return Error::InternalError;
   }
 
 
@@ -242,9 +240,10 @@ Op_YCbCr_to_RGB<Pixel>::convert_colorspace(const std::shared_ptr<const HeifPixel
         int cb = in_cb[cy * in_cb_stride + cx] - halfRange;
         int cr = in_cr[cy * in_cr_stride + cx] - halfRange;
 
-        out_r[y * out_r_stride + x] = (Pixel) (clip_int_u8(yv - cb + cr));
-        out_g[y * out_g_stride + x] = (Pixel) (clip_int_u8(yv + cb));
-        out_b[y * out_b_stride + x] = (Pixel) (clip_int_u8(yv - cb - cr));
+        uint16_t max_rgb = static_cast<uint16_t>(fullRange);
+        out_r[y * out_r_stride + x] = (Pixel) (clip_int_u16(yv - cb + cr, max_rgb));
+        out_g[y * out_g_stride + x] = (Pixel) (clip_int_u16(yv + cb, max_rgb));
+        out_b[y * out_b_stride + x] = (Pixel) (clip_int_u16(yv - cb - cr, max_rgb));
       }
       else if (matrix_coeffs == 16) {
         int16_t yy = in_y[y * in_y_stride + x];
@@ -283,7 +282,7 @@ Op_YCbCr_to_RGB<Pixel>::convert_colorspace(const std::shared_ptr<const HeifPixel
     }
 
     if (has_alpha) {
-      int alphaCopyWidth = (bpp_a>8 ? width * 2 : width);
+      size_t alphaCopyWidth = static_cast<size_t>(width) * static_cast<size_t>(bytes_per_sample_for_bit_depth(bpp_a));
       memcpy(&out_a[y * out_a_stride], &in_a[y * in_a_stride], alphaCopyWidth);
     }
   }
@@ -310,10 +309,12 @@ Op_YCbCr420_to_RGB24::state_after_conversion(const ColorState& input_state,
     }
   }
 
+  // All three planes are read as 8-bit samples, so they must all be 8 bits
+  // (get_uniform_color_bits_per_pixel() is 0 when they differ).
   if (input_state.colorspace != heif_colorspace_YCbCr ||
       input_state.chroma != heif_chroma_420 ||
-      input_state.bits_per_pixel != 8 ||
-      input_state.has_alpha == true) {
+      input_state.get_uniform_color_bits_per_pixel() != 8 ||
+      input_state.has_alpha()) {
     return {};
   }
 
@@ -333,8 +334,8 @@ Op_YCbCr420_to_RGB24::state_after_conversion(const ColorState& input_state,
 
   output_state.colorspace = heif_colorspace_RGB;
   output_state.chroma = heif_chroma_interleaved_RGB;
-  output_state.has_alpha = false;
-  output_state.bits_per_pixel = 8;
+  output_state.set_color_bits_per_pixel(8);
+  output_state.bits_per_pixel_alpha = 0;
 
   states.emplace_back(output_state, SpeedCosts_Unoptimized);
 
@@ -443,13 +444,15 @@ Op_YCbCr420_to_RGB32::state_after_conversion(const ColorState& input_state,
 
   // Note: no input alpha channel required. It will be filled up with 0xFF.
 
+  // All three planes are read as 8-bit samples, so they must all be 8 bits
+  // (get_uniform_color_bits_per_pixel() is 0 when they differ).
   if (input_state.colorspace != heif_colorspace_YCbCr ||
       input_state.chroma != heif_chroma_420 ||
-      input_state.bits_per_pixel != 8) {
+      input_state.get_uniform_color_bits_per_pixel() != 8) {
     return {};
   }
 
-  if (input_state.has_alpha && input_state.get_alpha_bits_per_pixel() != input_state.bits_per_pixel) {
+  if (input_state.has_alpha() && input_state.bits_per_pixel_alpha != input_state.bits_per_pixel_Y) {
     return {};
   }
 
@@ -469,8 +472,8 @@ Op_YCbCr420_to_RGB32::state_after_conversion(const ColorState& input_state,
 
   output_state.colorspace = heif_colorspace_RGB;
   output_state.chroma = heif_chroma_interleaved_RGBA;
-  output_state.has_alpha = true;
-  output_state.bits_per_pixel = 8;
+  output_state.set_color_bits_per_pixel(8);
+  output_state.bits_per_pixel_alpha = 8;
 
   states.emplace_back(output_state, SpeedCosts_Unoptimized);
 
@@ -577,13 +580,20 @@ Op_YCbCr420_to_RRGGBBaa::state_after_conversion(const ColorState& input_state,
     }
   }
 
+  // The conversion derives its shifts from one bit depth, so the three planes must share
+  // it (get_uniform_color_bits_per_pixel() is 0 when they differ) and it must be > 8.
   if (input_state.colorspace != heif_colorspace_YCbCr ||
       input_state.chroma != heif_chroma_420 ||
-      input_state.bits_per_pixel <= 8) {
+      input_state.get_uniform_color_bits_per_pixel() <= 8) {
     return {};
   }
 
-  if (input_state.has_alpha && input_state.get_alpha_bits_per_pixel() != input_state.bits_per_pixel) {
+  // All planes, alpha included, are read as uint16_t samples.
+  if (!input_state.all_channels_have_bytes_per_sample(2)) {
+    return {};
+  }
+
+  if (input_state.has_alpha() && input_state.bits_per_pixel_alpha != input_state.bits_per_pixel_Y) {
     return {};
   }
 
@@ -599,19 +609,19 @@ Op_YCbCr420_to_RRGGBBaa::state_after_conversion(const ColorState& input_state,
   // --- convert to YCbCr
 
   output_state.colorspace = heif_colorspace_RGB;
-  output_state.chroma = (input_state.has_alpha ?
+  output_state.chroma = (input_state.has_alpha() ?
                          heif_chroma_interleaved_RRGGBBAA_LE : heif_chroma_interleaved_RRGGBB_LE);
-  output_state.has_alpha = input_state.has_alpha;
-  output_state.bits_per_pixel = input_state.bits_per_pixel;
+  output_state.set_color_bits_per_pixel(input_state.bits_per_pixel_Y);
+  output_state.bits_per_pixel_alpha = input_state.bits_per_pixel_alpha;
 
   states.emplace_back(output_state, SpeedCosts_Unoptimized);
 
 
   output_state.colorspace = heif_colorspace_RGB;
-  output_state.chroma = (input_state.has_alpha ?
+  output_state.chroma = (input_state.has_alpha() ?
                          heif_chroma_interleaved_RRGGBBAA_BE : heif_chroma_interleaved_RRGGBB_BE);
-  output_state.has_alpha = input_state.has_alpha;
-  output_state.bits_per_pixel = input_state.bits_per_pixel;
+  output_state.set_color_bits_per_pixel(input_state.bits_per_pixel_Y);
+  output_state.bits_per_pixel_alpha = input_state.bits_per_pixel_alpha;
 
   states.emplace_back(output_state, SpeedCosts_Unoptimized);
 
@@ -632,6 +642,18 @@ Op_YCbCr420_to_RRGGBBaa::convert_colorspace(const std::shared_ptr<const HeifPixe
 
   int bpp = input->get_bits_per_pixel(heif_channel_Y);
   bool has_alpha = input->has_channel(heif_channel_Alpha);
+
+  // Defense in depth: the Cb/Cr planes are read below through a uint16_t* using a
+  // sample width taken from the Y channel (bpp). convert_colorspace() already
+  // rejects YCbCr with mismatched luma/chroma bit depths (GHSA-w7mc-p8jc-p853),
+  // but guard here as well so this operator is self-contained and a future direct
+  // caller or pipeline change cannot reintroduce the out-of-bounds chroma read.
+  if (input->get_bits_per_pixel(heif_channel_Cb) != bpp ||
+      input->get_bits_per_pixel(heif_channel_Cr) != bpp) {
+    return Error{heif_error_Unsupported_feature,
+                 heif_suberror_Unsupported_bit_depth,
+                 "Color conversion cannot handle YCbCr images with chroma bit depth differing from luma."};
+  }
 
   int le = (target_state.chroma == heif_chroma_interleaved_RRGGBB_LE ||
             target_state.chroma == heif_chroma_interleaved_RRGGBBAA_LE) ? 1 : 0;
@@ -663,9 +685,8 @@ Op_YCbCr420_to_RRGGBBaa::convert_colorspace(const std::shared_ptr<const HeifPixe
       };
     }
 
-    if (auto err = outimg->add_channel(heif_channel_Alpha, width, height, bpp, limits)) {
-      return err;
-    }
+    // The alpha samples go into the fourth component of the interleaved RRGGBBAA plane below.
+    // The output must not carry a separate alpha plane in addition to that.
   }
 
   uint8_t* out_p;

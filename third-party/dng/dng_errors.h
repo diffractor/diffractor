@@ -31,8 +31,12 @@ typedef std::atomic<dng_error_code> dng_atomic_error_code;
 
 enum
 	{
-	dng_error_none					= 0,		//!< No error. Success.
-	dng_error_unknown				= 100000,	//!< Logic or program error or other unclassifiable error.
+		
+	dng_error_none       = 0,		            //!< No error. Success.
+
+	dng_error_sdk_first  = 100000,
+	
+	dng_error_unknown    = dng_error_sdk_first,	//!< Logic or program error or other unclassifiable error.
 	dng_error_not_yet_implemented,				//!< Functionality requested is not yet implemented.
 	dng_error_silent,							//!< An error which should not be signalled to user.
 	dng_error_user_canceled,					//!< Processing stopped by user (or host application) request
@@ -51,6 +55,12 @@ enum
 	dng_error_overflow,							//!< Arithmetic overflow.
 	dng_error_jxl_encoder,						//!< JPEG XL encoder error.
 	dng_error_jxl_decoder,						//!< JPEG XL decoder error.
+
+	// Count of number of error codes in the DNG SDK, including dng_error_none.
+	
+	dng_error_sdk_end,
+	dng_error_sdk_count = dng_error_sdk_end - dng_error_sdk_first + 1,
+	
 	};
 	
 /*****************************************************************************/

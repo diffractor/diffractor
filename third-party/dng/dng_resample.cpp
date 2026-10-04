@@ -160,18 +160,50 @@ void dng_resample_weights::Initialize (real64 scale,
 	
 	uint32 j;
 	
+	// Ensure scale is positive and finite.
+
+	if (!isfinite (scale))
+		{
+
+		ThrowProgramError ("scale not finite");
+
+		}
+
+	if (scale <= 0.0)
+		{
+
+		ThrowProgramError ("scale not positive");
+
+		}
+
 	// We only adjust the kernel size for scale factors less than 1.0.
 	
 	scale = Min_real64 (scale, 1.0);
-	
+
 	// Find radius of this kernel.
+
+	fRadius = ConvertDoubleToUint32 (std::ceil (kernel.Extent () / scale));
+
+	// Ensure fRadius > 0.
+
+	if (fRadius == 0)
+		{
+
+		ThrowProgramError ("fRadius zero");
+
+		}
 	
-	fRadius = (uint32) (kernel.Extent () / scale + 0.9999);
-	
-	// Width is twice the radius.
-	
-	uint32 width = fRadius * 2;
-	
+	// Width is twice the radius. Check for overflow.
+
+	uint32 width = 0;
+
+	if (!SafeUint32Mult (fRadius, 2, &width))
+		{
+
+		ThrowOverflow ("Arithmetic overflow computing width");
+
+		}
+
 	// Round to each set to weights to a multiple of 8 entries.
 	
 	if (!RoundUpUint32ToMultiple (width, 8, &fWeightStep))
@@ -240,7 +272,19 @@ void dng_resample_weights::Initialize (real64 scale,
 				}
 				
 			// Scale 32 bit weights so total of weights is 1.0.
-				
+			//
+			// CR-4208475 M-L3: Guard against a zero weight sum. A
+			// pathological kernel that returns 0 for every sample (or
+			// produces NaN/Inf) would otherwise yield 1.0 / 0 = +Inf
+			// and propagate Inf / NaN into the weight table, which is
+			// later cast to int16.
+
+			if (!(t32 > 0.0))
+				{
+				ThrowProgramError ("dng_resample: zero or non-finite "
+								   "1D kernel weight sum");
+				}
+
 			real32 s32 = (real32) (1.0 / t32);
 				
 			for (j = 0; j < width; j++)
@@ -428,7 +472,16 @@ void dng_resample_weights_2d::Initialize (const dng_resample_function &kernel,
 					}
 				
 				// Scale 32 bit weights so total of weights is 1.0.
-				
+				//
+				// CR-4208475 M-L3: Mirror the 1D guard above for the
+				// 2D weight builder.
+
+				if (!(t32 > 0.0))
+					{
+					ThrowProgramError ("dng_resample: zero or non-finite "
+									   "2D kernel weight sum");
+					}
+
 				const real32 s32 = (real32) (1.0 / t32);
 				
 				for (uint32 i = 0; i < widthSqr; i++)

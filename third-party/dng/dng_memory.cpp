@@ -12,10 +12,26 @@
 #include "dng_exceptions.h"
 #include "dng_safe_arithmetic.h"
 
+#include <atomic>
+
 #ifdef _MSC_VER
 #include <Windows.h>
 #endif
 
+/*****************************************************************************/
+
+static std::atomic<bool> sDNGSimulateMemoryFull { false };
+
+void DNG_SetSimulateMemoryFull (bool simulate)
+	{
+	
+	sDNGSimulateMemoryFull.store (simulate,
+								  std::memory_order_relaxed);
+	
+	}
+
+/*****************************************************************************/
+/*****************************************************************************/
 /*****************************************************************************/
 
 dng_memory_data::dng_memory_data ()
@@ -247,6 +263,9 @@ dng_malloc_block::~dng_malloc_block ()
 dng_memory_block * dng_memory_allocator::Allocate (uint32 size)
 	{
 	
+	if (sDNGSimulateMemoryFull.load (std::memory_order_relaxed))
+		ThrowMemoryFull ();
+
 	dng_memory_block *result = new dng_malloc_block (size);
 	
 	if (!result)

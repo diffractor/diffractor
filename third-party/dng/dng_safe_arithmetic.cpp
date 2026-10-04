@@ -82,6 +82,14 @@ int64 SafeInt64Add(int64 arg1, int64 arg2) {
 	return SafeAdd<int64>(arg1, arg2);
 }
 
+int32 SafeInt32Add(int32 arg1, int32 arg2, int32 arg3) {
+	return SafeInt32Add (SafeInt32Add (arg1, arg2), arg3);
+}
+
+int64 SafeInt64Add(int64 arg1, int64 arg2, int64 arg3) {
+	return SafeInt64Add (SafeInt64Add (arg1, arg2), arg3);
+}
+
 bool SafeUint32Add(uint32 arg1, uint32 arg2,
 				   uint32 *result) {
 	try {
@@ -98,6 +106,14 @@ uint32 SafeUint32Add(uint32 arg1, uint32 arg2) {
 
 uint64 SafeUint64Add(uint64 arg1, uint64 arg2) {
 	return SafeAdd<uint64>(arg1, arg2);
+}
+
+uint32 SafeUint32Add(uint32 arg1, uint32 arg2, uint32 arg3) {
+	return SafeUint32Add (SafeUint32Add (arg1, arg2), arg3);
+}
+
+uint64 SafeUint64Add(uint64 arg1, uint64 arg2, uint64 arg3) {
+	return SafeUint64Add (SafeUint64Add (arg1, arg2), arg3);
 }
 
 bool SafeInt32Sub(int32 arg1, int32 arg2, int32 *result) {
@@ -124,7 +140,11 @@ uint32 SafeUint32Sub(uint32 arg1, uint32 arg2) {
 	if (arg1 >= arg2) {
 		return arg1 - arg2;
 	} else {
-		ThrowOverflow ("Arithmetic overflow in SafeInt32Sub");
+		// CR-4208475 M-L1: Diagnostic previously misreported this as
+		// SafeInt32Sub. Correct it to SafeUint32Sub so debugging the
+		// failing call site is unambiguous.
+
+		ThrowOverflow ("Arithmetic overflow in SafeUint32Sub");
 
 		// Dummy return statement.
 		return 0;
@@ -244,6 +264,10 @@ int64 SafeInt64MultSlow(int64 arg1, int64 arg2) {
 }
 
 }  // namespace dng_internal
+
+int64 SafeInt64Mult(int64 arg1, int64 arg2, int64 arg3) {
+	return SafeInt64Mult (SafeInt64Mult (arg1, arg2), arg3);
+}
 
 uint32 SafeUint32DivideUp(uint32 arg1, uint32 arg2) {
 	// It might seem more intuitive to implement this function simply as

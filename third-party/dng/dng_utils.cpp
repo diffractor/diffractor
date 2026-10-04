@@ -208,6 +208,10 @@ void dng_show_message (const char *s)
 
 /*****************************************************************************/
 
+#if (qMacOS || qiPhone)
+__attribute__((__format__ (__printf__, 1, 2)))
+#endif
+
 void dng_show_message_f (const char *fmt, ... )
 	{
 	
@@ -1317,14 +1321,33 @@ bool dng_image_stats::operator== (const dng_image_stats &src) const
 
 /*****************************************************************************/
 
-void dng_image_stats::Parse (dng_stream &stream)
+void dng_image_stats::Parse (dng_stream &stream,
+							 uint32 tagByteCount)
 	{
 	
 	// Tag data is big-endian byte order.
 
 	TempBigEndian tempEndian (stream);
 
+	uint64 tagEnd = SafeUint64Add (stream.Position (),
+								   (uint64) tagByteCount);
+
+	const auto requireAvailableBytes =
+		[&stream,
+		 tagEnd] (uint64 byteCount)
+		{
+
+		if (stream.Position () > tagEnd ||
+			byteCount > tagEnd - stream.Position ())
+			{
+			ThrowBadFormat ("ImageStats tag is truncated");
+			}
+
+		};
+
 	// Read the number of tags.
+
+	requireAvailableBytes (4);
 
 	uint32 count = stream.Get_uint32 ();
 
@@ -1339,6 +1362,8 @@ void dng_image_stats::Parse (dng_stream &stream)
 	for (uint32 i = 0; i < count; i++)
 		{
 		
+		requireAvailableBytes (8);
+
 		// Read child tag code.
 
 		uint32 childTagCode = stream.Get_uint32 ();
@@ -1363,6 +1388,11 @@ void dng_image_stats::Parse (dng_stream &stream)
 
 		if (length > kMaxBytes)
 			ThrowBadFormat ("child tag byte length too large");
+
+		requireAvailableBytes (length);
+
+		uint64 childEnd = SafeUint64Add (stream.Position (),
+										 (uint64) length);
 
 		// Read all floats.
 
@@ -1489,6 +1519,16 @@ void dng_image_stats::Parse (dng_stream &stream)
 			
 			}
 
+		if (stream.Position () != childEnd)
+			{
+			ThrowBadFormat ("ImageStats child tag length mismatch");
+			}
+
+		}
+
+	if (stream.Position () != tagEnd)
+		{
+		ThrowBadFormat ("ImageStats tag length mismatch");
 		}
 	
 	}

@@ -26,6 +26,7 @@
 
 #include <string>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <limits>
 
@@ -324,7 +325,7 @@ public:
     }
   }
 
-  void add_sample_entry(std::shared_ptr<class Box> entry)
+  void add_sample_entry(const std::shared_ptr<class Box>& entry)
   {
     m_sample_entries.push_back(entry);
   }
@@ -356,8 +357,18 @@ public:
   struct TimeToSample {
     uint32_t sample_count;
     uint32_t sample_delta;
+
+    // Index one past the last sample described by this entry, i.e. the prefix sum
+    // of sample_count over the entries up to and including this one. Derived (not
+    // stored in the file); kept in sync by parse() and append_sample_duration() so
+    // get_sample_duration() can binary-search instead of scanning linearly.
+    uint32_t cumulative_sample_count = 0;
   };
 
+  // O(log entries) lookup of the sample duration (delta) for a given sample index.
+  // Called once per output sample on the decode/raw paths, so a linear scan would
+  // be O(entries) per sample, i.e. O(entries * samples) overall (GHSA-xw34-mjcp-jqh8,
+  // variant V1).
   uint32_t get_sample_duration(uint32_t sample_idx);
 
   void append_sample_duration(uint32_t duration);
@@ -700,7 +711,7 @@ public:
     set_short_type(fourcc("uri "));
   }
 
-  void set_uri(std::string uri) { m_uri = uri; }
+  void set_uri(std::string uri) { m_uri = std::move(uri); }
 
   std::string get_uri() const { return m_uri; }
 
@@ -984,8 +995,6 @@ protected:
   Error parse(BitstreamRange& range, const heif_security_limits*) override;
 
   Error write(StreamWriter& writer) const override;
-
-  Error check_for_double_references() const;
 
 private:
   std::vector<Reference> m_references;

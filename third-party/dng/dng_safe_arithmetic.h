@@ -55,6 +55,12 @@ bool SafeInt32Add(int32 arg1, int32 arg2, int32 *result);
 int32 SafeInt32Add(int32 arg1, int32 arg2);
 int64 SafeInt64Add(int64 arg1, int64 arg2);
 
+// Returns the result of adding arg1 and arg2 and arg3 if it will fit in the
+// result type (without under-/overflow). Otherwise, throws a dng_exception with
+// error code dng_error_unknown.
+int32 SafeInt32Add(int32 arg1, int32 arg2, int32 arg3);
+int64 SafeInt64Add(int64 arg1, int64 arg2, int64 arg3);
+
 // If the result of adding arg1 and arg2 will fit in a uint32_t (without
 // wraparound), stores this result in *result and returns true. Otherwise,
 // returns false and leaves *result unchanged.
@@ -66,6 +72,12 @@ bool SafeUint32Add(uint32 arg1, uint32 arg2,
 // dng_error_unknown.
 uint32 SafeUint32Add(uint32 arg1, uint32 arg2);
 uint64 SafeUint64Add(uint64 arg1, uint64 arg2);
+
+// Returns the result of adding arg1 and arg2 and arg3 if it will fit in the
+// result type (without wraparound). Otherwise, throws a dng_exception with
+// error code dng_error_unknown.
+uint32 SafeUint32Add(uint32 arg1, uint32 arg2, uint32 arg3);
+uint64 SafeUint64Add(uint64 arg1, uint64 arg2, uint64 arg3);
 
 // If the subtraction of arg2 from arg1 will not result in an int32_t under- or
 // overflow, stores this result in *result and returns true. Otherwise,
@@ -120,13 +132,7 @@ int64 SafeInt64MultSlow(int64 arg1, int64 arg2);
 
 #if !qWinOS
 #ifdef __clang__
-#ifdef __ANDROID__
-// While clang says it supports __builtin_smull_overflow, the Android NDK
-// doesn't use the right runtime library per https://bugs.llvm.org/show_bug.cgi?id=28629
-#define __USE_BUILTIN_SMULL_OVERFLOW !defined(__NDK_MAJOR__) && __has_builtin(__builtin_smull_overflow)
-#else
 #define __USE_BUILTIN_SMULL_OVERFLOW __has_builtin(__builtin_smull_overflow)
-#endif // __ANDROID__
 #endif // __clang__
 #endif // !qWinOS
 
@@ -145,16 +151,16 @@ inline int64 SafeInt64MultByClang(int64 arg1, int64 arg2) {
 	  long temp_result;
 	  failed = __builtin_smull_overflow((long)arg1, (long)arg2, &temp_result);
 	  if (sizeof(long) > 8 && !failed) {
-		  failed = (temp_result > std::numeric_limits<int64>::max() ||
-				temp_result < std::numeric_limits<int64>::min());
+		  failed = (temp_result > (std::numeric_limits<int64>::max)() ||
+				temp_result < (std::numeric_limits<int64>::min)());
 	  }
 	  result = (int64)temp_result;
 	} else if (sizeof(long long) >= 8) {
 	  long long temp_result;
 	  failed = __builtin_smulll_overflow((long long)arg1, (long long)arg2, &temp_result);
 	  if (sizeof(long long) > 8 && !failed) {
-		  failed = (temp_result > std::numeric_limits<int64>::max() ||
-				temp_result < std::numeric_limits<int64>::min());
+		  failed = (temp_result > (std::numeric_limits<int64>::max)() ||
+				temp_result < (std::numeric_limits<int64>::min)());
 	  }
 	  result = (int64)temp_result;
 	} else {
@@ -174,9 +180,9 @@ inline int64 SafeInt64MultByClang(int64 arg1, int64 arg2) {
 inline int64 SafeInt64MultByInt128(int64 arg1,
 									  int64 arg2) {
 	const __int128 kInt64Max =
-		static_cast<__int128>(std::numeric_limits<int64>::max());
+		static_cast<__int128>((std::numeric_limits<int64>::max)());
 	const __int128 kInt64Min =
-		static_cast<__int128>(std::numeric_limits<int64>::min());
+		static_cast<__int128>((std::numeric_limits<int64>::min)());
 	__int128 result = static_cast<__int128>(arg1) * static_cast<__int128>(arg2);
 	if (result > kInt64Max || result < kInt64Min) {
 		ThrowProgramError("Arithmetic overflow");
@@ -199,6 +205,11 @@ inline int64 SafeInt64Mult(int64 arg1, int64 arg2) {
 	return dng_internal::SafeInt64MultSlow(arg1, arg2);
 #endif
 }
+
+// Returns the result of multiplying arg1, ..., argn if it will fit in a
+// int64_t (without wraparound). Otherwise, throws a dng_exception with error
+// code dng_error_unknown.
+int64 SafeInt64Mult(int64 arg1, int64 arg2, int64 arg3);
 
 // Returns the result of dividing arg1 by arg2; if the result is not an integer,
 // rounds up to the next integer. If arg2 is zero, throws a dng_exception with

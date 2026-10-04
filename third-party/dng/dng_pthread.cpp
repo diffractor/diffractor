@@ -195,7 +195,8 @@ namespace
 	void init_thread_TLS()
 	{
 		thread_wait_sema_TLS_index = ::TlsAlloc();
-		thread_wait_sema_inited = true;
+		thread_wait_sema_inited =
+			(thread_wait_sema_TLS_index != TLS_OUT_OF_INDEXES);
 	}
 
 	void finalize_thread_TLS()
@@ -219,11 +220,26 @@ namespace
 	{
 		dng_pthread_once(&once_thread_TLS, init_thread_TLS);
 
+		if (!thread_wait_sema_inited)
+			{
+			return NULL;
+			}
+
 		HANDLE semaphore = ::TlsGetValue(thread_wait_sema_TLS_index);
 		if (semaphore == NULL)
 		{
 			semaphore = ::CreateSemaphore(NULL, 0, 1, NULL);
-			::TlsSetValue(thread_wait_sema_TLS_index, semaphore);
+
+			if (semaphore == NULL)
+				{
+				return NULL;
+				}
+
+			if (!::TlsSetValue(thread_wait_sema_TLS_index, semaphore))
+				{
+				::CloseHandle(semaphore);
+				return NULL;
+				}
 		}
 
 		return semaphore;
@@ -247,6 +263,38 @@ namespace
 	{
 		void *(*func)(void *);
 		void *arg;
+	};
+
+	struct ScopedThreadHandle
+	{
+		HANDLE handle;
+
+		explicit ScopedThreadHandle(HANDLE arg = NULL) : handle(arg)
+		{
+		}
+
+		~ScopedThreadHandle()
+		{
+			if (handle != NULL)
+			{
+			#if qWinRT
+				::WinRT_CloseThreadHandle(handle);
+			#else
+				::CloseHandle(handle);
+			#endif
+			}
+		}
+
+		HANDLE Release()
+		{
+			HANDLE result = handle;
+			handle = NULL;
+			return result;
+		}
+
+	private:
+		ScopedThreadHandle &operator=(const ScopedThreadHandle &);
+		ScopedThreadHandle(const ScopedThreadHandle &);
 	};
 
 	// This trampoline takes care of the return type being different
@@ -373,13 +421,23 @@ int dng_pthread_create(dng_pthread_t *thread, const pthread_attr_t *attrs, void 
 				return -1; // ENOMEM
 			(void) args.Release();
 
+			// CR-4208475 O-L5: Keep the OS handle owned locally until the
+			// map insertion succeeds. If insert throws, the handle is
+			// closed by ScopedThreadHandle instead of leaking.
+			ScopedThreadHandle threadHandle((HANDLE)result);
+
 			std::pair<DWORD, std::pair<HANDLE, void **> > newMapEntry(threadID,
-																	 std::pair<HANDLE, void **>((HANDLE)result, resultHolder.Get ()));
+																	 std::pair<HANDLE, void **>(threadHandle.handle, resultHolder.Get ()));
 			std::pair<ThreadMapType::iterator, bool> insertion = primaryHandleMap.insert(newMapEntry);
 			(void) insertion;
 
 			// If there is a handle open on the thread, its ID should not be reused so assert that an insertion was made.
 			DNG_ASSERT(insertion.second, "pthread emulation logic error");
+
+			if (!insertion.second)
+				return -1;
+
+			(void) threadHandle.Release();
 		}
 
 
@@ -636,6 +694,12 @@ static int cond_wait_internal(dng_pthread_cond_t *cond, dng_pthread_mutex_t *mut
 	HANDLE semaphore = GetThreadSemaphore();
 	int my_generation; // The broadcast generation this waiter is in
 
+	// CR-4208475 Q-M3: Never enqueue a stack waiter without a valid,
+	// thread-owned semaphore.
+
+	if (semaphore == NULL)
+		return ERROR_NOT_ENOUGH_MEMORY;
+
 	{
 		this_wait.next = NULL;
 		this_wait.semaphore = semaphore;
@@ -660,13 +724,12 @@ static int cond_wait_internal(dng_pthread_cond_t *cond, dng_pthread_mutex_t *mut
 	real_mutex.Unlock();
 
 	DWORD result = ::WaitForSingleObject(semaphore, timeout_milliseconds);
+	DWORD wait_error = (result == WAIT_FAILED) ? ::GetLastError() : ERROR_SUCCESS;
 
-	if (result == WAIT_TIMEOUT)
+	if (result != WAIT_OBJECT_0)
 	{
-		// If the wait timed out, this thread is likely still on the waiters list
-		// of the condition. However, there is a race in that the thread may have been
-		// signaled or broadcast between when WaitForSingleObject decided
-		// we had timed out and this code running.
+		// A timeout or wait failure may leave this stack waiter linked. Remove it
+		// before returning so a later signal cannot access expired storage.
 
 		bool mustConsumeSemaphore = false;
 		{
@@ -675,9 +738,10 @@ static int cond_wait_internal(dng_pthread_cond_t *cond, dng_pthread_mutex_t *mut
 			bool chosen_by_signal = this_wait.chosen_by_signal;
 			bool chosen_by_broadcast = my_generation != real_cond.broadcast_generation;
 
-			if (chosen_by_signal || chosen_by_broadcast)
+			if (result == WAIT_TIMEOUT &&
+				(chosen_by_signal || chosen_by_broadcast))
 				mustConsumeSemaphore = true;
-			else
+			else if (!chosen_by_signal && !chosen_by_broadcast)
 			{
 				// Still on waiters list. Remove this waiter from list.
 				if (this_wait.next != NULL)
@@ -694,17 +758,29 @@ static int cond_wait_internal(dng_pthread_cond_t *cond, dng_pthread_mutex_t *mut
 
 		if (mustConsumeSemaphore)
 		{
-			::WaitForSingleObject(semaphore, INFINITE);
-			result = WAIT_OBJECT_0;
+			DWORD consume_result = ::WaitForSingleObject(semaphore, INFINITE);
+
+			if (consume_result == WAIT_OBJECT_0)
+				result = WAIT_OBJECT_0;
+			else
+				{
+				result = consume_result;
+				wait_error = ::GetLastError();
+				}
 		}
 	}
-	else
-		DNG_ASSERT (result == WAIT_OBJECT_0, "pthread emulation logic error");
 
 	// reacquire the mutex
 	real_mutex.Lock();
 
-	return (result == WAIT_TIMEOUT) ? DNG_ETIMEDOUT : 0;
+	if (result == WAIT_OBJECT_0)
+		return 0;
+
+	if (result == WAIT_TIMEOUT)
+		return DNG_ETIMEDOUT;
+
+	return wait_error == ERROR_SUCCESS ? ERROR_INVALID_FUNCTION
+									   : (int) wait_error;
 #endif
 }
 

@@ -23,6 +23,7 @@
 
 #include "codecs/decoder.h"
 #include <memory>
+#include <utility>
 #include <vector>
 
 
@@ -45,6 +46,11 @@ public:
 
   virtual ~Chunk() = default;
 
+  // Size in bytes of one entry in the internal sample-range table. Used by the
+  // owning Track to reserve the aggregate memory for all chunks up front
+  // (GHSA-xw34-mjcp-jqh8, variants V2/V3).
+  static size_t sample_range_entry_size();
+
   heif_compression_format get_compression_format() const { return m_compression_format; }
 
   virtual std::shared_ptr<class Decoder> get_decoder() const { return m_decoder; }
@@ -57,7 +63,7 @@ public:
 
   DataExtent get_data_extent_for_sample(uint32_t n) const;
 
-  void set_decoder(std::shared_ptr<class Decoder> dec) { m_decoder = dec; }
+  void set_decoder(std::shared_ptr<class Decoder> dec) { m_decoder = std::move(dec); }
 
 private:
   // Sets `success` to false if the chunk cannot be constructed validly

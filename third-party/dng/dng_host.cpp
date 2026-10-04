@@ -655,9 +655,26 @@ dng_jxl_encode_settings *
 		case use_case_LosslessEnhancedImage:
 		case use_case_LosslessGainMap:
 			{
-			settings->SetDistance (0.0f);
-			settings->SetUseOriginalColorEncoding (true);
+			
+			// If we have special settings attached to the host, just use them.
+			
+			if (JXLEncodeSettings ())
+				{
+				
+				*settings = *JXLEncodeSettings ();
+				
+				}
+
+			else
+				{
+				
+				settings->SetDistance (0.0f);
+				settings->SetUseOriginalColorEncoding (true);
+
+				}
+
 			break;
+			
 			}
 			
 		case use_case_MainImage:
@@ -733,7 +750,9 @@ dng_jxl_encode_settings *
 				}
 				
 			// Fall through
-			
+
+			DNG_FALLTHROUGH
+
 			}
 			
 		case use_case_LosslessTransparency:
@@ -760,7 +779,9 @@ dng_jxl_encode_settings *
 				}
 				
 			// Fall through
-			
+
+			DNG_FALLTHROUGH
+
 			}
 			
 		case use_case_LosslessDepth:

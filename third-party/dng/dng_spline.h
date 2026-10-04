@@ -12,6 +12,7 @@
 /*****************************************************************************/
 
 #include "dng_1d_function.h"
+#include "dng_assertions.h"
 #include "dng_memory.h"
 
 #include <vector>
@@ -28,6 +29,14 @@ inline real64 EvaluateSplineSegment (real64 x,
 	{
 	
 	real64 A = x1 - x0;
+
+	// CR-4208475 M-L7: A == 0 would feed B and C below division by
+	// zero and propagate NaN / Inf into the returned value. Callers in
+	// dng_spline_solver normally pre-validate that X is strictly
+	// increasing, but this is a public inline helper.
+
+	DNG_REQUIRE (A > 0.0,
+				 "EvaluateSplineSegment requires x1 > x0");
 
 	real64 B = (x - x0) / A;
 
@@ -52,6 +61,13 @@ inline real64 EvaluateSlopeSplineSegment (real64 x,
 	{
 
 	real64 A = x1 - x0;
+
+	// CR-4208475 M-L7: Mirror the EvaluateSplineSegment precondition.
+	// A2 / A3 below feed multiple divisions; A == 0 would propagate
+	// Inf / NaN through every term.
+
+	DNG_REQUIRE (A > 0.0,
+				 "EvaluateSlopeSplineSegment requires x1 > x0");
 
 	real64 A2 = A * A;
 	

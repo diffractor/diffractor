@@ -250,6 +250,27 @@ class dng_raw_preview: public dng_preview
 
 /*****************************************************************************/
 
+class dng_hdr_gain_map_preview: public dng_raw_preview
+	{
+	
+	public:
+
+		// ISO 21496-1 data here.
+	
+		std::shared_ptr<const dng_memory_block> fGainMapMetadata;
+
+	public:
+	
+		void SetIFDInfo (dng_host &host,
+						 const dng_image &image) override;
+		
+		dng_basic_tag_set * AddTagSet (dng_host &host,
+									   dng_tiff_directory &directory) const override;
+		
+	};
+
+/*****************************************************************************/
+
 class dng_mask_preview: public dng_preview
 	{
 	

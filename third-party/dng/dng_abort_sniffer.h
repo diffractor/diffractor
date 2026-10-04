@@ -139,6 +139,16 @@ class dng_abort_sniffer
 			return 0.1;
 			}
 
+		// Intended to be called as a hint that the upcoming task is about to
+		// take a long time and may block the thread, so if the goal is to
+		// provide some initial visual hint to the user (e.g., an
+		// indeterminate progress UX, etc.), now would be a good time to do
+		// so. The default implementation does nothing.
+
+		virtual void SniffSlowHint ()
+			{
+			}
+
 	protected:
 	
 		/// Should be implemented by derived classes to check for an user
@@ -200,12 +210,8 @@ class dng_sniffer_task: private dng_uncopyable
 				fSniffer->StartTask (name, fract);
 			}
 			
-		~dng_sniffer_task ()
-			{
-			if (fSniffer)
-				fSniffer->EndTask ();
-			}
-		
+		virtual ~dng_sniffer_task ();
+
 		/// Check for pending user cancellation or other abort. ThrowUserCanceled
 		/// will be called if one is pending.
 

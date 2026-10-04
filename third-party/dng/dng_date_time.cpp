@@ -427,24 +427,30 @@ void dng_date_time_info::Decode_ISO_8601 (const char *s)
 						
 					if (s [k] == '+' || s [k] == '-')
 						{
-						
+
 						int32 sign = (s [k] == '-' ? -1 : 1);
-						
+
 						unsigned tzhour = 0;
 						unsigned tzmin	= 0;
-						
+
+						// CR-4208475 N-L11: width-limit the timezone fields
+						// so an attacker-controlled XMP / EXIF string cannot
+						// supply UINT_MAX and wrap the unsigned arithmetic
+						// before downstream IsValid clamps it. Matches the
+						// %2u pattern in Decode_IPTC_Time.
+
 						if (sscanf (s + k + 1,
-									"%u:%u",
+									"%2u:%2u",
 									&tzhour,
 									&tzmin) > 0)
 							{
-							
+
 							fTimeZone.SetOffsetMinutes (sign * (tzhour * 60 + tzmin));
-															
+
 							}
-						
+
 						break;
-						
+
 						}
 					
 					}

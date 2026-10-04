@@ -54,7 +54,7 @@
 		
 /*****************************************************************************/
 
-#define kDNGValidateVersion "1.7.1"
+#define kDNGValidateVersion (kDNGSDK_GetInfoVersion)
 		
 /*****************************************************************************/
 
@@ -688,14 +688,14 @@ int main (int argc, char *argv [])
 
 			fprintf (stderr,
 					 "\n"
-					 "dng_validate, version " kDNGValidateVersion " "
+					 "dng_validate, version %s "
 					 #if qDNG64Bit
 					 "(64-bit)"
 					 #else
 					 "(32-bit)"
 					 #endif
 					 "\n"
-					 "Copyright 2005-2023 Adobe Systems, Inc.\n"
+					 "Copyright 2005-2026 Adobe Systems, Inc.\n"
 					 "\n"
 					 "Usage:  %s [options] file1 file2 ...\n"
 					 "\n"
@@ -730,6 +730,7 @@ int main (int argc, char *argv [])
 					 "-tif <file>           Write TIF image to \"<file>.tif\"\n"
 					 "-dng <file>           Write DNG image to \"<file>.dng\"\n"
 					 "\n",
+					 kDNGValidateVersion,
 					 argv [0]);
 					 
 			return 1;

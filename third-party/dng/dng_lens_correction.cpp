@@ -25,6 +25,19 @@
 
 /*****************************************************************************/
 
+static void RequireValidWarpPlaneCount (uint32 planes)
+	{
+
+	// CR-4208475 Q-H3: Warp parameter storage is fixed to
+	// kMaxColorPlanes. Enforce the count before any array iteration.
+
+	DNG_REQUIRE (planes >= 1 && planes <= kMaxColorPlanes,
+				 "Invalid warp parameter plane count");
+
+	}
+
+/*****************************************************************************/
+
 dng_warp_params::dng_warp_params ()
 
 	:	fPlanes (1)
@@ -44,8 +57,7 @@ dng_warp_params::dng_warp_params (uint32 planes,
 
 	{
 	
-	DNG_ASSERT (planes >= 1,			   "Too few planes." );
-	DNG_ASSERT (planes <= kMaxColorPlanes, "Too many planes.");
+	RequireValidWarpPlaneCount (planes);
 
 	DNG_ASSERT (fCenter.h >= 0.0 && fCenter.h <= 1.0, 
 				"Center (horizontal) out of range.");
@@ -86,6 +98,8 @@ bool dng_warp_params::IsNOP (uint32 plane) const
 
 bool dng_warp_params::IsRadNOPAll () const
 	{
+
+	RequireValidWarpPlaneCount (fPlanes);
 	
 	for (uint32 plane = 0; plane < fPlanes; plane++)
 		{
@@ -114,6 +128,8 @@ bool dng_warp_params::IsRadNOP (uint32 /* plane */) const
 
 bool dng_warp_params::IsTanNOPAll () const
 	{
+
+	RequireValidWarpPlaneCount (fPlanes);
 	
 	for (uint32 plane = 0; plane < fPlanes; plane++)
 		{
@@ -150,7 +166,9 @@ bool dng_warp_params::IsValid () const
 
 		}
 
-	if (fCenter.h < 0.0 || 
+	if (!std::isfinite (fCenter.h) ||
+		!std::isfinite (fCenter.v) ||
+		fCenter.h < 0.0 ||
 		fCenter.h > 1.0 ||
 		fCenter.v < 0.0 ||
 		fCenter.v > 1.0)
@@ -591,6 +609,11 @@ bool dng_warp_params_rectilinear::IsTanNOP (uint32 plane) const
 bool dng_warp_params_rectilinear::IsValid () const
 	{
 
+	if (!dng_warp_params::IsValid ())
+		{
+		return false;
+		}
+
 	for (uint32 plane = 0; plane < fPlanes; plane++)
 		{
 
@@ -606,7 +629,7 @@ bool dng_warp_params_rectilinear::IsValid () const
 		
 		}
 
-	return dng_warp_params::IsValid ();
+	return true;
 	
 	}
 
@@ -614,6 +637,13 @@ bool dng_warp_params_rectilinear::IsValid () const
 
 void dng_warp_params_rectilinear::PropagateToAllPlanes (uint32 totalPlanes)
 	{
+
+	RequireValidWarpPlaneCount (fPlanes);
+
+	if (totalPlanes < 1 || totalPlanes > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
 
 	for (uint32 plane = fPlanes; plane < totalPlanes; plane++)
 		{
@@ -681,6 +711,8 @@ dng_point_real64 dng_warp_params_rectilinear::EvaluateTangential (uint32 plane,
 real64 dng_warp_params_rectilinear::MaxSrcRadiusGap (real64 maxDstGap) const
 	{
 
+	RequireValidWarpPlaneCount (fPlanes);
+
 	real64 maxSrcGap = 0.0;
 
 	for (uint32 plane = 0; plane < fPlanes; plane++)
@@ -724,6 +756,8 @@ real64 dng_warp_params_rectilinear::MaxSrcRadiusGap (real64 maxDstGap) const
 dng_point_real64 dng_warp_params_rectilinear::MaxSrcTanGap (dng_point_real64 minDst,
 															dng_point_real64 maxDst) const
 	{
+
+	RequireValidWarpPlaneCount (fPlanes);
 	
 	const real64 v [] = { minDst.v, maxDst.v, 0.0 };
 	const real64 h [] = { minDst.h, maxDst.h, 0.0 };
@@ -797,6 +831,8 @@ void dng_warp_params_rectilinear::Dump () const
 	{
 	
 	#if qDNGValidate
+
+	RequireValidWarpPlaneCount (fPlanes);
 
 	dng_warp_params::Dump ();
 
@@ -903,6 +939,11 @@ bool dng_warp_params_fisheye::IsTanNOP (uint32 /* plane */) const
 bool dng_warp_params_fisheye::IsValid () const
 	{
 
+	if (!dng_warp_params::IsValid ())
+		{
+		return false;
+		}
+
 	for (uint32 plane = 0; plane < fPlanes; plane++)
 		{
 		
@@ -913,7 +954,7 @@ bool dng_warp_params_fisheye::IsValid () const
 		
 		}
 
-	return dng_warp_params::IsValid ();
+	return true;
 	
 	}
 
@@ -921,7 +962,14 @@ bool dng_warp_params_fisheye::IsValid () const
 
 void dng_warp_params_fisheye::PropagateToAllPlanes (uint32 totalPlanes)
 	{
-	
+
+	RequireValidWarpPlaneCount (fPlanes);
+
+	if (totalPlanes < 1 || totalPlanes > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	for (uint32 plane = fPlanes; plane < totalPlanes; plane++)
 		{
 
@@ -992,6 +1040,8 @@ dng_point_real64 dng_warp_params_fisheye::EvaluateTangential (uint32 /* plane */
 
 real64 dng_warp_params_fisheye::MaxSrcRadiusGap (real64 maxDstGap) const
 	{
+
+	RequireValidWarpPlaneCount (fPlanes);
 	
 	//
 	//	Let f (r) be the radius warp function. Consider the function
@@ -1076,6 +1126,8 @@ void dng_warp_params_fisheye::Dump () const
 	{
 	
 	#if qDNGValidate
+
+	RequireValidWarpPlaneCount (fPlanes);
 
 	dng_warp_params::Dump ();
 
@@ -1182,6 +1234,11 @@ dng_filter_warp::dng_filter_warp (const dng_image &srcImage,
 	DNG_ASSERT (negPlanes <= kMaxColorPlanes, "Too many planes.");
 
 	(void) negPlanes;
+
+	if (dstImage.Planes () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
 	
 	// At least one set of params must do something interesting.
 
@@ -1412,8 +1469,18 @@ dng_point dng_filter_warp::SrcTileSize (const dng_point &dstTileSize)
 
 		}
 
-	srcTileSize.h += ConvertUint32ToInt32 (fWeights.Width ());
-	srcTileSize.v += ConvertUint32ToInt32 (fWeights.Width ());
+	// CR-4208475 N-L9: each += chains a ConvertUint32ToInt32 /
+	// ConvertDoubleToInt32 result (which can reach INT32_MAX individually)
+	// onto srcTileSize, so two adds back-to-back can signed-overflow. Route
+	// through SafeInt32Add so the failure is a clean throw on overflow.
+	// Mirrors the M-M7 dng_tile_iterator pattern.
+
+	srcTileSize.h =
+		SafeInt32Add (srcTileSize.h,
+					  ConvertUint32ToInt32 (fWeights.Width ()));
+	srcTileSize.v =
+		SafeInt32Add (srcTileSize.v,
+					  ConvertUint32ToInt32 (fWeights.Width ()));
 
 	// Get upper bound on src tile size from tangential warp.
 
@@ -1421,17 +1488,21 @@ dng_point dng_filter_warp::SrcTileSize (const dng_point &dstTileSize)
 
 	const dng_point_real64 minDst ((bounds.t - fCenter.v) * fInvNormRadius,
 								   (bounds.l - fCenter.h) * fInvNormRadius);
-	
+
 	const dng_point_real64 maxDst ((bounds.b - 1.0 - fCenter.v) * fInvNormRadius,
 								   (bounds.r - 1.0 - fCenter.h) * fInvNormRadius);
-	
+
 	const dng_point_real64 srcTanGap = fParams->MaxSrcTanGap (minDst,
 															  maxDst);
 
 	// Add the two bounds together.
 
-	srcTileSize.v += ConvertDoubleToInt32 (ceil (srcTanGap.v * fNormRadius));
-	srcTileSize.h += ConvertDoubleToInt32 (ceil (srcTanGap.h * fNormRadius));
+	srcTileSize.v =
+		SafeInt32Add (srcTileSize.v,
+					  ConvertDoubleToInt32 (ceil (srcTanGap.v * fNormRadius)));
+	srcTileSize.h =
+		SafeInt32Add (srcTileSize.h,
+					  ConvertDoubleToInt32 (ceil (srcTanGap.h * fNormRadius)));
 	
 	DNG_REQUIRE (srcTileSize.v > 0, "Bad srcTileSize.v in dng_filter_warp::SrcTileSize");
 	DNG_REQUIRE (srcTileSize.h > 0, "Bad srcTileSize.h in dng_filter_warp::SrcTileSize");
@@ -2391,7 +2462,9 @@ bool dng_vignette_radial_params::IsValid () const
 		return false;
 		}
 
-	if (fCenter.h < 0.0 || 
+	if (!std::isfinite (fCenter.h) ||
+		!std::isfinite (fCenter.v) ||
+		fCenter.h < 0.0 ||
 		fCenter.h > 1.0 ||
 		fCenter.v < 0.0 ||
 		fCenter.v > 1.0)
@@ -2399,8 +2472,23 @@ bool dng_vignette_radial_params::IsValid () const
 		return false;
 		}
 
+	// CR-4208475 N-M3: reject NaN / Inf in the radial-vignette coefficient
+	// terms. The finiteness check on fCenter above was insufficient; the
+	// fParams array also feeds the per-pixel correction math and can
+	// produce non-finite intermediates if it contains NaN / Inf entries.
+
+	for (uint32 i = 0; i < kNumTerms; i++)
+		{
+
+		if (!std::isfinite (fParams [i]))
+			{
+			return false;
+			}
+
+		}
+
 	return true;
-	
+
 	}
 
 /*****************************************************************************/
@@ -2724,7 +2812,8 @@ void dng_opcode_FixVignetteRadial::Prepare (dng_negative &negative,
 	
 		fTableOutputBits = 15;
 	
-		while ((1 << fTableOutputBits) * maxScale > 65535.0)
+		while (fTableOutputBits > 0 &&
+			   (1 << fTableOutputBits) * maxScale > 65535.0)
 			{
 			fTableOutputBits--;
 			}

@@ -52,6 +52,10 @@ enum
 
 	sfGainMap					= 32,
 		
+	// Preview (reduced resolution) Gain Map.
+
+	sfPreviewGainMap			= sfPreviewImage + sfGainMap,
+		
 	// Preview image for non-primary settings.
 	
 	sfAltPreviewImage			= 0x10001,
@@ -481,9 +485,20 @@ enum
 	
 	// Was this preview build using a the default baseline multi-channel
 	// CFA merge (i.e. only using the first channel)?
-	
-	cacheVersionFakeMerge			= 0x40000
-	
+
+	cacheVersionFakeMerge			= 0x40000,
+
+	// Were the preview pixels written after an embedded-gain-map application
+	// (ApplyGainMapToDNGStage3) at preview-build time? If yes, the cached
+	// pixels already include the gain-map transform plus the
+	// NormalizeFloatStage1 BaselineExposure normalization. On extract, the
+	// gain map MUST NOT be re-applied or the gain map ends up applied twice.
+	// Cache entries that do not carry this bit but whose source DNG has a
+	// gain map are treated as stale and rebuilt. See cache-rebuild logic in
+	// cr_negative::CacheVersionUsable / PickRawPreviewIFD.
+
+	cacheVersionGainMapApplied		= 0x80000
+
 	};
 
 /*****************************************************************************/

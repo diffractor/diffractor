@@ -17,6 +17,8 @@
 #include "dng_types.h"
 #include "dng_utils.h"
 
+#include <cstdint>
+
 /*****************************************************************************/
 
 #define DNG_RECT_FMT(x) (x).t, (x).l, (x).b, (x).r
@@ -436,10 +438,10 @@ inline dng_rect operator+ (const dng_rect &a,
 						   const dng_point &b)
 	{
 	
-	return dng_rect (a.t + b.v,
-					 a.l + b.h,
-					 a.b + b.v,
-					 a.r + b.h);
+	return dng_rect (SafeInt32Add (a.t, b.v),
+					 SafeInt32Add (a.l, b.h),
+					 SafeInt32Add (a.b, b.v),
+					 SafeInt32Add (a.r, b.h));
 	
 	}
 
@@ -462,10 +464,10 @@ inline dng_rect operator- (const dng_rect &a,
 						   const dng_point &b)
 	{
 	
-	return dng_rect (a.t - b.v,
-					 a.l - b.h,
-					 a.b - b.v,
-					 a.r - b.h);
+	return dng_rect (SafeInt32Sub (a.t, b.v),
+					 SafeInt32Sub (a.l, b.h),
+					 SafeInt32Sub (a.b, b.v),
+					 SafeInt32Sub (a.r, b.h));
 	
 	}
 
@@ -505,8 +507,8 @@ inline dng_rect_real64 Transpose (const dng_rect_real64 &a)
 inline void HalfRect (dng_rect &rect)
 	{
 
-	rect.r = rect.l + (int32) (rect.W () >> 1);
-	rect.b = rect.t + (int32) (rect.H () >> 1);
+	rect.r = SafeInt32Add (rect.l, (int32) (rect.W () >> 1));
+	rect.b = SafeInt32Add (rect.t, (int32) (rect.H () >> 1));
 
 	}
 
@@ -515,8 +517,11 @@ inline void HalfRect (dng_rect &rect)
 inline void DoubleRect (dng_rect &rect)
 	{
 
-	rect.r = rect.l + (int32) (rect.W () << 1);
-	rect.b = rect.t + (int32) (rect.H () << 1);
+	int32 w = (int32) rect.W ();
+	int32 h = (int32) rect.H ();
+
+	rect.r = SafeInt32Add (SafeInt32Add (rect.l, w), w);
+	rect.b = SafeInt32Add (SafeInt32Add (rect.t, h), h);
 
 	}
 
@@ -526,10 +531,10 @@ inline void InnerPadRect (dng_rect &rect,
 						  int32 pad)
 	{
 
-	rect.l += pad;
-	rect.r -= pad;
-	rect.t += pad;
-	rect.b -= pad;
+	rect.l = SafeInt32Add (rect.l, pad);
+	rect.r = SafeInt32Sub (rect.r, pad);
+	rect.t = SafeInt32Add (rect.t, pad);
+	rect.b = SafeInt32Sub (rect.b, pad);
 
 	}
 
@@ -538,6 +543,11 @@ inline void InnerPadRect (dng_rect &rect,
 inline void OuterPadRect (dng_rect &rect,
 						  int32 pad)
 	{
+
+	if (pad == INT32_MIN)
+		{
+		ThrowOverflow ("pad");
+		}
 
 	InnerPadRect (rect, -pad);
 
@@ -549,8 +559,8 @@ inline void InnerPadRectH (dng_rect &rect,
 						   int32 pad)
 	{
 
-	rect.l += pad;
-	rect.r -= pad;
+	rect.l = SafeInt32Add (rect.l, pad);
+	rect.r = SafeInt32Sub (rect.r, pad);
 
 	}
 
@@ -560,8 +570,8 @@ inline void InnerPadRectV (dng_rect &rect,
 						   int32 pad)
 	{
 
-	rect.t += pad;
-	rect.b -= pad;
+	rect.t = SafeInt32Add (rect.t, pad);
+	rect.b = SafeInt32Sub (rect.b, pad);
 
 	}
 

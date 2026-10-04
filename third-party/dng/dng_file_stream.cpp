@@ -11,6 +11,8 @@
 #include "dng_exceptions.h"
 #include "dng_flags.h"
 
+#include <limits>
+
 #if qAndroid
 #include <unistd.h>
 #endif
@@ -92,16 +94,23 @@ dng_file_stream::dng_file_stream (int fd,
 	{
 
 	// Note: Use dup here as caller is responsible for separately managing fd.
+	// CR-4208475 Q-L8: Keep the duplicate visible until fdopen succeeds so its
+	// failure path can release the descriptor.
 
-	fFile = fdopen (dup (fd), mode);
+	const int duplicatedFD = dup (fd);
+
+	if (duplicatedFD >= 0)
+		fFile = fdopen (duplicatedFD, mode);
 
 	if (!fFile)
 		{
 
+		if (duplicatedFD >= 0)
+			(void) close (duplicatedFD);
+
 		#if qDNGValidate
 
-		ReportError ("Unable to open file",
-					 filename);
+		ReportError ("Unable to open file");
 
 		ThrowSilentError ();
 
@@ -121,35 +130,11 @@ dng_file_stream::dng_file_stream (int fd,
 								  bool output,
 								  uint32 bufferSize)
 
-	:	dng_stream ((dng_abort_sniffer *) NULL,
-					bufferSize,
-					0)
-
-	,	fFile (NULL)
+	:	dng_file_stream (fd,
+						 output ? "wb" : "rb",
+						 bufferSize)
 
 	{
-
-	// Note: Use dup here as caller is responsible for separately managing fd.
-
-	fFile = fdopen (dup (fd), output ? "wb" : "rb");
-
-	if (!fFile)
-		{
-
-		#if qDNGValidate
-
-		ReportError ("Unable to open file",
-					 filename);
-
-		ThrowSilentError ();
-
-		#else
-
-		ThrowOpenFile ();
-
-		#endif
-
-		}
 
 	}
 
@@ -229,17 +214,73 @@ dng_file_stream::~dng_file_stream ()
 uint64 dng_file_stream::DoGetLength ()
 	{
 	
-	if (fseek (fFile, 0, SEEK_END) != 0)
+	#if qWinOS
+
+	if (_fseeki64 (fFile, 0, SEEK_END) != 0)
 		{
-		
+
 		ThrowReadFile ();
 
 		}
-	
-	return (uint64) ftell (fFile);
+
+	// CR-4208475 K-L2: Treat tell failures as read errors before
+	// widening the position into the unsigned stream-length domain.
+
+	const auto position = _ftelli64 (fFile);
+
+	if (position < 0)
+		{
+
+		ThrowReadFile ();
+
+		}
+
+	return (uint64) position;
+
+	#else
+
+	if (fseeko (fFile, 0, SEEK_END) != 0)
+		{
+
+		ThrowReadFile ();
+
+		}
+
+	// CR-4208475 K-L2: Treat tell failures as read errors before
+	// widening the position into the unsigned stream-length domain.
+
+	const auto position = ftello (fFile);
+
+	if (position < 0)
+		{
+
+		ThrowReadFile ();
+
+		}
+
+	return (uint64) position;
+
+	#endif
 	
 	}
 		
+/*****************************************************************************/
+
+static bool dng_file_stream_offset_fits_seek (uint64 offset)
+	{
+
+	#if qWinOS
+
+	return offset <= 0x7FFFFFFFFFFFFFFFull;
+
+	#else
+
+	return offset <= (uint64) std::numeric_limits<off_t>::max ();
+
+	#endif
+
+	}
+
 /*****************************************************************************/
 
 void dng_file_stream::DoRead (void *data,
@@ -247,7 +288,20 @@ void dng_file_stream::DoRead (void *data,
 							  uint64 offset)
 	{
 	
-	if (fseek (fFile, (long) offset, SEEK_SET) != 0)
+	if (!dng_file_stream_offset_fits_seek (offset))
+		{
+		ThrowReadFile ();
+		}
+
+	#if qWinOS
+
+	if (_fseeki64 (fFile, (int64) offset, SEEK_SET) != 0)
+
+	#else
+
+	if (fseeko (fFile, (off_t) offset, SEEK_SET) != 0)
+
+	#endif
 		{
 		
 		ThrowReadFile ();
@@ -272,7 +326,20 @@ void dng_file_stream::DoWrite (const void *data,
 							   uint64 offset)
 	{
 	
-	if (fseek (fFile, (uint32) offset, SEEK_SET) != 0)
+	if (!dng_file_stream_offset_fits_seek (offset))
+		{
+		ThrowWriteFile ();
+		}
+
+	#if qWinOS
+
+	if (_fseeki64 (fFile, (int64) offset, SEEK_SET) != 0)
+
+	#else
+
+	if (fseeko (fFile, (off_t) offset, SEEK_SET) != 0)
+
+	#endif
 		{
 		
 		ThrowWriteFile ();

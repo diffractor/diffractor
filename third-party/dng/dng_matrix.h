@@ -19,6 +19,7 @@
 /*****************************************************************************/
 
 #include "dng_sdk_limits.h"
+#include "dng_classes.h"
 #include "dng_types.h"
 
 /*****************************************************************************/
@@ -108,6 +109,8 @@ class dng_matrix
 						  real64 slop = 1.0e-8) const;
 
 		bool AlmostIdentity (real64 slop = 1.0e-8) const;
+
+		void Process (dng_md5_printer_stream &printer) const;
 
 	};
 	
@@ -247,7 +250,9 @@ class dng_vector
 		dng_matrix AsDiagonal () const;
 		
 		dng_matrix AsColumn () const;
-		
+
+		void Process (dng_md5_printer_stream &printer) const;
+
 	};
 
 /*****************************************************************************/

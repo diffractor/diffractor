@@ -33,11 +33,16 @@
 
 class dng_fingerprint
 	{
+
+	friend struct dng_fingerprint_less_than;
+	friend class dng_md5_printer;
 	
 	public:
 	
 		static const size_t kDNGFingerprintSize = 16;
 
+	private:
+		
 		uint8 data [kDNGFingerprintSize];
 		
 	public:
@@ -46,6 +51,10 @@ class dng_fingerprint
 		
 		explicit dng_fingerprint (const char *hex);
 		
+		dng_fingerprint (const dng_fingerprint& print);
+
+		dng_fingerprint& operator= (const dng_fingerprint& print);
+
 		/// Check if fingerprint is all zeros.
 
 		bool IsNull () const;
@@ -62,6 +71,16 @@ class dng_fingerprint
 		void Clear ()
 			{
 			*this = dng_fingerprint ();
+			}
+
+		const uint8 * Data () const
+			{
+			return data;
+			}
+
+		uint8 * MutableData ()
+			{
+			return data;
 			}
 
 		/// Test if two fingerprints are equal.
@@ -94,7 +113,12 @@ class dng_fingerprint
 		/// Convert fingerprint to UTF-8 string and return result as a dng_string.
 
 		dng_string ToUtf8HexString () const;
+		
+		/// Utility function to convert hex char to a numbrer.
+		/// Returns -1 if invalid hex charactor.
 
+		static int HexCharToNum (char hexChar);
+		
 		/// Convert UTF-8 string to fingerprint. Returns true on success, false on
 		/// failure.
 		///
@@ -114,6 +138,12 @@ class dng_fingerprint
 		/// \retval True indicates success.
 
 		bool FromUtf8HexString (const dng_string &inputStr);
+
+		/// Convert fingerprint to UTF-8 string in UUID format (with possibly
+		/// a few bits modified to conform to the UUID format rules) and
+		/// return result as a dng_string.
+
+		dng_string ToUtf8ClosestUUIDString () const;
 
 	};
 
@@ -196,10 +226,12 @@ typedef std::vector<dng_fingerprint> dng_fingerprint_vector;
 class dng_md5_printer
 	{
 	
-	public:
+	protected:
 	
 		dng_md5_printer ();
 		
+	public:
+	
 		virtual ~dng_md5_printer ()
 			{
 			}
@@ -212,22 +244,48 @@ class dng_md5_printer
 		/// \param data The data to be hashed.
 		/// \param inputLen The length of data, in bytes.
 
-		void Process (const void *data,
-					  uint32 inputLen);
+		virtual void ProcessPtr (const void *data,
+								 uint32 inputLen);
 					  
 		/// Append the string to the stream to be hashed.
 		/// \param text The string to be hashed.
 
-		void Process (const char *text)
+		void ProcessString (const char *text)
 			{
 			
-			Process (text, (uint32) strlen (text));
+			ProcessPtr (text, (uint32) strlen (text));
 			
 			}
+
+		void Process (const dng_fingerprint &digest)
+			{
+
+			ProcessPtr (digest.data,
+						uint32 (sizeof (digest.data)));
+
+			}
+
+		void Process (const dng_string &str)
+			{
+
+			ProcessPtr (str.Get	   (),
+						str.Length ());
+
+			}
+
+		/// Process the Boolean value x.
+		/// \param x The value to be hashed.
+
+		void Process_bool (bool x);
+		
+		/// Process the size_t value x.
+		/// \param x The value to be hashed.
+
+		void Process_size (size_t x);
 		
 		/// Get the fingerprint (i.e., result of the hash).
 
-		const dng_fingerprint & Result ();
+		virtual const dng_fingerprint & Result ();
 		
 	private:
 	
@@ -348,7 +406,7 @@ class dng_md5_printer
 
 /// \brief A dng_stream based interface to the MD5 printing logic.
 
-class dng_md5_printer_stream : public dng_stream, dng_md5_printer
+class dng_md5_printer_stream : public dng_stream, public dng_md5_printer
 	{
 	
 	private:
@@ -366,23 +424,37 @@ class dng_md5_printer_stream : public dng_stream, dng_md5_printer
 			{
 			}
 
-		virtual uint64 DoGetLength ()
+		void ProcessPtr (const void *data,
+						 uint32 inputLen) override
+			{
+			
+			// Force data to be flushed, which ensures that interleaved
+			// Process* and Put* calls get serialized correctly.
+
+			Flush ();
+			
+			dng_md5_printer::ProcessPtr (data,
+										 inputLen);
+			
+			}
+					  
+		uint64 DoGetLength () override
 			{
 			
 			return fNextOffset;
 			
 			}
 	
-		virtual void DoRead (void * /* data */,
-							 uint32 /* count */,
-							 uint64 /* offset */)
+		void DoRead (void * /* data */,
+					 uint32 /* count */,
+					 uint64 /* offset */) override
 			{
 			
 			ThrowProgramError ();
 			
 			}
 							 
-		virtual void DoSetLength (uint64 length)
+		void DoSetLength (uint64 length) override
 			{
 			
 			if (length != fNextOffset)
@@ -392,9 +464,9 @@ class dng_md5_printer_stream : public dng_stream, dng_md5_printer
 				
 			}
 							 
-		virtual void DoWrite (const void *data,
-							  uint32 count2,
-							  uint64 offset)
+		void DoWrite (const void *data,
+					  uint32 count2,
+					  uint64 offset) override
 			{
 			
 			if (offset != fNextOffset)
@@ -402,13 +474,13 @@ class dng_md5_printer_stream : public dng_stream, dng_md5_printer
 				ThrowProgramError ();
 				}
 				
-			Process (data, count2);
+			dng_md5_printer::ProcessPtr (data, count2);
 			
 			fNextOffset += count2;
 			
 			}
 
-		const dng_fingerprint & Result ()
+		const dng_fingerprint & Result () override
 			{
 			
 			Flush ();
@@ -421,6 +493,37 @@ class dng_md5_printer_stream : public dng_stream, dng_md5_printer
 
 /*****************************************************************************/
 
-#endif
+/// \brief A version of dng_md5_printer_stream that is always little-endian.
+
+class dng_md5_printer_le_stream : public dng_md5_printer_stream
+	{
+
+	public:
+
+		dng_md5_printer_le_stream ()
+			{
+			SetLittleEndian ();
+			}
+	
+	};
+
+/*****************************************************************************/
+
+// A MD5 printer intended to be used directly with no portability requirements.
+
+class dng_md5_direct_printer: public dng_md5_printer
+	{
+
+	public:
+
+		dng_md5_direct_printer ()
+			{
+			}
+
+	};
+
+/*****************************************************************************/
+
+#endif	// __dng_fingerprint__
 	
 /*****************************************************************************/

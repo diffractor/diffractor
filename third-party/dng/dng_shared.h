@@ -282,6 +282,28 @@ class dng_shared
 
 		dng_image_sequence_info fImageSequenceInfo;
 		
+		uint32 fC2PAManifestCount  = 0;
+		uint64 fC2PAManifestOffset = 0;
+
+		// Older and possibly current versions of the public C2PA SDK would
+		// write C2PA XMP Provenance values into an XMP block in AVIF/HEIC/HEIF
+		// formats in a UUID box when signing such files (similar to how the
+		// XMP spec indicates XMP should be stored for MP4 files) rather than
+		// the standard XMP location for these types of files. This would
+		// typically produce AVIF/HEIC/HEIF files with 2 XMP blocks, one in
+		// the standard location and one in a UUID box. So we check for the
+		// existence of an XMP block in the UUID box location and record it
+		// here so that we may later check it to see if it contains a c2pa
+		// provenance value since, if it does, we may want to respect that
+		// value as a valid c2pa provenance URL.
+		//
+		// This is strictly a fallback location used only for locating a c2pa
+		// provenance value when the standard XMP location does not contain
+		// one; it is never treated as the file's authoritative embedded XMP.
+
+		uint32 fAltXMPCount  = 0;
+		uint64 fAltXMPOffset = 0;
+
 	public:
 	
 		dng_shared ();
@@ -321,6 +343,14 @@ class dng_shared
 									  uint32 tagCount,
 									  uint64 tagOffset);
 	
+		virtual bool Parse_main_chain_ifd (dng_stream &stream,
+										   dng_exif &exif,
+										   uint32 parentCode,
+										   uint32 tagCode,
+										   uint32 tagType,
+										   uint32 tagCount,
+										   uint64 tagOffset);
+
 	};
 	
 /*****************************************************************************/

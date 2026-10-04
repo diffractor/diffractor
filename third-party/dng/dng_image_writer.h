@@ -109,7 +109,7 @@ class tiff_tag: private dng_uncopyable
 		
 		uint32 Size () const
 			{
-			return TagTypeSize (Type ()) * Count ();
+			return SafeUint32Mult (TagTypeSize (Type ()), Count ());
 			}
 	
 		virtual void SetBigTIFF (bool /* isBigTIFF */)
@@ -450,6 +450,8 @@ class tag_big_uints: public tiff_tag
 		void Set (uint32 index,
 				  uint64 value)
 			{
+			DNG_REQUIRE (index < Count (),
+						 "tag_big_uints::Set index out of range");
 			fData.Buffer_uint64 () [index] = value;
 			}
 	
@@ -647,7 +649,8 @@ class tag_cfa_pattern: public tiff_tag
 						 uint32 cols,
 						 const uint8 *pattern)
 					   
-			:	tiff_tag (code, ttUndefined, 4 + rows * cols)
+			:	tiff_tag (code, ttUndefined,
+						 SafeUint32Add (4, SafeUint32Mult (rows, cols)))
 			
 			,	fRows	 (rows	 )
 			,	fCols	 (cols	 )
@@ -1326,7 +1329,10 @@ class dng_image_writer
 						bool hasTransparency = false,
 						bool allowBigTIFF = true,
 						const dng_image *gainMapImage = nullptr,
-						bool useHalfFloat = false);
+						const const_dng_memory_block_sptr gainMapMetadataBlock = nullptr,
+						bool useHalfFloat = false,
+						const void *gainMapAltProfileData = nullptr,
+						const uint32 gainMapAltProfileSize = 0);
 								
 		/// Write a dng_image to a dng_stream in TIFF format.
 		/// \param host Host interface used for progress updates, abort testing, buffer allocation, etc.
@@ -1360,7 +1366,10 @@ class dng_image_writer
 										   bool hasTransparency = false,
 										   bool allowBigTIFF = true,
 										   const dng_image *gainMapImage = nullptr,
-										   bool useHalfFloat = false);
+										   const const_dng_memory_block_sptr gainMapMetadataBlock = nullptr,
+										   bool useHalfFloat = false,
+										   const void *gainMapAltProfileData = nullptr,
+										   const uint32 gainMapAltProfileSize = 0);
 								
 		/// Write a dng_image to a dng_stream in DNG format.
 		/// \param host Host interface used for progress updates, abort testing, buffer allocation, etc.
@@ -1380,7 +1389,10 @@ class dng_image_writer
 					   bool uncompressed = false,
 					   bool allowBigTIFF = true,
 					   const dng_image *gainMapImage = nullptr,
-					   const dng_lossy_compressed_image *gainMapLossyCompressed = nullptr);
+					   const dng_lossy_compressed_image *gainMapLossyCompressed = nullptr,
+					   const const_dng_memory_block_sptr gainMapMetadataBlock = nullptr,
+					   const void *gainMapAltProfileData = nullptr,
+					   const uint32 gainMapAltProfileSize = 0);
 							   
 		/// Write a dng_image to a dng_stream in DNG format.
 		/// \param host Host interface used for progress updates, abort testing, buffer allocation, etc.
@@ -1402,7 +1414,10 @@ class dng_image_writer
 										   bool uncompressed = false,
 										   bool allowBigTIFF = true,
 										   const dng_image *gainMapImage = nullptr,
-										   const dng_lossy_compressed_image *gainMapLossyCompressed = nullptr);
+										   const dng_lossy_compressed_image *gainMapLossyCompressed = nullptr,
+										   const const_dng_memory_block_sptr gainMapMetadataBlock = nullptr,
+										   const void *gainMapAltProfileData = nullptr,
+										   const uint32 gainMapAltProfileSize = 0);
 
 		/// Resolve metadata conflicts and apply metadata policies in keeping
 		/// with Metadata Working Group (MWG) guidelines.
@@ -1493,6 +1508,8 @@ class dng_write_tiles_task : public dng_area_task,
 		uint32 fTilesDown;
 		
 		uint32 fTilesAcross;
+
+		uint32 fTileCount;
 		
 		uint32 fCompressedSize;
 		
@@ -1510,7 +1527,7 @@ class dng_write_tiles_task : public dng_area_task,
 
 		const bool fNeedDigest;
 
-		mutable dng_md5_printer fOverallPrinter;
+		mutable dng_md5_direct_printer fOverallPrinter;
 		
 	public:
 	

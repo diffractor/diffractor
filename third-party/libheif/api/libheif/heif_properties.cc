@@ -135,7 +135,7 @@ heif_item_property_type heif_item_get_property_type(const heif_context* context,
 }
 
 
-static char* create_c_string_copy(const std::string s)
+static char* create_c_string_copy(const std::string& s)
 {
   char* copy = new char[s.length() + 1];
   strcpy(copy, s.data());
@@ -184,10 +184,13 @@ heif_error heif_item_add_property_user_description(const heif_context* context,
   udes->set_description(description->description ? description->description : "");
   udes->set_tags(description->tags ? description->tags : "");
 
-  heif_property_id id = context->context->add_property(itemId, udes, false);
+  auto id = context->context->add_property(itemId, udes, false);
+  if (!id) {
+    return id.error_struct(context->context.get());
+  }
 
   if (out_propertyId) {
-    *out_propertyId = id;
+    *out_propertyId = *id;
   }
 
   return heif_error_success;
@@ -245,10 +248,22 @@ void heif_item_get_property_transform_crop_borders(const heif_context* context,
     return;
   }
 
-  if (left) *left = (*clap)->left_rounded(image_width);
-  if (right) *right = image_width - 1 - (*clap)->right_rounded(image_width);
-  if (top) *top = (*clap)->top_rounded(image_height);
-  if (bottom) *bottom = image_height - 1 - (*clap)->bottom_rounded(image_height);
+  auto crop = (*clap)->get_crop(image_width, image_height);
+  if (!crop) {
+    // The clean aperture cannot be applied to an image of this size (zero size, negative
+    // size, or a size beyond the supported coordinate range). This function has no error
+    // return, so report that nothing is cropped.
+    if (left) *left = 0;
+    if (right) *right = 0;
+    if (top) *top = 0;
+    if (bottom) *bottom = 0;
+    return;
+  }
+
+  if (left) *left = crop->left;
+  if (right) *right = image_width - 1 - crop->right;
+  if (top) *top = crop->top;
+  if (bottom) *bottom = image_height - 1 - crop->bottom;
 }
 
 
@@ -274,10 +289,13 @@ heif_error heif_item_add_raw_property(const heif_context* context,
   std::vector<uint8_t> data_vector(data, data + size);
   raw_box->set_raw_data(data_vector);
 
-  heif_property_id id = context->context->add_property(itemId, raw_box, is_essential != 0);
+  auto id = context->context->add_property(itemId, raw_box, is_essential != 0);
+  if (!id) {
+    return id.error_struct(context->context.get());
+  }
 
   if (out_propertyId) {
-    *out_propertyId = id;
+    *out_propertyId = *id;
   }
 
   return heif_error_success;

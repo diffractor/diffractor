@@ -152,7 +152,68 @@ dng_linearize_plane::dng_linearize_plane (dng_host &host,
 	real64 scale = 1.0 / minRange;
 	
 	fScale = (real32) scale;
-		
+
+	// CR-4209079 defense-in-depth: re-assert the black-level invariants
+	// that the loops below rely on. dng_ifd::IsValidDNG already enforces
+	// these for the main IFD parsed from a DNG file:
+	//	 - fBlackLevelDeltaHCount == fActiveArea.W () (dng_ifd.cpp:4584).
+	//	 - fBlackLevelDeltaVCount == fActiveArea.H () (dng_ifd.cpp:4601).
+	//	 - fBlackLevelRepeatRows / Cols are in [1, kMaxBlackPattern]
+	//	   (dng_ifd.cpp:4567 and at parse time dng_ifd.cpp:1622).
+	// Upstream / AOSP DNG SDK forks (which lack one or more of these
+	// upstream checks) are vulnerable to a heap OOB read past the
+	// fBlackDeltaH / fBlackDeltaV memory blocks when the active-area
+	// dimensions exceed the allocated delta-entry counts.
+	// This guard re-asserts the same invariants at the consumer so any
+	// caller that delivers inconsistent state (internal cr_sdk vendor
+	// readers via SetColumnBlacks / SetRowBlacks / SetActiveArea, future
+	// parser regressions, etc.) fails closed rather than walking past
+	// the delta block. Bounds enforced here use the actual LogicalSize ()
+	// of each block with a ">= width / height" check (strictly weaker
+	// than the parser's exact-equality), so no valid file is affected.
+	// ThrowBadFormat matches the failure mode already used at line 149
+	// for the WhiteLevel / BlackLevel range check.
+
+	if (info.fBlackDeltaH.Get ())
+		{
+
+		const uint32 entries =
+			info.fBlackDeltaH->LogicalSize () / (uint32) sizeof (real64);
+
+		if (entries < info.fActiveArea.W ())
+			{
+
+			ThrowBadFormat ();
+
+			}
+
+		}
+
+	if (info.fBlackDeltaV.Get ())
+		{
+
+		const uint32 entries =
+			info.fBlackDeltaV->LogicalSize () / (uint32) sizeof (real64);
+
+		if (entries < info.fActiveArea.H ())
+			{
+
+			ThrowBadFormat ();
+
+			}
+
+		}
+
+	if (info.fBlackLevelRepeatRows < 1 ||
+		info.fBlackLevelRepeatRows > kMaxBlackPattern ||
+		info.fBlackLevelRepeatCols < 1 ||
+		info.fBlackLevelRepeatCols > kMaxBlackPattern)
+		{
+
+		ThrowBadFormat ();
+
+		}
+
 	// Calculate two-dimensional black pattern, if any.
 	
 	if (info.fBlackDeltaH.Get ())
@@ -345,7 +406,7 @@ dng_linearize_plane::dng_linearize_plane (dng_host &host,
 				
 				// Apply linearization table, if any.
 				
-				if (lut)
+				if (lut && lutEntries)
 					{
 					
 					x = Min_uint32 (x, lutEntries - 1);
@@ -405,7 +466,7 @@ dng_linearize_plane::dng_linearize_plane (dng_host &host,
 				
 				// Apply linearization table, if any.
 				
-				if (lut)
+				if (lut && lutEntries)
 					{
 					
 					x = Min_uint32 (x, lutEntries - 1);
@@ -459,6 +520,12 @@ void dng_linearize_plane::Process (const dng_rect &srcTile)
 	// Process tile.
 	
 	dng_rect dstTile = srcTile - fActiveArea.TL ();
+
+	DNG_REQUIRE ((fSrcImage.Bounds () & srcTile) == srcTile,
+				 "Invalid srcTile in dng_linearize_plane::Process");
+		
+	DNG_REQUIRE ((fDstImage.Bounds () & dstTile) == dstTile,
+				 "Invalid dstTile in dng_linearize_plane::Process");
 		
 	dng_const_tile_buffer srcBuffer (fSrcImage, srcTile);
 	dng_dirty_tile_buffer dstBuffer (fDstImage, dstTile);
@@ -1012,7 +1079,12 @@ dng_linearize_image::dng_linearize_image (dng_host &host,
 	,	fActiveArea (info.fActiveArea)
 	
 	{
-	
+
+	if (srcImage.Planes () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	// Build linearization table for each plane.
 	
 	for (uint32 plane = 0; plane < srcImage.Planes (); plane++)
@@ -1452,7 +1524,49 @@ real64 dng_linearization_info::MaxBlackLevel (uint32 plane) const
 	return maxBlack;
 		
 	}
-				
+
+/*****************************************************************************/
+
+uint16 dng_linearization_info::Stage3BlackLevel (dng_negative &negative,
+												 uint32 numPlanes) const
+	{
+
+	real64 zeroFract = 0.0;
+
+	for (uint32 plane = 0; plane < numPlanes; plane++)
+		{
+
+		real64 maxBlackLevel = MaxBlackLevel (plane);
+		real64	  whiteLevel = fWhiteLevel [plane];
+
+		if (maxBlackLevel > 0.0 && maxBlackLevel < whiteLevel)
+			{
+
+			zeroFract = Max_real64 (zeroFract, maxBlackLevel / whiteLevel);
+
+			}
+
+		}
+
+	zeroFract = Min_real64 (zeroFract, kMaxStage3BlackLevelNormalized);
+
+	uint16 dstBlackLevel = (uint16) Round_uint32 (65535.0 * zeroFract);
+
+	if (negative.GetMosaicInfo ())
+		{
+
+		// If we have a mosaic image that supports non-zero black levels,
+		// enforce a minimum black level to give the demosaic algorithms
+		// some "footroom".
+
+		dstBlackLevel = (uint16) Max_uint32 (dstBlackLevel, 0x0404);
+
+		}
+	
+	return dstBlackLevel;
+
+	}
+
 /*****************************************************************************/
 
 void dng_linearization_info::Linearize (dng_host &host,
@@ -1461,6 +1575,11 @@ void dng_linearization_info::Linearize (dng_host &host,
 										dng_image &dstImage)
 	{
 
+	if (srcImage.Planes () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	bool allowPreserveBlackLevels = negative.SupportsPreservedBlackLevels (host);
 
 	if (allowPreserveBlackLevels &&
@@ -1468,37 +1587,8 @@ void dng_linearization_info::Linearize (dng_host &host,
 		dstImage.PixelType () == ttShort)
 		{
 		
-		real64 zeroFract = 0.0;
-		
-		for (uint32 plane = 0; plane < srcImage.Planes (); plane++)
-			{
-			
-			real64 maxBlackLevel = MaxBlackLevel (plane);
-			real64	  whiteLevel = fWhiteLevel	 [plane];
-			
-			if (maxBlackLevel > 0.0 && maxBlackLevel < whiteLevel)
-				{
-				
-				zeroFract = Max_real64 (zeroFract, maxBlackLevel / whiteLevel);
-				
-				}
-			
-			}
-
-		zeroFract = Min_real64 (zeroFract, kMaxStage3BlackLevelNormalized);
-		
-		uint16 dstBlackLevel = (uint16) Round_uint32 (65535.0 * zeroFract);
-		
-		if (negative.GetMosaicInfo ())
-			{
-			
-			// If we have a mosaic image that supports non-zero black levels,
-			// enforce a minimum black level to give the demosaic algorithms
-			// some "footroom".
-			
-			dstBlackLevel = (uint16) Max_uint32 (dstBlackLevel, 0x0404);
-			
-			}
+		uint16 dstBlackLevel = Stage3BlackLevel (negative,
+												 srcImage.Planes ());
 			
 		negative.SetStage3BlackLevel (dstBlackLevel);
 		
@@ -1512,9 +1602,11 @@ void dng_linearization_info::Linearize (dng_host &host,
 								   forceClipBlackLevel,
 								   srcImage,
 								   dstImage);
-								   
+
+	dng_rect overlap = fActiveArea & srcImage.Bounds ();
+
 	host.PerformAreaTask (processor,
-						  fActiveArea);
+						  overlap);
 						
 	}
 				

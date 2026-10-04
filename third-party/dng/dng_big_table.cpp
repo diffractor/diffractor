@@ -10,6 +10,7 @@
 
 #include "dng_1d_table.h"
 #include "dng_bottlenecks.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_abort_sniffer.h"
 #include "dng_color_space.h"
 #include "dng_globals.h"
@@ -90,7 +91,7 @@ class dng_big_table_cache
 									   const dng_fingerprint &fingerprint,
 									   dng_big_table &table) = 0;
 
-		virtual void Clear ()
+		virtual void CacheClear (dng_lock_std_mutex & /* lock */)
 			{
 
 			fRefCounts.clear ();
@@ -102,6 +103,8 @@ class dng_big_table_cache
 	public:
 
 		virtual ~dng_big_table_cache ();
+
+		void Clear ();
 
 		void FlushRecentlyUsed ();
 
@@ -139,6 +142,20 @@ dng_big_table_cache::dng_big_table_cache ()
 
 dng_big_table_cache::~dng_big_table_cache ()
 	{
+
+	}
+
+/*****************************************************************************/
+
+void dng_big_table_cache::Clear ()
+	{
+
+	// CR-4208475 Q-L7: Serialize both base and derived cache clearing with
+	// normal cache access. The lock remains held across virtual dispatch.
+
+	dng_lock_std_mutex lock (fMutex);
+
+	CacheClear (lock);
 
 	}
 
@@ -438,10 +455,10 @@ class dng_look_table_cache : public dng_big_table_cache
 			{
 			}
 
-		virtual void Clear ()
+		virtual void CacheClear (dng_lock_std_mutex &lock)
 			{
 
-			dng_big_table_cache::Clear ();
+			dng_big_table_cache::CacheClear (lock);
 
 			fTableData.clear ();
 
@@ -540,10 +557,10 @@ class dng_rgb_table_cache : public dng_big_table_cache
 			{
 			}
 
-		virtual void Clear ()
+		virtual void CacheClear (dng_lock_std_mutex &lock)
 			{
 
-			dng_big_table_cache::Clear ();
+			dng_big_table_cache::CacheClear (lock);
 
 			fTableData.clear ();
 
@@ -630,10 +647,10 @@ class dng_image_table_cache : public dng_big_table_cache
 
 	public:
 
-		void Clear () override
+		void CacheClear (dng_lock_std_mutex &lock) override
 			{
 
-			dng_big_table_cache::Clear ();
+			dng_big_table_cache::CacheClear (lock);
 
 			fTableData.clear ();
 
@@ -743,10 +760,10 @@ class dng_packed_image_table_cache : public dng_big_table_cache
 
 	public:
 
-		void Clear () override
+		void CacheClear (dng_lock_std_mutex &lock) override
 			{
 
-			dng_big_table_cache::Clear ();
+			dng_big_table_cache::CacheClear (lock);
 
 			fEntries.clear ();
 
@@ -940,12 +957,25 @@ const dng_fingerprint & dng_big_table::Fingerprint () const
 
 /*****************************************************************************/
 
+uint32 dng_big_table::MaxCompressedDecodedStreamSize () const
+	{
+
+	static const uint32 kMaxCompressedBigTableDecodedSize = 128u * 1024u * 1024u;
+
+	// Image table classes bypass the outer zlib big-table wrapper and enforce
+	// their own image-specific limits. This cap applies only to the generic
+	// compressed metadata-table stream.
+
+	return kMaxCompressedBigTableDecodedSize;
+
+	}
+
+/*****************************************************************************/
+
 dng_fingerprint dng_big_table::ComputeFingerprint () const
 	{
 	
-	dng_md5_printer_stream stream;
-
-	stream.SetLittleEndian ();
+	dng_md5_printer_le_stream stream;
 
 	PutStream (stream, true);
 
@@ -1003,6 +1033,8 @@ bool dng_big_table::DecodeFromBinary (dng_host &host,
 
 		uint8 *uncompressedData;
 		uint32 uncompressedSize;
+
+		const uint32 maxUncompressedSize = MaxCompressedDecodedStreamSize ();
 		
 		AutoPtr<dng_memory_block> uncompressedBlock;
 		
@@ -1010,6 +1042,12 @@ bool dng_big_table::DecodeFromBinary (dng_host &host,
 			{
 			uncompressedData = uncompressedCache->Get ()->Buffer_uint8 ();
 			uncompressedSize = uncompressedCache->Get ()->LogicalSize  ();
+
+			if (uncompressedSize > maxUncompressedSize)
+				{
+				return false;
+				}
+
 			}
 			
 		else
@@ -1023,6 +1061,11 @@ bool dng_big_table::DecodeFromBinary (dng_host &host,
 							   (((uint32) compressedData [2]) << 16) +
 							   (((uint32) compressedData [3]) << 24);
 
+			if (uncompressedSize > maxUncompressedSize)
+				{
+				return false;
+				}
+
 			uncompressedBlock.Reset (host.Allocate (uncompressedSize));
 			
 			uncompressedData = uncompressedBlock->Buffer_uint8 ();
@@ -1035,6 +1078,11 @@ bool dng_big_table::DecodeFromBinary (dng_host &host,
 										compressedSize - 4);
 
 			if (zResult != Z_OK)
+				{
+				return false;
+				}
+
+			if (destLen != (uLongf) uncompressedSize)
 				{
 				return false;
 				}
@@ -1212,7 +1260,8 @@ void dng_big_table::ASCIItoBinary (dng_memory_allocator &allocator,
 		
 	dCount = 0;
 	
-	uint32 maxDecodedSize = (sCount + 4) / 5 * 4;
+	uint32 maxDecodedSize = SafeUint32Mult (SafeUint32Add (sCount, 4) / 5,
+											4);
 
 	dBlock.Reset (allocator.Allocate (maxDecodedSize));
 
@@ -1376,9 +1425,17 @@ dng_memory_block* dng_big_table::EncodeAsBinary (dng_memory_allocator &allocator
 
 		uint32 uncompressedSize = block1->LogicalSize ();
 
-		uint32 safeCompressedSize = uncompressedSize + (uncompressedSize >> 8) + 64;
+		// CR-4208475 N-L13: route the zlib destination sizing through
+		// SafeUint32Add so pathological in-memory big-table sizes cannot
+		// wrap and under-allocate the compress2 destination buffer.
 
-		block2.Reset (allocator.Allocate (safeCompressedSize + 4));
+		uint32 safeCompressedSize =
+			SafeUint32Add (SafeUint32Add (uncompressedSize,
+										  uncompressedSize >> 8),
+						   64u);
+
+		block2.Reset (allocator.Allocate (SafeUint32Add (safeCompressedSize,
+														 4u)));
 
 		// Store uncompressed size in first four bytes of compressed block.
 
@@ -1402,7 +1459,16 @@ dng_memory_block* dng_big_table::EncodeAsBinary (dng_memory_allocator &allocator
 			ThrowMemoryFull ();
 			}
 
-		compressedSize = (uint32) dCount + 4;
+		// CR-4208475 N-L13: dCount is uLongf (>= 32 bits). Require it fits
+		// in uint32 before narrowing, and route the + 4 through
+		// SafeUint32Add so the header-byte addition cannot wrap.
+
+		if (dCount > 0xFFFFFFFFu)
+			{
+			ThrowProgramError ("compress2 output too large for uint32");
+			}
+
+		compressedSize = SafeUint32Add (static_cast<uint32> (dCount), 4u);
 
 		block1.Reset ();
 
@@ -1444,10 +1510,16 @@ dng_memory_block* dng_big_table::EncodeAsString (dng_memory_allocator &allocator
 			"*?`'|()[]{"
 			"}@%$#";
 
-		uint32 safeEncodedSize = compressedSize +
-								 (compressedSize >> 2) +
-								 (compressedSize >> 6) +
-								 16;
+		// CR-4208475 N-L12: writer-side counterpart to the G-L1 ASCIItoBinary
+		// fix. Route the encoded-size accumulation through SafeUint32Add so
+		// a pathological compressedSize cannot wrap and under-allocate the
+		// destination buffer before the encode loop writes into it.
+
+		uint32 safeEncodedSize =
+			SafeUint32Add (SafeUint32Add (compressedSize,
+										  compressedSize >> 2),
+						   SafeUint32Add (compressedSize >> 6,
+										  16u));
 
 		block3.Reset (allocator.Allocate (safeEncodedSize));
 
@@ -2113,7 +2185,9 @@ bool dng_look_table::GetStream (dng_stream &stream)
 		data.fMinAmount = stream.Get_real64 ();
 		data.fMaxAmount = stream.Get_real64 ();
 
-		if (data.fMinAmount < 0.0 || data.fMinAmount > 1.0 || data.fMaxAmount < 1.0)
+		if (!std::isfinite (data.fMinAmount) ||
+			!std::isfinite (data.fMaxAmount) ||
+			data.fMinAmount < 0.0 || data.fMinAmount > 1.0 || data.fMaxAmount < 1.0)
 			{
 			ThrowBadFormat ("Invalid min/max amount for look table");
 			}
@@ -2313,7 +2387,9 @@ void dng_rgb_table::Set (uint32 dimensions,
 
 			}
 
-		if (samples.LogicalSize () != divisions * 4 * sizeof (uint16))
+		if (samples.LogicalSize () !=
+			SafeUint32Mult (divisions, 4,
+							(uint32) sizeof (uint16)))
 			{
 
 			ThrowProgramError ("Bad 1D sample count");
@@ -2333,9 +2409,9 @@ void dng_rgb_table::Set (uint32 dimensions,
 
 			}
 
-		if (samples.LogicalSize () != divisions *
-									  divisions *
-									  divisions * 4 * sizeof (uint16))
+		if (samples.LogicalSize () !=
+			SafeUint32Mult (divisions, divisions, divisions,
+							4 * (uint32) sizeof (uint16)))
 			{
 
 			ThrowProgramError ("Bad 3D sample count");
@@ -2398,8 +2474,18 @@ bool dng_rgb_table::GetStream (dng_stream &stream)
 	else if (data.fDimensions == 3)
 		{
 
+		// Bound 3D divisions on read by kMaxDivisions3D_InMemory, the same
+		// ceiling Set () (create), PutStream () (write), and .cube import
+		// enforce, so any 3D table the SDK can produce round-trips. This read
+		// guard historically used the smaller kMaxDivisions3D (32), stricter
+		// than the write path: a table with more than 32 divisions (for example
+		// a 64-cube .cube LUT) serialized fine but threw here on reload,
+		// silently dropping the LUT. The decode below sizes fSamples from
+		// fDivisions and indexes nopValue (sized to kMaxDivisions1D) safely
+		// across this range.
+
 		if (data.fDivisions < kMinDivisions3D ||
-			data.fDivisions > kMaxDivisions3D)
+			data.fDivisions > kMaxDivisions3D_InMemory)
 			{
 			ThrowBadFormat ("Invalid 3D divisions");
 			}
@@ -2447,9 +2533,10 @@ bool dng_rgb_table::GetStream (dng_stream &stream)
 	else
 		{
 
-		data.fSamples.Allocate (data.fDivisions *
-								data.fDivisions *
-								data.fDivisions * 4 * sizeof (uint16));
+		data.fSamples.Allocate (SafeUint32Mult (data.fDivisions,
+												data.fDivisions,
+												data.fDivisions,
+												4 * (uint32) sizeof (uint16)));
 
 		uint16 *samples = data.fSamples.Buffer_uint16 ();
 
@@ -2507,7 +2594,9 @@ bool dng_rgb_table::GetStream (dng_stream &stream)
 	data.fMinAmount = stream.Get_real64 ();
 	data.fMaxAmount = stream.Get_real64 ();
 
-	if (data.fMinAmount < 0.0 || data.fMinAmount > 1.0 || data.fMaxAmount < 1.0)
+	if (!std::isfinite (data.fMinAmount) ||
+		!std::isfinite (data.fMaxAmount) ||
+		data.fMinAmount < 0.0 || data.fMinAmount > 1.0 || data.fMaxAmount < 1.0)
 		{
 		ThrowBadFormat ("Invalid min/max amount for RGB table");
 		}
@@ -2532,6 +2621,40 @@ void dng_rgb_table::PutStream (dng_stream &stream,
 	{
 
 	DNG_REQUIRE (IsValid (), "Invalid RGB Table");
+
+	// Enforce the same division limits on write that Set () (create) and
+	// GetStream () (read) enforce, so we never serialize a table that cannot
+	// be read back. kMaxDivisions3D_InMemory bounds both the in-memory and the
+	// serialized 3D form (see dng_big_table.h). A violation means an oversized
+	// table was constructed through some path that bypassed Set (), so this is
+	// a program error rather than a bad-format condition.
+
+	if (fData.fDimensions == 1)
+		{
+
+		if (fData.fDivisions < kMinDivisions1D ||
+			fData.fDivisions > kMaxDivisions1D)
+			{
+			ThrowProgramError ("Bad 1D divisions");
+			}
+
+		}
+
+	else if (fData.fDimensions == 3)
+		{
+
+		if (fData.fDivisions < kMinDivisions3D ||
+			fData.fDivisions > kMaxDivisions3D_InMemory)
+			{
+			ThrowProgramError ("Bad 3D divisions");
+			}
+
+		}
+
+	else
+		{
+		ThrowProgramError ("Bad dimensions");
+		}
 
 	stream.Put_uint32 (btt_RGBTable);
 
@@ -2695,6 +2818,7 @@ void dng_image_table_jxl_compression_info::Compress (dng_host &host,
 								 false,		 // has transparency
 								 true,		 // allow big tiff
 								 nullptr,	 // gain map,
+								 nullptr,	 // gain map metadata block
 								 fPreferHalfFloat);
 	
 	#else
@@ -2866,15 +2990,15 @@ dng_fingerprint dng_image_table::ComputeFingerprint () const
 		
 		dng_memory_stream tempStream (host->Allocator ());
 
+		tempStream.SetLittleEndian ();
+		
 		PutStream (tempStream, true);
 
 		tempStream.Flush ();
 
 		tempStream.SetReadPosition (0);
 		
-		dng_md5_printer_stream stream;
-
-		stream.SetLittleEndian ();
+		dng_md5_printer_le_stream stream;
 
 		tempStream.CopyToStream (stream,
 								 tempStream.Length ());
@@ -2892,9 +3016,7 @@ dng_fingerprint dng_image_table::ComputeFingerprint () const
 		
 		AutoPtr<dng_host> host (MakeHost (nullptr));
 		
-		dng_md5_printer_stream stream;
-
-		stream.SetLittleEndian ();
+		dng_md5_printer_le_stream stream;
 
 		stream.Put_uint32 (btt_ImageTable);
 
@@ -2914,7 +3036,7 @@ dng_fingerprint dng_image_table::ComputeFingerprint () const
 													 *fImage,
 													 fImage->PixelType ());
 													 
-		stream.Put (imageDigest.data, 16);
+		stream.Put (imageDigest);
 
 		return stream.Result ();
 
@@ -3125,7 +3247,7 @@ void dng_image_table::PutCompressedStream (dng_stream &stream,
 		
 		tempImage.Reset (tiffImage->Clone ());
 		
-		tempImage->Offset (dng_point (0, 0) - fImage->Bounds ().TL ());
+		tempImage->Offset (-fImage->Bounds ().TL ());
 		
 		tiffImage = tempImage.Get ();
 		
@@ -3150,6 +3272,8 @@ void dng_image_table::PutCompressedStream (dng_stream &stream,
 
 		dng_memory_stream tempStream (host->Allocator ());
 
+		tempStream.SetLittleEndian ();
+		
 		info.Compress (*host,
 					   tempStream,
 					   *tiffImage);
@@ -3195,6 +3319,8 @@ void dng_image_table::CompressImage (const dng_image_table_compression_info &inf
 	AutoPtr<dng_host> host (MakeHost (sniffer));
 
 	dng_memory_stream tempStream (host->Allocator ());
+
+	tempStream.SetLittleEndian ();
 
 	tempStream.SetSniffer (sniffer);
 
@@ -3522,7 +3648,7 @@ bool dng_packed_image_table::GetStream (dng_stream &stream)
 
 	// Read digest.
 
-	stream.Get (fTableDigest.data, 16);
+	stream.Get (fTableDigest);
 
 	// Read size.
 
@@ -3553,6 +3679,12 @@ bool dng_packed_image_table::GetStream (dng_stream &stream)
 	// to 32-bit. 
 
 	const uint32 bytes = stream.Get_uint32 ();
+
+	if (stream.Position () > stream.Length () ||
+		bytes > stream.Length () - stream.Position ())
+		{
+		ThrowBadFormat ("Invalid packed image table byte count");
+		}
 
 	AutoPtr<dng_host> host (MakeHost (stream.Sniffer ()));
 
@@ -3585,7 +3717,7 @@ void dng_packed_image_table::PutStream (dng_stream &stream,
 
 	// Write digest.
 
-	stream.Put (fTableDigest.data, 16);
+	stream.Put (fTableDigest);
 
 	// Write properties.
 
@@ -3948,13 +4080,33 @@ void dng_masked_rgb_table::CheckGamutExtension (dng_rgb_table::gamut_enum gamut)
 
 /*****************************************************************************/
 
+static void RequireRGBTablesBytes (dng_stream &stream,
+								   uint64 tagEnd,
+								   uint32 byteCount)
+	{
+
+	if (stream.Position () > tagEnd ||
+		byteCount > tagEnd - stream.Position ())
+		{
+		ThrowBadFormat ("Truncated RGBTables tag");
+		}
+
+	}
+
+/*****************************************************************************/
+
 void dng_masked_rgb_table::GetStream (dng_host &host,
-									  dng_stream &stream)
+									  dng_stream &stream,
+									  uint64 tagEnd)
 	{
 	
 	// Read LengthTableSemanticName and TableSemanticName.
 
+	RequireRGBTablesBytes (stream, tagEnd, 2);
+
 	uint16 nameLen = stream.Get_uint16 ();
+
+	RequireRGBTablesBytes (stream, tagEnd, nameLen);
 
 	dng_memory_data nameData (nameLen + 1);
 
@@ -3965,6 +4117,8 @@ void dng_masked_rgb_table::GetStream (dng_host &host,
 	fTableSemanticName.Set (nameData.Buffer_char ());
 
 	// Read Divisions.
+
+	RequireRGBTablesBytes (stream, tagEnd, 5);
 
 	uint32 divisions = (uint32) stream.Get_uint8 ();
 
@@ -4012,6 +4166,8 @@ void dng_masked_rgb_table::GetStream (dng_host &host,
 	uint32 dstBytes = divisions * divisions * divisions * 4 * 2;
 
 	dng_ref_counted_block samples;
+
+	RequireRGBTablesBytes (stream, tagEnd, srcBytes);
 
 	samples.Allocate (dstBytes);
 
@@ -4304,38 +4460,35 @@ void dng_masked_rgb_table::PutStream (dng_stream &stream) const
 
 /*****************************************************************************/
 
-void dng_masked_rgb_table::AddDigest (dng_md5_printer &printer) const
+void dng_masked_rgb_table::AddDigest (dng_md5_printer_stream &printer) const
 	{
 
 	// Header.
 
-	printer.Process ("dng_masked_rgb_table", 20);
+	printer.ProcessPtr ("dng_masked_rgb_table", 20);
 
 	// Name.
 
 	uint32 nameLen = SemanticName ().Length ();
 	
-	printer.Process (&nameLen,
-					 (uint32) sizeof (nameLen));
+	printer.Put_uint32 (nameLen);
 
 	if (nameLen > 0)
 		{
 		
-		printer.Process (SemanticName ().Get (), nameLen);
+		printer.ProcessPtr (SemanticName ().Get (), nameLen);
 		
 		}
 
 	// Pixel type.
 
-	printer.Process (&fPixelType,
-					 (uint32) sizeof (fPixelType));
+	printer.Put_uint32 (fPixelType);
 
 	// Table digest.
 	
 	dng_fingerprint tableDigest = fTable.Fingerprint ();
 
-	printer.Process (tableDigest.data,
-					 sizeof (tableDigest.data));
+	printer.Process (tableDigest);
 	
 	}
 
@@ -4358,6 +4511,8 @@ void dng_masked_rgb_table_render_data::Initialize (const dng_negative &negative,
 		return;
 
 	fUseSequentialMethod = tables.UseSequentialMethod ();
+
+	fInputDigest.Clear (); // Null fingerprint for profile case
 
 	// Find correspondence between RGBTables and SemanticMasks tags. It is
 	// still possible that we have a NOP situation if every table uses a mask
@@ -4815,19 +4970,18 @@ void dng_masked_rgb_tables::Validate () const
 
 /*****************************************************************************/
 
-void dng_masked_rgb_tables::AddDigest (dng_md5_printer &printer) const
+void dng_masked_rgb_tables::AddDigest (dng_md5_printer_stream &printer) const
 	{
 
 	// Header.
 	
-	printer.Process ("dng_masked_rgb_tables", 21);
+	printer.ProcessPtr ("dng_masked_rgb_tables", 21);
 
 	// Number of tables.
 
-	uint32 numTables = (uint32) fTables.size ();
+	const uint32 numTables = (uint32) fTables.size ();
 
-	printer.Process (&numTables,
-					 (uint32) sizeof (numTables));
+	printer.Put_uint32 (numTables);
 
 	// Process each table.
 
@@ -4838,8 +4992,7 @@ void dng_masked_rgb_tables::AddDigest (dng_md5_printer &printer) const
 
 	// Composite method.
 
-	printer.Process (&fCompositeMethod,
-					 (uint32) sizeof (fCompositeMethod));
+	printer.Put_uint32 (uint32 (fCompositeMethod));
 
 	}
 
@@ -4869,10 +5022,21 @@ void dng_masked_rgb_tables::PutStream (dng_stream &stream) const
 
 dng_masked_rgb_tables * dng_masked_rgb_tables::GetStream (dng_host &host,
 														  dng_stream &stream,
-														  const bool isDraft)
+														  const bool isDraft,
+														  uint32 tagCount)
 	{
 
+	const uint64 tagEnd = SafeUint64Add (stream.Position (),
+										 (uint64) tagCount);
+
+	if (tagEnd > stream.Length ())
+		{
+		ThrowBadFormat ("Invalid RGBTables tag count");
+		}
+
 	// Read number of tables.
+
+	RequireRGBTablesBytes (stream, tagEnd, 4);
 
 	uint32 numTables = stream.Get_uint32 ();
 
@@ -4898,7 +5062,9 @@ dng_masked_rgb_tables * dng_masked_rgb_tables::GetStream (dng_host &host,
 
 	if (!isDraft)
 		{
-		
+
+		RequireRGBTablesBytes (stream, tagEnd, 4);
+
 		method = (composite_method) stream.Get_uint32 ();
 
 		if (method != kWeightedSum &&
@@ -4920,7 +5086,7 @@ dng_masked_rgb_tables * dng_masked_rgb_tables::GetStream (dng_host &host,
 		
 		t.reset (new dng_masked_rgb_table);
 
-		t->GetStream (host, stream);
+		t->GetStream (host, stream, tagEnd);
 		
 		}
 
@@ -5280,15 +5446,14 @@ void dng_rgb_to_rgb_table_data::Process_32 (dng_pixel_buffer &buffer,
 
 /*****************************************************************************/
 
-void dng_rgb_to_rgb_table_data::AddDigest (dng_md5_printer &printer) const
+void dng_rgb_to_rgb_table_data::AddDigest (dng_md5_printer_stream &printer) const
 	{
 
 		{
 
 		const dng_fingerprint tableFingerPrint = fTable.Fingerprint ();
 
-		printer.Process (tableFingerPrint.data,
-						 dng_fingerprint::kDNGFingerprintSize);
+		printer.Process (tableFingerPrint);
 
 		}
 
@@ -5298,8 +5463,19 @@ void dng_rgb_to_rgb_table_data::AddDigest (dng_md5_printer &printer) const
 		for (uint32 i = 0; i < 3; i++)
 			{
 
+			#if 1
+
+			static_assert (sizeof (fEncodeMatrix [i] [0]) == 8, "matrix coeffs not 8 bytes");
+
+			printer.Put_swap8 (fEncodeMatrix [i], uint32 (3 * sizeof (fEncodeMatrix [i] [0])));
+			printer.Put_swap8 (fDecodeMatrix [i], uint32 (3 * sizeof (fEncodeMatrix [i] [0])));
+
+			#else
+
 			printer.Process (fEncodeMatrix [i], 3 * sizeof (fEncodeMatrix [i] [0]));
 			printer.Process (fDecodeMatrix [i], 3 * sizeof (fEncodeMatrix [i] [0]));
+
+			#endif
 
 			}
 
@@ -5308,12 +5484,26 @@ void dng_rgb_to_rgb_table_data::AddDigest (dng_md5_printer &printer) const
 	if (fEncodeTable.Get () && fDecodeTable.Get ())
 		{
 
+		#if 1
+
+		static_assert (sizeof (fEncodeTable->Table () [0]) == 4, "table data not 4 bytes");
+
+		printer.Put_swap4 (fEncodeTable->Table (),
+						   uint32 ((2 + fEncodeTable->Count ()) * sizeof (fEncodeTable->Table () [0])));
+
+		printer.Put_swap4 (fDecodeTable->Table (),
+						   uint32 ((2 + fEncodeTable->Count ()) * sizeof (fEncodeTable->Table () [0])));
+
+		#else
+
 		printer.Process (fEncodeTable->Table (),
 						 (2 + fEncodeTable->Count ()) * sizeof (fEncodeTable->Table () [0]));
 
 		printer.Process (fDecodeTable->Table (),
 						 (2 + fEncodeTable->Count ()) * sizeof (fEncodeTable->Table () [0]));
 
+		#endif
+		
 		}
 
 	if (fTable.Dimensions () != 3)
@@ -5322,9 +5512,20 @@ void dng_rgb_to_rgb_table_data::AddDigest (dng_md5_printer &printer) const
 		for (uint32 i = 0; i < 3; i++)
 			{
 
+			static_assert (sizeof (fTable1D [i]->Table () [0]) == 4, "table data not 4 bytes");
+
+			#if 1
+
+			printer.Put_swap4 (fTable1D [i]->Table (),
+							   uint32 ((2 + fTable1D [i]->Count ()) * sizeof (fTable1D [i]->Table () [0])));
+
+			#else
+
 			printer.Process (fTable1D [i]->Table (),
 							 (2 + fTable1D [i]->Count ()) * sizeof (fTable1D [i]->Table () [0]));
 
+			#endif
+			
 			}
 
 		}
@@ -5482,6 +5683,12 @@ void MoveBigTablesToDictionary (dng_xmp &xmp,
 					  XMP_NS_CRSS,
 					  nullptr,
 					  true);
+
+	xmp.IteratePaths (MoveBigTablesToDictionaryCallback,
+					  (void *) &context,
+					  XMP_NS_CRVC,
+					  nullptr,
+					  true);
 	
 	}
 
@@ -5496,7 +5703,9 @@ void DualParseXMP (dng_host &host,
 		
 	// Null pad XMP text so we can use string searching functions.
 	
-	AutoPtr<dng_memory_block> tempBlock (host.Allocate (blockSize + 1));
+	const uint32 paddedBlockSize = SafeUint32Add (blockSize, 1u);
+
+	AutoPtr<dng_memory_block> tempBlock (host.Allocate (paddedBlockSize));
 	
 	memcpy (tempBlock->Buffer (),
 			blockData,
@@ -5512,6 +5721,7 @@ void DualParseXMP (dng_host &host,
 	
 	dng_string ns_crs  ("crs:");
 	dng_string ns_crss ("crss:");
+	dng_string ns_crvc ("crvc:");
 
 	// Search for big tables in XMP using fast search.
 		
@@ -5544,10 +5754,16 @@ void DualParseXMP (dng_host &host,
 			{
 			
 			TableEntry entry;
+
+			// CR-4208475 Q-L2: Validate forward distances as offsets before
+			// forming pointers into an exactly sized caller allocation.
+
+			const size_t searchOffset = (size_t) (search - blockString);
+			const size_t searchBytes  = (size_t) blockSize - searchOffset;
 			
 			// Is the search result followed by a valid hex encoded fingerprint?
 			
-			if (search + 6 + 32 > blockString + blockSize)
+			if (searchBytes < 6 + 32)
 				{
 				break;		// Too near end of xmp block to even fit fingerprint
 				}
@@ -5572,15 +5788,17 @@ void DualParseXMP (dng_host &host,
 				
 				}
 				
-			// Look for big tables in both the XMP_NS_CRS and XMP_NS_CRSS
-			// namespaces.
+			// Look for big tables in the edit, saved-settings, and
+			// Virtual Copy namespaces.
 			
 			bool foundTable = false;
 			
-			for (uint32 nsIndex = 0; nsIndex < 2; nsIndex++)
+			for (uint32 nsIndex = 0; nsIndex < 3; nsIndex++)
 				{
 				
-				dng_string ns = (nsIndex == 0 ? ns_crs : ns_crss);
+				const dng_string &ns = nsIndex == 0
+					? ns_crs
+					: (nsIndex == 1 ? ns_crss : ns_crvc);
 				
 				int32 nsLength = ns.Length ();
 					
@@ -5594,7 +5812,7 @@ void DualParseXMP (dng_host &host,
 					 search [-nsLength - 1] == '\t' ||
 					 search [-nsLength - 1] == '\n' ||
 					 search [-nsLength - 1] == '\r') &&
-					search + 6 + 32 + 2 < blockString + blockSize &&
+					searchBytes > 6 + 32 + 2 &&
 					memcmp (search + 6 + 32, "=\"", 2) == 0)
 					{
 					
@@ -5628,7 +5846,7 @@ void DualParseXMP (dng_host &host,
 				if (search >= blockString + nsLength + 1 &&
 					memcmp (search - nsLength, ns.Get (), nsLength) == 0 &&
 					search [-nsLength - 1] == '<' &&
-					search + 6 + 32 + 1 < blockString + blockSize &&
+					searchBytes > 6 + 32 + 1 &&
 					search [6 + 32] == '>')
 					{
 					

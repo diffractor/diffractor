@@ -143,7 +143,7 @@ ImageItem_uncompressed::ImageItem_uncompressed(HeifContext* ctx)
 
 Result<std::shared_ptr<HeifPixelImage>> ImageItem_uncompressed::decode_compressed_image(const heif_decoding_options& options,
                                                                                 bool decode_tile_only, uint32_t tile_x0, uint32_t tile_y0,
-                                                                                std::set<heif_item_id> processed_ids) const
+                                                                                DecodeTraversalState decode_state) const
 {
   std::shared_ptr<HeifPixelImage> img;
 
@@ -282,7 +282,9 @@ Result<std::shared_ptr<ImageItem_uncompressed>> ImageItem_uncompressed::add_unci
 
   // Add transformative properties
 
-  ctx->get_heif_file()->add_orientation_properties(unci_id, encoding_options->image_orientation);
+  if (Error err = ctx->get_heif_file()->add_orientation_properties(unci_id, encoding_options->image_orientation)) {
+    return err;
+  }
 
 
   // Create empty image. If we use compression, we append the data piece by piece.
@@ -324,6 +326,20 @@ Error ImageItem_uncompressed::add_image_tile(uint32_t tile_x, uint32_t tile_y, c
     return Error{heif_error_Usage_error,
                  heif_suberror_Invalid_parameter_value,
                  "tile_x and/or tile_y are out of range."};
+  }
+
+  // All tiles have the same size (add_unci_item() enforces that the image size is an integer
+  // multiple of the tile size). We compute the position at which the tile data is written from the
+  // size of the passed image, so a differently sized tile would be written to a wrong offset.
+
+  uint32_t expected_tile_width, expected_tile_height;
+  get_tile_size(expected_tile_width, expected_tile_height);
+
+  if (tile_width != expected_tile_width ||
+      tile_height != expected_tile_height) {
+    return Error{heif_error_Usage_error,
+                 heif_suberror_Invalid_parameter_value,
+                 "Tile image size does not match the tile size of the uncompressed image."};
   }
 
 

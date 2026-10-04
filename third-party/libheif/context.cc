@@ -144,18 +144,28 @@ void heif_encoder::copy_parameters_from(const heif_encoder& src)
 }
 
 
-HeifContext::HeifContext()
-    : m_memory_tracker(&m_limits)
+// Selects the initial security limits for a new context. The environment variable
+// LIBHEIF_SECURITY_LIMITS=off disables all limits (for trusted input only).
+static const heif_security_limits& initial_security_limits()
 {
   const char* security_limits_variable = getenv("LIBHEIF_SECURITY_LIMITS");
 
   if (security_limits_variable && (strcmp(security_limits_variable, "off") == 0 ||
                                    strcmp(security_limits_variable, "OFF") == 0)) {
-    m_limits = disabled_security_limits;
+    return disabled_security_limits;
   }
   else {
-    m_limits = global_security_limits;
+    return global_security_limits;
   }
+}
+
+
+HeifContext::HeifContext()
+    : m_limits(initial_security_limits()),
+      m_memory_tracker(&m_limits)
+{
+  // m_limits must be fully initialized above before its address is passed to the memory tracker.
+  // (m_limits is declared before m_memory_tracker in context.h, so it is constructed first.)
 
   reset_to_empty_heif();
 }
@@ -381,6 +391,15 @@ static uint64_t rescale(uint64_t duration, uint32_t old_base, uint32_t new_base)
 
 Error HeifContext::write(StreamWriter& writer)
 {
+  // Writing is only implemented for contexts that were built in memory. In a context read
+  // from a file, the item and sample data still live in the input file and would not be
+  // copied to the output: the result would be a truncated file that no reader accepts.
+  if (m_heif_file->get_reader()) {
+    return Error(heif_error_Unsupported_feature,
+                 heif_suberror_Unspecified,
+                 "Writing a context that was read from a file is not supported");
+  }
+
   // --- finalize some parameters
 
   uint64_t max_sequence_duration = 0;
@@ -500,6 +519,15 @@ Error HeifContext::write(StreamWriter& writer)
     ftyp->set_major_brand(main_brand);
   }
 
+  // A file without images and without an image sequence (e.g. only metadata items) has no
+  // brand that describes it. Instead of writing a file with an all-zero 'ftyp' box that no
+  // reader (including libheif) accepts, refuse to write it.
+  if (ftyp->get_major_brand() == 0) {
+    return Error(heif_error_Usage_error,
+                 heif_suberror_Unspecified,
+                 "Cannot write a file that contains neither images nor an image sequence");
+  }
+
   ftyp->set_minor_version(0);
   for (auto brand : compatible_brands) {
     ftyp->add_compatible_brand(brand);
@@ -608,14 +636,14 @@ Error HeifContext::interpret_heif_file_images()
     std::vector<std::shared_ptr<Box>> properties;
     Error err = m_heif_file->get_properties(id, properties);
     if (err) {
-      imageItem = std::make_shared<ImageItem_Error>(imageItem->get_infe_type(), id, err);
+      imageItem = std::make_shared<ImageItem_Error>(this, imageItem->get_infe_type(), id, err);
     }
 
     imageItem->set_properties(properties);
 
     err = imageItem->initialize_decoder();
     if (err) {
-      imageItem = std::make_shared<ImageItem_Error>(imageItem->get_infe_type(), id, err);
+      imageItem = std::make_shared<ImageItem_Error>(this, imageItem->get_infe_type(), id, err);
       imageItem->set_properties(properties);
     } else {
       // The decoder's input data extent must be set before any codec-config
@@ -1100,6 +1128,14 @@ Error HeifContext::interpret_heif_file_images()
 
     auto metadataResult = m_heif_file->get_uncompressed_item_data(id);
     if (!metadataResult) {
+      if (metadataResult.error().error_code == heif_error_Unsupported_feature) {
+        // The item uses a content_encoding that we cannot decode (unknown coding, or the
+        // decompressor was not compiled in). That is a limitation of this one item, not of
+        // the file: skip it instead of refusing the whole file. Its raw data stays accessible
+        // through heif_item_get_item_data().
+        continue;
+      }
+
       if (item_type == fourcc("Exif") || item_type == fourcc("mime")) {
         // these item types should have data
         return metadataResult.error();
@@ -1111,6 +1147,15 @@ Error HeifContext::interpret_heif_file_images()
     }
     else {
       metadata->m_data = *metadataResult;
+
+      // Account the (possibly decompressed) metadata against the total-memory budget
+      // for the lifetime of the context. This bounds the cumulative memory of up to
+      // max_items metadata items, which would otherwise bypass the security limits
+      // (GHSA-24wx-9w62-c96w).
+      if (Error memErr = metadata->m_memory_handle.alloc(metadata->m_data.size(), &m_limits,
+                                                         "decompressed item metadata")) {
+        return memErr;
+      }
     }
 
     // --- assign metadata to the image
@@ -1245,6 +1290,12 @@ Error HeifContext::interpret_heif_file_images()
 
     auto textDataResult = m_heif_file->get_uncompressed_item_data(id);
     if (!textDataResult) {
+      if (textDataResult.error().error_code == heif_error_Unsupported_feature) {
+        // content_encoding that we cannot decode: this is not a text item we can use, but
+        // that is no reason to reject the file (see the metadata loop above)
+        continue;
+      }
+
       return textDataResult.error();
     }
 
@@ -1439,8 +1490,36 @@ Result<std::shared_ptr<HeifPixelImage>> HeifContext::decode_image(heif_item_id I
     return Error(heif_error_Invalid_input, heif_suberror_Nonexisting_item_referenced);
   }
 
+  // Reject un-decodable inputs before any decoding starts. In particular, a
+  // cycle in the decode reference graph ('dimg' inputs or the alpha 'auxl'
+  // edge) would let two parallel grid-tile workers take two item mutexes in
+  // opposite order and deadlock (GHSA-prgh-72vc-3xmc). Checked once here, at the
+  // single top-level decode entry, so the recursion below can assume an acyclic
+  // graph.
+  if (Error err = imgitem->verify_decodable()) {
+    return err;
+  }
 
-  auto decodingResult = imgitem->decode_image(options, decode_only_tile, tx, ty, processed_ids);
+  // Seed the traversal state for this top-level decode. The cycle-detection set
+  // is carried over from the caller; the amplification budget (shared across all
+  // recursion branches and parallel tile-decode threads) is created here, once.
+  // (GHSA-x8xm-cm2c-cfc8)
+  DecodeTraversalState decode_state;
+  decode_state.processed_ids = std::move(processed_ids);
+
+  const heif_security_limits* limits = get_security_limits();
+  if (limits && limits->max_items != 0) {
+    // Bound total sub-image decodes at a modest multiple of max_items. A
+    // well-formed file decodes each of its (<= max_items) items a small number
+    // of times, so this only trips on reference-amplification. Computed in 64
+    // bit and clamped to avoid overflow when max_items is configured very high.
+    uint64_t budget = static_cast<uint64_t>(limits->max_items) * MAX_DERIVED_IMAGE_DECODE_FACTOR;
+    decode_state.max_decodes = (budget > UINT32_MAX) ? UINT32_MAX : static_cast<uint32_t>(budget);
+    decode_state.max_overlay_nesting = MAX_OVERLAY_NESTING_LEVEL;
+    decode_state.decode_count = std::make_shared<std::atomic<uint32_t>>(0);
+  }
+
+  auto decodingResult = imgitem->decode_image(options, decode_only_tile, tx, ty, decode_state);
   if (!decodingResult) {
     return decodingResult.error();
   }
@@ -1701,7 +1780,9 @@ Result<std::shared_ptr<ImageItem>> HeifContext::encode_image(const std::shared_p
     std::shared_ptr<ImageItem> heif_alpha_image = *alphaEncodingResult;
 
     m_heif_file->add_iref_reference(heif_alpha_image->get_id(), fourcc("auxl"), {output_image_item->get_id()});
-    m_heif_file->set_auxC_property(heif_alpha_image->get_id(), output_image_item->get_auxC_alpha_channel_type());
+    if (Error err = m_heif_file->set_auxC_property(heif_alpha_image->get_id(), output_image_item->get_auxC_alpha_channel_type())) {
+      return err;
+    }
 
     if (pixel_image->is_premultiplied_alpha()) {
       m_heif_file->add_iref_reference(output_image_item->get_id(), fourcc("prem"), {heif_alpha_image->get_id()});
@@ -1901,8 +1982,10 @@ Error HeifContext::add_generic_metadata(const std::shared_ptr<ImageItem>& master
   else {
     // uncompressed data, plain copy
 
-    data_array.resize(size);
-    memcpy(data_array.data(), data, size);
+    if (size > 0) { // memcpy() with a NULL pointer is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read()
+      data_array.resize(size);
+      memcpy(data_array.data(), data, size);
+    }
   }
 
   // copy the data into the file, store the pointer to it in an iloc box entry
@@ -1913,8 +1996,17 @@ Error HeifContext::add_generic_metadata(const std::shared_ptr<ImageItem>& master
 }
 
 
-heif_property_id HeifContext::add_property(heif_item_id targetItem, std::shared_ptr<Box> property, bool essential)
+Result<heif_property_id> HeifContext::add_property(heif_item_id targetItem, const std::shared_ptr<Box>& property, bool essential)
 {
+  // Like writing, adding properties is only implemented for contexts that were built in memory.
+  // In a context read from a file, the item data still lives in the input file and the context
+  // cannot be written out again (see HeifContext::write()).
+  if (m_heif_file->get_reader()) {
+    return Error(heif_error_Unsupported_feature,
+                 heif_suberror_Unspecified,
+                 "Adding a property to a context that was read from a file is not supported");
+  }
+
   heif_property_id id;
 
   if (auto img = get_image(targetItem, false)) {
@@ -1922,6 +2014,12 @@ heif_property_id HeifContext::add_property(heif_item_id targetItem, std::shared_
   }
   else {
     id = m_heif_file->add_property(targetItem, property, essential);
+  }
+
+  if (id == 0) {
+    return Error(heif_error_Encoding_error,
+                 heif_suberror_Unspecified,
+                 "Cannot add property to item");
   }
 
   return id;
@@ -2036,8 +2134,7 @@ Result<heif_property_id> HeifContext::add_text_property(heif_item_id itemId, con
   auto elng = std::make_shared<Box_elng>();
   elng->set_lang(std::string(language));
 
-  heif_property_id id = add_property(itemId, elng, false);
-  return id;
+  return add_property(itemId, elng, false);
 }
 
 
@@ -2086,6 +2183,7 @@ Error HeifContext::interpret_heif_file_sequences()
   // --- post-parsing initialization
 
   std::vector<std::shared_ptr<Track>> all_tracks;
+  all_tracks.reserve(m_tracks.size());
   for (auto& track : m_tracks) {
    all_tracks.push_back(track.second);
   }
@@ -2105,6 +2203,7 @@ std::vector<uint32_t> HeifContext::get_track_IDs() const
 {
   std::vector<uint32_t> ids;
 
+  ids.reserve(m_tracks.size());
   for (const auto& track : m_tracks) {
     ids.push_back(track.first);
   }
@@ -2228,7 +2327,7 @@ Result<std::shared_ptr<Track_Visual>> HeifContext::add_visual_sequence_track(con
 
 
 Result<std::shared_ptr<class Track_Metadata>> HeifContext::add_uri_metadata_sequence_track(const TrackOptions* options,
-                                                                                           std::string uri)
+                                                                                           const std::string& uri)
 {
   m_heif_file->init_for_sequence();
 

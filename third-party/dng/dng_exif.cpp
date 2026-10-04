@@ -3674,8 +3674,8 @@ bool dng_exif::Parse_ifd0_exif (dng_stream &stream,
 				else
 					return false;
 				
-				f.data [j >> 1] *= 16;
-				f.data [j >> 1] += (uint8) digit;
+				f.MutableData () [j >> 1] *= 16;
+				f.MutableData () [j >> 1] += (uint8) digit;
 					
 				}
 				

@@ -171,54 +171,56 @@ heif_error heif_track_decode_next_image(heif_track* track_ptr,
     return heif_error_null_pointer_argument;
   }
 
-  // --- get the visual track
+  return exception_guard([&]() -> heif_error {
+    // --- get the visual track
 
-  auto track = track_ptr->track;
+    auto track = track_ptr->track;
 
-  // --- reached end of sequence ?
+    // --- reached end of sequence ?
 
-  if (track->end_of_sequence_reached()) {
-    *out_img = nullptr;
-    return {heif_error_End_of_sequence, heif_suberror_Unspecified, "End of sequence"};
-  }
+    if (track->end_of_sequence_reached()) {
+      *out_img = nullptr;
+      return {heif_error_End_of_sequence, heif_suberror_Unspecified, "End of sequence"};
+    }
 
-  // --- decode next sequence image
+    // --- decode next sequence image
 
-  std::unique_ptr<heif_decoding_options, void(*)(heif_decoding_options*)> opts(heif_decoding_options_alloc(), heif_decoding_options_free);
-  heif_decoding_options_copy(opts.get(), options);
-
-
-  auto visual_track = std::dynamic_pointer_cast<Track_Visual>(track);
-  if (!visual_track) {
-    return {
-      heif_error_Usage_error,
-      heif_suberror_Invalid_parameter_value,
-      "Cannot get image from non-visual track."
-    };
-  }
-
-  auto decodingResult = visual_track->decode_next_image_sample(*opts);
-  if (!decodingResult) {
-    return decodingResult.error_struct(track_ptr->context.get());
-  }
-
-  std::shared_ptr<HeifPixelImage> img = *decodingResult;
+    std::unique_ptr<heif_decoding_options, void(*)(heif_decoding_options*)> opts(heif_decoding_options_alloc(), heif_decoding_options_free);
+    heif_decoding_options_copy(opts.get(), options);
 
 
-  // --- convert to output colorspace
+    auto visual_track = std::dynamic_pointer_cast<Track_Visual>(track);
+    if (!visual_track) {
+      return {
+        heif_error_Usage_error,
+        heif_suberror_Invalid_parameter_value,
+        "Cannot get image from non-visual track."
+      };
+    }
 
-  auto conversion_result = track_ptr->context->convert_to_output_colorspace(img, colorspace, chroma, *opts);
-  if (!conversion_result) {
-    return conversion_result.error_struct(track_ptr->context.get());
-  }
-  else {
-    img = *conversion_result;
-  }
+    auto decodingResult = visual_track->decode_next_image_sample(*opts);
+    if (!decodingResult) {
+      return decodingResult.error_struct(track_ptr->context.get());
+    }
 
-  *out_img = new heif_image();
-  (*out_img)->image = std::move(img);
+    std::shared_ptr<HeifPixelImage> img = *decodingResult;
 
-  return {};
+
+    // --- convert to output colorspace
+
+    auto conversion_result = track_ptr->context->convert_to_output_colorspace(img, colorspace, chroma, *opts);
+    if (!conversion_result) {
+      return conversion_result.error_struct(track_ptr->context.get());
+    }
+    else {
+      img = *conversion_result;
+    }
+
+    *out_img = new heif_image();
+    (*out_img)->image = std::move(img);
+
+    return {};
+  });
 }
 
 
@@ -256,28 +258,73 @@ heif_error heif_track_get_urim_sample_entry_uri_of_first_cluster(const heif_trac
 }
 
 
+// TODO(next major API version): promote this to public API — remove 'static', add
+// the LIBHEIF_API attribute, and add its declaration to
+// libheif/api/libheif/heif_sequences.h. It is the options-taking counterpart of
+// heif_track_get_next_raw_sequence_sample() and the fix for GHSA-xw34-mjcp-jqh8
+// variant V7 (the raw-sample path otherwise cannot honor
+// heif_decoding_options::ignore_sequence_editlist). It is kept 'static' for now
+// because adding a new exported symbol / public declaration is not permitted in a
+// stable-API bugfix release. (The non-terminating-loop aspect of V7 is already
+// fixed by the clamp in Track::init_sample_timing_table(); this only closes the
+// remaining functional gap.)
+//
+// Proposed header declaration:
+//
+//   /**
+//    * Like heif_track_get_next_raw_sequence_sample(), but takes decoding options.
+//    * Set heif_decoding_options::ignore_sequence_editlist to iterate the raw media
+//    * timeline once, ignoring edit-list repetition. `options` may be NULL, which
+//    * behaves like heif_track_get_next_raw_sequence_sample().
+//    */
+//   LIBHEIF_API
+//   heif_error heif_track_get_next_raw_sequence_sample2(heif_track*,
+//                                                       heif_raw_sequence_sample** out_sample,
+//                                                       const heif_decoding_options* options);
+static heif_error heif_track_get_next_raw_sequence_sample2(heif_track* track_ptr,
+                                                           heif_raw_sequence_sample** out_sample,
+                                                           const heif_decoding_options* options)
+{
+  // The body allocates a buffer of the file-controlled 'stsz' sample size. An
+  // out-of-memory condition must come back as heif_error_out_of_memory instead of
+  // letting std::bad_alloc unwind across the extern "C" boundary and abort the host
+  // process (GHSA-4rv4-953r-p24q, same class as GHSA-7p2q-crf9-xm46). The guard sits
+  // here so that both the public wrapper below and a future public *2 variant are
+  // covered.
+  return exception_guard([&]() -> heif_error {
+    if (out_sample == nullptr) {
+      return heif_error_null_pointer_argument;
+    }
+
+    auto track = track_ptr->track;
+
+    // `options` may be null (the no-options public wrapper below passes nullptr).
+    // get_next_sample_raw_data() treats null as "apply the edit list" and only reads
+    // options->ignore_sequence_editlist when options is non-null.
+    //
+    // We intentionally do not pre-check end_of_sequence_reached() here: that helper
+    // compares against the edit-list-applied output count, whereas
+    // get_next_sample_raw_data() applies ignore_sequence_editlist itself and signals
+    // heif_error_End_of_sequence at the correct (option-dependent) boundary.
+    auto decodingResult = track->get_next_sample_raw_data(options);
+    if (!decodingResult) {
+      return decodingResult.error_struct(track_ptr->context.get());
+    }
+
+    *out_sample = *decodingResult;
+
+    return heif_error_success;
+  });
+}
+
+
 heif_error heif_track_get_next_raw_sequence_sample(heif_track* track_ptr,
                                                    heif_raw_sequence_sample** out_sample)
 {
-  auto track = track_ptr->track;
-
-  // --- reached end of sequence ?
-
-  if (track->end_of_sequence_reached()) {
-    return {heif_error_End_of_sequence, heif_suberror_Unspecified, "End of sequence"};
-  }
-
-  // --- get next raw sample
-
-  // TODO: pass decoding options. We currently have no way to ignore the edit-list.
-  auto decodingResult = track->get_next_sample_raw_data(nullptr);
-  if (!decodingResult) {
-    return decodingResult.error_struct(track_ptr->context.get());
-  }
-
-  *out_sample = *decodingResult;
-
-  return heif_error_success;
+  // Thin wrapper over the (currently internal) options-taking implementation, with
+  // no decoding options. Once heif_track_get_next_raw_sequence_sample2() is promoted
+  // to public API (see the TODO above), this stays as a convenience wrapper.
+  return heif_track_get_next_raw_sequence_sample2(track_ptr, out_sample, nullptr);
 }
 
 

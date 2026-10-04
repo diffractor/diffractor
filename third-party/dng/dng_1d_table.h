@@ -86,17 +86,23 @@ class dng_1d_table: private dng_uncopyable
 
 		real32 Interpolate (real32 x) const
 			{
-			
-			real32 y = x * fTableCount32;
-			
-			int32 index = (int32) y;
 
-			if (index < 0 || index > (int32) fTableCount)
+			real32 y = x * fTableCount32;
+
+			// CR-4208475 M-M5: Reject NaN / Inf / out-of-range y before
+			// casting to int32. A direct cast of a non-finite or
+			// out-of-int32-range float is undefined behavior, and the
+			// post-cast bounds check below would otherwise see whatever
+			// the implementation produced for the bad conversion.
+
+			if (!(y >= 0.0f && y <= fTableCount32))
 				{
-				
+
 				ThrowBadFormat ("Index out of range.");
-				
+
 				}
+
+			int32 index = (int32) y;
 
 			// Enable vectorization by using DNG_ASSERT instead of DNG_REQUIRE
 			

@@ -80,6 +80,7 @@ void ReportError (const char *message,
 
 /*****************************************************************************/
 
+// DNG_NO_RETURN
 void Throw_dng_error (dng_error_code err,
 					  const char *message,
 					  const char *sub_message,
@@ -206,13 +207,19 @@ void Throw_dng_error (dng_error_code err,
 		
 	#else
 	
+	#if !qDNGVerboseExceptions
 	(void) message;
 	(void) sub_message;
+	#endif
 	(void) silent;
 	
 	#endif
 	
+	#if qDNGVerboseExceptions
+	throw dng_exception (err, message, sub_message);
+	#else
 	throw dng_exception (err);
+	#endif
 	
 	}
 

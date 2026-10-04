@@ -52,7 +52,7 @@ extern bool gDNGUseFakeTimeZonesInXMP;
 /*****************************************************************************/
 
 // Stream block size.  Choose a size that the OS likes for file system
-// efficent read/write alignment.
+// efficient read/write alignment.
 
 extern uint32 gDNGStreamBlockSize;
 

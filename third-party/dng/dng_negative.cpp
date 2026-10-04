@@ -49,17 +49,266 @@
 
 /*****************************************************************************/
 
+static const uint32 kMaxEmbeddedMakerNoteBlockSize	= 128u * 1024u * 1024u;
+static const uint32 kMaxEmbeddedIPTCBlockSize		= 128u * 1024u * 1024u;
+static const uint32 kMaxEmbeddedXMPBlockSize		= 128u * 1024u * 1024u;
+static const uint32 kTrimmedEmbeddedXMPPaddingSize	= 4096u;
+
+/*****************************************************************************/
+
+static bool IsXMPPacketWhitespace (uint8 ch)
+	{
+
+	return ch == ' '  ||
+		   ch == '\t' ||
+		   ch == '\n' ||
+		   ch == '\r';
+
+	}
+
+/*****************************************************************************/
+
+static bool FindPatternInStream (dng_stream &stream,
+								 uint64 offset,
+								 uint64 count,
+								 const char *pattern,
+								 uint32 patternSize,
+								 uint64 &patternOffset)
+	{
+
+	DNG_REQUIRE (patternSize > 0, "Expected pattern");
+
+	const uint32 kBufferSize = 64u * 1024u;
+
+	dng_memory_data buffer (kBufferSize + patternSize);
+
+	uint8 *data = buffer.Buffer_uint8 ();
+
+	uint32 carryCount = 0;
+
+	uint64 position = offset;
+	uint64 remaining = count;
+
+	while (remaining)
+		{
+
+		uint32 readCount = (uint32) Min_uint64 (remaining, kBufferSize);
+
+		stream.SetReadPosition (position);
+
+		stream.Get (data + carryCount, readCount);
+
+		uint32 searchCount = carryCount + readCount;
+
+		for (uint32 j = 0; j + patternSize <= searchCount; j++)
+			{
+
+			if (!memcmp (data + j, pattern, patternSize))
+				{
+
+				patternOffset = position - carryCount + j;
+
+				return true;
+
+				}
+
+			}
+
+		carryCount = Min_uint32 (patternSize - 1, searchCount);
+
+		if (carryCount)
+			{
+			memmove (data, data + searchCount - carryCount, carryCount);
+			}
+
+		position += readCount;
+		remaining -= readCount;
+
+		}
+
+	return false;
+
+	}
+
+/*****************************************************************************/
+
+static bool StreamRangeIsXMPPacketWhitespace (dng_stream &stream,
+											  uint64 offset,
+											  uint64 count)
+	{
+
+	const uint32 kBufferSize = 64u * 1024u;
+
+	dng_memory_data buffer (kBufferSize);
+
+	uint64 position = offset;
+	uint64 remaining = count;
+
+	while (remaining)
+		{
+
+		uint32 readCount = (uint32) Min_uint64 (remaining, kBufferSize);
+
+		stream.SetReadPosition (position);
+
+		stream.Get (buffer.Buffer (), readCount);
+
+		const uint8 *data = buffer.Buffer_uint8 ();
+
+		for (uint32 j = 0; j < readCount; j++)
+			{
+
+			if (!IsXMPPacketWhitespace (data [j]))
+				{
+				return false;
+				}
+
+			}
+
+		position += readCount;
+		remaining -= readCount;
+
+		}
+
+	return true;
+
+	}
+
+/*****************************************************************************/
+
+// CR-4209376: Some legacy DNG files contain small valid XMP packets with
+// pathological amounts of packet padding.  Keep the embedded metadata block
+// allocation cap, but allow these files after verifying that the oversized
+// portion is only XML packet whitespace and trimming it to a normal reserve.
+
+static dng_memory_block * ReadEmbeddedXMPBlock (dng_host &host,
+												dng_stream &stream,
+												uint64 offset,
+												uint32 count)
+	{
+
+	if (count <= kMaxEmbeddedXMPBlockSize)
+		{
+
+		AutoPtr<dng_memory_block> block (host.Allocate (count));
+
+		stream.SetReadPosition (offset);
+
+		stream.Get (block->Buffer (),
+					block->LogicalSize ());
+
+		return block.Release ();
+
+		}
+
+	const char kXMPMetaEnd [] = "</x:xmpmeta>";
+	const char kXMPPacketEndStart [] = "<?xpacket end=";
+	const char kXMPPacketEndClose [] = "?>";
+
+	uint64 xmpMetaEndOffset = 0;
+
+	if (!FindPatternInStream (stream,
+							  offset,
+							  kMaxEmbeddedXMPBlockSize,
+							  kXMPMetaEnd,
+							  (uint32) strlen (kXMPMetaEnd),
+							  xmpMetaEndOffset))
+		{
+		ThrowBadFormat ("XMP block too large");
+		}
+
+	uint64 contentEndOffset = xmpMetaEndOffset + strlen (kXMPMetaEnd);
+
+	uint64 packetEndStartOffset = 0;
+
+	if (!FindPatternInStream (stream,
+							  contentEndOffset,
+							  offset + count - contentEndOffset,
+							  kXMPPacketEndStart,
+							  (uint32) strlen (kXMPPacketEndStart),
+							  packetEndStartOffset))
+		{
+		ThrowBadFormat ("XMP block too large");
+		}
+
+	if (!StreamRangeIsXMPPacketWhitespace (stream,
+										   contentEndOffset,
+										   packetEndStartOffset - contentEndOffset))
+		{
+		ThrowBadFormat ("XMP block too large");
+		}
+
+	uint64 packetEndCloseOffset = 0;
+
+	if (!FindPatternInStream (stream,
+							  packetEndStartOffset,
+							  offset + count - packetEndStartOffset,
+							  kXMPPacketEndClose,
+							  (uint32) strlen (kXMPPacketEndClose),
+							  packetEndCloseOffset))
+		{
+		ThrowBadFormat ("XMP block too large");
+		}
+
+	uint64 packetEndOffset = packetEndCloseOffset + strlen (kXMPPacketEndClose);
+
+	if (!StreamRangeIsXMPPacketWhitespace (stream,
+										   packetEndOffset,
+										   offset + count - packetEndOffset))
+		{
+		ThrowBadFormat ("XMP block too large");
+		}
+
+	uint32 contentSize = (uint32) (contentEndOffset - offset);
+	uint32 trailerSize = (uint32) (packetEndOffset - packetEndStartOffset);
+
+	// CR-4208475 Q-H1: Validate the complete retained size before narrowing so
+	// a near-4 GiB packet trailer cannot wrap the allocation below the cap.
+
+	const uint64 trimmedSize64 =
+		SafeUint64Add (contentSize,
+					   kTrimmedEmbeddedXMPPaddingSize,
+					   trailerSize);
+
+	if (trimmedSize64 > kMaxEmbeddedXMPBlockSize)
+		{
+		ThrowBadFormat ("XMP block too large");
+		}
+
+	const uint32 trimmedSize = (uint32) trimmedSize64;
+
+	AutoPtr<dng_memory_block> block (host.Allocate (trimmedSize));
+
+	uint8 *dst = block->Buffer_uint8 ();
+
+	stream.SetReadPosition (offset);
+
+	stream.Get (dst, contentSize);
+
+	memset (dst + contentSize, ' ', kTrimmedEmbeddedXMPPaddingSize);
+
+	stream.SetReadPosition (packetEndStartOffset);
+
+	stream.Get (dst + contentSize + kTrimmedEmbeddedXMPPaddingSize,
+				trailerSize);
+
+	return block.Release ();
+
+	}
+
+/*****************************************************************************/
+
 void dng_semantic_mask::CalcMaskSubArea (dng_point &origin,
 										 dng_rect &wholeImageArea) const
 	{
 
-	origin.v = (int32) fMaskSubArea [0];	 // top
-	origin.h = (int32) fMaskSubArea [1];	 // left
+	origin.v = ConvertUint32ToInt32 (fMaskSubArea [0]);	 // top
+	origin.h = ConvertUint32ToInt32 (fMaskSubArea [1]);	 // left
 
 	wholeImageArea.t = (int32) 0;
 	wholeImageArea.l = (int32) 0;
-	wholeImageArea.b = (int32) fMaskSubArea [3]; // height
-	wholeImageArea.r = (int32) fMaskSubArea [2]; // width
+	wholeImageArea.b = ConvertUint32ToInt32 (fMaskSubArea [3]); // height
+	wholeImageArea.r = ConvertUint32ToInt32 (fMaskSubArea [2]); // width
 	
 	}
 
@@ -75,22 +324,29 @@ bool dng_semantic_mask::IsMaskSubAreaValid () const
 		return false;
 		}
 
-	dng_point origin;
-
-	dng_rect wholeImageArea;
-
-	CalcMaskSubArea (origin, wholeImageArea);
-
 	const dng_point maskSize = fMask->Bounds ().Size ();
 
-	dng_rect crop;
+	// CR-4208475 Q-M8: Validate untrusted unsigned geometry before narrowing
+	// or constructing signed rectangle endpoints.
 
-	crop.t = origin.v;
-	crop.l = origin.h;
-	crop.b = origin.v + maskSize.v;
-	crop.r = origin.h + maskSize.h;
+	if (fMaskSubArea [0] > (uint32) INT32_MAX ||
+		fMaskSubArea [1] > (uint32) INT32_MAX ||
+		fMaskSubArea [2] > (uint32) INT32_MAX ||
+		fMaskSubArea [3] > (uint32) INT32_MAX ||
+		maskSize.v <= 0 ||
+		maskSize.h <= 0)
+		{
+		return false;
+		}
 
-	if ((crop & wholeImageArea) != crop)
+	const uint64 cropBottom =
+		SafeUint64Add (fMaskSubArea [0], (uint32) maskSize.v);
+
+	const uint64 cropRight =
+		SafeUint64Add (fMaskSubArea [1], (uint32) maskSize.h);
+
+	if (cropBottom > fMaskSubArea [3] ||
+		cropRight > fMaskSubArea [2])
 		{
 		return false;
 		}
@@ -578,7 +834,7 @@ dng_fingerprint dng_metadata::IPTCDigest (bool includePadding) const
 	if (IPTCLength ())
 		{
 		
-		dng_md5_printer printer;
+		dng_md5_direct_printer printer;
 		
 		const uint8 *data = (const uint8 *) IPTCData ();
 		
@@ -604,7 +860,7 @@ dng_fingerprint dng_metadata::IPTCDigest (bool includePadding) const
 				
 			}
 		
-		printer.Process (data, count);
+		printer.ProcessPtr (data, count);
 						 
 		return printer.Result ();
 			
@@ -727,9 +983,9 @@ void dng_metadata::SetEmbeddedXMP (dng_host &host,
 	if (SetXMP (host, buffer, count))
 		{
 		
-		dng_md5_printer printer;
+		dng_md5_direct_printer printer;
 		
-		printer.Process (buffer, count);
+		printer.ProcessPtr (buffer, count);
 		
 		fEmbeddedXMPDigest = printer.Result ();
 		
@@ -1331,9 +1587,12 @@ uint32 dng_negative::ProfileCount () const
 
 const dng_camera_profile & dng_negative::ProfileByIndex (uint32 index) const
 	{
+
+	// CR-4208475 Q-L11: This is a public release-build precondition, not a
+	// debug-only invariant.
 	
-	DNG_ASSERT (index < ProfileCount (),
-				"Invalid index for ProfileByIndex");
+	DNG_REQUIRE (index < ProfileCount () && fCameraProfile [index] != NULL,
+				 "Invalid index for ProfileByIndex");
 				
 	return *fCameraProfile [index];
 		
@@ -1365,10 +1624,11 @@ bool dng_negative::GetProfileByMetadata
 					dng_camera_profile &foundProfile) const
 	{
 	
-	if (metadata.fIndex >= 0)
+	if (metadata.fIndex >= 0 &&
+		(uint32) metadata.fIndex < ProfileCount ())
 		{
 		
-		foundProfile = ProfileByIndex (metadata.fIndex);
+		foundProfile = ProfileByIndex ((uint32) metadata.fIndex);
 		
 		return true;
 		
@@ -1606,7 +1866,8 @@ bool dng_negative::GetProfileByIDFromList (const dng_profile_metadata_list &list
 
 bool dng_negative::GetProfileToEmbedFromList (const dng_profile_metadata_list &list,
 											  const dng_metadata & /* metadata */,
-											  dng_camera_profile &foundProfile) const
+											  dng_camera_profile &foundProfile,
+											  bool /* skipAdobeStandard = false */) const
 	{
 	
 	 // How many profiles in list?
@@ -1704,7 +1965,8 @@ bool dng_negative::GetProfileByID (const dng_camera_profile_id &id,
 /*****************************************************************************/
 
 bool dng_negative::GetProfileToEmbed (const dng_metadata &metadata,
-									  dng_camera_profile &foundProfile) const
+									  dng_camera_profile &foundProfile,
+									  bool skipAdobeStandard /* = false */) const
 	{
 	
 	// Monochrome negatives don't have profiles.
@@ -1724,7 +1986,8 @@ bool dng_negative::GetProfileToEmbed (const dng_metadata &metadata,
 	
 	return GetProfileToEmbedFromList (list,
 									  metadata,
-									  foundProfile);
+									  foundProfile,
+									  skipAdobeStandard);
 	
 	}
 							   
@@ -1757,7 +2020,7 @@ dng_fingerprint dng_negative::FindImageDigest (dng_host &host,
 											   const dng_image &image)
 	{
 	
-	dng_md5_printer printer;
+	dng_md5_direct_printer printer;
 	
 	dng_pixel_buffer buffer (image.Bounds (), 
 							 0, 
@@ -1806,9 +2069,9 @@ dng_fingerprint dng_negative::FindImageDigest (dng_host &host,
 		
 		image.Get (buffer);
 		
-		uint32 count = buffer.fArea.H () *
-					   buffer.fRowStep *
-					   buffer.fPixelSize;
+		uint32 count = SafeUint32Mult (buffer.fArea.H (),
+									   (uint32) buffer.fRowStep,
+									   buffer.fPixelSize);
 					   
 		#if qDNGBigEndian
 		
@@ -1844,8 +2107,8 @@ dng_fingerprint dng_negative::FindImageDigest (dng_host &host,
 		
 		#endif
 
-		printer.Process (buffer.fData,
-						 count);
+		printer.ProcessPtr (buffer.fData,
+							count);
 		
 		}
 			
@@ -1932,16 +2195,26 @@ class dng_find_new_raw_image_digest_task : public dng_area_task
 			,	fTilesDown	 (0)
 			,	fTileCount	 (0)
 			,	fTileHash    ()
-			
+
 			{
-			
+
 			fMinTaskArea = 1;
-									
+
+			// CR-4208475 N-M5: reject empty image bounds before fUnitCell
+			// collapses to (0, 0) and Start / Process divide by it. The
+			// digest API has no meaningful answer for an empty image, so
+			// fail-closed mirrors the D-1-8 dng_tile_iterator pattern.
+
+			if (fImage.Bounds ().IsEmpty ())
+				{
+				ThrowProgramError ("Empty image bounds in tile digest task");
+				}
+
 			fUnitCell = dng_point (Min_int32 (kTileSize, fImage.Bounds ().H ()),
 								   Min_int32 (kTileSize, fImage.Bounds ().W ()));
-								   
+
 			fMaxTileSize = fUnitCell;
-						
+
 			}
 	
 		virtual void Start (uint32 threadCount,
@@ -1959,7 +2232,7 @@ class dng_find_new_raw_image_digest_task : public dng_area_task
 			fTilesAcross = (fImage.Bounds ().W () + fUnitCell.h - 1) / fUnitCell.h;
 			fTilesDown	 = (fImage.Bounds ().H () + fUnitCell.v - 1) / fUnitCell.v;
 			
-			fTileCount = fTilesAcross * fTilesDown;
+			fTileCount = SafeUint32Mult (fTilesAcross, fTilesDown);
 						 
 			fTileHash.Reset (fTileCount);
 			
@@ -2001,9 +2274,9 @@ class dng_find_new_raw_image_digest_task : public dng_area_task
 			
 			fImage.Get (buffer);
 			
-			uint32 count = buffer.fPlaneStep *
-						   buffer.fPlanes *
-						   buffer.fPixelSize;
+			uint32 count = SafeUint32Mult ((uint32) buffer.fPlaneStep,
+										   buffer.fPlanes,
+										   buffer.fPixelSize);
 			
 			#if qDNGBigEndian
 			
@@ -2039,9 +2312,9 @@ class dng_find_new_raw_image_digest_task : public dng_area_task
 
 			#endif
 			
-			dng_md5_printer printer;
+			dng_md5_direct_printer printer;
 			
-			printer.Process (buffer.fData, count);
+			printer.ProcessPtr (buffer.fData, count);
 							 
 			fTileHash [tileIndex] = printer.Result ();
 			
@@ -2050,12 +2323,12 @@ class dng_find_new_raw_image_digest_task : public dng_area_task
 		dng_fingerprint Result ()
 			{
 			
-			dng_md5_printer printer;
+			dng_md5_direct_printer printer;
 			
 			for (uint32 tileIndex = 0; tileIndex < fTileCount; tileIndex++)
 				{
 				
-				printer.Process (fTileHash [tileIndex] . data, 16);
+				printer.Process (fTileHash [tileIndex]);
 				
 				}
 				
@@ -2163,11 +2436,11 @@ void dng_negative::FindNewRawImageDigest (dng_host &host) const
 				
 			// Combine the two digests into a single digest.
 			
-			dng_md5_printer printer;
+			dng_md5_direct_printer printer;
 			
-			printer.Process (fNewRawImageDigest.data, 16);
+			printer.Process (fNewRawImageDigest);
 			
-			printer.Process (maskDigest.data, 16);
+			printer.Process (maskDigest);
 			
 			fNewRawImageDigest = printer.Result ();
 			
@@ -2291,7 +2564,7 @@ void dng_negative::ValidateRawImageDigest (dng_host &host)
 						
 						for (uint32 j = 4; j < 16; j++)
 							{
-							matchLast12 = matchLast12 && (oldDigest.data [j] == fRawImageDigest.data [j]);
+							matchLast12 = matchLast12 && (oldDigest.Data () [j] == fRawImageDigest.Data () [j]);
 							}
 							
 						if (matchLast12)
@@ -2305,10 +2578,10 @@ void dng_negative::ValidateRawImageDigest (dng_host &host)
 					// bytes, but for all those files that I have seen so far the
 					// resulting first four bytes are 0x08 0x00 0x00 0x00.
 					
-					if (oldDigest.data [0] == 0x08 &&
-						oldDigest.data [1] == 0x00 &&
-						oldDigest.data [2] == 0x00 &&
-						oldDigest.data [3] == 0x00)
+					if (oldDigest.Data () [0] == 0x08 &&
+						oldDigest.Data () [1] == 0x00 &&
+						oldDigest.Data () [2] == 0x00 &&
+						oldDigest.Data () [3] == 0x00)
 						{
 						return;
 						}
@@ -2337,12 +2610,12 @@ dng_fingerprint dng_negative::RawDataUniqueID () const
 	if (fRawDataUniqueID.IsValid () && fEnhanceParams.NotEmpty ())
 		{
 		
-		dng_md5_printer printer;
+		dng_md5_direct_printer printer;
 		
-		printer.Process (fRawDataUniqueID.data, 16);
+		printer.Process (fRawDataUniqueID);
 		
-		printer.Process (fEnhanceParams.Get	   (),
-						 fEnhanceParams.Length ());
+		printer.ProcessPtr (fEnhanceParams.Get	  (),
+							fEnhanceParams.Length ());
 			
 		return printer.Result ();
 
@@ -2364,7 +2637,7 @@ void dng_negative::FindRawDataUniqueID (dng_host &host) const
 	if (RawDataUniqueID ().IsNull ())
 		{
 		
-		dng_md5_printer_stream printer;
+		dng_md5_printer_le_stream printer;
 		
 		// If we have a raw lossy image, it is much faster to use its digest as
 		// part of the unique ID since the data size is much smaller. We
@@ -2376,8 +2649,7 @@ void dng_negative::FindRawDataUniqueID (dng_host &host) const
 			
 			FindRawLossyCompressedImageDigest (host);
 			
-			printer.Put (fRawLossyCompressedImageDigest.data,
-						 uint32 (sizeof (fRawLossyCompressedImageDigest.data)));
+			printer.Put (fRawLossyCompressedImageDigest);
 			
 			}
 
@@ -2388,7 +2660,7 @@ void dng_negative::FindRawDataUniqueID (dng_host &host) const
 		
 			FindNewRawImageDigest (host);
 					
-			printer.Put (fNewRawImageDigest.data, 16);
+			printer.Put (fNewRawImageDigest);
 			
 			}
 		
@@ -2463,10 +2735,10 @@ void dng_negative::FindOriginalRawFileDigest () const
 	if (fOriginalRawFileDigest.IsNull () && fOriginalRawFileData.Get ())
 		{
 		
-		dng_md5_printer printer;
+		dng_md5_direct_printer printer;
 		
-		printer.Process (fOriginalRawFileData->Buffer	   (),
-						 fOriginalRawFileData->LogicalSize ());
+		printer.ProcessPtr (fOriginalRawFileData->Buffer	  (),
+							fOriginalRawFileData->LogicalSize ());
 					
 		fOriginalRawFileDigest = printer.Result ();
 	
@@ -2559,13 +2831,22 @@ dng_rect dng_negative::DefaultCropArea () const
 			result.l -= result.r - imageSize.h;
 			result.r  = imageSize.h;
 			}
-			
+
+		// Clamp left/top to zero: if the crop size exceeds the image size
+		// the slide-back above can produce a negative origin, which would
+		// cause Trim() to shift the pixel buffer pointer before the
+		// allocation.
+
+		result.l = Max_int32 (0, result.l);
+
 		if (result.b > imageSize.v)
 			{
 			result.t -= result.b - imageSize.v;
 			result.b  = imageSize.v;
 			}
-			
+
+		result.t = Max_int32 (0, result.t);
+
 		}
 		
 	return result;
@@ -3975,13 +4256,38 @@ void dng_negative::PostParse (dng_host &host,
 			
 			// If the MakerNote is safe, preserve it as a MakerNote.
 			
-			if (IsMakerNoteSafe ())
+			if (IsMakerNoteSafe () && info.fTIFFBlockOriginalOffset != kDNGStreamInvalidOffset)
 				{
 
+				if (shared.fMakerNoteCount > kMaxEmbeddedMakerNoteBlockSize)
+					{
+					ThrowBadFormat ("MakerNote block too large");
+					}
+
 				AutoPtr<dng_memory_block> block (host.Allocate (shared.fMakerNoteCount));
-				
-				stream.SetReadPosition (shared.fMakerNoteOffset + info.fTIFFBlockOriginalOffset -
-																  info.fTIFFBlockOffset);
+
+				// CR-4208475 M-L6: Compute the MakerNote read position
+				// with explicit underflow / overflow checks instead of
+				// the open-coded `a + b - c` uint64 expression. The
+				// subtraction (fTIFFBlockOriginalOffset - fTIFFBlockOffset)
+				// can wrap when the original offset was below the current
+				// block offset, and the subsequent add can wrap on huge
+				// fMakerNoteOffset values. dng_stream::SetReadPosition
+				// already rejects an out-of-range position, but failing
+				// here gives a clearer diagnostic.
+
+				if (info.fTIFFBlockOriginalOffset < info.fTIFFBlockOffset)
+					{
+					ThrowBadFormat ("Inverted TIFF block offsets while "
+									"resolving MakerNote position");
+					}
+
+				uint64 makerNotePos =
+					SafeUint64Add (shared.fMakerNoteOffset,
+								   info.fTIFFBlockOriginalOffset -
+								   info.fTIFFBlockOffset);
+
+				stream.SetReadPosition (makerNotePos);
 					
 				stream.Get (block->Buffer (), shared.fMakerNoteCount);
 									
@@ -3995,6 +4301,11 @@ void dng_negative::PostParse (dng_host &host,
 		
 		if (shared.fIPTC_NAA_Count)
 			{
+
+			if (shared.fIPTC_NAA_Count > kMaxEmbeddedIPTCBlockSize)
+				{
+				ThrowBadFormat ("IPTC block too large");
+				}
 			
 			AutoPtr<dng_memory_block> block (host.Allocate (shared.fIPTC_NAA_Count));
 			
@@ -4016,12 +4327,10 @@ void dng_negative::PostParse (dng_host &host,
 		if (shared.fXMPCount)
 			{
 			
-			AutoPtr<dng_memory_block> block (host.Allocate (shared.fXMPCount));
-			
-			stream.SetReadPosition (shared.fXMPOffset);
-			
-			stream.Get (block->Buffer	   (),
-						block->LogicalSize ());
+			AutoPtr<dng_memory_block> block (ReadEmbeddedXMPBlock (host,
+																	stream,
+																	shared.fXMPOffset,
+																	shared.fXMPCount));
 						
 			Metadata ().SetEmbeddedXMP (host,
 										block->Buffer	   (),
@@ -4430,7 +4739,17 @@ void dng_negative::ReadStage1Image (dng_host &host,
 	if (fStage1Image->PixelType () == ttFloat)
 		{
 		
-		SetRawFloatBitDepth (rawIFD.fBitsPerSample [0]);
+		// If we are reading from a lossy JXL floating point image, and
+		// we are not keeping the lossy compressed data, we need to treat
+		// the raw floating point image as 32 bit, and ignore the bit
+		// depth that we fed into the JXL decoder.
+		
+		if (lossyImage.Get () || rawIFD.fCompression != ccJXL)
+			{
+			
+			SetRawFloatBitDepth (rawIFD.fBitsPerSample [0]);
+		
+			}
 		
 		}
 					  
@@ -5829,7 +6148,12 @@ dng_image * EncodeImageForCompression (dng_host &host,
 		{
 		return nullptr;
 		}
-  
+
+	if (srcImage.Planes () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	real64 lower [kMaxColorPlanes];
 	real64 upper [kMaxColorPlanes];
 	
@@ -6593,10 +6917,17 @@ void dng_negative::LosslessCompressJXL (dng_host &host,
 		{
 		
 		AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
-		
+
+		// CR-4208475 R-M2: Encode the enhanced (stage 3) image here, matching
+		// this block's use_case_EnhancedImage intent and the raw-image block's
+		// use of RawImage (). The prior operand *RawTransparencyMask () was a
+		// copy-paste error: it dereferences a null pointer when the negative
+		// has no transparency mask (the guard above does not require one), and
+		// encodes the wrong pixels when a mask does exist.
+
 		lossyImage->Encode (host,
 							writer,
-							*RawTransparencyMask (),
+							*Stage3Image (),
 							nearLosslessOK ? dng_host::use_case_EnhancedImage
 										   : dng_host::use_case_LosslessEnhancedImage,
 							this);
@@ -6675,7 +7006,16 @@ void dng_negative::ConvertToProxy (dng_host &host,
 								   uint32 proxySize,
 								   uint64 proxyCount)
 	{
-	
+
+	// ConvertToProxy requires a valid default crop area. An empty rect here
+	// means the negative has no crop metadata, which is a file format error
+	// in this context.
+
+	if (DefaultCropArea ().IsEmpty ())
+		{
+		ThrowBadFormat ();
+		}
+
 	if (!proxySize)
 		{
 		proxySize = kMaxImageSide;
@@ -6874,6 +7214,16 @@ void dng_negative::ConvertToProxy (dng_host &host,
 
 	const dng_rect originalStage3Bounds = Stage3Image ()->Bounds ();
 
+	// Validate that the crop area is contained within the stage 3 image.
+	// A mismatch here indicates malformed file metadata (e.g. a large
+	// DefaultCropSize from the primary IFD applied to a smaller enhanced
+	// image), which is a file format error.
+
+	if (!originalStage3Bounds.Contains (defaultCropArea))
+		{
+		ThrowBadFormat ();
+		}
+
 	if (!rawImageOK)
 		{
 
@@ -7020,7 +7370,7 @@ void dng_negative::ConvertToProxy (dng_host &host,
 			
 		// Figure out the requested proxy pixel size.
 		
-		real64 aspectRatio = AspectRatio ();
+		real64 aspectRatio = BaseAspectRatio ();
 		
 		dng_point newSize (proxySize, proxySize);
 		
@@ -7530,6 +7880,16 @@ void dng_negative::ResizeTransparencyToMatchStage3 (dng_host &host,
 			(TransparencyMask ()->PixelType () != ttByte && convertTo8Bit))
 			{
 			
+			if (host.SaveDNGVersion () != dngVersion_None && !convertTo8Bit)
+				{
+				
+				if (!fRawTransparencyMask.Get ())
+					{
+					fRawTransparencyMask.Reset (fTransparencyMask->Clone ());
+					}
+					
+				}
+			
 			AutoPtr<dng_image> newMask (host.Make_dng_image (fStage3Image->Bounds (),
 															 1,
 															 convertTo8Bit ?
@@ -7550,7 +7910,9 @@ void dng_negative::ResizeTransparencyToMatchStage3 (dng_host &host,
 				{
 				fRawTransparencyMaskBitDepth = 8;
 				}
-			
+
+			fRawLossyCompressedTransparencyMask.Reset ();
+
 			}
 			
 		}

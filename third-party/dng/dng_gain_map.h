@@ -17,10 +17,12 @@
 
 /*****************************************************************************/
 
+#include "dng_assertions.h"
 #include "dng_classes.h"
 #include "dng_fingerprint.h"
 #include "dng_memory.h"
 #include "dng_misc_opcodes.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_types.h"
 #include "dng_uncopyable.h"
 
@@ -92,11 +94,21 @@ class dng_gain_map: private dng_uncopyable
 						uint32 colIndex,
 						uint32 plane)
 			{
+
+			// CR-4208475 B2-2: Checked offset arithmetic cannot establish that
+			// public sample coordinates belong to this map.
+
+			DNG_REQUIRE (rowIndex < (uint32) fPoints.v &&
+						 colIndex < (uint32) fPoints.h &&
+						 plane < fPlanes,
+						 "Gain map entry index out of range");
 			
 			return *(fBuffer->Buffer_real32 () +
-					 rowIndex * fRowStep +
-					 colIndex * fPlanes	 +
-					 plane);
+					 SafeUint32Add (
+						SafeUint32Add (
+							SafeUint32Mult (rowIndex, fRowStep),
+							SafeUint32Mult (colIndex, fPlanes)),
+						plane));
 			
 			}
 			
@@ -107,11 +119,18 @@ class dng_gain_map: private dng_uncopyable
 							  uint32 colIndex,
 							  uint32 plane) const
 			{
+
+			DNG_REQUIRE (rowIndex < (uint32) fPoints.v &&
+						 colIndex < (uint32) fPoints.h &&
+						 plane < fPlanes,
+						 "Gain map entry index out of range");
 			
 			return *(fBuffer->Buffer_real32 () +
-					 rowIndex * fRowStep +
-					 colIndex * fPlanes	 +
-					 plane);
+					 SafeUint32Add (
+						SafeUint32Add (
+							SafeUint32Mult (rowIndex, fRowStep),
+							SafeUint32Mult (colIndex, fPlanes)),
+						plane));
 			
 			}
 			
@@ -271,11 +290,18 @@ class dng_gain_table_map: private dng_uncopyable
 						uint32 colIndex,
 						uint32 tableIndex)
 			{
+
+			DNG_REQUIRE (rowIndex < (uint32) fPoints.v &&
+						 colIndex < (uint32) fPoints.h &&
+						 tableIndex < fNumTablePoints,
+						 "Gain table entry index out of range");
 			
 			return *(fBuffer->Buffer_real32 () +
-					 rowIndex * fRowStep +
-					 colIndex * fColStep +
-					 tableIndex);
+					 SafeUint32Add (
+						SafeUint32Add (
+							SafeUint32Mult (rowIndex, fRowStep),
+							SafeUint32Mult (colIndex, fColStep)),
+						tableIndex));
 			
 			}
 			
@@ -286,11 +312,18 @@ class dng_gain_table_map: private dng_uncopyable
 							  uint32 colIndex,
 							  uint32 tableIndex) const
 			{
+
+			DNG_REQUIRE (rowIndex < (uint32) fPoints.v &&
+						 colIndex < (uint32) fPoints.h &&
+						 tableIndex < fNumTablePoints,
+						 "Gain table entry index out of range");
 			
 			return *(fBuffer->Buffer_real32 () +
-					 rowIndex * fRowStep +
-					 colIndex * fColStep +
-					 tableIndex);
+					 SafeUint32Add (
+						SafeUint32Add (
+							SafeUint32Mult (rowIndex, fRowStep),
+							SafeUint32Mult (colIndex, fColStep)),
+						tableIndex));
 			
 			}
 
@@ -335,7 +368,7 @@ class dng_gain_table_map: private dng_uncopyable
 
 		/// Add the gain table map to the given digest printer.
 
-		void AddDigest (dng_md5_printer &printer) const;
+		void AddDigest (dng_md5_printer_stream &printer) const;
 
 		/// Fingerprint for the gain table map. Computed lazily.
 
@@ -345,7 +378,8 @@ class dng_gain_table_map: private dng_uncopyable
 
 		static dng_gain_table_map * GetStream (dng_host &host,
 											   dng_stream &stream,
-											   bool useVersion2 = false);
+											   bool useVersion2,
+											   uint32 tagByteCount);
 
 		/// APIs to support ProfileGainTableMap2.
 

@@ -21,6 +21,7 @@
 #include "libheif/heif.h"
 #include "libheif/heif_plugin.h"
 #include "encoder_kvazaar.h"
+#include "encoder_input_check.h"
 #include <memory>
 #include <string>   // apparently, this is a false positive of cpplint
 #include <cstring>
@@ -524,19 +525,36 @@ static heif_error kvazaar_start_sequence_encoding_intern(void* encoder_raw, cons
   config->framerate_num = framerate_num;
   config->framerate_denom = framerate_denom;
 
+  // Set the input format through config_parse() instead of writing config->input_format directly.
+  // kvazaar git master (since July 2026) keeps the encoder chroma format in separate kvz_config
+  // fields that default to 4:2:0 and are only updated by the "input-format" parser. A direct
+  // assignment leaves them at 4:2:0, and the encoder then dereferences the NULL chroma planes of
+  // a 4:0:0 input picture. Released kvazaar versions derive the chroma format from input_format,
+  // so the parser works for them as well. The parser also rejects the chroma formats a kvazaar
+  // build does not support (4:2:2 and 4:4:4 in released versions), which becomes an error here
+  // instead of an encoder running in a mode it was not built for.
+  const char* input_format;
   if (isGreyscale) {
-    config->input_format = KVZ_FORMAT_P400;
+    input_format = "P400";
   }
   else if (chroma == heif_chroma_420) {
-    config->input_format = KVZ_FORMAT_P420;
+    input_format = "P420";
   }
   else if (chroma == heif_chroma_422) {
-    config->input_format = KVZ_FORMAT_P422;
+    input_format = "P422";
   }
   else if (chroma == heif_chroma_444) {
-    config->input_format = KVZ_FORMAT_P444;
+    input_format = "P444";
   }
   else {
+    return heif_error{
+      heif_error_Encoder_plugin_error,
+      heif_suberror_Unsupported_image_type,
+      kError_unsupported_chroma
+    };
+  }
+
+  if (!api->config_parse(config, "input-format", input_format)) {
     return heif_error{
       heif_error_Encoder_plugin_error,
       heif_suberror_Unsupported_image_type,
@@ -567,6 +585,22 @@ static heif_error kvazaar_start_sequence_encoding_intern(void* encoder_raw, cons
     config->vui.colorprim = nclx->color_primaries;
     config->vui.transfer = nclx->transfer_characteristics;
     config->vui.colormatrix = nclx->matrix_coefficients;
+  }
+
+  // Write the pixel aspect ratio into the VUI. Kvazaar emits aspect_ratio_info when both
+  // sar fields are >0. Extended_SAR stores sar_width/sar_height as u(16), so ratios that
+  // do not fit are only signalled through the pasp property. A 1:1 ratio is omitted
+  // (VUI absence already means unspecified/square).
+
+  uint32_t aspect_h = 1, aspect_v = 1;
+  heif_image_get_pixel_aspect_ratio(image, &aspect_h, &aspect_v);
+  if ((input_class == heif_image_input_class_normal ||
+       input_class == heif_image_input_class_thumbnail) &&
+      aspect_h != aspect_v &&
+      aspect_h > 0 && aspect_v > 0 &&
+      aspect_h <= 0xFFFF && aspect_v <= 0xFFFF) {
+    config->vui.sar_width = (int32_t) aspect_h;
+    config->vui.sar_height = (int32_t) aspect_v;
   }
 
   config->qp = ((100 - encoder->quality) * 51 + 50) / 100;
@@ -640,6 +674,14 @@ static heif_error kvazaar_start_sequence_encoding_intern(void* encoder_raw, cons
 static heif_error kvazaar_encode_sequence_frame(void* encoder_raw, const heif_image* image,
                                              uintptr_t frame_nr)
 {
+  // HEVC can signal different luma and chroma bit depths, but kvazaar has a
+  // single hard-coded bit depth and cannot produce such a stream.
+  heif_error input_error = check_encoder_input_image(image, /*supports_monochrome=*/true,
+                                                    {KVZ_BIT_DEPTH});
+  if (input_error.code != heif_error_Ok) {
+    return input_error;
+  }
+
   encoder_struct_kvazaar* encoder = (encoder_struct_kvazaar*) encoder_raw;
 
   // Note: it is ok to cast away the const, as the image content is not changed.
@@ -733,13 +775,6 @@ static heif_error kvazaar_encode_sequence_frame(void* encoder_raw, const heif_im
 
   if (!isGreyscale) {
     bit_depth_chroma = heif_image_get_bits_per_pixel_range(image, heif_channel_Cb);
-    if (bit_depth != bit_depth_chroma) {
-      return {
-        heif_error_Encoder_plugin_error,
-        heif_suberror_Unsupported_bit_depth,
-        "Luma bit depth must equal the chroma bit depth"
-      };
-    }
   }
 
   if (isGreyscale) {

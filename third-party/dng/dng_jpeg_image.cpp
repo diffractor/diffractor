@@ -21,6 +21,7 @@
 #include "dng_uncopyable.h"
 
 #include <atomic>
+#include <cinttypes>
 
 /*****************************************************************************/
 
@@ -157,9 +158,15 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
 	
 	uint32 tilesAcross = ifd.TilesAcross ();
 	uint32 tilesDown   = ifd.TilesDown	 ();
-	
-	uint32 tileCount = tilesAcross * tilesDown;
-	
+
+	// CR-4208475 M-M3: Mirror the SafeUint32Mult preflight used in the
+	// dng_image_writer encode path (Phase L-M5). A pathological IFD with
+	// huge TilesAcross / TilesDown could otherwise wrap the uint32 tile
+	// count and under-size the fData vector before the worker pool writes
+	// per-tile buffers into it.
+
+	uint32 tileCount = SafeUint32Mult (tilesAcross, tilesDown);
+
 	fData.resize (tileCount);
 	
 	uint32 threadCount = Min_uint32 (tileCount,
@@ -182,7 +189,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
 		
 		snprintf (message,
 				  sizeof (message),
-				  "JXL encode %u by %u pixels, distance = %.2f, effort = %d, size = %llu",
+				  "JXL encode %u by %u pixels, distance = %.2f, effort = %d, size = %" PRIu64,
 				  image.Width (),
 				  image.Height (),
 				  ifd.fJXLEncodeSettings->Distance (),
@@ -196,7 +203,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
 		
 		snprintf (message,
 				  sizeof (message),
-				  "Lossy JPEG encode %u by %u pixels, quality = %d, size = %llu",
+				  "Lossy JPEG encode %u by %u pixels, quality = %d, size = %" PRIu64,
 				  image.Width (),
 				  image.Height (),
 				  ifd.fCompressionQuality,
@@ -209,7 +216,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
 		
 		snprintf (message,
 				  sizeof (message),
-				  "Deflate encode %u by %u pixels, quality = %d, size = %llu",
+				  "Deflate encode %u by %u pixels, quality = %d, size = %" PRIu64,
 				  image.Width (),
 				  image.Height (),
 				  ifd.fCompressionQuality,
@@ -222,7 +229,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
 		
 		snprintf (message,
 				  sizeof (message),
-				  "EncodeTiles %u by %u pixels, size = %llu",
+				  "EncodeTiles %u by %u pixels, size = %" PRIu64,
 				  image.Width (),
 				  image.Height (),
 				  NonHeaderSize ());
@@ -349,10 +356,10 @@ dng_fingerprint dng_lossy_compressed_image::FindDigest (dng_host &host) const
 		 for (int32 i = ra.fBegin; i < ra.fEnd; i++)
 			 {
 				 
-			 dng_md5_printer printer;
+			 dng_md5_direct_printer printer;
 				
-			 printer.Process (fData [i]->Buffer	     (),
-							  fData [i]->LogicalSize ());
+			 printer.ProcessPtr (fData [i]->Buffer		(),
+								 fData [i]->LogicalSize ());
 								 
 			 digests [i] = printer.Result ();
 				 
@@ -368,11 +375,10 @@ dng_fingerprint dng_lossy_compressed_image::FindDigest (dng_host &host) const
 	
 		{
 		
-		dng_md5_printer printer;
+		dng_md5_direct_printer printer;
 		
 		for (const auto &digest : digests)
-			printer.Process (digest.data,
-							 uint32 (sizeof (digest.data)));
+			printer.Process (digest);
 			
 		return printer.Result ();
 		
@@ -485,10 +491,10 @@ void dng_jpeg_image::DoFindDigest (dng_host & /* host */,
 	if (fJPEGTables.Get ())
 		{
 		
-		dng_md5_printer printer;
+		dng_md5_direct_printer printer;
 		
-		printer.Process (fJPEGTables->Buffer	  (),
-						 fJPEGTables->LogicalSize ());
+		printer.ProcessPtr (fJPEGTables->Buffer		 (),
+							fJPEGTables->LogicalSize ());
 						 
 		digests.push_back (printer.Result ());
 		

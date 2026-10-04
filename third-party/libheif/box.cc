@@ -80,12 +80,28 @@ Fraction::Fraction(int32_t num, int32_t den)
   }
 }
 
-Fraction::Fraction(uint32_t num, uint32_t den)
+Result<Fraction> Fraction::from_signed(int64_t num, int64_t den)
 {
-  assert(num <= (uint32_t) std::numeric_limits<int32_t>::max());
-  assert(den <= (uint32_t) std::numeric_limits<int32_t>::max());
+  if (num < std::numeric_limits<int32_t>::min() || num > std::numeric_limits<int32_t>::max() ||
+      den < std::numeric_limits<int32_t>::min() || den > std::numeric_limits<int32_t>::max()) {
+    return Error(heif_error_Invalid_input,
+                 heif_suberror_Invalid_fractional_number,
+                 "Fraction value exceeds the supported range");
+  }
 
-  *this = Fraction(int32_t(num), int32_t(den));
+  Fraction f(static_cast<int32_t>(num), static_cast<int32_t>(den));
+  if (!f.is_valid()) {
+    return Error(heif_error_Invalid_input,
+                 heif_suberror_Invalid_fractional_number,
+                 "Fraction with zero denominator");
+  }
+
+  return f;
+}
+
+Result<Fraction> Fraction::from_unsigned(uint32_t num, uint32_t den)
+{
+  return from_signed(num, den);
 }
 
 Fraction::Fraction(int64_t num, int64_t den)
@@ -1091,7 +1107,52 @@ bool Box::equal(const std::shared_ptr<Box>& box1, const std::shared_ptr<Box>& bo
 
 Error Box::read_children(BitstreamRange& range, uint32_t max_number, const heif_security_limits* limits)
 {
-  uint32_t count = 0;
+  // A freshly parsed box has no children yet, so m_children.size() below tracks
+  // the number of children read so far.
+  assert(m_children.empty());
+
+  // Determine the applicable limit on the number of child boxes.
+  uint32_t max_children;
+  if (get_short_type() == fourcc("iinf")) {
+    max_children = limits->max_items;
+  }
+  else {
+    max_children = limits->max_children_per_box;
+  }
+
+  // If the number of children is known in advance, reject an excessive count
+  // directly instead of reading children until the accumulated count reaches
+  // the limit.
+  if (max_number != READ_CHILDREN_ALL) {
+    if (max_children && max_number > max_children) {
+      std::stringstream sstr;
+      sstr << "Number of child boxes (" << max_number << ") in '" << get_type_string()
+           << "' box exceeds the security limit of " << max_children << ".";
+
+      return Error(heif_error_Memory_allocation_error,
+                   heif_suberror_Security_limit_exceeded,
+                   sstr.str());
+    }
+
+    // The declared number of children cannot exceed what the remaining input
+    // could possibly hold (each box occupies at least an 8-byte header). A
+    // larger count means the box is truncated or malformed, so reject it
+    // before reading anything. This also bounds the reservation below, which
+    // matters when security limits are disabled and 'max_number' is otherwise
+    // unbounded.
+    size_t max_possible_children = range.get_remaining_bytes() / 8;
+    if (max_number > max_possible_children) {
+      std::stringstream sstr;
+      sstr << "'" << get_type_string() << "' box declares " << max_number
+           << " child boxes, but the remaining data can hold at most "
+           << max_possible_children << ".";
+      return Error(heif_error_Invalid_input,
+                   heif_suberror_End_of_data,
+                   sstr.str());
+    }
+
+    m_children.reserve(max_number);
+  }
 
   while (!range.eof() && !range.error()) {
     std::shared_ptr<Box> box;
@@ -1101,14 +1162,6 @@ Error Box::read_children(BitstreamRange& range, uint32_t max_number, const heif_
     }
 
     if (max_number == READ_CHILDREN_ALL) {
-      uint32_t max_children;
-      if (get_short_type() == fourcc("iinf")) {
-        max_children = limits->max_items;
-      }
-      else {
-        max_children = limits->max_children_per_box;
-      }
-
       if (max_children && m_children.size() > max_children) {
         std::stringstream sstr;
         sstr << "Maximum number of child boxes (" << max_children << ") in '" << get_type_string() << "' box exceeded.";
@@ -1122,15 +1175,24 @@ Error Box::read_children(BitstreamRange& range, uint32_t max_number, const heif_
 
     m_children.push_back(std::move(box));
 
-
-    // count the new child and end reading new children when we reached the expected number
-
-    count++;
-
+    // Stop once we have read the expected number of children.
     if (max_number != READ_CHILDREN_ALL &&
-        count == max_number) {
+        m_children.size() == max_number) {
       break;
     }
+  }
+
+  // If a specific number of children was expected, we must have read exactly
+  // that many. A short read means the box is truncated or malformed. Prefer
+  // this specific error over the lower-level range error below, which would
+  // otherwise mask it.
+  if (max_number != READ_CHILDREN_ALL && m_children.size() != max_number) {
+    std::stringstream sstr;
+    sstr << "'" << get_type_string() << "' box declares " << max_number
+         << " child boxes, but only " << m_children.size() << " could be read.";
+    return Error(heif_error_Invalid_input,
+                 heif_suberror_End_of_data,
+                 sstr.str());
   }
 
   return range.get_error();
@@ -1817,7 +1879,45 @@ Error Box_iloc::read_data(heif_item_id item_id,
   //       this function clears the array in some cases. This should be corrected.
 
   for (const auto& extent : item->extents) {
+
+    // --- data that was appended in memory (append_data()) and not written to a file yet
+
+    // This is the case for items added to a context that is being written. There may be no
+    // input stream at all (writer-only context), and even if there is one (context read from
+    // a file, then modified), the stream does not contain this data.
+
+    if (!extent.data.empty() || extent.length == 0) {
+      uint64_t skip_len = std::min(offset, extent.length);
+      offset -= skip_len;
+
+      uint64_t read_len = std::min(extent.length - skip_len, size);
+
+      if (offset > 0 || read_len == 0) {
+        continue;
+      }
+
+      auto max_memory_block_size = limits->max_memory_block_size;
+      if (max_memory_block_size && max_memory_block_size - dest->size() < read_len) {
+        return {heif_error_Memory_allocation_error,
+                heif_suberror_Security_limit_exceeded,
+                "iloc item data exceeds the maximum memory block size"};
+      }
+
+      dest->insert(dest->end(),
+                   extent.data.begin() + static_cast<size_t>(skip_len),
+                   extent.data.begin() + static_cast<size_t>(skip_len + read_len));
+
+      size -= read_len;
+      continue;
+    }
+
     if (item->construction_method == 0) {
+
+      if (!istr) {
+        return {heif_error_Invalid_input,
+                heif_suberror_No_item_data,
+                "Item data is not available: the context has no input file"};
+      }
 
       // --- make sure that all data is available
 
@@ -1920,15 +2020,35 @@ Error Box_iloc::read_data(heif_item_id item_id,
                 "idat box referenced in iref box is not present in file"};
       }
 
+      // Honor the requested (offset, size) window, exactly like the in-memory
+      // and construction_method==0 branches above. Reading the whole extent and
+      // doing `size -= extent.length` unconditionally ignored the caller's
+      // sub-range: any partial read (size < extent.length) underflowed `size`
+      // and fell into the "Not enough data" check below, which broke per-tile
+      // and per-icef-unit reads of uncompressed items stored in 'idat'
+      // (unc_decoder::get_compressed_image_data_uncompressed()).
+      uint64_t skip_len = std::min(offset, extent.length);
+      offset -= skip_len;
+
+      uint64_t read_len = std::min(extent.length - skip_len, size);
+
+      if (offset > 0) {
+        continue;
+      }
+
+      if (read_len == 0) {
+        continue;
+      }
+
       Error err = idat->read_data(istr,
-                                  extent.offset + item->base_offset,
-                                  extent.length,
+                                  extent.offset + item->base_offset + skip_len,
+                                  read_len,
                                   *dest, limits);
       if (err) {
         return err;
       }
 
-      size -= extent.length;
+      size -= read_len;
     }
     else {
       std::stringstream sstr;
@@ -2554,6 +2674,17 @@ Error Box_iinf::parse(BitstreamRange& range, const heif_security_limits* limits)
 
   if (item_count == 0) {
     return Error::Ok;
+  }
+
+  // Sanity check.
+  if (limits->max_items && item_count > limits->max_items) {
+    std::stringstream sstr;
+    sstr << "iinf box contains " << item_count << " items, which exceeds the security limit of "
+         << limits->max_items << " items.";
+
+    return Error(heif_error_Memory_allocation_error,
+                 heif_suberror_Security_limit_exceeded,
+                 sstr.str());
   }
 
   return read_children(range, item_count, limits);
@@ -3301,8 +3432,8 @@ bool Box_ipma::is_property_essential_for_item(heif_item_id itemId, int propertyI
 }
 
 
-void Box_ipma::add_property_for_item_ID(heif_item_id itemID,
-                                        PropertyAssociation assoc)
+heif_property_id Box_ipma::add_property_for_item_ID(heif_item_id itemID,
+                                                    PropertyAssociation assoc)
 {
   size_t idx;
   for (idx = 0; idx < m_entries.size(); idx++) {
@@ -3321,7 +3452,7 @@ void Box_ipma::add_property_for_item_ID(heif_item_id itemID,
   // If the property is already associated with the item, skip.
   for (auto const& a : m_entries[idx].associations) {
     if (a.property_index == assoc.property_index) {
-      return;
+      return get_property_id_for_item_ID(itemID, assoc.property_index);
     }
 
     // TODO: should we check that the essential flag matches and return an internal error if not?
@@ -3329,6 +3460,43 @@ void Box_ipma::add_property_for_item_ID(heif_item_id itemID,
 
   // add the property association
   m_entries[idx].associations.push_back(assoc);
+
+  return get_property_id_for_item_ID(itemID, assoc.property_index);
+}
+
+
+heif_property_id Box_ipma::get_property_id_for_item_ID(heif_item_id itemID, uint16_t property_index) const
+{
+  // Index 0 means "no property". It is skipped by Box_ipco::get_properties_for_item_ID() and
+  // hence has no position in the item's property list.
+  if (property_index == 0) {
+    return 0;
+  }
+
+  for (const auto& entry : m_entries) {
+    if (entry.item_ID != itemID) {
+      continue;
+    }
+
+    // Count the associations the way Box_ipco::get_properties_for_item_ID() does, i.e. skipping
+    // the associations with index 0, so that the returned id indexes the vector it produces.
+    heif_property_id id = 0;
+    for (const auto& assoc : entry.associations) {
+      if (assoc.property_index == 0) {
+        continue;
+      }
+
+      id++;
+
+      if (assoc.property_index == property_index) {
+        return id;
+      }
+    }
+
+    break;
+  }
+
+  return 0;
 }
 
 
@@ -3646,28 +3814,24 @@ Error Box_clap::parse(BitstreamRange& range, const heif_security_limits* limits)
   int32_t vertical_offset_num = (int32_t) range.read32();
   uint32_t vertical_offset_den = (uint32_t) range.read32();
 
-  if (clean_aperture_width_num > (uint32_t) std::numeric_limits<int32_t>::max() ||
-      clean_aperture_width_den > (uint32_t) std::numeric_limits<int32_t>::max() ||
-      clean_aperture_height_num > (uint32_t) std::numeric_limits<int32_t>::max() ||
-      clean_aperture_height_den > (uint32_t) std::numeric_limits<int32_t>::max() ||
-      horizontal_offset_den > (uint32_t) std::numeric_limits<int32_t>::max() ||
-      vertical_offset_den > (uint32_t) std::numeric_limits<int32_t>::max()) {
-    return Error(heif_error_Invalid_input,
-                 heif_suberror_Invalid_fractional_number,
-                 "Exceeded supported value range.");
+  // The checked Fraction construction rejects values outside the int32_t range and
+  // zero denominators.
+  auto clean_aperture_width = Fraction::from_unsigned(clean_aperture_width_num, clean_aperture_width_den);
+  auto clean_aperture_height = Fraction::from_unsigned(clean_aperture_height_num, clean_aperture_height_den);
+  auto horizontal_offset = Fraction::from_signed(horizontal_offset_num, horizontal_offset_den);
+  auto vertical_offset = Fraction::from_signed(vertical_offset_num, vertical_offset_den);
+
+  for (const Result<Fraction>* f : {&clean_aperture_width, &clean_aperture_height,
+                                    &horizontal_offset, &vertical_offset}) {
+    if (!*f) {
+      return f->error();
+    }
   }
 
-  m_clean_aperture_width = Fraction(clean_aperture_width_num,
-                                    clean_aperture_width_den);
-  m_clean_aperture_height = Fraction(clean_aperture_height_num,
-                                     clean_aperture_height_den);
-  m_horizontal_offset = Fraction(horizontal_offset_num, (int32_t) horizontal_offset_den);
-  m_vertical_offset = Fraction(vertical_offset_num, (int32_t) vertical_offset_den);
-  if (!m_clean_aperture_width.is_valid() || !m_clean_aperture_height.is_valid() ||
-      !m_horizontal_offset.is_valid() || !m_vertical_offset.is_valid()) {
-    return Error(heif_error_Invalid_input,
-                 heif_suberror_Invalid_fractional_number);
-  }
+  m_clean_aperture_width = *clean_aperture_width;
+  m_clean_aperture_height = *clean_aperture_height;
+  m_horizontal_offset = *horizontal_offset;
+  m_vertical_offset = *vertical_offset;
 
   return range.get_error();
 }
@@ -3725,50 +3889,45 @@ double Box_clap::top(int image_height) const
 }
 
 
-int Box_clap::left_rounded(uint32_t image_width) const
+Result<Box_clap::Crop> Box_clap::get_crop(uint32_t image_width, uint32_t image_height) const
 {
-  // pcX = horizOff + (width  - 1)/2
-  // pcX ± (cleanApertureWidth - 1)/2
-
-  // left = horizOff + (width-1)/2 - (clapWidth-1)/2
-
-  // Guard against image_width==0: `image_width - 1U` would underflow to
-  // UINT32_MAX and overflow the Fraction (GHSA-jc8f-p23p-5hjg).
-  if (image_width == 0) {
-    return 0;
+  // The clean aperture is specified relative to the image center:
+  //   pcX  = horizOff + (width - 1)/2
+  //   left = pcX - (clapWidth - 1)/2
+  //   right = left + clapWidth - 1
+  // (and likewise vertically).
+  //
+  // Computing this needs the image size inside the int32_t-based Fraction. A zero size
+  // would underflow `size - 1` (GHSA-jc8f-p23p-5hjg) and a size above INT32_MAX + 1
+  // does not fit (GHSA-gh5q-69gg-c964). Such an image cannot be cropped with a 'clap',
+  // which is reported as an error instead of computing a bogus crop.
+  if (image_width == 0 || image_height == 0) {
+    return Error(heif_error_Invalid_input,
+                 heif_suberror_Invalid_clean_aperture,
+                 "Clean aperture cannot be applied to an image with zero size");
   }
 
-  Fraction pcX = m_horizontal_offset + Fraction(image_width - 1U, 2U);
+  auto halfWidth = Fraction::from_unsigned(image_width - 1, 2);
+  auto halfHeight = Fraction::from_unsigned(image_height - 1, 2);
+  if (!halfWidth || !halfHeight) {
+    return Error(heif_error_Invalid_input,
+                 heif_suberror_Invalid_clean_aperture,
+                 "Clean aperture cannot be applied to an image larger than 2^31 pixels in any direction");
+  }
+
+  Fraction pcX = m_horizontal_offset + *halfWidth;
+  Fraction pcY = m_vertical_offset + *halfHeight;
+
   Fraction left = pcX - (m_clean_aperture_width - 1) / 2;
-
-  return left.round_down();
-}
-
-int Box_clap::right_rounded(uint32_t image_width) const
-{
-  Fraction right = m_clean_aperture_width - 1 + left_rounded(image_width);
-
-  return right.round();
-}
-
-int Box_clap::top_rounded(uint32_t image_height) const
-{
-  // Guard against image_height==0 underflowing the Fraction (see left_rounded).
-  if (image_height == 0) {
-    return 0;
-  }
-
-  Fraction pcY = m_vertical_offset + Fraction(image_height - 1U, 2U);
   Fraction top = pcY - (m_clean_aperture_height - 1) / 2;
 
-  return top.round();
-}
+  Crop crop;
+  crop.left = left.round_down();
+  crop.top = top.round();
+  crop.right = (m_clean_aperture_width - 1 + crop.left).round();
+  crop.bottom = (m_clean_aperture_height - 1 + crop.top).round();
 
-int Box_clap::bottom_rounded(uint32_t image_height) const
-{
-  Fraction bottom = m_clean_aperture_height - 1 + top_rounded(image_height);
-
-  return bottom.round();
+  return crop;
 }
 
 int Box_clap::get_width_rounded() const
@@ -3781,17 +3940,32 @@ int Box_clap::get_height_rounded() const
   return m_clean_aperture_height.round();
 }
 
-void Box_clap::set(uint32_t clap_width, uint32_t clap_height,
-                   uint32_t image_width, uint32_t image_height)
+Error Box_clap::set(uint32_t clap_width, uint32_t clap_height,
+                    uint32_t image_width, uint32_t image_height)
 {
-  assert(image_width >= clap_width);
-  assert(image_height >= clap_height);
+  if (clap_width > image_width || clap_height > image_height) {
+    return Error(heif_error_Usage_error,
+                 heif_suberror_Invalid_parameter_value,
+                 "Clean aperture is larger than the image");
+  }
 
-  m_clean_aperture_width = Fraction(clap_width, 1U);
-  m_clean_aperture_height = Fraction(clap_height, 1U);
+  auto width = Fraction::from_unsigned(clap_width, 1);
+  auto height = Fraction::from_unsigned(clap_height, 1);
+  auto horizontal_offset = Fraction::from_signed(-int64_t{image_width - clap_width}, 2);
+  auto vertical_offset = Fraction::from_signed(-int64_t{image_height - clap_height}, 2);
 
-  m_horizontal_offset = Fraction(-(int32_t) (image_width - clap_width), 2);
-  m_vertical_offset = Fraction(-(int32_t) (image_height - clap_height), 2);
+  if (!width || !height || !horizontal_offset || !vertical_offset) {
+    return Error(heif_error_Usage_error,
+                 heif_suberror_Invalid_parameter_value,
+                 "Clean aperture values exceed the supported range");
+  }
+
+  m_clean_aperture_width = *width;
+  m_clean_aperture_height = *height;
+  m_horizontal_offset = *horizontal_offset;
+  m_vertical_offset = *vertical_offset;
+
+  return Error::Ok;
 }
 
 
@@ -3804,6 +3978,29 @@ Error Box_iref::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 
   while (!range.eof()) {
+    // Cap the total number of reference entries, matching the item-count caps in
+    // Box_iloc/Box_iinf/Box_ipma (and the per-entry nRefs cap below). Without it
+    // the entry count is bounded only by the file size. That is a linear,
+    // file-bounded allocation rather than an amplification, so this is a
+    // consistency limit and not a security fix, but it rejects a pathological
+    // 'iref' early with a clear error instead of parsing it in full.
+    //
+    // max_items is a heuristic ceiling here, not a semantically exact bound: the
+    // number of entries is not strictly limited by the number of items, because
+    // one item may be the source (from_item_ID) of several entries, one per
+    // reference type (e.g. 'dimg', 'thmb', 'cdsc'). A well-formed file stays far
+    // below max_items (default 1000) regardless, so the generous ceiling is fine
+    // as a sanity limit; raise max_items if a legitimate file ever exceeds it.
+    if (limits->max_items && m_references.size() >= limits->max_items) {
+      std::stringstream sstr;
+      sstr << "'iref' box contains more than " << limits->max_items
+           << " reference entries, which exceeds the security limit.";
+
+      return {heif_error_Invalid_input,
+              heif_suberror_Security_limit_exceeded,
+              sstr.str()};
+    }
+
     Reference ref;
 
     Error err = ref.header.parse_header(range);
@@ -3848,11 +4045,10 @@ Error Box_iref::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 
 
-  // --- check for duplicate references
-
-  if (auto error = check_for_double_references()) {
-    return error;
-  }
+  // Note: the same item may be listed several times within one reference entry.
+  // ISO/IEC 14496-12 does not forbid it, and derived images rely on it: an 'iovl'
+  // that places the same input image at two positions references it twice in its
+  // 'dimg' entry (one offset per reference). Conformance file C021 does this.
 
 
 #if 0
@@ -3945,27 +4141,9 @@ Error Box_iref::parse(BitstreamRange& range, const heif_security_limits* limits)
   }
 #endif
 
+  build_index();
+
   return range.get_error();
-}
-
-
-Error Box_iref::check_for_double_references() const
-{
-  for (const auto& ref : m_references) {
-    std::set<heif_item_id> to_ids;
-    for (const auto to_id : ref.to_item_ID) {
-      if (to_ids.find(to_id) == to_ids.end()) {
-        to_ids.insert(to_id);
-      }
-      else {
-        return {heif_error_Invalid_input,
-                heif_suberror_Unspecified,
-                "'iref' has double references"};
-      }
-    }
-  }
-
-  return Error::Ok;
 }
 
 
@@ -3993,10 +4171,6 @@ void Box_iref::derive_box_version()
 
 Error Box_iref::write(StreamWriter& writer) const
 {
-  if (auto error = check_for_double_references()) {
-    return error;
-  }
-
   size_t box_start = reserve_box_header_space(writer);
 
   int id_size = ((get_version() == 0) ? 2 : 4);
@@ -4041,15 +4215,25 @@ std::string Box_iref::dump(Indent& indent) const
 }
 
 
+void Box_iref::build_index()
+{
+  m_from_id_index.clear();
+  m_from_id_index.reserve(m_references.size());
+  for (size_t i = 0; i < m_references.size(); i++) {
+    add_to_index(i);
+  }
+}
+
+
+void Box_iref::add_to_index(size_t reference_index)
+{
+  m_from_id_index[m_references[reference_index].from_item_ID].push_back(reference_index);
+}
+
+
 bool Box_iref::has_references(uint32_t itemID) const
 {
-  for (const Reference& ref : m_references) {
-    if (ref.from_item_ID == itemID) {
-      return true;
-    }
-  }
-
-  return false;
+  return m_from_id_index.find(itemID) != m_from_id_index.end();
 }
 
 
@@ -4057,9 +4241,11 @@ std::vector<Box_iref::Reference> Box_iref::get_references_from(heif_item_id item
 {
   std::vector<Reference> references;
 
-  for (const Reference& ref : m_references) {
-    if (ref.from_item_ID == itemID) {
-      references.push_back(ref);
+  auto iter = m_from_id_index.find(itemID);
+  if (iter != m_from_id_index.end()) {
+    references.reserve(iter->second.size());
+    for (size_t ref_idx : iter->second) {
+      references.push_back(m_references[ref_idx]);
     }
   }
 
@@ -4069,10 +4255,13 @@ std::vector<Box_iref::Reference> Box_iref::get_references_from(heif_item_id item
 
 std::vector<uint32_t> Box_iref::get_references(uint32_t itemID, uint32_t ref_type) const
 {
-  for (const Reference& ref : m_references) {
-    if (ref.from_item_ID == itemID &&
-        ref.header.get_short_type() == ref_type) {
-      return ref.to_item_ID;
+  auto iter = m_from_id_index.find(itemID);
+  if (iter != m_from_id_index.end()) {
+    for (size_t ref_idx : iter->second) {
+      const Reference& ref = m_references[ref_idx];
+      if (ref.header.get_short_type() == ref_type) {
+        return ref.to_item_ID;
+      }
     }
   }
 
@@ -4090,6 +4279,7 @@ void Box_iref::add_references(heif_item_id from_id, uint32_t type, const std::ve
   assert(to_ids.size() <= 0xFFFF);
 
   m_references.push_back(ref);
+  add_to_index(m_references.size() - 1);
 }
 
 
@@ -4592,16 +4782,8 @@ Error Box_dref::parse(BitstreamRange& range, const heif_security_limits* limits)
                  "Too many entities in dref box.");
   }
 
-  Error err = read_children(range, (int)nEntities, limits);
-  if (err) {
-    return err;
-  }
-
-  if (m_children.size() != nEntities) {
-    // TODO return Error(
-  }
-
-  return err;
+  // read_children verifies that exactly nEntities children are present.
+  return read_children(range, (int)nEntities, limits);
 }
 
 
@@ -4706,7 +4888,7 @@ std::string Box_udes::dump(Indent& indent) const
   sstr << indent << "lang: " << m_lang << "\n";
   sstr << indent << "name: " << m_name << "\n";
   sstr << indent << "description: " << m_description << "\n";
-  sstr << indent << "tags: " << m_lang << "\n";
+  sstr << indent << "tags: " << m_tags << "\n";
   return sstr.str();
 }
 

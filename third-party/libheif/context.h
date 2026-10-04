@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "error.h"
+#include "security_limits.h"
 
 #include "libheif/heif.h"
 #include "libheif/heif_experimental.h"
@@ -174,7 +175,7 @@ public:
                              uint32_t item_type, const char* content_type, const char* item_uri_type,
                              heif_metadata_compression compression, heif_item_id* out_item_id);
 
-  heif_property_id add_property(heif_item_id targetItem, std::shared_ptr<Box> property, bool essential);
+  Result<heif_property_id> add_property(heif_item_id targetItem, const std::shared_ptr<Box>& property, bool essential);
 
   Result<heif_item_id> add_pyramid_group(const std::vector<heif_item_id>& layers);
 
@@ -231,7 +232,7 @@ public:
   Result<std::shared_ptr<class Track_Visual>> add_visual_sequence_track(const TrackOptions*, uint32_t handler_type,
                                                                         uint16_t width, uint16_t height);
 
-  Result<std::shared_ptr<class Track_Metadata>> add_uri_metadata_sequence_track(const TrackOptions*, std::string uri);
+  Result<std::shared_ptr<class Track_Metadata>> add_uri_metadata_sequence_track(const TrackOptions*, const std::string& uri);
 
   void add_text_item(std::shared_ptr<TextItem> text_item)
   {
@@ -267,7 +268,7 @@ public:
     }
 
     if (propertyId - 1 >= properties.size()) {
-      Error(heif_error_Usage_error, heif_suberror_Invalid_property, "property index out of range");
+      return Error(heif_error_Usage_error, heif_suberror_Invalid_property, "property index out of range");
     }
 
     auto box = properties[propertyId - 1];

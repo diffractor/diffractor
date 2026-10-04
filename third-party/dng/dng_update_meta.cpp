@@ -15,6 +15,7 @@
 #include "dng_host.h"
 #include "dng_negative.h"
 #include "dng_parse_utils.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_stream.h"
 #include "dng_tag_codes.h"
 #include "dng_tag_types.h"
@@ -26,6 +27,10 @@
 /*****************************************************************************/
 
 #define qLogDNGUpdateMetadata (qDNGDebug && 0)
+
+static const uint32 kMaxUpdateBigTableEntries = 10000;
+static const uint32 kMaxUpdateBigTableGroupFingerprints =
+	kMaxUpdateBigTableEntries * 2;
 
 #if qLogDNGUpdateMetadata
 #include "cr_logging.h"
@@ -80,10 +85,26 @@ class dng_tag_updater
 			{
 			return fTagCode < rhs.fTagCode;
 			}
+
+		static uint64 ComputeTagSize (uint32 tagType,
+									  uint64 tagCount)
+			{
+
+			uint32 tagTypeSize = TagTypeSize (tagType);
+
+			if (tagTypeSize != 0 &&
+				tagCount > ((uint64) -1) / tagTypeSize)
+				{
+				ThrowBadFormat ("Tag size too large");
+				}
 			
+			return tagTypeSize * tagCount;
+
+			}
+
 		uint64 TagSize () const
 			{
-			return TagTypeSize (fTagType) * fTagCount;
+			return ComputeTagSize (fTagType, fTagCount);
 			}
 			
 		bool PrepareToSet (dng_file_updater &updater,
@@ -398,7 +419,7 @@ bool dng_tag_updater::PrepareToSet (dng_file_updater &updater,
 	uint32 inlineLimit = updater.InlineLimit ();
 	
 	uint64 oldSize = TagSize ();
-	uint64 newSize = TagTypeSize (tagType) * tagCount;
+	uint64 newSize = ComputeTagSize (tagType, tagCount);
 	
 	bool wasInline = (oldSize <= inlineLimit);
 	bool canInline = (newSize <= inlineLimit);
@@ -498,16 +519,30 @@ bool dng_tag_updater::GetArray_uint64 (dng_file_updater &updater,
 	if (fTagCount >= 1)
 		{
 		
-		values.reserve (fTagCount);
+		if (fTagCount > 0xFFFFFFFFu)
+			{
+			ThrowBadFormat ("Tag count too large");
+			}
+
+		uint32 count32 = (uint32) fTagCount;
+
+		if ((fTagCode == tcBigTableOffsets ||
+			 fTagCode == tcBigTableByteCounts) &&
+			count32 > kMaxUpdateBigTableEntries)
+			{
+			ThrowBadFormat ("Too many BigTable entries");
+			}
+
+		values.reserve (count32);
 		
 		if (TagSize () <= updater.InlineLimit ())
 			{
 			
 			dng_stream tempStream (fTagValue8, updater.InlineLimit ());
 			
-			tempStream.SetSwapBytes (false);		// Inline values pre-swapped
+			tempStream.SetSwapBytes (false);
 		
-			for (uint32 j = 0; j < fTagCount; j++)
+			for (uint32 j = 0; j < count32; j++)
 				{
 				
 				values.push_back (tempStream.TagValue_uint64 (fTagType));
@@ -523,7 +558,7 @@ bool dng_tag_updater::GetArray_uint64 (dng_file_updater &updater,
 		
 			updater.Stream ().SetReadPosition (fTagOffset);
 
-			for (uint32 j = 0; j < fTagCount; j++)
+			for (uint32 j = 0; j < count32; j++)
 				{
 				
 				values.push_back (updater.Stream ().TagValue_uint64 (fTagType));
@@ -551,7 +586,28 @@ bool dng_tag_updater::GetArray_Fingerprint (dng_file_updater &updater,
 	if (fTagType == ttByte && fTagCount >= 16)
 		{
 		
-		uint64 count = fTagCount >> 4;
+		uint64 count64 = fTagCount >> 4;
+
+		if (count64 > 0xFFFFFFFFu)
+			{
+			ThrowBadFormat ("Fingerprint tag count too large");
+			}
+
+		uint32 count = (uint32) count64;
+
+		uint32 maxCount = kMaxUpdateBigTableEntries;
+
+		if (fTagCode == tcBigTableGroupIndex)
+			{
+			maxCount = kMaxUpdateBigTableGroupFingerprints;
+			}
+
+		if ((fTagCode == tcBigTableDigests ||
+			 fTagCode == tcBigTableGroupIndex) &&
+			count > maxCount)
+			{
+			ThrowBadFormat ("Too many BigTable entries");
+			}
 		
 		values.reserve (count);
 		
@@ -562,7 +618,7 @@ bool dng_tag_updater::GetArray_Fingerprint (dng_file_updater &updater,
 			
 			dng_fingerprint fingerprint;
 		
-			updater.Stream ().Get (fingerprint.data, 16);
+			updater.Stream ().Get (fingerprint);
 			
 			values.push_back (fingerprint);
 			
@@ -612,7 +668,7 @@ void dng_ifd_updater::Parse (dng_file_updater &updater)
 		
 		uint32 tagTypeSize = TagTypeSize (tag.fTagType);
 		
-		uint64 tagSize = tag.fTagCount * tagTypeSize;
+		uint64 tagSize = tag.TagSize ();
 		
 		if (tagSize > inlineLimit)
 			{
@@ -690,9 +746,12 @@ uint32 dng_ifd_updater::ByteCount (dng_file_updater &updater) const
 		{
 		return 0;
 		}
-		
-	return updater.BigTIFF () ? EntryCount () * 20 + 16
-							  : EntryCount () * 12 +  6;
+
+	const uint32 entryBytes = SafeUint32Mult (EntryCount (),
+											  updater.BigTIFF () ? 20u : 12u);
+
+	return SafeUint32Add (entryBytes,
+						  updater.BigTIFF () ? 16u : 6u);
 
 	}
 
@@ -1347,8 +1406,10 @@ void dng_ifd_updater::UpdateDualStringTag (dng_file_updater &updater,
 	else
 		{
 	
-		uint32 tagCount = s1.Length () +
-						  s2.Length () + 2;
+		uint32 tagCount =
+			SafeUint32Add (SafeUint32Add (s1.Length (),
+										  s2.Length ()),
+						   2);
 		
 		dng_memory_data buffer (tagCount);
 								
@@ -1387,7 +1448,7 @@ void dng_ifd_updater::UpdateEncodedTextTag (dng_file_updater &updater,
 	else if (s.IsASCII ())
 		{
 		
-		uint32 tagCount = 8 + s.Length ();
+		uint32 tagCount = SafeUint32Add (8, s.Length ());
 		
 		dng_memory_data buffer (tagCount);
 		
@@ -1414,7 +1475,9 @@ void dng_ifd_updater::UpdateEncodedTextTag (dng_file_updater &updater,
 		
 		uint32 utf16_length = s.Get_UTF16 (utf16);
 		
-		uint32 tagCount = 8 + utf16_length * 2;
+		uint32 tagCount =
+			SafeUint32Add (8,
+						   SafeUint32Mult (utf16_length, 2));
 		
 		if (updater.Stream ().SwapBytes ())
 			{
@@ -1591,7 +1654,7 @@ void dng_ifd_updater::Write (dng_file_updater &updater) const
 		
 		uint32 tagTypeSize = TagTypeSize (tag.fTagType);
 		
-		uint64 tagSize = tag.fTagCount * tagTypeSize;
+		uint64 tagSize = tag.TagSize ();
 		
 		if (tagSize > inlineLimit)
 			{
@@ -1699,7 +1762,9 @@ void dng_ifd_updater::ParseBigTableIndex (dng_file_updater &updater,
 						if (digests [j].IsValid () && offsets [j] && counts [j])
 							{
 							
-							if (offsets [j] + counts [j] <= updater.Stream ().Length ())
+							if (offsets [j] <= updater.Stream ().Length () &&
+								counts [j] <= updater.Stream ().Length () - offsets [j] &&
+								counts [j] <= uint64 (0xFFFFFFFF))
 								{
 							
 								bigTableIndex.AddEntry (digests [j],
@@ -1845,7 +1910,7 @@ void dng_ifd_updater::WriteBigTableGroupIndex (dng_file_updater &updater,
 		
 	std::vector<dng_fingerprint> digests;
 
-	digests.reserve (updatedCount * 2);
+	digests.reserve (SafeUint32Mult (updatedCount, 2));
 
 	for (const auto &group : index.Map ())
 		{
@@ -1920,9 +1985,11 @@ void dng_ifd_updater::UpdateAdobeData (dng_file_updater &updater,
 		stream.SetReadPosition (adobeData.fTagOffset);
 			
 		uint64 nextOffset = stream.Position ();
-		uint64 lastOffset = nextOffset + adobeData.TagSize ();
+		uint64 lastOffset = SafeUint64Add (nextOffset,
+										   adobeData.TagSize ());
 	
-		while (nextOffset + 12 <= lastOffset)
+		while (nextOffset <= lastOffset &&
+			   12 <= lastOffset - nextOffset)
 			{
 			
 			stream.SetReadPosition (nextOffset);
@@ -1942,6 +2009,14 @@ void dng_ifd_updater::UpdateAdobeData (dng_file_updater &updater,
 				{
 			
 				uint32 tagNameCount = stream.Get_uint8 ();
+
+				const uint32 tagNamePad = (tagNameCount & 1) == 0 ? 1 : 0;
+
+				if (lastOffset - stream.Position () <
+					(uint64) tagNameCount + tagNamePad + 4)
+					{
+					return;
+					}
 			
 				stream.Get (tagName, tagNameCount);
 			
@@ -1960,14 +2035,30 @@ void dng_ifd_updater::UpdateAdobeData (dng_file_updater &updater,
 			
 			// Check validity of size.
 			
-			if (stream.Position () + tagSize > lastOffset)
+			if ((uint64) tagSize > lastOffset - stream.Position ())
 				{
 				return;
 				}
 			
 			// Find next offset.
-			
-			nextOffset = stream.Position () + RoundUp2 (tagSize);
+
+			if (tagSize == 0xFFFFFFFFu)
+				{
+				return;
+				}
+
+			const uint32 paddedTagSize = RoundUp2 (tagSize);
+
+			uint64 newOffset = SafeUint64Add (stream.Position (),
+											  paddedTagSize);
+
+			if (newOffset <= nextOffset ||
+				newOffset > lastOffset)
+				{
+				return;
+				}
+
+			nextOffset = newOffset;
 			
 			if (tagSignature == DNG_CHAR4 ('8', 'B', 'I', 'M') &&
 				tagID == 1061 &&
@@ -1976,7 +2067,7 @@ void dng_ifd_updater::UpdateAdobeData (dng_file_updater &updater,
 				
 				dng_fingerprint oldDigest;
 				
-				stream.Get (oldDigest.data, 16);
+				stream.Get (oldDigest);
 				
 				if (iptcDigest != oldDigest)
 					{
@@ -1990,7 +2081,7 @@ void dng_ifd_updater::UpdateAdobeData (dng_file_updater &updater,
 						
 					#endif
  
-					stream.Put (iptcDigest.data, 16);
+					stream.Put (iptcDigest);
 					
 					}
 				
@@ -2966,7 +3057,7 @@ void DNGUpdateMetadata (dng_host &host,
 									   tcRawDataUniqueID,
 									   ttByte,
 									   16,
-									   rawDataUniqueID.data);
+									   rawDataUniqueID.Data ());
 																					 
 			}
 		

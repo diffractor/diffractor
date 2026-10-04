@@ -207,6 +207,19 @@ dng_piecewise_linear::~dng_piecewise_linear ()
 	
 /*****************************************************************************/
 
+static void RequireValidPiecewiseLinear (const dng_piecewise_linear &f)
+	{
+
+	// CR-4208475 P-L3: Evaluate paths index the public X/Y vectors and
+	// narrow their size to int32 for binary search bounds. Enforce that
+	// contract in release builds instead of relying on debug assertions.
+
+	DNG_REQUIRE (f.IsValid (), "Invalid piecewise linear function");
+
+	}
+
+/*****************************************************************************/
+
 void dng_piecewise_linear::Reset ()
 	{
 	
@@ -242,9 +255,7 @@ bool dng_piecewise_linear::IsIdentity () const
 real64 dng_piecewise_linear::Evaluate (real64 x) const
 	{
 
-	DNG_ASSERT (X.size () >= 2, "Too few points.");
-
-	DNG_ASSERT (X.size () == Y.size (), "Input/output vector size mismatch.");
+	RequireValidPiecewiseLinear (*this);
 	
 	// Check for extremes.
 
@@ -300,9 +311,7 @@ real64 dng_piecewise_linear::Evaluate (real64 x) const
 real64 dng_piecewise_linear::EvaluateInverse (real64 y) const
 	{
 	
-	DNG_ASSERT (X.size () >= 2, "Too few points.");
-
-	DNG_ASSERT (X.size () == Y.size (), "Input/output vector size mismatch.");
+	RequireValidPiecewiseLinear (*this);
 	
 	// Binary search for the Y index.
 

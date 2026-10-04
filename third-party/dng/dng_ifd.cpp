@@ -1157,6 +1157,13 @@ bool dng_ifd::ParseTag (dng_host &host,
 			{
 			
 			CheckTagType (parentCode, tagCode, tagType, ttUndefined);
+
+			const uint32 kMaxJPEGTablesBytes = 64u * 1024u * 1024u;
+
+			if (tagCount > kMaxJPEGTablesBytes)
+				{
+				ThrowBadFormat ("JPEGTables tag too large");
+				}
 			
 			fJPEGTablesCount  = tagCount;
 			fJPEGTablesOffset = tagOffset;
@@ -2218,7 +2225,7 @@ bool dng_ifd::ParseTag (dng_host &host,
 			if (!CheckTagCount (parentCode, tagCode, tagCount, 16))
 				return false;
 				
-			stream.Get (fPreviewInfo.fSettingsDigest.data, 16);
+			stream.Get (fPreviewInfo.fSettingsDigest);
 				
 			#if qDNGValidate
 
@@ -2769,7 +2776,8 @@ bool dng_ifd::ParseTag (dng_host &host,
 			std::shared_ptr<dng_gain_table_map> pgtm
 				(dng_gain_table_map::GetStream (host,
 												stream,
-												useVersion2format));
+												useVersion2format,
+												tagCount));
 
 			// If both PGTM and PGTM2 tags are present, then the latter
 			// supersedes the former.
@@ -2790,7 +2798,7 @@ bool dng_ifd::ParseTag (dng_host &host,
 			if (pgtm && gVerbose)
 				{
 
-				dng_md5_printer printer;
+				dng_md5_printer_le_stream printer;
 				
 				pgtm->AddDigest (printer);
 
@@ -2809,7 +2817,8 @@ bool dng_ifd::ParseTag (dng_host &host,
 
 			#endif	// qDNGValidate
 			
-			if (stream.Position () > tagOffset + (uint64) tagCount)
+			if (stream.Position () > SafeUint64Add (tagOffset,
+													(uint64) tagCount))
 				{
 
 				if (useVersion2format)
@@ -3004,6 +3013,11 @@ bool dng_ifd::ParseTag (dng_host &host,
 
 			CheckTagType (parentCode, tagCode, tagType, ttLong);
 
+			// CR-4208475 K-M2: MaskSubArea is a fixed four-long tag.
+
+			if (!CheckTagCount (parentCode, tagCode, tagCount, 4))
+				return false;
+
 			fMaskSubArea [0] = stream.TagValue_uint32 (tagType);
 			fMaskSubArea [1] = stream.TagValue_uint32 (tagType);
 			fMaskSubArea [2] = stream.TagValue_uint32 (tagType);
@@ -3038,7 +3052,8 @@ bool dng_ifd::ParseTag (dng_host &host,
 			
 			CheckRawIFD (parentCode, tagCode, fPhotometricInterpretation);
 
-			fImageStats.Parse (stream);
+			fImageStats.Parse (stream,
+							   tagCount);
 
 			#if qDNGValidate
 
@@ -3056,19 +3071,25 @@ bool dng_ifd::ParseTag (dng_host &host,
 			
 			if (!CheckTagType (parentCode, tagCode, tagType, ttFloat))
 				return false;
+
+			// CR-4208475 K-M2: JXL scalar tags must not borrow bytes from
+			// neighboring tag data when malformed.
+
+			if (!CheckTagCount (parentCode, tagCode, tagCount, 1))
+				return false;
 			
 			fJXLDistance = (real32) stream.TagValue_real64 (tagType);
+
+			if (!std::isfinite (fJXLDistance) || fJXLDistance < 0.0f)
+				{
+				ThrowBadFormat ("Invalid JXL distance");
+				}
 			
 			#if qDNGValidate
 
 			if (fCompression != ccJXL)
 				{
 				ReportWarning ("JXL compression expected");
-				}
-				
-			if (fJXLDistance < 0.0f)
-				{
-				ReportWarning ("Invalid JXL distance");
 				}
 				
 			if (gVerbose)
@@ -3086,6 +3107,12 @@ bool dng_ifd::ParseTag (dng_host &host,
 			{
 			
 			if (!CheckTagType (parentCode, tagCode, tagType, ttLong))
+				return false;
+
+			// CR-4208475 K-M2: JXL scalar tags must not borrow bytes from
+			// neighboring tag data when malformed.
+
+			if (!CheckTagCount (parentCode, tagCode, tagCount, 1))
 				return false;
 			
 			fJXLEffort = stream.TagValue_int32 (tagType);
@@ -3118,6 +3145,12 @@ bool dng_ifd::ParseTag (dng_host &host,
 			
 			if (!CheckTagType (parentCode, tagCode, tagType, ttLong))
 				return false;
+
+			// CR-4208475 K-M2: JXL scalar tags must not borrow bytes from
+			// neighboring tag data when malformed.
+
+			if (!CheckTagCount (parentCode, tagCode, tagCount, 1))
+				return false;
 			
 			fJXLDecodeSpeed = stream.TagValue_int32 (tagType);
 			
@@ -3136,6 +3169,38 @@ bool dng_ifd::ParseTag (dng_host &host,
 			if (gVerbose)
 				{
 				printf ("JXLDecodeSpeed: %d\n", fJXLDecodeSpeed);
+				}
+				
+			#endif
+
+			break;
+			
+			}
+
+		case tcGainMapMetadata_ISO_21496_1:
+			{
+			
+			if (!CheckTagType (parentCode, tagCode, tagType, ttUndefined))
+				return false;
+
+			constexpr uint32 kMaxTagCount = 4 * 1024 * 1024;
+
+			if (tagCount > kMaxTagCount)
+				ThrowBadFormat ("Gain map metadata block too large");
+
+			AutoPtr<dng_memory_block> block (host.Allocate (tagCount));
+			
+			stream.Get (block->Buffer (),
+						tagCount);
+
+			fGainMapMetadata.reset (block.Release ());
+			
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+				printf ("GainMapMetadata: %u bytes\n",
+						tagCount);
 				}
 				
 			#endif
@@ -3456,7 +3521,8 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 
 	bool isMainOrEnhancedIFD = isMainIFD || isEnhancedIFD;
 
-	bool isGainMapIFD = (fNewSubFileType == sfGainMap);
+	bool isGainMapIFD = (fNewSubFileType == sfGainMap ||
+						 fNewSubFileType == sfPreviewGainMap);
 	
 	// Check NewSubFileType.
 	
@@ -3483,6 +3549,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		fNewSubFileType != sfEnhancedImage	  &&
 		fNewSubFileType != sfAltPreviewImage  &&
 		fNewSubFileType != sfGainMap		  &&
+		fNewSubFileType != sfPreviewGainMap	  &&
 		fNewSubFileType != sfSemanticMask)
 		{
 		
@@ -3630,7 +3697,8 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 		
 		}
 
-	else if (fNewSubFileType == sfGainMap)
+	else if (fNewSubFileType == sfGainMap ||
+			 fNewSubFileType == sfPreviewGainMap)
 		{
 		
 		if (fPhotometricInterpretation != piGainMap)
@@ -3800,7 +3868,8 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 	// Check ColorimetricReference.
 
 	if (isGainMapIFD &&
-		(shared.fColorimetricReference == crSceneReferred))
+		(shared.fColorimetricReference == crSceneReferred) &&
+		(fNewSubFileType != sfPreviewGainMap))
 		{
 		
 		#if qDNGValidate
@@ -4364,7 +4433,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 	uint32 tilesWide = SafeUint32DivideUp (fImageWidth,	 fTileWidth);
 	uint32 tilesHigh = SafeUint32DivideUp (fImageLength, fTileLength);
 	
-	uint32 tileCount = tilesWide * tilesHigh;
+	uint32 tileCount = SafeUint32Mult (tilesWide, tilesHigh);
 	
 	if (fTileOffsetsCount != tileCount)
 		{
@@ -4548,8 +4617,11 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 	
 	real64 maxWhite = fLinearizationTableCount ? 65535.0
 											   : (real64) defaultWhite;
-		
-	for (j = 0; j < fSamplesPerPixel; j++)
+
+	// Only validate planes that were stored; ParseTag caps fills at
+	// kMaxColorPlanes so we must not read beyond that index.
+
+	for (j = 0; j < fSamplesPerPixel && j < kMaxColorPlanes; j++)
 		{
 		
 		if (fWhiteLevel [j] < 1.0 || (fWhiteLevel [j] > maxWhite && !isFloatingPoint))
@@ -4928,7 +5000,7 @@ bool dng_ifd::IsValidDNG (dng_shared &shared,
 	
 	if (fSubTileBlockRows != 1 || fSubTileBlockCols != 1)
 		{
-		
+
 		if (fSubTileBlockRows < 2 || fSubTileBlockRows > fTileLength ||
 			fSubTileBlockCols < 1 || fSubTileBlockCols > fTileWidth)
 			{
@@ -5024,12 +5096,14 @@ uint32 dng_ifd::TilesDown () const
 uint32 dng_ifd::TilesPerImage () const
 	{
 	
-	uint32 total = TilesAcross () * TilesDown ();
+	uint32 total = SafeUint32Mult (TilesAcross (),
+								   TilesDown ());
 	
 	if (fPlanarConfiguration == pcPlanar)
 		{
 		
-		total *= fSamplesPerPixel;
+		total = SafeUint32Mult (total,
+								fSamplesPerPixel);
 		
 		}
 		
@@ -5107,17 +5181,34 @@ uint32 dng_ifd::TileByteCount (const dng_rect &tile) const
 uint64 dng_ifd::MaxImageDataByteCount () const
 	{
 	
-	uint64 bitsPerRow = (uint64) fTileWidth *
-						(uint64) fSamplesPerPixel *
-						(uint64) fBitsPerSample [0];
+	// CR-4208475 K-L3: Keep this conservative upper-bound estimate in
+	// checked arithmetic so malformed geometry cannot wrap a smaller size.
+
+	const auto safeMult = [] (uint64 lhs, uint64 rhs) -> uint64
+		{
+
+		if (lhs != 0 && rhs > ((uint64) -1) / lhs)
+			{
+
+			ThrowOverflow ();
+
+			}
+
+		return lhs * rhs;
+
+		};
+
+	uint64 bitsPerRow = safeMult (safeMult ((uint64) fTileWidth,
+											(uint64) fSamplesPerPixel),
+								  (uint64) fBitsPerSample [0]);
 						
-	uint64 bytesPerRow = (bitsPerRow + 7) >> 3;
+	uint64 bytesPerRow = SafeUint64Add (bitsPerRow, 7) >> 3;
 	
-	uint64 bytesPerTile = bytesPerRow * fTileLength;
+	uint64 bytesPerTile = safeMult (bytesPerRow, fTileLength);
 	
 	// Round up for TIFF format tile data alignment.
 	
-	if (bytesPerTile & 1) bytesPerTile++;
+	if (bytesPerTile & 1) bytesPerTile = SafeUint64Add (bytesPerTile, 1);
 	
 	// Deal with possible compression expansion.
 	
@@ -5129,7 +5220,9 @@ uint64 dng_ifd::MaxImageDataByteCount () const
 			
 			// ZLib says maximum is source size + 0.1% + 12 bytes.
 			
-			bytesPerTile += (bytesPerTile >> 8) + 12;
+			bytesPerTile = SafeUint64Add (bytesPerTile,
+										  bytesPerTile >> 8,
+										  12);
 			
 			}
 	
@@ -5138,13 +5231,15 @@ uint64 dng_ifd::MaxImageDataByteCount () const
 			
 			// Add a slop factor for compression expansion.
 		
-			bytesPerTile += (bytesPerTile >> 2) + 1024;
+			bytesPerTile = SafeUint64Add (bytesPerTile,
+										  bytesPerTile >> 2,
+										  1024);
 			
 			}
 			
 		}
 		
-	return bytesPerTile * TilesPerImage ();
+	return safeMult (bytesPerTile, TilesPerImage ());
 	
 	}
 		
@@ -5168,9 +5263,15 @@ void dng_ifd::FindTileSize (uint32 bytesPerTile,
 							uint32 cellV)
 	{
 	
-	uint32 bytesPerSample = fSamplesPerPixel *
-							((fBitsPerSample [0] + 7) >> 3);
-								
+	uint32 bytesPerSample =
+		SafeUint32Mult (fSamplesPerPixel,
+						((fBitsPerSample [0] + 7) >> 3));
+
+	if (bytesPerSample == 0)
+		{
+		ThrowBadFormat ("zero bytesPerSample in FindTileSize");
+		}
+
 	uint32 samplesPerTile = bytesPerTile / bytesPerSample;
 	
 	uint32 tileSide = Round_uint32 (sqrt ((real64) samplesPerTile));
@@ -5213,29 +5314,51 @@ void dng_ifd::FindTileSize (uint32 bytesPerTile,
 void dng_ifd::FindStripSize (uint32 bytesPerStrip,
 							 uint32 cellV)
 	{
-	
-	uint32 bytesPerSample = fSamplesPerPixel *
-							((fBitsPerSample [0] + 7) >> 3);
-								
+
+	// CR-4208475 M-M4: Mirror the validation pattern already used in
+	// FindTileSize. The raw uint32 multiply and the chained divisions by
+	// fTileWidth, TilesDown(), and cellV were all unchecked and could
+	// produce division by zero or wrap on attacker-controlled IFD shape.
+
+	uint32 bytesPerSample =
+		SafeUint32Mult (fSamplesPerPixel,
+						((fBitsPerSample [0] + 7) >> 3));
+
+	if (bytesPerSample == 0)
+		{
+		ThrowBadFormat ("zero bytesPerSample in FindStripSize");
+		}
+
 	uint32 samplesPerStrip = bytesPerStrip / bytesPerSample;
-	
+
 	fTileWidth = fImageWidth;
-		
+
+	if (fTileWidth == 0)
+		{
+		ThrowBadFormat ("zero fTileWidth in FindStripSize");
+		}
+
 	fTileLength = Pin_uint32 (1,
 							  samplesPerStrip / fTileWidth,
 							  fImageLength);
-								  
+
 	uint32 down = TilesDown ();
-								 
+
+	DNG_REQUIRE (down > 0,
+				 "Bad number of tiles down in dng_ifd::FindStripSize");
+
+	DNG_REQUIRE (cellV > 0,
+				 "Bad cellV in dng_ifd::FindStripSize");
+
 	fTileLength = (fImageLength + down - 1) / down;
-		
+
 	fTileLength = ((fTileLength + cellV - 1) / cellV) * cellV;
-		
+
 	fTileLength = Min_uint32 (fTileLength, fImageLength);
-	
+
 	fUsesTiles	= false;
 	fUsesStrips = true;
-		
+
 	}
 		
 /*****************************************************************************/
@@ -5304,6 +5427,17 @@ bool dng_ifd::IsBaselineJPEG () const
 		default:
 			break;
 			
+		}
+
+	// Some scanned TIFF files have JPEG + alpha channel. Treat these as
+	// baseline for purposes of reading. See CR-4205789.
+
+	if ((fCompression == ccJPEG) &&
+		(fPhotometricInterpretation == piRGB) &&
+		(fSamplesPerPixel == 3 ||
+		 fSamplesPerPixel == 4))
+		{
+		return true;
 		}
 		
 	return false;

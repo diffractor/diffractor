@@ -265,11 +265,25 @@ void dng_opcode_list::Parse (dng_host &host,
 	
 	Clear ();
 	
+	if (byteCount < 4 ||
+		streamOffset > 0xFFFFFFFFFFFFFFFFull - byteCount)
+		{
+		ThrowBadFormat ("Invalid opcode list size");
+		}
+
+	const uint64 listEnd = streamOffset + byteCount;
+	const uint32 kMinOpcodeBytes = 16;
+
 	TempBigEndian tempBigEndian (stream);
 	
 	stream.SetReadPosition (streamOffset);
 	
 	uint32 count = stream.Get_uint32 ();
+
+	if (count > (byteCount - 4) / kMinOpcodeBytes)
+		{
+		ThrowBadFormat ("Invalid opcode count");
+		}
 	
 	#if qDNGValidate
 	
@@ -292,8 +306,32 @@ void dng_opcode_list::Parse (dng_host &host,
 	
 	for (uint32 index = 0; index < count; index++)
 		{
+
+		const uint64 opcodeStart = stream.Position ();
+
+		if (opcodeStart > listEnd ||
+			kMinOpcodeBytes > listEnd - opcodeStart)
+			{
+			ThrowBadFormat ("Invalid opcode list entry");
+			}
 		
 		uint32 opcodeID = stream.Get_uint32 ();
+
+		const uint64 opcodeHeaderStart = stream.Position ();
+		const uint64 opcodeDataSizePosition = opcodeHeaderStart + 8;
+
+		stream.SetReadPosition (opcodeDataSizePosition);
+
+		uint32 opcodeDataSize = stream.Get_uint32 ();
+
+		const uint64 opcodeDataStart = opcodeHeaderStart + 12;
+
+		if (opcodeDataSize > listEnd - opcodeDataStart)
+			{
+			ThrowBadFormat ("Invalid opcode data size");
+			}
+
+		stream.SetReadPosition (opcodeHeaderStart);
 		
 		AutoPtr<dng_opcode> opcode (host.Make_dng_opcode (opcodeID,
 														  stream));

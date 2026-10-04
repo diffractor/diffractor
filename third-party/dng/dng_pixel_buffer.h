@@ -124,6 +124,16 @@ class dng_pixel_buffer
 
 			// TO DO: review this. do we set up buffers sometimes with "col" parameter
 			// equal to 0, which would then cause this exception to throw?!
+			//
+			// CR-4208475 N-L7: the qDNGValidate-gated bounds check
+			// previously attempted here was empirically confirmed to reject
+			// valid DNG reads in cr_validate / dng_validate tooling runs
+			// (which build with qDNGValidate=1). The original author's
+			// "TO DO" comment about col == 0 turned out to be correct:
+			// legitimate callers do pass coords outside fArea, presumably
+			// for edge-padding or similar patterns. Leaving the bounds
+			// check disabled until those caller patterns can be migrated
+			// to an API that does not depend on out-of-fArea pointer math.
 
 			#if 0
 
@@ -134,7 +144,7 @@ class dng_pixel_buffer
 				{
 				ThrowProgramError ("Out-of-range pixel access");
 				}
-			
+
 			// Compute offset of pixel.
 			const int64 rowOffset = SafeInt64Mult(fRowStep,
 				static_cast<int64> (row) - static_cast<int64> (fArea.t));
@@ -144,29 +154,17 @@ class dng_pixel_buffer
 				static_cast<int64> (plane - fPlane));
 			const int64 offset = SafeInt64Mult(static_cast<int64>(fPixelSize),
 				SafeInt64Add(SafeInt64Add(rowOffset, colOffset), planeOffset));
-			
+
 			// Add offset to buffer base address.
 			return static_cast<void *> (static_cast<uint8 *> (fData) + offset);
 
 			#else
 
-			#if qDNG64Bit
-			
 			return (void *)
 				   (((uint8 *) fData) + (int64) fPixelSize *
-					(fRowStep	* (int64) (row	 - fArea.t) +
-					 fColStep	* (int64) (col	 - fArea.l) +
-					 fPlaneStep * (int64) (plane - fPlane )));
-			
-			#else
-
-			return (void *)
-				   (((uint8 *) fData) + (int32) fPixelSize *
-					(fRowStep	* (int32) (row	 - fArea.t) +
-					 fColStep	* (int32) (col	 - fArea.l) +
-					 fPlaneStep * (int32) (plane - fPlane )));
-
-			#endif
+					(fRowStep	* (row	 - (int64) fArea.t) +
+					 fColStep	* (col	 - (int64) fArea.l) +
+					 fPlaneStep * (plane - (int64) fPlane )));
 
 			#endif
 

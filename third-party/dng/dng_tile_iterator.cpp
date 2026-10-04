@@ -11,6 +11,7 @@
 #include "dng_exceptions.h"
 #include "dng_image.h"
 #include "dng_pixel_buffer.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_types.h"
 #include "dng_utils.h"
 		
@@ -60,9 +61,12 @@ dng_tile_iterator::dng_tile_iterator (const dng_point &tileSize,
 	{
 	
 	dng_rect tile (area);
+
+	// CR-4208475 O-L4: Check the caller-provided tile-size clipping
+	// arithmetic before Initialize derives tile width and height.
 	
-	tile.b = Min_int32 (tile.b, tile.t + tileSize.v);
-	tile.r = Min_int32 (tile.r, tile.l + tileSize.h);
+	tile.b = Min_int32 (tile.b, SafeInt32Add (tile.t, tileSize.v));
+	tile.r = Min_int32 (tile.r, SafeInt32Add (tile.l, tileSize.h));
 	
 	Initialize (tile,
 				area);
@@ -114,25 +118,56 @@ void dng_tile_iterator::Initialize (const dng_rect &tile,
 	
 	int32 vOffset = tile.t;
 	int32 hOffset = tile.l;
+
+	// CR-4208475 O-L4: These dimensions may come directly from public
+	// iterator callers, so derive them without raw signed subtraction.
 	
-	int32 tileHeight = tile.b - vOffset;
-	int32 tileWidth	 = tile.r - hOffset;
-	
+	int32 tileHeight = SafeInt32Sub (tile.b, vOffset);
+	int32 tileWidth	 = SafeInt32Sub (tile.r, hOffset);
+
+	if (tileWidth <= 0 || tileHeight <= 0)
+		{
+
+		fVerticalPage =  0;
+		fBottomPage	  = -1;
+
+		return;
+
+		}
+
 	fTileHeight = tileHeight;
 	fTileWidth	= tileWidth;
-	
-	fLeftPage  = (fArea.l - hOffset	   ) / tileWidth;
-	fRightPage = (fArea.r - hOffset - 1) / tileWidth;
-	
+
+	// CR-4208475 N-L14: residual to M-M7. Bring the page-index derivation
+	// in line with the safe seed math by routing the int32 subtractions
+	// through SafeInt32Sub so pathological caller-API combinations of
+	// fArea / hOffset / vOffset cannot wrap before the divide.
+
+	fLeftPage  = SafeInt32Sub (fArea.l, hOffset) / tileWidth;
+	fRightPage = SafeInt32Sub (SafeInt32Sub (fArea.r, hOffset), 1) / tileWidth;
+
 	fHorizontalPage = fLeftPage;
-	
-	fTopPage	= (fArea.t - vOffset	) / tileHeight;
-	fBottomPage = (fArea.b - vOffset - 1) / tileHeight;
-	
+
+	fTopPage	= SafeInt32Sub (fArea.t, vOffset) / tileHeight;
+	fBottomPage = SafeInt32Sub (SafeInt32Sub (fArea.b, vOffset), 1) / tileHeight;
+
 	fVerticalPage = fTopPage;
-	
-	fTileLeft = fHorizontalPage * tileWidth	 + hOffset;
-	fTileTop  = fVerticalPage	* tileHeight + vOffset;
+
+	// CR-4208475 M-M7: Compute initial tile origin with overflow-checked
+	// int32 arithmetic. The raw multiplies (fHorizontalPage * tileWidth,
+	// fVerticalPage * tileHeight) and the subsequent adds with hOffset /
+	// vOffset can overflow int32 on pathological page indices or huge
+	// tile dimensions, producing signed-overflow undefined behavior. The
+	// per-step increments in GetOneTile (fTileLeft += fTileWidth,
+	// fTileTop += fTileHeight) and tile.b / tile.r construction stay
+	// bounded by these initial values plus a finite number of per-tile
+	// increments, so guarding the seeds is sufficient.
+
+	fTileLeft = SafeInt32Add (SafeInt32Mult (fHorizontalPage, tileWidth),
+							  hOffset);
+
+	fTileTop = SafeInt32Add (SafeInt32Mult (fVerticalPage, tileHeight),
+							 vOffset);
 
 	fRowLeft = fTileLeft;
 			
@@ -153,8 +188,14 @@ bool dng_tile_iterator::GetOneTile (dng_rect &tile)
 	else
 		tile.t = fArea.t;
 
+	// CR-4208475 N-L14: residual to M-M7. Bound each tile.r / tile.b
+	// computation and each per-step increment through SafeInt32Add.
+	// M-M7 already proved seeds are safe and the per-step values stay
+	// within the bounded final tile position; routing through
+	// SafeInt32Add closes the contract explicitly.
+
 	if (fVerticalPage < fBottomPage)
-		tile.b = fTileTop + fTileHeight;
+		tile.b = SafeInt32Add (fTileTop, fTileHeight);
 	else
 		tile.b = fArea.b;
 
@@ -164,21 +205,21 @@ bool dng_tile_iterator::GetOneTile (dng_rect &tile)
 		tile.l = fArea.l;
 
 	if (fHorizontalPage < fRightPage)
-		tile.r = fTileLeft + fTileWidth;
+		tile.r = SafeInt32Add (fTileLeft, fTileWidth);
 	else
 		tile.r = fArea.r;
 
 	if (fHorizontalPage < fRightPage)
 		{
 		fHorizontalPage++;
-		fTileLeft += fTileWidth;
+		fTileLeft = SafeInt32Add (fTileLeft, fTileWidth);
 		}
 
 	else
 		{
 
 		fVerticalPage++;
-		fTileTop += fTileHeight;
+		fTileTop = SafeInt32Add (fTileTop, fTileHeight);
 
 		fHorizontalPage = fLeftPage;
 		fTileLeft = fRowLeft;

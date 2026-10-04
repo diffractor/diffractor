@@ -17,6 +17,8 @@
 
 /*****************************************************************************/
 
+#include "dng_flags.h"
+
 #include "dng_auto_ptr.h"
 #include "dng_classes.h"
 #include "dng_types.h"
@@ -24,6 +26,12 @@
 #include "dng_rational.h"
 #include "dng_uncopyable.h"
 #include "dng_utils.h"
+
+/*****************************************************************************/
+
+#ifndef qDNGStreamCheckForUnflushedStreams
+#define qDNGStreamCheckForUnflushedStreams (qDNGValidate)
+#endif
 
 /*****************************************************************************/
 
@@ -100,7 +108,20 @@ class dng_stream: private dng_uncopyable
 		virtual void DoWrite (const void *data,
 							  uint32 count,
 							  uint64 offset);
-		
+
+		#if qDNGStreamCheckForUnflushedStreams
+
+		// Call this from dtor of derived class for derived classes
+		// which allow for destruction of an UNFLUSHED writable stream.
+		// This helps with fBufferDirty check in dtor.
+
+		void DestructionOfUnflushedInstancesIsAllowed ()
+			{
+			fBufferDirty = false;
+			}
+
+		#endif
+
 	public:
 	
 		/// Construct a stream with initial data.
@@ -231,16 +252,17 @@ class dng_stream: private dng_uncopyable
 
 		void Skip (uint64 delta)
 			{
-			SetReadPosition (Position () + delta);
+			SetReadPosition (SafeUint64Add (Position (), delta));
 			}
 		
-		/// Quick check to see if data range in completely buffered.
+		/// Quick check to see if data range is completely buffered.
 
 		bool DataInBuffer (uint64 count,
 						   uint64 offset)
 			{
-			return (offset		   >= fBufferStart &&
-					offset + count <= fBufferEnd);
+			return (offset >= fBufferStart &&
+					count  <= fBufferEnd   &&
+					offset <= fBufferEnd - count);
 			}
 		
 		/// Get data from stream. Exception is thrown and no data is read if 
@@ -251,6 +273,8 @@ class dng_stream: private dng_uncopyable
 		/// if not enough data in stream.
 		
 		void Get (void *data, uint32 count, uint32 maxOverRead=0);
+
+		void Get (dng_fingerprint &digest);
 
 		/// Seek to a new position in stream for writing.
 		
@@ -270,6 +294,24 @@ class dng_stream: private dng_uncopyable
 		/// \param count Bytes of in data.
 
 		void Put (const void *data, uint32 count);
+
+		/// Write data to stream, performing 4-byte aligned swapping if
+		/// needed. If byte-swapping is not needed, this routine is equivalent
+		/// to Put.
+		/// \param data Buffer of data to write to stream.
+		/// \param countMul4 Length of data in bytes. Must be a multiple of 4.
+
+		void Put_swap4 (const void *data,
+						uint32 countMul4);
+		
+		/// Write data to stream, performing 8-byte aligned swapping if
+		/// needed. If byte-swapping is not needed, this routine is equivalent
+		/// to Put.
+		/// \param data Buffer of data to write to stream.
+		/// \param countMul8 Length of data in bytes. Must be a multiple of 8.
+
+		void Put_swap8 (const void *data,
+						uint32 countMul8);
 
 		/// Get an unsigned 8-bit integer from stream and advance read position.
 		/// \retval One unsigned 8-bit integer.
@@ -350,16 +392,19 @@ class dng_stream: private dng_uncopyable
 		/// \exception dng_exception with fErrorCode equal to dng_error_end_of_file
 		/// if not enough data in stream.
 		
-		uint32 Get_uint32();
+		uint32 Get_uint32 ();
 
 #if !qDNGBigEndian
 		inline // ep, enable compiler inlining
 		uint32 Get_uint32_LE ()
 			{
 	
-			uint32 x;
+			// CR-4208475 Q-L1: Zero-fill the explicitly permitted missing
+			// suffix so truncated reads never expose indeterminate bytes.
+
+			uint32 x = 0;
 	
-			Get (&x, 4, 3); // Allow 3-byte overread (undefined data returned but not used)
+			Get (&x, 4, 3);
 
 			// No check for fSwapBytes
 
@@ -406,6 +451,21 @@ class dng_stream: private dng_uncopyable
 			Put_uint8 ((uint8) x);
 			}
 
+		/// Put a Boolean as a single byte.
+
+		void Put_bool (bool x)
+			{
+			Put_uint8 (x ? 1 : 0);
+			}
+
+		/// Put a size_t as 8 bytes.
+
+		void Put_size (size_t x)
+			{
+			static_assert (sizeof (size_t) <= 8, "size_t > 8 bytes");
+			Put_uint64 (uint64 (x));
+			}
+
 		/// Get one 16-bit integer from stream and advance read position. 
 		/// Byte swap if byte swapping is turned on.
 		/// \retval One 16-bit integer.
@@ -445,7 +505,31 @@ class dng_stream: private dng_uncopyable
 			{
 			Put_uint32 ((uint32) x);
 			}
+
+		/// Put one dng_rect (as four sequential calls to Put_int32) and advance write position.
+		/// Byte swap if byte swapping is turned on.
+		/// \param x One dng_rect.
 			
+		void Put (const dng_rect &r);
+
+		void Put (const dng_rect_real64 &r);
+
+		/// Put one dng_fingerprint and advance write position.
+		/// No byte swapping.
+		/// \param x One dng_fingerprint.
+			
+		void Put (const dng_fingerprint &digest);
+
+		void Put (const dng_point &pt);
+
+		void Put (const dng_point_real64 &pt);
+
+		void Put (const dng_srational &value);
+
+		void Put (const dng_urational &value);
+
+		void Put (const dng_string &value);
+
 		/// Get one 64-bit integer from stream and advance read position. 
 		/// Byte swap if byte swapping is turned on.
 		/// \retval One 64-bit integer.
@@ -503,26 +587,39 @@ class dng_stream: private dng_uncopyable
 		/// \exception dng_exception with fErrorCode equal to dng_error_end_of_file
 		/// if stream runs out before NUL is seen.
 
+		// CR-4208475 N-L4: Get_CString / Get_UString optionally bound the
+		// number of stream bytes consumed while searching for the NUL
+		// terminator. Callers that parse from a tag-local payload should
+		// pass the declared payload length as maxStreamBytes so a malformed
+		// non-terminated tag fails closed instead of consuming later file
+		// bytes. Default UINT32_MAX preserves the original open-ended
+		// behavior for existing callers.
+
 		void Get_CString (char *data,
-						  uint32 maxLength);
-		
+						  uint32 maxLength,
+						  uint32 maxStreamBytes = 0xFFFFFFFFu);
+
 		/// Puts an 8-bit character string from stream, including trailing NUL.
 		/// \param data Buffer pointing to null terminated string.
 
 		void Put_CString (const char *data);
-		
+
 		/// Get a 16-bit character string from stream and advance read position.
 		/// 16-bit characters are truncated to 8-bits.
 		/// Routine always reads until a NUL character (16-bits of zero) is read.
-		/// (That is, only maxLength bytes will be returned in buffer, but the 
+		/// (That is, only maxLength bytes will be returned in buffer, but the
 		/// stream is always advanced until a NUL is read or EOF is reached.)
 		/// \param data Buffer to place string in.
 		/// \param maxLength Maximum number of bytes to place in buffer.
+		/// \param maxStreamBytes Maximum number of stream bytes (not code
+		/// units) that may be consumed before reaching the NUL terminator.
+		/// Throws ThrowBadFormat if the bound is exceeded.
 		/// \exception dng_exception with fErrorCode equal to dng_error_end_of_file
 		/// if stream runs out before NUL is seen.
 
 		void Get_UString (char *data,
-						  uint32 maxLength);
+						  uint32 maxLength,
+						  uint32 maxStreamBytes = 0xFFFFFFFFu);
 						  
 		/// Writes the specified number of zero bytes to stream.
 		/// \param count Number of zero bytes to write.

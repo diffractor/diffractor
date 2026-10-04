@@ -11,9 +11,12 @@
 #include "dng_bottlenecks.h"
 #include "dng_exceptions.h"
 #include "dng_flags.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_types.h"
 #include "dng_tag_values.h"
 #include "dng_utils.h"
+
+#include <climits>
 
 /*****************************************************************************/
 
@@ -30,6 +33,80 @@ static bool SafeUint32ToInt32Mult (uint32 arg1,
 
 			ConvertUint32ToInt32 (uint32_result, 
 								  result));
+
+		}
+
+/*****************************************************************************/
+
+static int64 ComputeRebaseDelta (uint32 count,
+								 int32 step,
+								 uint32 pixelSize)
+	{
+
+	const int64 countMinusOne = static_cast<int64> (count) - 1;
+
+	return SafeInt64Mult (countMinusOne,
+						  static_cast<int64> (step),
+						  static_cast<int64> (pixelSize));
+
+	}
+
+/*****************************************************************************/
+
+static const void * OffsetPointer (const void *ptr,
+								   int64 delta)
+	{
+
+	return static_cast<const void *> (static_cast<const uint8 *> (ptr) + delta);
+
+	}
+
+/*****************************************************************************/
+
+static void * OffsetPointer (void *ptr,
+							 int64 delta)
+	{
+
+	return static_cast<void *> (static_cast<uint8 *> (ptr) + delta);
+
+	}
+
+/*****************************************************************************/
+
+static int32 NegateStepChecked (int32 step)
+	{
+
+	if (step == INT32_MIN)
+		{
+		ThrowOverflow ("OptimizeOrder step negate");
+		}
+
+	return -step;
+
+	}
+
+/*****************************************************************************/
+
+static bool CanCoalesceStep (int32 outerStep,
+							 uint32 innerCount,
+							 int32 innerStep)
+	{
+
+	int32 innerCount32 = 0;
+
+	if (!ConvertUint32ToInt32 (innerCount, &innerCount32))
+		{
+		return false;
+		}
+
+	int32 coalescedStep = 0;
+
+	if (!SafeInt32Mult (innerCount32, innerStep, &coalescedStep))
+		{
+		return false;
+		}
+
+	return outerStep == coalescedStep;
 
 	}
 
@@ -49,6 +126,11 @@ void OptimizeOrder (const void *&sPtr,
 					int32 &dStep1,
 					int32 &dStep2)
 	{
+
+	if (count0 == 0 || count1 == 0 || count2 == 0)
+		{
+		return;
+		}
 	
 	uint32 step0;
 	uint32 step1;
@@ -56,56 +138,62 @@ void OptimizeOrder (const void *&sPtr,
 	
 	// Optimize the order for the data that is most spread out.
 							   
-	uint32 sRange = Abs_int32 (sStep0) * (count0 - 1) +
-					Abs_int32 (sStep1) * (count1 - 1) +
-					Abs_int32 (sStep2) * (count2 - 1);
+	uint64 sRange = static_cast<uint64> (Abs_int32 (sStep0)) *
+					static_cast<uint64> (count0 - 1) +
+					static_cast<uint64> (Abs_int32 (sStep1)) *
+					static_cast<uint64> (count1 - 1) +
+					static_cast<uint64> (Abs_int32 (sStep2)) *
+					static_cast<uint64> (count2 - 1);
 							   
-	uint32 dRange = Abs_int32 (dStep0) * (count0 - 1) +
-					Abs_int32 (dStep1) * (count1 - 1) +
-					Abs_int32 (dStep2) * (count2 - 1);
+	uint64 dRange = static_cast<uint64> (Abs_int32 (dStep0)) *
+					static_cast<uint64> (count0 - 1) +
+					static_cast<uint64> (Abs_int32 (dStep1)) *
+					static_cast<uint64> (count1 - 1) +
+					static_cast<uint64> (Abs_int32 (dStep2)) *
+					static_cast<uint64> (count2 - 1);
 							   
 	if (dRange >= sRange)
 		{						
 	
 		if (dStep0 < 0)
 			{
-			
-			sPtr = (const void *)
-				   (((const uint8 *) sPtr) + (int32)(count0 - 1) * sStep0 * (int32)sPixelSize);
-				   
-			dPtr = (void *)
-				   (((uint8 *) dPtr) + (int32)(count0 - 1) * dStep0 * (int32)dPixelSize);
-				   
-			sStep0 = -sStep0;
-			dStep0 = -dStep0;
+
+			const int64 sDelta0 = ComputeRebaseDelta (count0, sStep0, sPixelSize);
+			const int64 dDelta0 = ComputeRebaseDelta (count0, dStep0, dPixelSize);
+
+			sPtr = OffsetPointer (sPtr, sDelta0);
+			dPtr = OffsetPointer (dPtr, dDelta0);
+
+			sStep0 = NegateStepChecked (sStep0);
+			dStep0 = NegateStepChecked (dStep0);
 			
 			}
 		
 		if (dStep1 < 0)
 			{
-			
-			sPtr = (const void *)
-				   (((const uint8 *) sPtr) + (int32)(count1 - 1) * sStep1 * (int32)sPixelSize);
-				   
-			dPtr = (void *)
-				   (((uint8 *) dPtr) + (int32)(count1 - 1) * dStep1 * (int32)dPixelSize);
-				   
-			sStep1 = -sStep1;
-			dStep1 = -dStep1;
+
+			const int64 sDelta1 = ComputeRebaseDelta (count1, sStep1, sPixelSize);
+			const int64 dDelta1 = ComputeRebaseDelta (count1, dStep1, dPixelSize);
+
+			sPtr = OffsetPointer (sPtr, sDelta1);
+			dPtr = OffsetPointer (dPtr, dDelta1);
+
+			sStep1 = NegateStepChecked (sStep1);
+			dStep1 = NegateStepChecked (dStep1);
 			
 			}
 		
 		if (dStep2 < 0)
 			{
-			
-			sPtr = (const void *)
-				   (((const uint8 *) sPtr) + (int32)(count2 - 1) * sStep2 * (int32)sPixelSize);
-				   
-			dPtr = (void *)
-				   (((uint8 *) dPtr) + (int32)(count2 - 1) * dStep2 * (int32)dPixelSize);
-				   
-			sStep2 = -sStep2;
-			dStep2 = -dStep2;
+
+			const int64 sDelta2 = ComputeRebaseDelta (count2, sStep2, sPixelSize);
+			const int64 dDelta2 = ComputeRebaseDelta (count2, dStep2, dPixelSize);
+
+			sPtr = OffsetPointer (sPtr, sDelta2);
+			dPtr = OffsetPointer (dPtr, dDelta2);
+
+			sStep2 = NegateStepChecked (sStep2);
+			dStep2 = NegateStepChecked (dStep2);
 			
 			}
 		
@@ -120,43 +208,43 @@ void OptimizeOrder (const void *&sPtr,
 	
 		if (sStep0 < 0)
 			{
-			
-			sPtr = (const void *)
-				   (((const uint8 *) sPtr) + (int32)(count0 - 1) * sStep0 * (int32)sPixelSize);
-				   
-			dPtr = (void *)
-				   (((uint8 *) dPtr) + (int32)(count0 - 1) * dStep0 * (int32)dPixelSize);
-				   
-			sStep0 = -sStep0;
-			dStep0 = -dStep0;
+
+			const int64 sDelta0 = ComputeRebaseDelta (count0, sStep0, sPixelSize);
+			const int64 dDelta0 = ComputeRebaseDelta (count0, dStep0, dPixelSize);
+
+			sPtr = OffsetPointer (sPtr, sDelta0);
+			dPtr = OffsetPointer (dPtr, dDelta0);
+
+			sStep0 = NegateStepChecked (sStep0);
+			dStep0 = NegateStepChecked (dStep0);
 			
 			}
 		
 		if (sStep1 < 0)
 			{
-			
-			sPtr = (const void *)
-				   (((const uint8 *) sPtr) + (int32)(count1 - 1) * sStep1 * (int32)sPixelSize);
-				   
-			dPtr = (void *)
-				   (((uint8 *) dPtr) + (int32)(count1 - 1) * dStep1 * (int32)dPixelSize);
-				   
-			sStep1 = -sStep1;
-			dStep1 = -dStep1;
+
+			const int64 sDelta1 = ComputeRebaseDelta (count1, sStep1, sPixelSize);
+			const int64 dDelta1 = ComputeRebaseDelta (count1, dStep1, dPixelSize);
+
+			sPtr = OffsetPointer (sPtr, sDelta1);
+			dPtr = OffsetPointer (dPtr, dDelta1);
+
+			sStep1 = NegateStepChecked (sStep1);
+			dStep1 = NegateStepChecked (dStep1);
 			
 			}
 		
 		if (sStep2 < 0)
 			{
-			
-			sPtr = (const void *)
-				   (((const uint8 *) sPtr) + (int32)(count2 - 1) * sStep2 * (int32)sPixelSize);
-				   
-			dPtr = (void *)
-				   (((uint8 *) dPtr) + (int32)(count2 - 1) * dStep2 * (int32)dPixelSize);
-				   
-			sStep2 = -sStep2;
-			dStep2 = -dStep2;
+
+			const int64 sDelta2 = ComputeRebaseDelta (count2, sStep2, sPixelSize);
+			const int64 dDelta2 = ComputeRebaseDelta (count2, dStep2, dPixelSize);
+
+			sPtr = OffsetPointer (sPtr, sDelta2);
+			dPtr = OffsetPointer (dPtr, dDelta2);
+
+			sStep2 = NegateStepChecked (sStep2);
+			dStep2 = NegateStepChecked (dStep2);
 			
 			}
 		
@@ -254,17 +342,25 @@ void OptimizeOrder (const void *&sPtr,
 	dStep1 = step [index1];
 	dStep2 = step [index2];
 	
-	if (sStep0 == ((int32) count1) * sStep1 &&
-		dStep0 == ((int32) count1) * dStep1)
+	// CR-4208475 P-L1: These final coalescing checks are an optimization.
+	// If the step product or combined loop count cannot be represented,
+	// leave the dimensions split instead of evaluating signed-overflow math.
+
+	uint32 coalescedCount = 0;
+
+	if (CanCoalesceStep (sStep0, count1, sStep1) &&
+		CanCoalesceStep (dStep0, count1, dStep1) &&
+		SafeUint32Mult (count1, count0, &coalescedCount))
 		{
-		count1 *= count0;
+		count1 = coalescedCount;
 		count0 = 1;
 		}
 	
-	if (sStep1 == ((int32) count2) * sStep2 &&
-		dStep1 == ((int32) count2) * dStep2)
+	if (CanCoalesceStep (sStep1, count2, sStep2) &&
+		CanCoalesceStep (dStep1, count2, dStep2) &&
+		SafeUint32Mult (count2, count1, &coalescedCount))
 		{
-		count2 *= count1;
+		count2 = coalescedCount;
 		count1 = 1;
 		}
 	
@@ -498,7 +594,6 @@ dng_pixel_buffer & dng_pixel_buffer::operator= (const dng_pixel_buffer &buffer)
 	fPlaneStep	= buffer.fPlaneStep;
 	fPixelType	= buffer.fPixelType;
 	fPixelSize	= buffer.fPixelSize;
-	fPixelType	= buffer.fPixelType;
 	fData		= buffer.fData;
 	fDirty		= buffer.fDirty;
 	
@@ -574,6 +669,30 @@ void dng_pixel_buffer::SetConstant (const dng_rect &area,
 									uint32 value)
 	{
 	
+	if (planes == 0)
+		{
+		ReportWarning ("dng_pixel_buffer::SetConstant: planes = 0");
+		return;
+		}
+
+	DNG_REQUIRE ((area & Area ()) == area,
+				 "SetConstant: area OOB");
+
+		{
+
+		uint32 endPlane = plane + planes;
+
+		uint32 endFullPlane = fPlane + fPlanes;
+
+		DNG_REQUIRE (plane < endPlane,
+					 "SetConstant: planes overflow");
+
+		DNG_REQUIRE (fPlane   <= plane &&
+					 endPlane <= endFullPlane,
+					 "SetConstant: planes range");
+
+		}
+
 	uint32 rows = area.H ();
 	uint32 cols = area.W ();
 	
@@ -631,7 +750,7 @@ void dng_pixel_buffer::SetConstant (const dng_rect &area,
 			if (rows == 1 && cols == 1 && dPlaneStep == 1 && value == 0)
 				{
 				
-				DoZeroBytes (dPtr, planes << 1);
+				DoZeroBytes (dPtr, SafeUint32Mult (planes, 2));
 				
 				}
 				
@@ -659,7 +778,7 @@ void dng_pixel_buffer::SetConstant (const dng_rect &area,
 			if (rows == 1 && cols == 1 && dPlaneStep == 1 && value == 0)
 				{
 				
-				DoZeroBytes (dPtr, planes << 2);
+				DoZeroBytes (dPtr, SafeUint32Mult (planes, 4));
 				
 				}
 				
@@ -743,6 +862,42 @@ void dng_pixel_buffer::CopyArea (const dng_pixel_buffer &src,
 								 uint32 planes)
 	{
 	
+	if (planes == 0)
+		{
+		ReportWarning ("dng_pixel_buffer::CopyArea: planes = 0");
+		return;
+		}
+
+	DNG_REQUIRE ((area & src.Area ()) == area,
+				 "CopyArea: area OOB src");
+
+	DNG_REQUIRE ((area &     Area ()) == area,
+				 "CopyArea: area OOB dst");
+
+		{
+
+		uint32 endSrcPlane = srcPlane + planes;
+		uint32 endDstPlane = dstPlane + planes;
+
+		uint32 endFullSrcPlane = src.fPlane + src.fPlanes;
+		uint32 endFullDstPlane =     fPlane +     fPlanes;
+
+		DNG_REQUIRE (srcPlane < endSrcPlane,
+					 "CopyArea: src planes overflow");
+
+		DNG_REQUIRE (dstPlane < endDstPlane,
+					 "CopyArea: dst planes overflow");
+
+		DNG_REQUIRE (src.fPlane  <= srcPlane    &&
+					 endSrcPlane <= endFullSrcPlane,
+					 "CopyArea: src planes range");
+
+		DNG_REQUIRE (    fPlane  <= dstPlane    &&
+					 endDstPlane <= endFullDstPlane,
+					 "CopyArea: dst planes range");
+
+		}
+
 	uint32 rows = area.H ();
 	uint32 cols = area.W ();
 	
@@ -784,7 +939,7 @@ void dng_pixel_buffer::CopyArea (const dng_pixel_buffer &src,
 			
 			DoCopyBytes (sPtr,
 						 dPtr, 
-						 planes * fPixelSize);
+						 SafeUint32Mult (planes, fPixelSize));
 			
 			}
 			
@@ -1410,7 +1565,17 @@ void dng_pixel_buffer::RepeatSubArea (const dng_rect subArea,
 									  uint32 repeatV,
 									  uint32 repeatH)
 	{
-	
+
+	// CR-4208475 N-L8: dng_rect ctors below narrow (int32 + uint32) results
+	// back to int32; values above INT32_MAX would wrap silently. Mirrors the
+	// M-L4 guard in dng_image::Get for the same shape. Existing callers
+	// pass small Bayer-phase repeats, so this is defense-in-depth at the
+	// public API boundary.
+
+	DNG_REQUIRE (repeatV <= (uint32) 0x7FFFFFFF &&
+				 repeatH <= (uint32) 0x7FFFFFFF,
+				 "Invalid repeat in dng_pixel_buffer::RepeatSubArea");
+
 	if (fArea.t < subArea.t)
 		{
 		
@@ -1549,14 +1714,48 @@ bool dng_pixel_buffer::EqualArea (const dng_pixel_buffer &src,
 								  uint32 plane,
 								  uint32 planes) const
 	{
-	
+
+	// CR-4208475 R-L4: Validate the compared area and plane interval against
+	// both buffers before indexing pixels. ConstPixel's internal bounds check
+	// is compiled out, so an out-of-range plane/planes value forwarded by a
+	// public caller would otherwise read past the backing allocations. Mirrors
+	// the area/plane DNG_REQUIRE guards in CopyArea.
+
+	if (planes == 0)
+		{
+		return true;
+		}
+
+	DNG_REQUIRE ((area & src.Area ()) == area,
+				 "EqualArea: area OOB src");
+
+	DNG_REQUIRE ((area &     Area ()) == area,
+				 "EqualArea: area OOB dst");
+
+		{
+
+		uint32 endPlane = plane + planes;
+
+		DNG_REQUIRE (plane < endPlane,
+					 "EqualArea: planes overflow");
+
+		DNG_REQUIRE (src.fPlane <= plane &&
+					 endPlane <= src.fPlane + src.fPlanes,
+					 "EqualArea: src planes range");
+
+		DNG_REQUIRE (    fPlane <= plane &&
+					 endPlane <=     fPlane +     fPlanes,
+					 "EqualArea: dst planes range");
+
+		}
+
 	uint32 rows = area.H ();
 	uint32 cols = area.W ();
-	
+
 	const void *sPtr = src.ConstPixel (area.t,
 									   area.l,
 									   plane);
-								  
+
 	const void *dPtr = ConstPixel (area.t,
 								   area.l,
 								   plane);
@@ -1576,8 +1775,8 @@ bool dng_pixel_buffer::EqualArea (const dng_pixel_buffer &src,
 			{
 			
 			return DoEqualBytes (sPtr,
-								 dPtr, 
-								 planes * fPixelSize);
+								 dPtr,
+								 SafeUint32Mult (planes, fPixelSize));
 			
 			}
 			
@@ -1777,10 +1976,41 @@ real64 dng_pixel_buffer::MaximumDifference (const dng_pixel_buffer &rhs,
 											uint32 plane,
 											uint32 planes) const
 	{
-	
+
+	// CR-4208475 R-L4: Validate the compared area and plane interval against
+	// both buffers before indexing pixels (see EqualArea).
+
+	if (planes == 0)
+		{
+		return 0.0;
+		}
+
+	DNG_REQUIRE ((area & rhs.Area ()) == area,
+				 "MaximumDifference: area OOB src");
+
+	DNG_REQUIRE ((area &     Area ()) == area,
+				 "MaximumDifference: area OOB dst");
+
+		{
+
+		uint32 endPlane = plane + planes;
+
+		DNG_REQUIRE (plane < endPlane,
+					 "MaximumDifference: planes overflow");
+
+		DNG_REQUIRE (rhs.fPlane <= plane &&
+					 endPlane <= rhs.fPlane + rhs.fPlanes,
+					 "MaximumDifference: src planes range");
+
+		DNG_REQUIRE (    fPlane <= plane &&
+					 endPlane <=     fPlane +     fPlanes,
+					 "MaximumDifference: dst planes range");
+
+		}
+
 	uint32 rows = area.H ();
 	uint32 cols = area.W ();
-	
+
 	const void *s1Ptr = rhs.ConstPixel (area.t,
 										area.l,
 										plane);

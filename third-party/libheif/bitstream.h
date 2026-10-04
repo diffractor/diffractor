@@ -143,7 +143,7 @@ public:
 private:
   const uint8_t* m_data;
   uint64_t m_length;
-  uint64_t m_position;
+  uint64_t m_position = 0;
 
   // if we made a copy of the data, we store a pointer to the owned memory area here
   uint8_t* m_owned_data = nullptr;
@@ -159,7 +159,16 @@ public:
 
   StreamReader::grow_status wait_for_file_size(uint64_t target_size) override;
 
-  bool read(void* data, size_t size) override { return !m_func_table->read(data, size, m_userdata); }
+  bool read(void* data, size_t size) override
+  {
+    if (size == 0) {
+      // Do not hand a NULL buffer (an empty std::vector) to the user's read callback; it may pass
+      // it on to memcpy(), which is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read().
+      return true;
+    }
+
+    return !m_func_table->read(data, size, m_userdata);
+  }
 
   bool seek(uint64_t position) override { return !m_func_table->seek(position, m_userdata); }
 
@@ -206,13 +215,20 @@ public:
       }
     }
     else {
-      auto result = m_func_table->wait_for_file_size(end_pos, m_userdata);
+      // wait_for_file_size() takes a signed int64_t, so we cannot probe a position
+      // beyond INT64_MAX: it would wrap to a negative value and the reader would
+      // misreport the size. No file accessed through this API can be that large,
+      // so clamp the search range to INT64_MAX. (Callers may pass UINT64_MAX to
+      // ask for the total file size.)
+      uint64_t hi = std::min<uint64_t>(end_pos, std::numeric_limits<int64_t>::max());
+
+      auto result = m_func_table->wait_for_file_size(static_cast<int64_t>(hi), m_userdata);
       if (result == heif_reader_grow_status_size_reached) {
-        return end_pos;
+        return hi;
       }
       else {
         uint64_t pos = m_func_table->get_position(m_userdata);
-        return bisect_filesize(pos,end_pos);
+        return bisect_filesize(pos, hi);
       }
     }
   }
@@ -225,8 +241,10 @@ public:
       return mini;
     }
 
-    uint64_t pos = (mini + maxi) / 2;
-    auto result = m_func_table->wait_for_file_size(pos, m_userdata);
+    // Overflow-safe midpoint. 'maxi' is bounded by INT64_MAX (see request_range),
+    // but computing (mini + maxi) directly could still overflow uint64_t.
+    uint64_t pos = mini + (maxi - mini) / 2;
+    auto result = m_func_table->wait_for_file_size(static_cast<int64_t>(pos), m_userdata);
     if (result == heif_reader_grow_status_size_reached) {
       return bisect_filesize(pos, maxi);
     }
@@ -449,7 +467,13 @@ public:
 
   size_t get_current_byte_index() const
   {
-    return data_length - bytes_remaining - nextbits_cnt / 8;
+    // Computed in signed arithmetic: when we skipped past the end of the data,
+    // nextbits_cnt is negative and the index keeps growing beyond data_length (the
+    // 'uncC' alignment handling relies on that). Doing the subtraction in size_t
+    // would convert the negative operand first, which trips the 'integer' sanitizer.
+    // The result itself is always >= 0.
+    int64_t bytes_read = static_cast<int64_t>(data_length - bytes_remaining);
+    return static_cast<size_t>(bytes_read - nextbits_cnt / 8);
   }
 
   int64_t get_bits_remaining() const
@@ -464,7 +488,12 @@ private:
   size_t bytes_remaining;
 
   uint64_t nextbits; // left-aligned bits
-  int nextbits_cnt;
+
+  // Number of valid bits in 'nextbits'. Goes negative when we read or skip past the
+  // end of the data, in which case it holds the (negated) overshoot so that
+  // get_current_byte_index() keeps advancing. Has to be 64-bit because skip_bytes()
+  // may be asked to skip up to 2^32 bytes (= 2^35 bits) past the end.
+  int64_t nextbits_cnt;
 
   void refill(); // refill to at least 56+1 bits
 };

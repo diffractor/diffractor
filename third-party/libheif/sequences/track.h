@@ -23,10 +23,12 @@
 
 #include "error.h"
 #include "api_structs.h"
+#include "security_limits.h"
 #include "libheif/heif_plugin.h"
 #include "libheif/heif_sequences.h"
 #include <string>
 #include <memory>
+#include <utility>
 #include <vector>
 
 class HeifContext;
@@ -66,8 +68,8 @@ private:
 class SampleAuxInfoReader
 {
 public:
-  SampleAuxInfoReader(std::shared_ptr<Box_saiz>,
-                      std::shared_ptr<Box_saio>,
+  SampleAuxInfoReader(const std::shared_ptr<Box_saiz>&,
+                      const std::shared_ptr<Box_saio>&,
                       const std::vector<std::shared_ptr<Chunk>>& chunks);
 
   heif_sample_aux_info_type get_type() const;
@@ -161,7 +163,7 @@ public:
 
   void set_auxiliary_info_type(heif_auxiliary_track_info_type);
 
-  void set_auxiliary_info_type_urn(std::string t) { m_auxiliary_info_type = t; }
+  void set_auxiliary_info_type_urn(std::string t) { m_auxiliary_info_type = std::move(t); }
 
   bool is_visual_track() const;
 
@@ -220,6 +222,10 @@ protected:
     uint32_t sample_duration_presentation_time = 0; // TODO
   };
   std::vector<SampleTiming> m_presentation_timeline;
+  // Accounts m_presentation_timeline against max_total_memory. A small track can
+  // declare millions of samples, so this vector (~48 bytes/sample) must be tracked
+  // to bound multi-track accumulation (GHSA-xw34-mjcp-jqh8, variants V2/V3).
+  MemoryHandle m_presentation_timeline_memory;
   uint64_t m_num_output_samples = 0; // Can be larger than the vector. It then repeats the playback.
 
   // How many times the media timeline is repeated.
@@ -241,6 +247,10 @@ protected:
   Error init_sample_timing_table();
 
   std::vector<std::shared_ptr<Chunk>> m_chunks;
+  // Accounts the per-chunk Chunk::m_sample_ranges tables against max_total_memory.
+  // Their combined size over all chunks is num_samples * sizeof(SampleFileRange),
+  // so a single reservation here bounds them all (GHSA-xw34-mjcp-jqh8, V2/V3).
+  MemoryHandle m_chunk_sample_ranges_memory;
   std::vector<uint8_t> m_chunk_data;
 
   std::shared_ptr<Box_moov> m_moov;
@@ -283,7 +293,7 @@ protected:
   // Has to be called when we call add_chunk().
   // It is not merged with add_chunk() because the sample_description_box may need information from the
   // first encoded frame.
-  void set_sample_description_box(std::shared_ptr<Box> sample_description_box);
+  void set_sample_description_box(const std::shared_ptr<Box>& sample_description_box);
 
   // Write the actual sample data. `tai` may be null and `gimi_contentID` may be empty.
   // In these cases, no timestamp or no contentID will be written, respectively.

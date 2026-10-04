@@ -75,12 +75,13 @@ bool StreamReader_istream::seek(uint64_t position)
 
 
 StreamReader_memory::StreamReader_memory(const uint8_t* data, size_t size, bool copy)
-    : m_length(size),
-      m_position(0)
+    : m_length(size)
 {
   if (copy) {
     m_owned_data = new uint8_t[m_length];
-    memcpy(m_owned_data, data, size);
+    if (size > 0) { // memcpy() from a NULL pointer is UB even for size 0 (until C2y/N3322), see read()
+      memcpy(m_owned_data, data, size);
+    }
 
     m_data = m_owned_data;
   }
@@ -113,7 +114,14 @@ bool StreamReader_memory::read(void* data, size_t size)
     return false;
   }
 
-  memcpy(data, &m_data[m_position], size);
+  // Do not call memcpy() with a NULL pointer, even when size == 0. 'data' is NULL when the
+  // caller reads into an empty std::vector (e.g. a box with an empty payload), and passing
+  // NULL to memcpy() is undefined behaviour in C17 and C++. It trips UBSan's nonnull-attribute
+  // check on glibc's memcpy() declaration. C2y (WG14 N3322) makes zero-length operations on
+  // NULL pointers well-defined, but we cannot rely on that for many years.
+  if (size > 0) {
+    memcpy(data, &m_data[m_position], size);
+  }
   m_position += size;
 
   return true;
@@ -653,10 +661,65 @@ int BitReader::peek_bits(int n)
 
 void BitReader::skip_bytes(uint32_t nBytes)
 {
-  // TODO: this is slow
-  while (nBytes) {
-    nBytes--;
-    skip_bits(8);
+  // This has to run in constant time. The number of bytes to skip is taken directly
+  // from 32-bit file fields (e.g. the 'uncC' row/tile alignment), so a byte-at-a-time
+  // loop spins for billions of iterations when a malformed file asks to skip far
+  // beyond the end of the data. MinimizedImageBox::parse() guards against the same
+  // failure mode by validating its declared chunk sizes up front.
+
+  uint64_t nBits = uint64_t{nBytes} * 8;
+
+  // --- consume the bits that are already buffered in 'nextbits'
+
+  if (nextbits_cnt > 0) {
+    uint64_t from_buffer = std::min(nBits, static_cast<uint64_t>(nextbits_cnt));
+
+    if (from_buffer >= 64) {
+      nextbits = 0;
+    }
+    else {
+#if AVOID_FUZZER_FALSE_POSITIVE
+      nextbits &= (0xffffffffffffffffULL >> from_buffer);
+#endif
+      nextbits <<= from_buffer;
+    }
+
+    nextbits_cnt -= static_cast<int64_t>(from_buffer);
+    nBits -= from_buffer;
+  }
+
+  if (nBits == 0) {
+    return;
+  }
+
+  // --- skip whole bytes directly in the input buffer, without pushing them
+  //     through the bit buffer
+
+  uint64_t whole_bytes = nBits / 8;
+  int residual_bits = static_cast<int>(nBits % 8);
+
+  if (whole_bytes >= bytes_remaining) {
+    // Skipping past the end of the data. Record the overshoot in 'nextbits_cnt' (which
+    // thereby goes negative) so that get_current_byte_index() keeps advancing exactly
+    // as it did with the previous bit-by-bit implementation.
+    uint64_t overshoot_bits = (whole_bytes - bytes_remaining) * 8 + static_cast<uint64_t>(residual_bits);
+
+    data += bytes_remaining;
+    bytes_remaining = 0;
+    nextbits = 0;
+    nextbits_cnt -= static_cast<int64_t>(overshoot_bits);
+    return;
+  }
+
+  data += static_cast<size_t>(whole_bytes);
+  bytes_remaining -= static_cast<size_t>(whole_bytes);
+  nextbits = 0;
+  nextbits_cnt = 0;
+
+  refill();
+
+  if (residual_bits > 0) {
+    skip_bits(residual_bits);
   }
 }
 
@@ -686,7 +749,7 @@ void BitReader::skip_bits_fast(int n)
 
 void BitReader::skip_to_byte_boundary()
 {
-  int nskip = (nextbits_cnt & 7);
+  int nskip = static_cast<int>(nextbits_cnt & 7);
 
 #if AVOID_FUZZER_FALSE_POSITIVE
   nextbits &= (0xffffffffffffffffULL >> nskip);
@@ -747,7 +810,13 @@ void BitReader::refill()
     nextbits |= newval;
   }
 #else
-  int shift = 64 - nextbits_cnt;
+  if (bytes_remaining == 0) {
+    // Nothing to refill. Returning early also keeps the shift below out of range
+    // when nextbits_cnt is far negative after skipping past the end of the data.
+    return;
+  }
+
+  int64_t shift = 64 - nextbits_cnt;
 
   while (shift >= 8 && bytes_remaining) {
     uint64_t newval = *data++;
@@ -993,7 +1062,9 @@ void StreamWriter::write(const std::vector<uint8_t>& vec)
     m_data.resize(required_size);
   }
 
-  memcpy(m_data.data() + m_position, vec.data(), vec.size());
+  if (!vec.empty()) { // memcpy() with a NULL pointer is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read()
+    memcpy(m_data.data() + m_position, vec.data(), vec.size());
+  }
   m_position += vec.size();
 }
 
@@ -1008,7 +1079,9 @@ void StreamWriter::write(const StreamWriter& writer)
 
   const auto& data = writer.get_data();
 
-  memcpy(m_data.data() + m_position, data.data(), data.size());
+  if (!data.empty()) { // memcpy() with a NULL pointer is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read()
+    memcpy(m_data.data() + m_position, data.data(), data.size());
+  }
 
   m_position += data.size();
 }

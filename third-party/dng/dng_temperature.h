@@ -21,6 +21,20 @@
 
 /*****************************************************************************/
 
+// Runtime flag for enabling extended low-temperature behavior in
+// dng_temperature.
+
+void SetDNGEnableLowTemperatureLimit (bool enable);
+
+bool GetDNGEnableLowTemperatureLimit ();
+
+// Explicitly initialize the extended temperature LUT.
+// Safe to call multiple times.
+
+void InitExtendedTemperatureLUT ();
+
+/*****************************************************************************/
+
 class dng_temperature
 	{
 	

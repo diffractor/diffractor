@@ -312,7 +312,9 @@ void Box_hvcC::append_nal_data(const uint8_t* data, size_t size)
 {
   std::vector<uint8_t> nal;
   nal.resize(size);
-  memcpy(nal.data(), data, size);
+  if (size > 0) { // memcpy() with a NULL pointer is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read()
+    memcpy(nal.data(), data, size);
+  }
 
   append_nal_data(nal);
 }
@@ -353,7 +355,7 @@ void Box_hvcC::append_nal_data(const std::vector<uint8_t>& nal)
           // If they are similar, keep the smaller one.
 
           if (nal_unit.size() > nal.size()) {
-            nal_unit = std::move(nal);
+            nal_unit = nal;
           }
 
           // Exit. Do not add a copy of the packet.
@@ -362,7 +364,7 @@ void Box_hvcC::append_nal_data(const std::vector<uint8_t>& nal)
         }
       }
 
-      nal_array.m_nal_units.push_back(std::move(nal));
+      nal_array.m_nal_units.push_back(nal);
 
       return;
     }
@@ -373,7 +375,7 @@ void Box_hvcC::append_nal_data(const std::vector<uint8_t>& nal)
   HEVCDecoderConfigurationRecord::NalArray array;
   array.m_array_completeness = 1;
   array.m_NAL_unit_type = uint8_t(nal[0] >> 1);
-  array.m_nal_units.push_back(std::move(nal));
+  array.m_nal_units.push_back(nal);
 
   m_configuration.m_nal_array.push_back(array);
 }
@@ -668,6 +670,13 @@ Error parse_sps_for_hvcC_configuration(const uint8_t* sps, size_t size,
   if (!reader.get_uvlc(&dummy) || // skip seq_parameter_seq_id
       !reader.get_uvlc(&value)) {
     return invalidUVLC;
+  }
+  if (value > 3) {
+    // chroma_format_idc is in the range 0..3 (H.265 section 7.4.3.2.1). The
+    // value is later cast to heif_chroma, so it must not be left unchecked.
+    return Error{heif_error_Invalid_input,
+                 heif_suberror_Invalid_parameter_value,
+                 "SPS chroma_format_idc out of range"};
   }
   config->chroma_format = (uint8_t) value;
 

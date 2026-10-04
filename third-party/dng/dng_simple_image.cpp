@@ -8,7 +8,9 @@
 
 #include "dng_simple_image.h"
 
+#include "dng_exceptions.h"
 #include "dng_orientation.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_types.h"
 #include "dng_tag_values.h"
 
@@ -103,7 +105,16 @@ void dng_simple_image::SetPixelType (uint32 pixelType)
 
 void dng_simple_image::Trim (const dng_rect &r)
 	{
-	
+
+	// Defense-in-depth: reject any rect not fully contained within the
+	// current image bounds to prevent negative pointer arithmetic in
+	// DirtyPixel.
+
+	if (!fBounds.Contains (r))
+		{
+		ThrowProgramError ("Trim rect not contained within image bounds");
+		}
+
 	fBounds.t = 0;
 	fBounds.l = 0;
 	
@@ -130,22 +141,32 @@ void dng_simple_image::Rotate (const dng_orientation &orientation)
 	uint32 width  = fBounds.W ();
 	uint32 height = fBounds.H ();
 	
+	// CR-4208475 N-L6: width / height are uint32 from fBounds; the existing
+	// int32 += (width - 1) chain narrowed via implicit conversion and could
+	// wrap for caller-API dimensions above INT32_MAX. Route through
+	// ConvertUint32ToInt32 + SafeInt32Add so the failure is a clean throw
+	// rather than a silently-negative origin.
+
 	if (orientation.FlipH ())
 		{
-		
-		originH += width - 1;
-		
+
+		originH = SafeInt32Add (originH,
+								SafeInt32Sub (ConvertUint32ToInt32 (width),
+											  1));
+
 		colStep = -colStep;
-		
+
 		}
 
 	if (orientation.FlipV ())
 		{
-		
-		originV += height - 1;
-		
+
+		originV = SafeInt32Add (originV,
+								SafeInt32Sub (ConvertUint32ToInt32 (height),
+											  1));
+
 		rowStep = -rowStep;
-		
+
 		}
 		
 	if (orientation.FlipD ())

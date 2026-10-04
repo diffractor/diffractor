@@ -167,7 +167,7 @@ static void SpoolAdobeData (dng_stream &stream,
 			
 			stream.Put_uint32 (16);
 			
-			stream.Put (iptcDigest.data, 16);
+			stream.Put (iptcDigest);
 			
 			}
 			
@@ -267,14 +267,15 @@ tag_encoded_text::tag_encoded_text (uint16 code,
 	if (fText.IsASCII ())
 		{
 	
-		fCount = 8 + fText.Length ();
+		fCount = SafeUint32Add (8, fText.Length ());
 		
 		}
 		
 	else
 		{
 		
-		fCount = 8 + fText.Get_UTF16 (fUTF16) * 2;
+		fCount = SafeUint32Add (8,
+					SafeUint32Mult (fText.Get_UTF16 (fUTF16), 2));
 		
 		}
 	
@@ -399,8 +400,8 @@ void tag_data_ptr::Put (dng_stream &stream) const
 				
 				}
 			
-			// Entries don't need to be byte swapped.  Fall through
-			// to non-byte swapped case.
+			// Entries don't need to be byte swapped.
+			// Default to non-byte swapped case.
 				
 			default:
 				{
@@ -1106,7 +1107,12 @@ exif_tag_set::exif_tag_set (dng_tiff_directory &directory,
 	
 	,	fFocalPlaneResolutionUnit (tcFocalPlaneResolutionUnitExif, (uint16) exif.fFocalPlaneResolutionUnit)
 	
-	,	fSubjectArea (tcSubjectArea, fSubjectAreaData, exif.fSubjectAreaCount)
+		// CR-4208475 R-L5: fSubjectAreaData holds at most 4 entries; clamp the
+		// tag count so tag_data_ptr::Put cannot read past the fixed array if a
+		// caller sets exif.fSubjectAreaCount above 4. File parsing already
+		// bounds the count to [2,4].
+	,	fSubjectArea (tcSubjectArea, fSubjectAreaData,
+					  Min_uint32 (4, exif.fSubjectAreaCount))
 
 	,	fLensInfo (tcLensInfo, fLensInfoData, 4)
 	
@@ -1546,7 +1552,7 @@ exif_tag_set::exif_tag_set (dng_tiff_directory &directory,
 			snprintf (fImageUniqueIDData + j * 2,
 					  33,
 					  "%02X",
-					  (unsigned) exif.fImageUniqueID.data [j]);
+					  (unsigned) exif.fImageUniqueID.Data () [j]);
 					 
 			}
 		
@@ -1965,7 +1971,12 @@ range_tag_set::range_tag_set (dng_tiff_directory &directory,
 	{
 	
 	const dng_image &rawImage (negative.RawImage ());
-	
+
+	if (rawImage.Planes () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	const dng_linearization_info *rangeInfo = negative.GetLinearizationInfo ();
 	
 	if (rangeInfo)
@@ -2524,11 +2535,18 @@ class profile_tag_set
 
 		AutoPtr<tag_owned_data_ptr> fRGBTablesTag;
 
+		bool fProfileDidWritePGTM = false;
+
 	public:
 	
 		profile_tag_set (dng_host &host,
 						 dng_tiff_directory &directory,
 						 const dng_camera_profile &profile);
+
+		bool ProfileDidWritePGTMToMainIFD () const
+			{
+			return fProfileDidWritePGTM;
+			}
 		
 	};
 	
@@ -3027,6 +3045,8 @@ profile_tag_set::profile_tag_set (dng_host &host,
 
 			directory.Add (fProfileGainTableMapTag.Get ());
 
+			fProfileDidWritePGTM = true;
+
 			}
 
 		// ProfileDynamicRange.
@@ -3248,23 +3268,35 @@ big_table_tag_set::big_table_tag_set (dng_host &host,
 	if (!fDictionary.IsEmpty ())
 		{
 		
-		uint32 count = (uint32) fDictionary.Map ().size ();
+		const size_t count64 = fDictionary.Map ().size ();
+
+		if (count64 > size_t (0xFFFFFFFFu))
+			{
+			ThrowProgramError ("Too many BigTable entries");
+			}
+
+		uint32 count = (uint32) count64;
+
+		const uint32 digestBytes = SafeUint32Mult (count, 16);
 		
-		fDigestsBuffer.Reset (host.Allocate (count * 16));
+		fDigestsBuffer.Reset (host.Allocate (digestBytes));
 		
-		fBigTableDigests.SetCount (count * 16);
+		fBigTableDigests.SetCount (digestBytes);
 		fBigTableDigests.SetData  (fDigestsBuffer->Buffer_uint8 ());
 		
 		directory.Add (&fBigTableDigests);
+
+		const uint32 indexBytes = SafeUint32Mult (count,
+												  (uint32) sizeof (uint32));
 		
-		fOffsetsBuffer.Reset (host.Allocate (count * sizeof (uint32)));
+		fOffsetsBuffer.Reset (host.Allocate (indexBytes));
 		
 		fBigTableOffsets.SetCount (count);
 		fBigTableOffsets.SetData  (fOffsetsBuffer->Buffer_uint32 ());
 		
 		directory.Add (&fBigTableOffsets);
 		
-		fByteCountsBuffer.Reset (host.Allocate (count * sizeof (uint32)));
+		fByteCountsBuffer.Reset (host.Allocate (indexBytes));
 		
 		fBigTableByteCounts.SetCount (count);
 		fBigTableByteCounts.SetData	 (fByteCountsBuffer->Buffer_uint32 ());
@@ -3276,11 +3308,18 @@ big_table_tag_set::big_table_tag_set (dng_host &host,
 		if (!groupIndex.IsEmpty ())
 			{
 
-			const uint32 groups = (uint32) groupIndex.Map ().size ();
+			const size_t groupCount64 = groupIndex.Map ().size ();
+
+			if (groupCount64 > size_t (0xFFFFFFFFu))
+				{
+				ThrowProgramError ("Too many BigTable groups");
+				}
+
+			const uint32 groups = (uint32) groupCount64;
 
 			constexpr uint32 bytesPerGroup = 2 * 16;
 
-			const uint32 totalBytes = groups * bytesPerGroup;
+			const uint32 totalBytes = SafeUint32Mult (groups, bytesPerGroup);
 			
 			fGroupBuffer.Reset (host.Allocate (totalBytes));
 
@@ -3315,7 +3354,7 @@ void big_table_tag_set::WriteData (dng_stream &stream)
 			const dng_fingerprint &fingerprint = it->first;
 			
 			memcpy (fDigestsBuffer->Buffer_uint8 () + index * 16,
-					fingerprint.data,
+					fingerprint.Data (),
 					16);
 			
 			const dng_ref_counted_block &block = it->second;
@@ -3342,8 +3381,8 @@ void big_table_tag_set::WriteData (dng_stream &stream)
 			for (const auto &group : fGroupIndex.Map ())			
 				{
 				
-				memcpy (dPtr	 , group.first .data, 16);
-				memcpy (dPtr + 16, group.second.data, 16);
+				memcpy (dPtr	 , group.first .Data (), 16);
+				memcpy (dPtr + 16, group.second.Data (), 16);
 
 				dPtr += 32;
 				
@@ -3462,8 +3501,13 @@ static void EncodeDelta8 (uint8 *dPtr,
 						  uint32 cols,
 						  uint32 channels)
 	{
+
+	// CR-4208475 Q-M2: Empty helper input is a no-op. EncodePredictor still
+	// rejects nonempty tiles that are too narrow for their predictor grouping.
+
+	if (cols == 0) return;
 	
-	const uint32 dRowStep = cols * channels;
+	const uint32 dRowStep = SafeUint32Mult (cols, channels);
 	
 	for (uint32 row = 0; row < rows; row++)
 		{
@@ -3493,8 +3537,10 @@ static void EncodeDelta16 (uint16 *dPtr,
 						   uint32 cols,
 						   uint32 channels)
 	{
+
+	if (cols == 0) return;
 	
-	const uint32 dRowStep = cols * channels;
+	const uint32 dRowStep = SafeUint32Mult (cols, channels);
 	
 	for (uint32 row = 0; row < rows; row++)
 		{
@@ -3524,8 +3570,10 @@ static void EncodeDelta32 (uint32 *dPtr,
 						   uint32 cols,
 						   uint32 channels)
 	{
+
+	if (cols == 0) return;
 	
-	const uint32 dRowStep = cols * channels;
+	const uint32 dRowStep = SafeUint32Mult (cols, channels);
 	
 	for (uint32 row = 0; row < rows; row++)
 		{
@@ -3553,10 +3601,17 @@ static void EncodeDelta32 (uint32 *dPtr,
 inline void EncodeDeltaBytes (uint8 *bytePtr, int32 cols, int32 channels)
 	{
 	
+	if (cols <= 0 || channels <= 0)
+		{
+		ThrowProgramError ("Invalid EncodeDeltaBytes dimensions");
+		}
+
+	const int32 rowBytes = SafeInt32Mult (cols, channels);
+
 	if (channels == 1)
 		{
 		
-		bytePtr += (cols - 1);
+		bytePtr += (rowBytes - 1);
 		
 		uint8 this0 = bytePtr [0];
 		
@@ -3580,7 +3635,7 @@ inline void EncodeDeltaBytes (uint8 *bytePtr, int32 cols, int32 channels)
 	else if (channels == 3)
 		{
 		
-		bytePtr += (cols - 1) * 3;
+		bytePtr += (rowBytes - channels);
 		
 		uint8 this0 = bytePtr [0];
 		uint8 this1 = bytePtr [1];
@@ -3614,11 +3669,9 @@ inline void EncodeDeltaBytes (uint8 *bytePtr, int32 cols, int32 channels)
 	else
 		{
 	
-		uint32 rowBytes = cols * channels;
-		
 		bytePtr += rowBytes - 1;
 		
-		for (uint32 col = channels; col < rowBytes; col++)
+		for (int32 col = channels; col < rowBytes; col++)
 			{
 			
 			bytePtr [0] -= bytePtr [-channels];
@@ -3640,7 +3693,7 @@ static void EncodeFPDelta (uint8 *buffer,
 						   int32 bytesPerSample)
 	{
 	
-	int32 rowIncrement = cols * channels;
+	int32 rowIncrement = SafeInt32Mult (cols, channels);
 	
 	if (bytesPerSample == 2)
 		{
@@ -3753,6 +3806,19 @@ void dng_image_writer::EncodePredictor (dng_host &host,
 				{
 				xFactor = 4;
 				}
+
+			// CR-4208475 Q-M2: Reverse delta loops subtract one from their
+			// grouped column count. Reject tiles too narrow for one group.
+
+			const uint32 width = buffer.fArea.W ();
+			const uint32 xFactor32 = (uint32) xFactor;
+
+			DNG_REQUIRE (width >= xFactor32,
+						 "Tile width is smaller than predictor grouping");
+
+			const uint32 cols = width / xFactor32;
+			const uint32 channels = SafeUint32Mult (buffer.fPlanes,
+												   xFactor32);
 			
 			switch (buffer.fPixelType)
 				{
@@ -3762,8 +3828,8 @@ void dng_image_writer::EncodePredictor (dng_host &host,
 					
 					EncodeDelta8 ((uint8 *) buffer.fData,
 								  buffer.fArea.H (),
-								  buffer.fArea.W () / xFactor,
-								  buffer.fPlanes	* xFactor);
+								  cols,
+								  channels);
 					
 					return;
 					
@@ -3774,8 +3840,8 @@ void dng_image_writer::EncodePredictor (dng_host &host,
 					
 					EncodeDelta16 ((uint16 *) buffer.fData,
 								   buffer.fArea.H (),
-								   buffer.fArea.W () / xFactor,
-								   buffer.fPlanes	 * xFactor);
+								   cols,
+								   channels);
 					
 					return;
 					
@@ -3786,8 +3852,8 @@ void dng_image_writer::EncodePredictor (dng_host &host,
 					
 					EncodeDelta32 ((uint32 *) buffer.fData,
 								   buffer.fArea.H (),
-								   buffer.fArea.W () / xFactor,
-								   buffer.fPlanes	 * xFactor);
+								   cols,
+								   channels);
 					
 					return;
 					
@@ -3870,9 +3936,16 @@ void dng_image_writer::EncodePredictor (dng_host &host,
 void dng_image_writer::ByteSwapBuffer (dng_host & /* host */,
 									   dng_pixel_buffer &buffer)
 	{
-	
-	uint32 pixels = buffer.fRowStep * buffer.fArea.H ();
-	
+
+	// This currently expects/required buffer.fRowStep to be positive
+	// unless the buffer has zero height.
+
+	DNG_REQUIRE (buffer.fArea.H () == 0 || buffer.fRowStep > 0,
+				 "buffer.fRowStep");
+
+	uint32 pixels = SafeUint32Mult ((uint32) buffer.fRowStep,
+									buffer.fArea.H ());
+
 	switch (buffer.fPixelSize)
 		{
 		
@@ -3917,13 +3990,18 @@ void dng_image_writer::ReorderSubTileBlocks (const dng_ifd &ifd,
 	uint32 rowBlocks = buffer.fArea.H () / blockRows;
 	uint32 colBlocks = buffer.fArea.W () / blockCols;
 	
-	int32 rowStep = buffer.fRowStep * buffer.fPixelSize;
-	int32 colStep = buffer.fColStep * buffer.fPixelSize;
+	int32 rowStep = SafeInt32Mult (buffer.fRowStep,
+								   (int32) buffer.fPixelSize);
 	
-	int32 rowBlockStep = rowStep * blockRows;
-	int32 colBlockStep = colStep * blockCols;
+	int32 colStep = SafeInt32Mult (buffer.fColStep,
+								   (int32) buffer.fPixelSize);
 	
-	uint32 blockColBytes = blockCols * buffer.fPlanes * buffer.fPixelSize;
+	int32 rowBlockStep = SafeInt32Mult (rowStep, (int32) blockRows);
+	int32 colBlockStep = SafeInt32Mult (colStep, (int32) blockCols);
+	
+	uint32 blockColBytes = SafeUint32Mult (blockCols,
+										   buffer.fPlanes,
+										   buffer.fPixelSize);
 	
 	const uint8 *s0 = uncompressedBuffer->Buffer_uint8 ();
 		  uint8 *d0 = subTileBlockBuffer->Buffer_uint8 ();
@@ -4434,6 +4512,12 @@ void dng_image_writer::WriteData (dng_host &host,
 								  bool usingMultipleThreads)
 	{
 
+	// This currently expects/required buffer.fRowStep to be positive
+	// unless the buffer has zero height.
+
+	DNG_REQUIRE (buffer.fArea.H () == 0 || buffer.fRowStep > 0,
+				 "buffer.fRowStep");
+
 	(void) usingMultipleThreads;
 	
 	switch (ifd.fCompression)
@@ -4448,8 +4532,8 @@ void dng_image_writer::WriteData (dng_host &host,
 			if (ifd.fBitsPerSample [0] == 8 && buffer.fPixelType == ttShort)
 				{
 				
-				uint32 count = buffer.fRowStep *
-							   buffer.fArea.H ();
+				uint32 count = SafeUint32Mult ((uint32) buffer.fRowStep,
+											   buffer.fArea.H ());
 							   
 				const uint16 *sPtr = (const uint16 *) buffer.fData;
 				
@@ -4476,9 +4560,10 @@ void dng_image_writer::WriteData (dng_host &host,
 			
 				// Write the bytes.
 				
-				stream.Put (buffer.fData, buffer.fRowStep *
-										  buffer.fArea.H () *
-										  buffer.fPixelSize);
+				stream.Put (buffer.fData,
+							SafeUint32Mult ((uint32) buffer.fRowStep,
+											buffer.fArea.H (),
+											buffer.fPixelSize));
 										  
 				}
 			
@@ -4504,9 +4589,9 @@ void dng_image_writer::WriteData (dng_host &host,
 			
 			// Run the compression algorithm.
 				
-			uint32 sBytes = buffer.fRowStep *
-							buffer.fArea.H () *
-							buffer.fPixelSize;
+			uint32 sBytes = SafeUint32Mult ((uint32) buffer.fRowStep,
+											buffer.fArea.H (),
+											buffer.fPixelSize);
 				
 			uint8 *sBuffer = (uint8 *) buffer.fData;
 				
@@ -5054,7 +5139,9 @@ void dng_image_writer::WriteTile (dng_host &host,
 			uint32 *srcPtr = (uint32 *) buffer.fData;
 			uint16 *dstPtr = (uint16 *) buffer.fData;
 			
-			uint32 pixels = tileArea.W () * tileArea.H () * buffer.fPlanes;
+			uint32 pixels = SafeUint32Mult (tileArea.W (),
+											tileArea.H (),
+											buffer.fPlanes);
 			
 			for (uint32 j = 0; j < pixels; j++)
 				{
@@ -5073,7 +5160,9 @@ void dng_image_writer::WriteTile (dng_host &host,
 			uint32 *srcPtr = (uint32 *) buffer.fData;
 			uint8  *dstPtr = (uint8	 *) buffer.fData;
 			
-			uint32 pixels = tileArea.W () * tileArea.H () * buffer.fPlanes;
+			uint32 pixels = SafeUint32Mult (tileArea.W (),
+											tileArea.H (),
+											buffer.fPlanes);
 			
 			if (stream.BigEndian () || ifd.fPredictor == cpFloatingPoint   ||
 									   ifd.fPredictor == cpFloatingPointX2 ||
@@ -5174,6 +5263,7 @@ dng_write_tiles_task::dng_write_tiles_task
 	,	fFakeChannels	  (fakeChannels)
 	,	fTilesDown		  (tilesDown)
 	,	fTilesAcross	  (tilesAcross)
+	,	fTileCount		  (SafeUint32Mult (tilesDown, tilesAcross))
 	,	fCompressedSize	  (compressedSize)
 	,	fUncompressedSize (uncompressedSize)
 	,	fNextTileIndex	  (0)
@@ -5230,7 +5320,7 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
 
 			uint32 tileIndex = fNextTileIndex++;
 
-			if (tileIndex >= fTilesDown * fTilesAcross)
+			if (tileIndex >= fTileCount)
 				{
 				return;
 				}
@@ -5259,7 +5349,7 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
 				
 				tileStream.SetReadPosition (0);
 				
-				dng_md5_printer_stream md5stream;
+				dng_md5_printer_le_stream md5stream;
 				
 				tileStream.CopyToStream (md5stream, tileByteCount);
 				
@@ -5305,8 +5395,7 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
 			if (fNeedDigest)
 				{
 				
-				fOverallPrinter.Process (tileDigest.data,
-										 uint32 (sizeof (tileDigest.data)));
+				fOverallPrinter.Process (tileDigest);
 
 				}
 
@@ -5477,7 +5566,9 @@ void dng_image_writer::DoWriteTiles (dng_host &host,
 									 dng_fingerprint *outDigest)
 	{
 	
-	uint32 threadCount = Min_uint32 (tilesDown * tilesAcross,
+	const uint32 tileCount = SafeUint32Mult (tilesDown, tilesAcross);
+
+	uint32 threadCount = Min_uint32 (tileCount,
 									 host.PerformAreaTaskThreads ());
 										 
 	dng_write_tiles_task task (*this,
@@ -5585,9 +5676,42 @@ void dng_image_writer::WriteImage (dng_host &host,
 	// Compute basic information.
 
 	dng_safe_uint32 bytesPerSample (TagTypeSize (image.PixelType ()));
-	
+
+	// CR-4208475 N-M4: WriteImage divides by tileRowBytes, fSubTileBlockRows,
+	// and subTileLength below. dng_safe_uint32 protects multiplication but
+	// not division, and TagTypeSize returns 0 for unknown pixel types.
+	// Programmatically built dng_ifd / dng_image objects with zero
+	// fSamplesPerPixel, fTileWidth, fTileLength, or fSubTileBlockRows would
+	// otherwise reach a divide-by-zero before any safety helper runs. Mirrors
+	// the M-M4 pattern in dng_ifd::FindStripSize.
+
+	if (bytesPerSample.Get () == 0)
+		{
+		ThrowBadFormat ("zero bytesPerSample in WriteImage");
+		}
+
+	if (ifd.fSamplesPerPixel == 0)
+		{
+		ThrowBadFormat ("zero fSamplesPerPixel in WriteImage");
+		}
+
+	if (ifd.fTileWidth == 0)
+		{
+		ThrowBadFormat ("zero fTileWidth in WriteImage");
+		}
+
+	if (ifd.fTileLength == 0)
+		{
+		ThrowBadFormat ("zero fTileLength in WriteImage");
+		}
+
+	if (ifd.fSubTileBlockRows == 0)
+		{
+		ThrowBadFormat ("zero fSubTileBlockRows in WriteImage");
+		}
+
 	dng_safe_uint32 bytesPerPixel = bytesPerSample * ifd.fSamplesPerPixel;
-	
+
 	dng_safe_uint32 tileRowBytes = bytesPerPixel * ifd.fTileWidth;
 
 	// If we can compute the number of bytes needed to store the
@@ -5621,8 +5745,9 @@ void dng_image_writer::WriteImage (dng_host &host,
 	
 	uint32 tilesAcross = ifd.TilesAcross ();
 	uint32 tilesDown   = ifd.TilesDown	 ();
+	uint32 tileCount   = SafeUint32Mult (tilesDown, tilesAcross);
 							   
-	bool useMultipleThreads = (tilesDown * tilesAcross >= 2) &&
+	bool useMultipleThreads = (tileCount >= 2) &&
 							  (host.PerformAreaTaskThreads () > 1) &&
 							  (subTileLength == ifd.fTileLength) &&
 							  (ifd.fCompression != ccUncompressed);
@@ -5667,7 +5792,7 @@ void dng_image_writer::WriteImage (dng_host &host,
 			subTileBlockBuffer.Reset (host.Allocate (uncompressedSize.Get ()));
 			}
 
-		dng_md5_printer overallPrinter;
+		dng_md5_direct_printer overallPrinter;
 
 		const bool needDigest = (outDigest != nullptr);
 				
@@ -5745,7 +5870,7 @@ void dng_image_writer::WriteImage (dng_host &host,
 
 					tileStream.SetReadPosition (0);
 					
-					dng_md5_printer_stream md5stream;
+					dng_md5_printer_le_stream md5stream;
 					
 					tileStream.CopyToStream (md5stream, tileByteCount);
 					
@@ -5753,8 +5878,7 @@ void dng_image_writer::WriteImage (dng_host &host,
 
 					// Update the overall digest.
 
-					overallPrinter.Process (tileDigest.data,
-											uint32 (sizeof (tileDigest.data)));
+					overallPrinter.Process (tileDigest);
 
 					// Copy the tile data to the main stream.
 					
@@ -6598,7 +6722,6 @@ void dng_image_writer::CleanUpMetadata (dng_host &host,
 	#endif	// qDNGUseXMP
 
 	}
-	
 
 /*****************************************************************************/
 
@@ -6664,7 +6787,10 @@ void dng_image_writer::WriteTIFF (dng_host &host,
 								  bool hasTransparency,
 								  bool allowBigTIFF,
 								  const dng_image *gainMapImage,
-								  const bool useHalfFloat)
+								  const const_dng_memory_block_sptr gainMapMetadataBlock,
+								  const bool useHalfFloat,
+								  const void *gainMapAltProfileData,
+								  const uint32 gainMapAltProfileSize)
 	{
 	
 	const void *profileData = NULL;
@@ -6696,7 +6822,10 @@ void dng_image_writer::WriteTIFF (dng_host &host,
 						  hasTransparency,
 						  allowBigTIFF,
 						  gainMapImage,
-						  useHalfFloat);
+						  gainMapMetadataBlock,
+						  useHalfFloat,
+						  gainMapAltProfileData,
+						  gainMapAltProfileSize);
 	
 	}
 
@@ -6828,7 +6957,10 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 											 bool hasTransparency,
 											 bool allowBigTIFF,
 											 const dng_image *gainMapImage,
-											 const bool useHalfFloat)
+											 const const_dng_memory_block_sptr gainMapMetadataBlock,
+											 const bool useHalfFloat,
+											 const void *gainMapAltProfileData,
+											 const uint32 gainMapAltProfileSize)
 	{
 	
 	// Force writing all TIFF files in BigTIFF format.
@@ -6986,7 +7118,12 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 	
 	AutoPtr<dng_ifd> gainMapImageIFD;
 
-	const bool hasGainMap = (gainMapImage != nullptr);
+	AutoPtr<tag_owned_data_ptr> tagGainMapMetadata;
+
+	AutoPtr<tag_icc_profile> tagGainMapAlternateProfile;
+
+	const bool hasGainMap = ((gainMapImage != nullptr) &&
+							 (gainMapMetadataBlock != nullptr));
 
 	if (hasGainMap)
 		{
@@ -7005,6 +7142,26 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 
 		gainMapTagSet.Reset (new dng_basic_tag_set (gainMapIFD,
 													*gainMapImageIFD));
+		
+		tagGainMapMetadata.Reset
+			(new tag_owned_data_ptr (tcGainMapMetadata_ISO_21496_1,
+									 ttUndefined,
+									 gainMapMetadataBlock->LogicalSize (),
+									 gainMapMetadataBlock));
+		
+		gainMapIFD.Add (tagGainMapMetadata.Get ());
+
+		if (gainMapAltProfileData &&
+			(gainMapAltProfileSize > 0))
+			{
+			
+			tagGainMapAlternateProfile.Reset
+				(new tag_icc_profile (gainMapAltProfileData,
+									  gainMapAltProfileSize));
+
+			gainMapIFD.Add (tagGainMapAlternateProfile.Get ());
+			
+			}
 		
 		}
 
@@ -7172,7 +7329,7 @@ void dng_image_writer::WriteTIFFWithProfile (dng_host &host,
 
 	// Write the gain map image.
 
-	if (gainMapImage)
+	if (hasGainMap)
 		{
 		
 		WriteImage (host,
@@ -7287,7 +7444,10 @@ void dng_image_writer::WriteDNG (dng_host &host,
 								 bool uncompressed,
 								 bool allowBigTIFF,
 								 const dng_image *gainMapImage,
-								 const dng_lossy_compressed_image *gainMapLossyCompressed)
+								 const dng_lossy_compressed_image *gainMapLossyCompressed,
+								 const const_dng_memory_block_sptr gainMapMetadataBlock,
+								 const void *gainMapAltProfileData,
+								 const uint32 gainMapAltProfileSize)
 	{
 	
 	WriteDNGWithMetadata (host,
@@ -7299,7 +7459,10 @@ void dng_image_writer::WriteDNG (dng_host &host,
 						  uncompressed,
 						  allowBigTIFF,
 						  gainMapImage,
-						  gainMapLossyCompressed);
+						  gainMapLossyCompressed,
+						  gainMapMetadataBlock,
+						  gainMapAltProfileData,
+						  gainMapAltProfileSize);
 	
 	}
 	
@@ -7497,7 +7660,10 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 											 const bool uncompressed,
 											 bool allowBigTIFF,
 											 const dng_image *gainMapImage,
-											 const dng_lossy_compressed_image *gainMapLossyCompressed)
+											 const dng_lossy_compressed_image *gainMapLossyCompressed,
+											 const const_dng_memory_block_sptr gainMapMetadataBlock,
+											 const void *gainMapAltProfileData,
+											 const uint32 gainMapAltProfileSize)
 	{
 	
 	// Force writing all DNG files in 64-bit format.
@@ -7700,6 +7866,8 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 
 	bool hasProfileWith_1_6_Features = false;
 	bool hasProfileWith_1_7_Features = false;
+
+	bool mainProfileDidWritePGTMtoMainIFD = false;
 		
 	// Create the main IFD.
 										 
@@ -7723,6 +7891,9 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		profileSet.Reset (new profile_tag_set (host,
 											   mainIFD,
 											   mainProfile));
+
+		mainProfileDidWritePGTMtoMainIFD =
+			profileSet->ProfileDidWritePGTMToMainIFD ();
 		
 		colorSet.Reset (new color_tag_set (mainIFD,
 										   negative));
@@ -7794,6 +7965,10 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	
 	AutoPtr<dng_ifd> gainMapImageIFD;
 
+	AutoPtr<tag_owned_data_ptr> tagGainMapMetadata;
+
+	AutoPtr<tag_icc_profile> tagGainMapAlternateProfile;
+
 	const bool hasGainMap = (gainMapImage != nullptr);
 
 	if (hasGainMap)
@@ -7809,6 +7984,31 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 
 		gainMapTagSet.Reset (new dng_basic_tag_set (gainMapIFD,
 													*gainMapImageIFD));
+
+		if (gainMapMetadataBlock)
+			{
+		
+			tagGainMapMetadata.Reset
+				(new tag_owned_data_ptr (tcGainMapMetadata_ISO_21496_1,
+										 ttUndefined,
+										 gainMapMetadataBlock->LogicalSize (),
+										 gainMapMetadataBlock));
+
+			gainMapIFD.Add (tagGainMapMetadata.Get ());
+
+			if (gainMapAltProfileData &&
+				(gainMapAltProfileSize > 0))
+				{
+
+				tagGainMapAlternateProfile.Reset
+					(new tag_icc_profile (gainMapAltProfileData,
+										  gainMapAltProfileSize));
+
+				gainMapIFD.Add (tagGainMapAlternateProfile.Get ());
+
+				}
+
+			}
 		
 		}
 		
@@ -8081,7 +8281,12 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	// Get the raw image we are writing.
 
 	const dng_image &rawImage (negative.RawImage ());
-	
+
+	if (rawImage.Planes () > kMaxColorPlanes)
+		{
+		ThrowBadFormat ();
+		}
+
 	// Create a dng_ifd record for the raw image.
 	
 	dng_ifd info;
@@ -8633,7 +8838,7 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		}
 	
 	tag_uint8_ptr tagRawImageDigest (useNewDigest ? tcNewRawImageDigest : tcRawImageDigest,
-									 mainImageRawImageDigest.data,
+									 mainImageRawImageDigest.Data (),
 									 16);
 									 
 	if (mainImageRawImageDigest.IsValid ())
@@ -8650,7 +8855,7 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	const auto rawDataUniqueID = negative.RawDataUniqueID ();
 	
 	tag_uint8_ptr tagRawDataUniqueID (tcRawDataUniqueID,
-									  rawDataUniqueID.data,
+									  rawDataUniqueID.Data (),
 									  16);
 									  
 	if (rawDataUniqueID.IsValid ())
@@ -8679,7 +8884,7 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 										 negative.OriginalRawFileData		());
 										 
 	tag_uint8_ptr tagOriginalRawFileDigest (tcOriginalRawFileDigest,
-											negative.OriginalRawFileDigest ().data,
+											negative.OriginalRawFileDigest ().Data (),
 											16);
 										 
 	if (negative.OriginalRawFileData ())
@@ -8834,12 +9039,10 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 	
 	if (negative.HasProfileGainTableMap () &&
 
-		// If the main profile already has the PGTM attached, let the profile
-		// logic take care of writing the PGTM. Otherwise we would end up
-		// writing two identical PGTM tags into IFD 0.
-		
-		(negative.ShareProfileGainTableMap () !=
-		 mainProfile.ShareProfileGainTableMap ()))
+		// If the main profile already wrote the PGTM attached, then
+		// ignore whatever PGTM is attached to the negative.
+
+		!mainProfileDidWritePGTMtoMainIFD)
 		{
 
 		dng_memory_stream tempStream (host.Allocator (),
@@ -9081,6 +9284,11 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
 		enhancedInfo->fImageLength = negative.Stage3Image ()->Bounds ().H ();
 	
 		enhancedInfo->fSamplesPerPixel = negative.Stage3Image ()->Planes ();
+
+		if (enhancedInfo->fSamplesPerPixel > kMaxColorPlanes)
+			{
+			ThrowBadFormat ();
+			}
 
 		const bool isEnhancedFloat =
 			(negative.Stage3Image ()->PixelType () == ttFloat);

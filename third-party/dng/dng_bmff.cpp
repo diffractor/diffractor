@@ -121,6 +121,14 @@ void dng_bmff_io::Read (dng_host &host,
 
 		const uint64 contentLength = length - headerOffset;
 
+		DNG_REQUIRE (stream.Position () <= stream.Length (),
+					 "Box header past stream end");
+
+		const uint64 bytesRemaining = stream.Length () - stream.Position ();
+
+		DNG_REQUIRE (contentLength <= bytesRemaining,
+					 "Box content past stream end");
+
 		// Store the box data if desired.
 
 		if (ShouldReadBox (name, length))
@@ -191,7 +199,7 @@ void dng_bmff_io::Write (dng_host & /* host */,
 		const uint32 dataLen = box->fContent ? box->fContent->LogicalSize () : 0;
 
 		bool useLargeSize = ((box->fStoredLength == 1) ||
-							 uint64 (dataLen + 8) > uint64 (0xFFFFFFFF));
+							 (uint64 (dataLen) + 8) > uint64 (0xFFFFFFFF));
 		
 		if (useLargeSize)
 			{
@@ -294,8 +302,7 @@ void dng_bmff_io::UpdateBigTables (dng_host &host,
 
 				dng_fingerprint digest;
 
-				tableStream.Get (digest.data,
-								 uint32 (sizeof (digest.data)));
+				tableStream.Get (digest);
 
 				if (digest.IsValid () &&
 					(digests.find (digest) == digests.end ()))
@@ -378,8 +385,7 @@ void dng_bmff_io::UpdateBigTables (dng_host &host,
 
 		// Write fingerprint.
 
-		memStream.Put (fingerprint.data,
-					   uint32 (sizeof (fingerprint.data)));
+		memStream.Put (fingerprint);
 
 		// Write table data.
 

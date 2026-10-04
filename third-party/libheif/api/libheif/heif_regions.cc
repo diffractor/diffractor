@@ -173,7 +173,10 @@ heif_error heif_region_get_point_transformed(const struct heif_region* region, h
     auto t = RegionCoordinateTransform::create(region->context->get_heif_file(), image_id,
                                                region->region_item->reference_width,
                                                region->region_item->reference_height);
-    RegionCoordinateTransform::Point p = t.transform_point({(double) point->x, (double) point->y});
+    if (!t) {
+      return t.error().error_struct(region->context.get());
+    }
+    RegionCoordinateTransform::Point p = t->transform_point({(double) point->x, (double) point->y});
     *x = p.x;
     *y = p.y;
 
@@ -211,9 +214,12 @@ heif_error heif_region_get_rectangle_transformed(const heif_region* region,
     auto t = RegionCoordinateTransform::create(region->context->get_heif_file(), image_id,
                                                region->region_item->reference_width,
                                                region->region_item->reference_height);
+    if (!t) {
+      return t.error().error_struct(region->context.get());
+    }
 
-    RegionCoordinateTransform::Point p = t.transform_point({(double) rect->x, (double) rect->y});
-    RegionCoordinateTransform::Extent e = t.transform_extent({(double) rect->width, (double) rect->height});
+    RegionCoordinateTransform::Point p = t->transform_point({(double) rect->x, (double) rect->y});
+    RegionCoordinateTransform::Extent e = t->transform_extent({(double) rect->width, (double) rect->height});
 
     *x = p.x;
     *y = p.y;
@@ -253,9 +259,12 @@ heif_error heif_region_get_ellipse_transformed(const heif_region* region,
     auto t = RegionCoordinateTransform::create(region->context->get_heif_file(), image_id,
                                                region->region_item->reference_width,
                                                region->region_item->reference_height);
+    if (!t) {
+      return t.error().error_struct(region->context.get());
+    }
 
-    RegionCoordinateTransform::Point p = t.transform_point({(double) ellipse->x, (double) ellipse->y});
-    RegionCoordinateTransform::Extent e = t.transform_extent({(double) ellipse->radius_x, (double) ellipse->radius_y});
+    RegionCoordinateTransform::Point p = t->transform_point({(double) ellipse->x, (double) ellipse->y});
+    RegionCoordinateTransform::Extent e = t->transform_extent({(double) ellipse->radius_x, (double) ellipse->radius_y});
 
     *x = p.x;
     *y = p.y;
@@ -319,9 +328,12 @@ static heif_error heif_region_get_poly_points_scaled(const heif_region* region, 
     auto t = RegionCoordinateTransform::create(region->context->get_heif_file(), image_id,
                                                region->region_item->reference_width,
                                                region->region_item->reference_height);
+    if (!t) {
+      return t.error().error_struct(region->context.get());
+    }
 
     for (int i = 0; i < (int) poly->points.size(); i++) {
-      RegionCoordinateTransform::Point p = t.transform_point({
+      RegionCoordinateTransform::Point p = t->transform_point({
                                                                (double) poly->points[i].x,
                                                                (double) poly->points[i].y
                                                              });
@@ -409,12 +421,43 @@ heif_error heif_region_item_add_region_inline_mask_data(heif_region_item* item,
                                                         size_t mask_data_len,
                                                         heif_region** out_region)
 {
+  if (out_region) {
+    *out_region = nullptr;
+  }
+
+  if (mask_data == nullptr) {
+    return heif_error_null_pointer_argument;
+  }
+
+  if (width == 0 || height == 0) {
+    return {heif_error_Invalid_input, heif_suberror_Invalid_region_data,
+            "Inline mask region has zero width or height"};
+  }
+
+  // The mask is stored with one bit per pixel, no padding between rows. Only the
+  // very last byte is padded. This is the same canonical size that the file parser
+  // (RegionGeometry_InlineMask::parse) and the reader (heif_region_get_mask_image)
+  // compute from the geometry. The caller-supplied buffer must hold exactly that
+  // many bytes: a shorter buffer would make the reader run off the end of the
+  // allocation, and a longer buffer indicates that the caller's geometry and mask
+  // data disagree, which we reject rather than silently discard.
+  uint64_t mask_size = (static_cast<uint64_t>(width) * height + 7) / 8;
+  if (mask_size > std::numeric_limits<size_t>::max()) {
+    return {heif_error_Memory_allocation_error, heif_suberror_Security_limit_exceeded,
+            "Inline mask size overflow"};
+  }
+
+  if (mask_data_len != static_cast<size_t>(mask_size)) {
+    return {heif_error_Invalid_input, heif_suberror_Invalid_region_data,
+            "Inline mask data length does not match the given region size"};
+  }
+
   auto region = std::make_shared<RegionGeometry_InlineMask>();
   region->x = x;
   region->y = y;
   region->width = width;
   region->height = height;
-  region->mask_data.resize(mask_data_len);
+  region->mask_data.resize(static_cast<size_t>(mask_size));
   std::memcpy(region->mask_data.data(), mask_data, region->mask_data.size());
 
   item->region_item->add_region(region);
@@ -442,7 +485,11 @@ static heif_error heif_region_get_inline_mask_image(const heif_region* region,
     *out_y0 = mask->y;
     uint32_t width = *out_width = mask->width;
     uint32_t height = *out_height = mask->height;
-    uint8_t* mask_data = mask->mask_data.data();
+    const uint8_t* mask_data = mask->mask_data.data();
+    // Defence in depth: the writer API and the file parser both guarantee that
+    // mask_data holds ceil(width*height/8) bytes, but never read beyond the actual
+    // buffer even if that invariant were somehow violated.
+    size_t mask_data_len = mask->mask_data.size();
 
     heif_error err = heif_image_create(width, height, heif_colorspace_monochrome, heif_chroma_monochrome, out_mask_image);
     if (err.code) {
@@ -462,7 +509,7 @@ static heif_error heif_region_get_inline_mask_image(const heif_region* region,
         uint64_t mask_byte = pixel_index / 8;
         uint8_t pixel_bit = uint8_t(0x80U >> (pixel_index % 8));
 
-        p[y * stride + x] = (mask_data[mask_byte] & pixel_bit) ? 255 : 0;
+        p[y * stride + x] = (mask_byte < mask_data_len && (mask_data[mask_byte] & pixel_bit)) ? 255 : 0;
 
         pixel_index++;
       }
@@ -592,27 +639,59 @@ heif_error heif_region_item_add_region_ellipse(heif_region_item* item,
 }
 
 
+// Shared implementation of heif_region_item_add_region_polygon() and
+// heif_region_item_add_region_polyline(). `pts` holds 2*nPoints values in the
+// order X1, Y1, X2, Y2, ...
+static heif_error add_region_poly(heif_region_item* item,
+                                  const int32_t* pts, int nPoints,
+                                  bool closed,
+                                  heif_region** out_region)
+{
+  if (out_region) {
+    *out_region = nullptr;
+  }
+
+  // We cannot verify that the caller's array really holds 2*nPoints values, that
+  // is part of the API contract (GHSA-prcj-g5xh-rw95). What we can check is that
+  // the arguments are self-consistent: a negative count would be converted to a
+  // huge size_t in resize() below and throw std::length_error through the C API,
+  // and a NULL array with a non-zero count would be dereferenced.
+  if (nPoints < 0) {
+    return {heif_error_Usage_error, heif_suberror_Invalid_parameter_value,
+            "Number of polygon points must not be negative"};
+  }
+
+  if (nPoints > 0 && pts == nullptr) {
+    return heif_error_null_pointer_argument;
+  }
+
+  return exception_guard([&]() -> heif_error {
+    auto region = std::make_shared<RegionGeometry_Polygon>();
+    region->points.resize(nPoints);
+
+    for (int i = 0; i < nPoints; i++) {
+      region->points[i].x = pts[2 * i + 0];
+      region->points[i].y = pts[2 * i + 1];
+    }
+
+    region->closed = closed;
+
+    item->region_item->add_region(region);
+
+    if (out_region) {
+      *out_region = create_region(region, item);
+    }
+
+    return heif_error_success;
+  });
+}
+
+
 heif_error heif_region_item_add_region_polygon(heif_region_item* item,
                                                const int32_t* pts, int nPoints,
                                                heif_region** out_region)
 {
-  auto region = std::make_shared<RegionGeometry_Polygon>();
-  region->points.resize(nPoints);
-
-  for (int i = 0; i < nPoints; i++) {
-    region->points[i].x = pts[2 * i + 0];
-    region->points[i].y = pts[2 * i + 1];
-  }
-
-  region->closed = true;
-
-  item->region_item->add_region(region);
-
-  if (out_region) {
-    *out_region = create_region(region, item);
-  }
-
-  return heif_error_success;
+  return add_region_poly(item, pts, nPoints, true, out_region);
 }
 
 
@@ -620,23 +699,7 @@ heif_error heif_region_item_add_region_polyline(heif_region_item* item,
                                                 const int32_t* pts, int nPoints,
                                                 heif_region** out_region)
 {
-  auto region = std::make_shared<RegionGeometry_Polygon>();
-  region->points.resize(nPoints);
-
-  for (int i = 0; i < nPoints; i++) {
-    region->points[i].x = pts[2 * i + 0];
-    region->points[i].y = pts[2 * i + 1];
-  }
-
-  region->closed = false;
-
-  item->region_item->add_region(region);
-
-  if (out_region) {
-    *out_region = create_region(region, item);
-  }
-
-  return heif_error_success;
+  return add_region_poly(item, pts, nPoints, false, out_region);
 }
 
 
@@ -685,7 +748,9 @@ heif_error heif_region_get_inline_mask_data(const heif_region* region,
     *y = mask->y;
     *width = mask->width;
     *height = mask->height;
-    memcpy(data, mask->mask_data.data(), mask->mask_data.size());
+    if (!mask->mask_data.empty()) { // memcpy() from a NULL pointer is UB even for size 0 (until C2y/N3322), see StreamReader_memory::read()
+      memcpy(data, mask->mask_data.data(), mask->mask_data.size());
+    }
     return heif_error_success;
   }
   return heif_error_invalid_parameter_value;

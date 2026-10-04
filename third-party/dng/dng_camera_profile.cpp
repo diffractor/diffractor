@@ -69,21 +69,20 @@ dng_string StripProfileGroupPrefix (const dng_string &name)
 void dng_camera_profile_id::AddDigest (dng_md5_printer &printer) const
 	{
 	
-	printer.Process ("DCPI", 4);
+	printer.ProcessPtr ("DCPI", 4);
 
 	if (Name ().NotEmpty ())
 		{
 		
-		printer.Process (Name ().Get (),
-						 Name ().Length ());
+		printer.ProcessPtr (Name ().Get (),
+							Name ().Length ());
 		
 		}
 
 	if (Fingerprint ().IsValid ())
 		{
 		
-		printer.Process (fFingerprint.data,
-						 uint32 (sizeof (fFingerprint.data)));
+		printer.Process (fFingerprint);
 		
 		}
 	
@@ -516,6 +515,8 @@ static void FingerprintMatrix (dng_md5_printer_stream &printer,
 	
 	// Tag's Put routine doesn't write the header, only the data
 
+	// The Put routine handles endian byte swapping if needed.
+
 	tag.Put (printer);
 
 	}
@@ -563,12 +564,10 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 	
 	DNG_ASSERT (!fWasStubbed, "CalculateFingerprint on stubbed profile");
 
-	dng_md5_printer_stream printer;
-
 	// MD5 hash is always calculated on little endian data.
 
-	printer.SetLittleEndian ();
-	
+	dng_md5_printer_le_stream printer;
+
 	// The data that we fingerprint closely matches that saved
 	// by the profile_tag_set class in dng_image_writer.cpp, with
 	// the exception of the fingerprint itself.
@@ -784,8 +783,7 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 			
 			dng_fingerprint digest = pgtm->GetFingerprint ();
 
-			printer.Put (digest.data,
-						 uint32 (sizeof (digest.data)));
+			printer.Put (digest);
 			
 			}
 
@@ -803,8 +801,7 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 			printer.Put ("hdr", 3);
 
 			if (range.fHintMaxOutputValue != 1.0f)
-				printer.Put (&range.fHintMaxOutputValue,
-							 uint32 (sizeof (range.fHintMaxOutputValue)));
+				printer.Put_real32 (range.fHintMaxOutputValue);
 			
 			}
 			
@@ -815,14 +812,13 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 	if (HasMaskedRGBTables ())
 		{
 		
-		dng_md5_printer rgbTablesPrinter;
+		dng_md5_printer_le_stream rgbTablesPrinter;
 		
 		MaskedRGBTables ().AddDigest (rgbTablesPrinter);
 		
 		auto rgbTableDigest = rgbTablesPrinter.Result ();
 		
-		printer.Put (rgbTableDigest.data,
-					 uint32 (sizeof (rgbTableDigest.data)));
+		printer.Put (rgbTableDigest);
 		
 		}
 
@@ -835,18 +831,15 @@ dng_fingerprint dng_camera_profile::CalculateFingerprint (bool renderDataOnly) c
 dng_fingerprint dng_camera_profile::UniqueID () const
 	{
 
-	dng_md5_printer_stream printer;
-
 	// MD5 hash is always calculated on little endian data.
 
-	printer.SetLittleEndian ();
+	dng_md5_printer_le_stream printer;
 
 	// Start with the existing fingerprint.
  
 	dng_fingerprint fingerprint = Fingerprint ();
 	
-	printer.Put (fingerprint.data,
-				 (uint32) sizeof (fingerprint.data));
+	printer.Put (fingerprint);
 
 	// Also include the UniqueCameraModelRestriction tag.
 
@@ -1670,9 +1663,10 @@ void dng_camera_profile::Parse (dng_stream &stream,
 
 		stream.SetReadPosition (profileInfo.fHueSatDeltas3Offset);
 
-		bool skipSat0 = (profileInfo.fHueSatDeltas3Count == profileInfo.fProfileHues *
-														   (profileInfo.fProfileSats - 1) *
-															profileInfo.fProfileVals * 3);
+		bool skipSat0 = (profileInfo.fHueSatDeltas3Count ==
+						 SafeUint32Mult (profileInfo.fProfileHues,
+										 SafeUint32Sub (profileInfo.fProfileSats, 1),
+										 profileInfo.fProfileVals, 3));
 
 		ReadHueSatMap (stream,
 					   fHueSatDeltas3,
@@ -1857,6 +1851,8 @@ void dng_camera_profile::SetFourColorBayer ()
 	fForwardMatrix1.Clear ();
 	fForwardMatrix2.Clear ();
 	fForwardMatrix3.Clear ();
+
+	ClearFingerprint ();
 	
 	}
 
@@ -2046,6 +2042,8 @@ void dng_camera_profile::SetProfileGainTableMap
 	{
 	
 	fProfileGainTableMap = gainTableMap;
+
+	ClearFingerprint ();
 	
 	}
 
@@ -2119,6 +2117,8 @@ void dng_camera_profile::SetMaskedRGBTables
 	{
 	
 	fMaskedRGBTables = maskedRGBTables;
+
+	ClearFingerprint ();
 	
 	}
 
@@ -2129,6 +2129,8 @@ void dng_camera_profile::SetMaskedRGBTables
 	{
 	
 	fMaskedRGBTables.reset (maskedRGBTables.Release ());
+
+	ClearFingerprint ();
 	
 	}
 

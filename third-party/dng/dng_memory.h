@@ -575,6 +575,15 @@ extern dng_memory_allocator gDefaultDNGMemoryAllocator;
 
 /*****************************************************************************/
 
+// Simulation hook: makes every dng_memory_allocator::Allocate () throw
+// dng_error_memory (100005), replicating the allocation failure caused by SDK
+// clients being unable to page when the disk is full. Intended for internal
+// development & diagnostics only.
+
+void DNG_SetSimulateMemoryFull (bool simulate);
+
+/*****************************************************************************/
+
 /// \brief C++ allocator (i.e. an implementation of the Allocator concept)
 /// that throws a dng_exception with error code dng_error_memory if it cannot
 /// allocate memory.

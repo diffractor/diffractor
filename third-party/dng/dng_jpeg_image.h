@@ -107,7 +107,10 @@ class dng_lossy_compressed_image : public dng_compressed_image_tiles
 			
 		uint32 TileCount () const
 			{
-			return TilesAcross () * TilesDown ();
+			// CR-4208475 R-L6: Use checked multiplication so this count can
+			// never wrap or diverge from dng_ifd::TilesPerImage(), which sizes
+			// the fData vector that FindDigest indexes by this value.
+			return SafeUint32Mult (TilesAcross (), TilesDown ());
 			}
 		
 		dng_fingerprint FindDigest (dng_host &host) const;

@@ -34,6 +34,13 @@ struct DataExtent;
 struct heif_security_limits;
 
 
+// Validate the uncC component formats, bit depths and pixel packing. These are
+// image-size independent invariants, so this must run on every decode entry
+// point -- both the full-image path (unc_decoder::decode_full_image) and the
+// per-tile path (UncompressedImageCodec::decode_uncompressed_image_tile).
+Error check_hard_limits(const std::shared_ptr<const Box_uncC>& uncC);
+
+
 class unc_decoder
 {
 public:
@@ -75,7 +82,8 @@ protected:
                                                      const Box_iloc::Item* item) const;
 
   Result<std::vector<uint8_t>> do_decompress_data(std::shared_ptr<const Box_cmpC>& cmpC_box,
-                                                  std::vector<uint8_t> compressed_data) const;
+                                                  const std::vector<uint8_t>& compressed_data,
+                                                  const heif_security_limits* limits) const;
 
   const uint32_t m_width;
   const uint32_t m_height;

@@ -207,7 +207,7 @@ std::shared_ptr<Decoder> Decoder::alloc_for_infe_type(const ImageItem* item)
 }
 
 
-std::shared_ptr<Decoder> Decoder::alloc_for_sequence_sample_description_box(std::shared_ptr<const Box_VisualSampleEntry> sample_description_box)
+std::shared_ptr<Decoder> Decoder::alloc_for_sequence_sample_description_box(const std::shared_ptr<const Box_VisualSampleEntry>& sample_description_box)
 {
   std::string compressor = sample_description_box->get_VisualSampleEntry_const().compressorname;
   uint32_t sampleType = sample_description_box->get_short_type();
@@ -314,6 +314,35 @@ Decoder::~Decoder()
 }
 
 
+std::vector<std::pair<const uint8_t*, size_t>>
+split_nal_units_4byte_length_prefixed(const uint8_t* data, size_t size)
+{
+  std::vector<std::pair<const uint8_t*, size_t>> units;
+
+  size_t ptr = 0;
+  while (ptr + 4 <= size) {
+    uint32_t nal_size = (uint32_t(data[ptr]) << 24) | (uint32_t(data[ptr + 1]) << 16) |
+                        (uint32_t(data[ptr + 2]) << 8) | uint32_t(data[ptr + 3]);
+    ptr += 4;
+
+    // A length that runs past the end of the buffer means the stream is
+    // malformed; stop rather than read out of bounds.
+    if (nal_size > size - ptr) {
+      break;
+    }
+
+    if (nal_size > 0) {
+      units.emplace_back(data + ptr, (size_t) nal_size);
+    }
+
+    ptr += nal_size;
+  }
+
+  return units;
+}
+
+
+
 void Decoder::release_decoder()
 {
   if (m_decoder) {
@@ -321,6 +350,71 @@ void Decoder::release_decoder()
     m_decoder_plugin->free_decoder(m_decoder);
     m_decoder = nullptr;
   }
+}
+
+
+// Names the compression format and, where one exists, an example decoder
+// implementation, so that users can tell which decoder plugin package or
+// build option is missing (issue #1876).
+static std::string missing_decoder_error_message(heif_compression_format format)
+{
+  const char* format_name = nullptr;
+  const char* example_decoder = nullptr;
+
+  switch (format) {
+    case heif_compression_HEVC:
+      format_name = "HEVC";
+      example_decoder = "libde265";
+      break;
+    case heif_compression_AVC:
+      format_name = "AVC";
+      example_decoder = "openh264";
+      break;
+    case heif_compression_JPEG:
+      format_name = "JPEG";
+      example_decoder = "libjpeg";
+      break;
+    case heif_compression_AV1:
+      format_name = "AV1";
+      example_decoder = "dav1d";
+      break;
+    case heif_compression_VVC:
+      format_name = "VVC";
+      example_decoder = "vvdec";
+      break;
+    case heif_compression_EVC:
+      format_name = "EVC";
+      break;
+    case heif_compression_JPEG2000:
+      format_name = "JPEG 2000";
+      example_decoder = "openjpeg";
+      break;
+    case heif_compression_HTJ2K:
+      format_name = "HT-J2K";
+      example_decoder = "openjpeg";
+      break;
+    case heif_compression_uncompressed:
+      format_name = "ISO/IEC 23001-17 uncompressed";
+      break;
+    case heif_compression_mask:
+      format_name = "mask image";
+      break;
+    case heif_compression_undefined:
+      break;
+  }
+
+  if (format_name == nullptr) {
+    return {};
+  }
+
+  std::string msg = format_name;
+  if (example_decoder) {
+    msg += " (a suitable decoder plugin is ";
+    msg += example_decoder;
+    msg += ")";
+  }
+
+  return msg;
 }
 
 
@@ -337,7 +431,8 @@ Error Decoder::require_decoder_plugin(const heif_decoding_options& options)
 
     m_decoder_plugin = get_decoder(get_compression_format(), options.decoder_id);
     if (!m_decoder_plugin) {
-      return Error(heif_error_Plugin_loading_error, heif_suberror_No_matching_decoder_installed);
+      return {heif_error_Plugin_loading_error, heif_suberror_No_matching_decoder_installed,
+              missing_decoder_error_message(get_compression_format())};
     }
 
     if (m_decoder_plugin->plugin_api_version < 5) {
@@ -362,14 +457,34 @@ Error Decoder::decode_sequence_frame_from_compressed_data(bool upload_configurat
     return pluginErr;
   }
 
-  // Reject memory-bomb inputs whose codec configuration record (SPS) declares
-  // a coded picture size beyond libheif's security limits, before handing any
-  // bytes to the decoder plugin. Codecs whose configuration record does not
-  // carry dimensions (e.g. AV1's av1C) return nullopt and skip the check.
-  //
-  // TODO: check this also in the decoder plugin since SPS packets may be
-  //       found within the actual image bitstream.
-  auto codedSize = get_coded_image_size_from_config();
+  // Fetch the compressed data once. The same buffer is used both to enforce the
+  // security limits below and to feed the decoder, so we neither re-read the
+  // iloc extents nor rebuild the combined config+bitstream buffer twice.
+  auto dataResult = get_compressed_data(upload_configuration_NALs);
+  if (!dataResult) {
+    return dataResult.error();
+  }
+
+  // Check that we are pushing at least some data into the decoder.
+  // Some decoders (e.g. aom) do not complain when the input data is empty and we might
+  // get stuck in an endless decoding loop, waiting for the decompressed image.
+  if (dataResult->size() == 0) {
+    return Error{
+      heif_error_Invalid_input,
+      heif_suberror_Unspecified,
+      "Input with empty data extent."
+    };
+  }
+
+  // Reject memory-bomb inputs whose coded picture size exceeds libheif's
+  // security limits, before handing any bytes to the decoder plugin. The coded
+  // (pre-crop) size the decoder will allocate lives in the bitstream: the SPS for
+  // AVC/HEVC/VVC, the Sequence Header OBU for AV1/AVIF, or the SOF marker for
+  // JPEG. It can be far larger than the 'ispe' dimensions, and for the NAL codecs
+  // an SPS may sit in the item data rather than only in the config record, so we
+  // scan the whole buffer that is about to be pushed. Codecs that expose no coded
+  // size return nullopt and skip the check.
+  auto codedSize = get_max_coded_image_size(*dataResult);
   if (codedSize.is_error()) {
     return codedSize.error();
   }
@@ -418,23 +533,6 @@ Error Decoder::decode_sequence_frame_from_compressed_data(bool upload_configurat
         }
       }
     }
-  }
-
-  auto dataResult = get_compressed_data(upload_configuration_NALs);
-  if (!dataResult) {
-    return dataResult.error();
-  }
-
-  // Check that we are pushing at least some data into the decoder.
-  // Some decoders (e.g. aom) do not complain when the input data is empty and we might
-  // get stuck in an endless decoding loop, waiting for the decompressed image.
-
-  if (dataResult->size() == 0) {
-    return Error{
-      heif_error_Invalid_input,
-      heif_suberror_Unspecified,
-      "Input with empty data extent."
-    };
   }
 
   //std::cout << "Decoder::decode_sequence_frame_from_compressed_data push " << dataResult->size() << "\n";

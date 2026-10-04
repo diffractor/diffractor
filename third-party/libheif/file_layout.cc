@@ -88,6 +88,9 @@ Error FileLayout::read(const std::shared_ptr<StreamReader>& stream, const heif_s
   BitstreamRange ftyp_range(m_stream_reader, 0, ftyp_size);
   std::shared_ptr<Box> ftyp_box;
   err = Box::read(ftyp_range, &ftyp_box, limits);
+  if (err) {
+    return err;
+  }
 
   m_boxes.push_back(ftyp_box);
   m_ftyp_box = std::dynamic_pointer_cast<Box_ftyp>(ftyp_box);
@@ -128,20 +131,29 @@ Error FileLayout::read(const std::shared_ptr<StreamReader>& stream, const heif_s
 
     if (box_header.get_short_type() == fourcc("meta")) {
       const uint64_t meta_box_start = next_box_start;
-      if (box_header.get_box_size() == 0) {
-        // TODO: get file-size from stream and compute box size
-        return {heif_error_Invalid_input,
-                heif_suberror_No_meta_box,
-                "Cannot read meta box with unspecified size"};
+      uint64_t end_of_meta_box;
+      if (box_header.get_box_size() == BoxHeader::size_until_end_of_file) {
+        // A box size of 0 means the box extends to the end of the file
+        // (ISO/IEC 14496-12 clause 4.2), which is legal for the last box.
+        // Resolve it to the file size.
+        end_of_meta_box = m_stream_reader->request_range(meta_box_start,
+                                                         std::numeric_limits<uint64_t>::max());
+        m_max_length = end_of_meta_box;
+        if (end_of_meta_box <= meta_box_start) {
+          return {heif_error_Invalid_input,
+                  heif_suberror_No_meta_box,
+                  "Cannot read meta box with unspecified size"};
+        }
       }
-
-      uint64_t end_of_meta_box = box_header.get_box_size();
-      if (end_of_meta_box > std::numeric_limits<uint64_t>::max() - meta_box_start) {
-        return {heif_error_Invalid_input,
-                heif_suberror_No_meta_box,
-                "Cannot read meta box with invalid size"};
+      else {
+        end_of_meta_box = box_header.get_box_size();
+        if (end_of_meta_box > std::numeric_limits<uint64_t>::max() - meta_box_start) {
+          return {heif_error_Invalid_input,
+                  heif_suberror_No_meta_box,
+                  "Cannot read meta box with invalid size"};
+        }
+        end_of_meta_box += meta_box_start;
       }
-      end_of_meta_box += meta_box_start;
       if (m_max_length < end_of_meta_box) {
         m_max_length = m_stream_reader->request_range(meta_box_start, end_of_meta_box);
       }
@@ -167,19 +179,29 @@ Error FileLayout::read(const std::shared_ptr<StreamReader>& stream, const heif_s
     // TODO: this is basically the same as the meta box case above, with different error handling.
     if (box_header.get_short_type() == fourcc("mini")) {
       const uint64_t mini_box_start = next_box_start;
-      if (box_header.get_box_size() == 0) {
-        // TODO: get file-size from stream and compute box size
-        return {heif_error_Invalid_input,
-                heif_suberror_Invalid_mini_box,
-                "Cannot read mini box with unspecified size"};
+      uint64_t end_of_mini_box;
+      if (box_header.get_box_size() == BoxHeader::size_until_end_of_file) {
+        // A box size of 0 means the box extends to the end of the file
+        // (ISO/IEC 14496-12 clause 4.2), which is legal for the last box.
+        // Resolve it to the file size.
+        end_of_mini_box = m_stream_reader->request_range(mini_box_start,
+                                                         std::numeric_limits<uint64_t>::max());
+        m_max_length = end_of_mini_box;
+        if (end_of_mini_box <= mini_box_start) {
+          return {heif_error_Invalid_input,
+                  heif_suberror_Invalid_mini_box,
+                  "Cannot read mini box with unspecified size"};
+        }
       }
-      uint64_t end_of_mini_box = box_header.get_box_size();
-      if (end_of_mini_box > std::numeric_limits<uint64_t>::max() - mini_box_start) {
-        return {heif_error_Invalid_input,
-                heif_suberror_Invalid_mini_box,
-                "Cannot read mini box with invalid size"};
+      else {
+        end_of_mini_box = box_header.get_box_size();
+        if (end_of_mini_box > std::numeric_limits<uint64_t>::max() - mini_box_start) {
+          return {heif_error_Invalid_input,
+                  heif_suberror_Invalid_mini_box,
+                  "Cannot read mini box with invalid size"};
+        }
+        end_of_mini_box += mini_box_start;
       }
-      end_of_mini_box += mini_box_start;
       if (m_max_length < end_of_mini_box) {
         m_max_length = m_stream_reader->request_range(mini_box_start, end_of_mini_box);
       }
@@ -191,7 +213,7 @@ Error FileLayout::read(const std::shared_ptr<StreamReader>& stream, const heif_s
       }
       BitstreamRange mini_box_range(m_stream_reader, mini_box_start, end_of_mini_box);
       std::shared_ptr<Box> mini_box;
-      err = Box::read(mini_box_range, &mini_box, heif_get_global_security_limits());
+      err = Box::read(mini_box_range, &mini_box, limits);
       if (err) {
         return err;
       }
@@ -204,20 +226,29 @@ Error FileLayout::read(const std::shared_ptr<StreamReader>& stream, const heif_s
 
     if (box_header.get_short_type() == fourcc("moov")) {
       const uint64_t moov_box_start = next_box_start;
-      if (box_header.get_box_size() == 0) {
-        // TODO: get file-size from stream and compute box size
-        return {heif_error_Invalid_input,
-                heif_suberror_No_moov_box,
-                "Cannot read moov box with unspecified size"};
+      uint64_t end_of_moov_box;
+      if (box_header.get_box_size() == BoxHeader::size_until_end_of_file) {
+        // A box size of 0 means the box extends to the end of the file
+        // (ISO/IEC 14496-12 clause 4.2), which is legal for the last box.
+        // Resolve it to the file size.
+        end_of_moov_box = m_stream_reader->request_range(moov_box_start,
+                                                         std::numeric_limits<uint64_t>::max());
+        m_max_length = end_of_moov_box;
+        if (end_of_moov_box <= moov_box_start) {
+          return {heif_error_Invalid_input,
+                  heif_suberror_No_moov_box,
+                  "Cannot read moov box with unspecified size"};
+        }
       }
-
-      uint64_t end_of_moov_box = box_header.get_box_size();
-      if (end_of_moov_box > std::numeric_limits<uint64_t>::max() - moov_box_start) {
-        return {heif_error_Invalid_input,
-                heif_suberror_No_moov_box,
-                "Cannot read moov box with invalid size"};
+      else {
+        end_of_moov_box = box_header.get_box_size();
+        if (end_of_moov_box > std::numeric_limits<uint64_t>::max() - moov_box_start) {
+          return {heif_error_Invalid_input,
+                  heif_suberror_No_moov_box,
+                  "Cannot read moov box with invalid size"};
+        }
+        end_of_moov_box += moov_box_start;
       }
-      end_of_moov_box += moov_box_start;
       if (m_max_length < end_of_moov_box) {
         m_max_length = m_stream_reader->request_range(moov_box_start, end_of_moov_box);
       }

@@ -37,6 +37,7 @@
 #include "plugin_registry.h"
 #include "security_limits.h"
 
+#include <algorithm>
 #include <limits>
 #include <cassert>
 #include <cstring>
@@ -79,19 +80,24 @@ std::shared_ptr<HeifFile> ImageItem::get_file() const
 }
 
 
-heif_property_id ImageItem::add_property(std::shared_ptr<Box> property, bool essential)
+heif_property_id ImageItem::add_property(const std::shared_ptr<Box>& property, bool essential)
 {
   if (!property) {
     return 0;
   }
 
-  // TODO: is this correct? What happens when add_property does deduplicate the property?
-  m_properties.push_back(property);
+  // HeifFile::add_property() deduplicates the property box, so only remember it here if the
+  // item does not hold it yet. The returned id is the position in the item's property list and
+  // is correct in both cases.
+  if (std::find(m_properties.begin(), m_properties.end(), property) == m_properties.end()) {
+    m_properties.push_back(property);
+  }
+
   return get_file()->add_property(get_id(), property, essential);
 }
 
 
-heif_property_id ImageItem::add_property_without_deduplication(std::shared_ptr<Box> property, bool essential)
+heif_property_id ImageItem::add_property_without_deduplication(const std::shared_ptr<Box>& property, bool essential)
 {
   if (!property) {
     return 0;
@@ -177,14 +183,14 @@ std::shared_ptr<ImageItem> ImageItem::alloc_for_infe_box(HeifContext* ctx, const
     std::stringstream sstr;
     sstr << "Image item of type '" << fourcc_to_string(item_type) << "' is not supported.";
     Error err{ heif_error_Unsupported_feature, heif_suberror_Unsupported_image_type, sstr.str() };
-    return std::make_shared<ImageItem_Error>(item_type, id, err);
+    return std::make_shared<ImageItem_Error>(ctx, item_type, id, err);
 #endif
   }
   else if (item_type == fourcc("j2k1")) {
     return std::make_shared<ImageItem_JPEG2000>(ctx, id);
   }
   else if (item_type == fourcc("lhv1")) {
-    return std::make_shared<ImageItem_Error>(item_type, id,
+    return std::make_shared<ImageItem_Error>(ctx, item_type, id,
                                              Error{heif_error_Unsupported_feature,
                                                    heif_suberror_Unsupported_image_type,
                                                    "Layered HEVC images (lhv1) are not supported yet"});
@@ -309,7 +315,9 @@ Result<Encoder::CodedImageData> ImageItem::encode_to_bitstream_and_boxes(const s
       input_height != encoded_height) {
 
     auto clap = std::make_shared<Box_clap>();
-    clap->set(input_width, input_height, encoded_width, encoded_height);
+    if (Error err = clap->set(input_width, input_height, encoded_width, encoded_height)) {
+      return err;
+    }
     codedImage.properties.push_back(clap);
   }
 
@@ -434,7 +442,9 @@ Error ImageItem::encode_to_item(HeifContext* ctx,
   }
 
   // TODO: move this into encode_to_bistream_and_boxes()
-  ctx->get_heif_file()->add_orientation_properties(image_id, options.image_orientation);
+  if (Error err = ctx->get_heif_file()->add_orientation_properties(image_id, options.image_orientation)) {
+    return err;
+  }
 
   return Error::Ok;
 }
@@ -521,7 +531,7 @@ int ImageItem::get_luma_bits_per_pixel() const
 {
   auto decoderResult = get_decoder();
   if (!decoderResult) {
-    return decoderResult.error();
+    return -1;
   }
 
   auto decoder = *decoderResult;
@@ -534,7 +544,7 @@ int ImageItem::get_chroma_bits_per_pixel() const
 {
   auto decoderResult = get_decoder();
   if (!decoderResult) {
-    return decoderResult.error();
+    return -1;
   }
 
   auto decoder = *decoderResult;
@@ -879,20 +889,270 @@ void ImageItem::set_omaf_image_projection(heif_omaf_image_projection projection)
 }
 
 
+namespace {
+
+// Detect cycles in the decode reference graph reached from `root`, following the
+// same edges the decode recursion follows. This uses an explicit heap worklist
+// rather than recursion on purpose: the graph depth is influenced by the input
+// (a chain of derived items, and unbounded when the item-count limit is
+// disabled), so a recursive walk could exhaust the native stack and crash the
+// process before any decode, on the read path of an untrusted file. The worklist
+// grows on the heap instead, so depth is bounded only by available memory.
+//
+// It is a depth-first walk. `on_path` holds the items on the current
+// root-to-node path; reaching one that is already on the path is a cycle.
+// `verified` memoizes items whose subtree is already proven acyclic, so a shared
+// sub-image reached through several paths is visited once and the walk stays
+// linear rather than exponential in the number of root-to-item paths
+// (cf. the decode amplification bound, GHSA-x8xm-cm2c-cfc8).
+Error check_decode_reference_cycles(const ImageItem* root)
+{
+  std::set<heif_item_id> on_path;    // items on the current DFS path
+  std::set<heif_item_id> verified;   // items whose subtree is proven acyclic
+
+  // Collect the decode-input children of an item, in the exact order the decode
+  // recursion follows them: the derived-image ('dimg') inputs (grid tiles,
+  // overlay inputs, the 'iden' base) first, then the alpha ('auxl') auxiliary.
+  // The returned shared_ptrs keep the child ImageItems alive for as long as the
+  // frame that holds them stays on the worklist.
+  auto collect_children = [](const ImageItem* item) {
+    std::vector<std::shared_ptr<const ImageItem>> children;
+    auto file = item->get_file();
+    auto iref = file ? file->get_iref_box() : nullptr;
+    if (iref) {
+      for (heif_item_id child_id : iref->get_references(item->get_id(), fourcc("dimg"))) {
+        if (auto child = item->get_context()->get_image(child_id, true)) {
+          children.push_back(std::move(child));
+        }
+      }
+    }
+    if (const auto& alpha = item->get_alpha_channel()) {
+      children.push_back(alpha);
+    }
+    return children;
+  };
+
+  // One worklist frame per item currently on the DFS path. `next` is the index
+  // of the child to descend into next; when it reaches the end, the item's whole
+  // subtree has been proven acyclic and the item leaves the path.
+  struct Frame {
+    const ImageItem* item;
+    std::vector<std::shared_ptr<const ImageItem>> children;
+    size_t next = 0;
+  };
+
+  std::vector<Frame> stack;
+  on_path.insert(root->get_id());
+  stack.push_back(Frame{root, collect_children(root), 0});
+
+  while (!stack.empty()) {
+    Frame& top = stack.back();
+
+    if (top.next >= top.children.size()) {
+      // All children proven acyclic: leave the DFS path and memoize the subtree.
+      heif_item_id done_id = top.item->get_id();
+      on_path.erase(done_id);
+      verified.insert(done_id);
+      stack.pop_back();
+      continue;
+    }
+
+    const ImageItem* child = top.children[top.next++].get();
+    // From here on `top` must not be used: the push_back below may reallocate
+    // `stack` and invalidate the reference.
+
+    heif_item_id child_id = child->get_id();
+    if (on_path.find(child_id) != on_path.end()) {
+      return {heif_error_Invalid_input,
+              heif_suberror_Item_reference_cycle,
+              "Image reference cycle"};
+    }
+    if (verified.find(child_id) != verified.end()) {
+      continue;  // subtree already proven acyclic; do not descend into it again
+    }
+
+    on_path.insert(child_id);
+    auto grandchildren = collect_children(child);
+    stack.push_back(Frame{child, std::move(grandchildren), 0});
+  }
+
+  return Error::Ok;
+}
+
+
+// --- MIAF derived-image dependency constraints (ISO/IEC 23000-22, clause 7.3.11)
+//
+// MIAF restricts the derivation chain to a fixed order. From base to top it is:
+//   coded image(s) -> [iden] -> grid -> [iden] -> overlay -> [iden]
+// (7.3.11.1), plus: an 'iden' shall not be derived directly from another 'iden'
+// (7.3.11.2), and a grid tile that is an 'iden' must refer directly to a coded
+// image (7.3.11.4.1). So, ignoring 'iden', a chain may apply overlay above grid
+// above the coded base, each at most once. We model that with a "structural
+// rank": coded=0, grid=1, overlay=2. Walking from the top down, each derived
+// item must have rank <= the rank its position allows, and it lowers the rank
+// allowed for its own inputs (grid inputs must be coded; overlay inputs may be
+// grid or below). 'iden' is transparent to the rank but must not sit directly
+// on another 'iden'. Only the 'dimg' derivation is constrained here; auxiliary
+// images are checked as their own fresh chains.
+enum { MIAF_RANK_CODED = 0, MIAF_RANK_GRID = 1, MIAF_RANK_OVERLAY = 2 };
+
+int miaf_structural_rank(const ImageItem* item, bool& is_iden)
+{
+  uint32_t type = item->get_infe_type();
+  is_iden = (type == fourcc("iden"));
+  if (type == fourcc("iovl")) { return MIAF_RANK_OVERLAY; }
+  if (type == fourcc("grid")) { return MIAF_RANK_GRID; }
+  return MIAF_RANK_CODED;  // coded image, or 'iden' (rank unused when is_iden)
+}
+
+// `max_rank` is the highest structural rank allowed at this item's position;
+// `parent_is_iden` is true when the immediate parent on the derivation path is
+// an 'iden'. `verified` memoizes (item, max_rank, parent_is_iden) triples that
+// already passed, keeping a shared sub-image from being re-walked per path.
+Error check_miaf_derivation_constraints(const ImageItem* item,
+                                        int max_rank, bool parent_is_iden,
+                                        std::set<uint64_t>& verified)
+{
+  heif_item_id id = item->get_id();
+
+  bool is_iden = false;
+  int rank = miaf_structural_rank(item, is_iden);
+
+  if (is_iden) {
+    if (parent_is_iden) {
+      return {heif_error_Invalid_input, heif_suberror_Unspecified,
+              "MIAF: an 'iden' image is derived directly from another 'iden' image"};
+    }
+  }
+  else if (rank > max_rank) {
+    return {heif_error_Invalid_input, heif_suberror_Unspecified,
+            "MIAF: derived-image dependencies are not in the order allowed by ISO/IEC 23000-22"};
+  }
+
+  uint64_t key = (static_cast<uint64_t>(id) << 4) |
+                 (static_cast<uint64_t>(max_rank & 0x3) << 2) |
+                 (parent_is_iden ? 2u : 0u) | (is_iden ? 1u : 0u);
+  if (!verified.insert(key).second) {
+    return Error::Ok;  // already verified in this context
+  }
+
+  // Rank budget passed to this item's own 'dimg' inputs.
+  int child_max_rank;
+  bool child_parent_is_iden;
+  if (is_iden) {
+    child_max_rank = max_rank;          // transparent: inputs keep this position
+    child_parent_is_iden = true;
+  }
+  else if (rank == MIAF_RANK_OVERLAY) {
+    child_max_rank = MIAF_RANK_GRID;    // overlay inputs: grid or below
+    child_parent_is_iden = false;
+  }
+  else if (rank == MIAF_RANK_GRID) {
+    child_max_rank = MIAF_RANK_CODED;   // grid inputs: coded (or iden -> coded)
+    child_parent_is_iden = false;
+  }
+  else {
+    return Error::Ok;                   // coded image: leaf of the derivation chain
+  }
+
+  auto file = item->get_file();
+  auto iref = file ? file->get_iref_box() : nullptr;
+  if (iref) {
+    for (heif_item_id child_id : iref->get_references(id, fourcc("dimg"))) {
+      auto child = item->get_context()->get_image(child_id, true);
+      if (child) {
+        if (Error err = check_miaf_derivation_constraints(child.get(), child_max_rank,
+                                                          child_parent_is_iden, verified)) {
+          return err;
+        }
+      }
+    }
+  }
+
+  // An auxiliary (e.g. alpha) image is a separate image whose own derivation
+  // chain must independently satisfy MIAF, so check it as a fresh chain.
+  if (auto alpha = item->get_alpha_channel()) {
+    if (Error err = check_miaf_derivation_constraints(alpha.get(), MIAF_RANK_OVERLAY,
+                                                      /*parent_is_iden=*/false, verified)) {
+      return err;
+    }
+  }
+
+  return Error::Ok;
+}
+
+} // namespace
+
+
+Error ImageItem::verify_decodable() const
+{
+  // Always: reject a cyclic decode reference graph (both 'dimg' and 'auxl'
+  // edges) before decoding. See the declaration in image_item.h.
+  if (Error err = check_decode_reference_cycles(this)) {
+    return err;
+  }
+
+  // Optionally: enforce MIAF's restricted derived-image dependencies
+  // (ISO/IEC 23000-22, clause 7.3.11). Applied when the file declares the 'miaf'
+  // brand.
+  //
+  // TODO(v1.24.x): also apply this when a security-limits flag
+  // (always_apply_MIAF_derivation_constraints) is set, so that a malicious file
+  // cannot bypass the check simply by omitting the 'miaf' brand. That flag is a
+  // heif_security_limits API addition and therefore has to wait for v1.24.x.
+  bool apply_miaf = false;
+  if (auto file = get_file()) {
+    if (auto ftyp = file->get_ftyp_box()) {
+      apply_miaf = ftyp->has_compatible_brand(heif_brand2_miaf);
+    }
+  }
+
+  if (apply_miaf) {
+    std::set<uint64_t> verified;
+    if (Error err = check_miaf_derivation_constraints(this, MIAF_RANK_OVERLAY,
+                                                      /*parent_is_iden=*/false, verified)) {
+      return err;
+    }
+  }
+
+  return Error::Ok;
+}
+
+
 Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_image(const heif_decoding_options& options,
                                                                 bool decode_tile_only, uint32_t tile_x0, uint32_t tile_y0,
-                                                                std::set<heif_item_id> processed_ids) const
+                                                                DecodeTraversalState decode_state) const
 {
   // Check for cycles before taking m_decode_mutex: a derived item that
   // (transitively) references itself would otherwise re-enter decode_image()
   // on the same ImageItem and self-deadlock on the non-recursive mutex.
   // The matching insert lives inside decode_compressed_image() of derived
-  // items (grid/overlay/iden), so the current item is in processed_ids only
+  // items (grid/overlay/iden), so the current item is in decode_state only
   // when called from one of its own descendants.
-  if (processed_ids.contains(m_id)) {
+  //
+  // Second-layer hardening, not required for correctness: the top-level decode
+  // already ran ImageItem::verify_decodable() (HeifContext::decode_image), which
+  // proves the whole reachable decode graph is acyclic before any recursion, so
+  // this per-path check can never fire on a graph that reached here. It is kept
+  // as a cheap in-decode backstop, and the same applies to the equivalent checks
+  // in decode_compressed_image() and in grid/overlay/iden. We may remove them in
+  // the future once verify_decodable() is the sole cycle guard.
+  if (decode_state.processed_ids.contains(m_id)) {
     return Error{heif_error_Invalid_input,
                  heif_suberror_Unspecified,
                  "'iref' has cyclic references"};
+  }
+
+  // Bound the total number of sub-image decodes for this top-level decode.
+  // Derived images (grid/iovl/iden) can reference the same base image through
+  // indirection, and because the cycle-detection set is per-path, a shared
+  // subtree is otherwise re-decoded once per path that reaches it, which grows
+  // as branch^depth for nested references. This is the single choke point that
+  // every item decode passes through. (GHSA-x8xm-cm2c-cfc8)
+  if (!decode_state.count_decode()) {
+    return Error{heif_error_Invalid_input,
+                 heif_suberror_Security_limit_exceeded,
+                 "Too many derived-image decode operations (possible reference amplification)"};
   }
 
   if (m_item_error) {
@@ -924,15 +1184,16 @@ Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_image(const heif_decod
 
   // --- decode image
 
-  Result<std::shared_ptr<HeifPixelImage>> decodingResult = decode_compressed_image(options, decode_tile_only, tile_x0, tile_y0, processed_ids);
+  Result<std::shared_ptr<HeifPixelImage>> decodingResult = decode_compressed_image(options, decode_tile_only, tile_x0, tile_y0, decode_state);
   if (!decodingResult) {
     return decodingResult.error();
   }
 
   auto img = *decodingResult;
   if (!img) {
-    // Can happen if missing tiled image is decoded in non-strict mode.
-    return Error(heif_error_Decoder_plugin_error, heif_suberror_Unspecified);
+    // Safety net: no known decoding path returns a null image without an error anymore.
+    return Error(heif_error_Decoder_plugin_error, heif_suberror_Unspecified,
+                 "Decoding returned no image");
   }
 
   // --- validate the decoded image against the signaled size (pre-transform)
@@ -984,10 +1245,15 @@ Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_image(const heif_decod
           uint32_t img_width = img->get_width();
           uint32_t img_height = img->get_height();
 
-          int left = clap->left_rounded(img_width);
-          int right = clap->right_rounded(img_width);
-          int top = clap->top_rounded(img_height);
-          int bottom = clap->bottom_rounded(img_height);
+          auto clapCrop = clap->get_crop(img_width, img_height);
+          if (!clapCrop) {
+            return clapCrop.error();
+          }
+
+          int left = clapCrop->left;
+          int right = clapCrop->right;
+          int top = clapCrop->top;
+          int bottom = clapCrop->bottom;
 
           if (left < 0) { left = 0; }
           if (top < 0) { top = 0; }
@@ -1033,7 +1299,18 @@ Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_image(const heif_decod
       return alpha_image->get_item_error();
     }
 
-    auto alphaDecodingResult = alpha_image->decode_image(options, decode_tile_only, tile_x0, tile_y0, processed_ids);
+    // Record this item on the current decode path before following the alpha
+    // ('auxl') edge. Unlike the derived-image ('dimg') edges, whose cycle-guard
+    // insert happens inside decode_compressed_image(), the alpha edge is
+    // followed here in the base decode_image() using this frame's own
+    // decode_state. decode_compressed_image() only received a *copy* of it, so
+    // its insert of m_id is invisible here. Without adding m_id ourselves, a
+    // cycle of alpha references (auxl A->B, B->A) would re-enter decode_image()
+    // on an item whose non-recursive m_decode_mutex is still held one frame up,
+    // deadlocking the decode thread. (GHSA-8fmq-r4pf-7m57)
+    decode_state.processed_ids.insert(m_id);
+
+    auto alphaDecodingResult = alpha_image->decode_image(options, decode_tile_only, tile_x0, tile_y0, decode_state);
     if (!alphaDecodingResult) {
       return alphaDecodingResult.error();
     }
@@ -1065,7 +1342,7 @@ Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_image(const heif_decod
     //       It might also be that a specific output format implies that alpha is scaled (RGBA32). That would favor an enum for the scaling filter option + a bool to switch auto-filtering on.
     //       But we can only do this when libheif itself doesn't assume anymore that the alpha channel has the same resolution.
 
-    if ((alpha_image->get_width() != img->get_width()) || (alpha_image->get_height() != img->get_height())) {
+    if ((alpha->get_width() != img->get_width()) || (alpha->get_height() != img->get_height())) {
       std::shared_ptr<HeifPixelImage> scaled_alpha;
       Error err = alpha->scale_nearest_neighbor(scaled_alpha, img->get_width(), img->get_height(), m_heif_context->get_security_limits());
       if (err) {
@@ -1073,7 +1350,9 @@ Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_image(const heif_decod
       }
       alpha = std::move(scaled_alpha);
     }
-    img->transfer_channel_from_image_as(alpha, channel, heif_channel_Alpha);
+    if (Error err = img->transfer_channel_from_image_as(alpha, channel, heif_channel_Alpha)) {
+      return err;
+    }
 
     if (is_premultiplied_alpha()) {
       img->set_premultiplied_alpha(true);
@@ -1242,15 +1521,15 @@ Result<std::vector<uint8_t>> ImageItem::read_bitstream_configuration_data_overri
 
 Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_compressed_image(const heif_decoding_options& options,
                                                                            bool decode_tile_only, uint32_t tile_x0, uint32_t tile_y0,
-                                                                           std::set<heif_item_id> processed_ids) const
+                                                                           DecodeTraversalState decode_state) const
 {
-  if (processed_ids.contains(m_id)) {
+  if (decode_state.processed_ids.contains(m_id)) {
     return Error{heif_error_Invalid_input,
                  heif_suberror_Unspecified,
                  "'iref' has cyclic references"};
   }
 
-  processed_ids.insert(m_id);
+  decode_state.processed_ids.insert(m_id);
 
 
   DataExtent extent;
@@ -1270,7 +1549,7 @@ Result<std::shared_ptr<HeifPixelImage>> ImageItem::decode_compressed_image(const
   // when the codec bitstream lies about its dimensions.
   heif_security_limits tightened = tighten_image_size_limit_for_ispe(
       get_context()->get_security_limits(),
-      get_width(), get_height(),
+      get_ispe_width(), get_ispe_height(),
       max_coding_unit_size_for_codec(get_compression_format()));
 
   return decoder->decode_single_frame_from_compressed_data(options, &tightened);
@@ -1324,7 +1603,7 @@ heif_image_tiling ImageItem::get_heif_image_tiling() const
   // process_image_transformations_on_tiling(), so handing it the already
   // transformed m_width/m_height would apply them a second time. For a clap
   // that shrinks the image to zero this double application underflowed inside
-  // Box_clap::left_rounded() (GHSA-jc8f-p23p-5hjg); for irot/imir it silently
+  // Box_clap::get_crop() (GHSA-jc8f-p23p-5hjg); for irot/imir it silently
   // produced wrong dimensions. The grid/unc/tiled overrides likewise report
   // coded dimensions.
   uint32_t coded_width = m_width;
@@ -1471,10 +1750,15 @@ Error ImageItem::process_image_transformations_on_tiling(heif_image_tiling& tili
     if (auto clap = std::dynamic_pointer_cast<Box_clap>(property)) {
       std::shared_ptr<HeifPixelImage> clap_img;
 
-      int left = clap->left_rounded(tiling.image_width);
-      int right = clap->right_rounded(tiling.image_width);
-      int top = clap->top_rounded(tiling.image_height);
-      int bottom = clap->bottom_rounded(tiling.image_height);
+      auto cropResult = clap->get_crop(tiling.image_width, tiling.image_height);
+      if (!cropResult) {
+        return cropResult.error();
+      }
+
+      int left = cropResult->left;
+      int right = cropResult->right;
+      int top = cropResult->top;
+      int bottom = cropResult->bottom;
 
       if (left < 0) { left = 0; }
       if (top < 0) { top = 0; }

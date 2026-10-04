@@ -390,8 +390,13 @@ uint32 ComputeBufferSize (uint32 pixelType,
 
 inline uint64 Abs_int64 (int64 x)
 	{
+
+	// CR-4208475 Q-L12: Convert before negation so INT64_MIN is handled with
+	// defined unsigned modulo arithmetic.
+
+	const uint64 value = (uint64) x;
 	
-	return (uint64) (x < 0 ? -x : x);
+	return x < 0 ? 0 - value : value;
 
 	}
 
@@ -640,15 +645,6 @@ inline uint8 Round_uint8 (real64 x)
 
 /*****************************************************************************/
 
-inline int32 Round_int32 (real32 x)
-	{
-	
-	return (int32) (x > 0.0f ? x + 0.5f : x - 0.5f);
-	
-	}
-
-/*****************************************************************************/
-
 inline int32 Round_int32 (real64 x)
 	{
 	
@@ -670,6 +666,18 @@ inline int32 Round_int32 (real64 x)
 		return 0;
 		}
 	
+	}
+
+/*****************************************************************************/
+
+inline int32 Round_int32 (real32 x)
+	{
+
+	// CR-4208475 N-L5: Match the real64 overload's finite and range checks
+	// before converting parsed or caller-provided floating-point values.
+
+	return Round_int32 ((real64) x);
+
 	}
 
 /*****************************************************************************/
@@ -728,7 +736,24 @@ inline uint32 Round_uint32 (real64 x)
 inline int64 Round_int64 (real64 x)
 	{
 	
-	return (int64) (x >= 0.0 ? x + 0.5 : x - 0.5);
+	const real64 temp = x >= 0.0 ? x + 0.5 : x - 0.5;
+
+	// CR-4208475 O-L2: Match the int32 helper's fail-closed contract
+	// before converting floating-point values to integer. NaN, infinity,
+	// or out-of-range input would otherwise make the cast undefined.
+
+	if (temp > real64 (std::numeric_limits<int64>::min ()) - 1.0 &&
+		temp < real64 (std::numeric_limits<int64>::max ()) + 1.0)
+		{
+		return (int64) temp;
+		}
+
+	else
+		{
+		ThrowProgramError ("Overflow in Round_int64");
+		// Dummy return.
+		return 0;
+		}
 	
 	}
 
@@ -751,7 +776,7 @@ inline int64 Real64ToFixed64 (real64 x)
 inline real64 Fixed64ToReal64 (int64 x)
 	{
 	
-	return x * (1.0 / (real64) kFixed64_One);
+	return ((real64)x) * (1.0 / (real64) kFixed64_One);
 	
 	}
 
@@ -1698,7 +1723,8 @@ class dng_image_stats
 
 		bool operator== (const dng_image_stats &src) const;
 
-		void Parse (dng_stream &stream);
+		void Parse (dng_stream &stream,
+					uint32 tagByteCount);
 
 		#if qDNGValidate
 		void Dump () const;

@@ -12,6 +12,7 @@
 #include "dng_exceptions.h"
 #include "dng_orientation.h"
 #include "dng_pixel_buffer.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_tag_types.h"
 #include "dng_tile_iterator.h"
 #include "dng_utils.h"
@@ -307,9 +308,14 @@ void dng_image::GetRepeat (dng_pixel_buffer &buffer,
 									  srcArea.TL ());
 										 
 		// Find quadrant split coordinates.
+
+		// CR-4208475 Q-L3: Repeating areas can use translated coordinates near
+		// the int32 limits, so derive every split with checked arithmetic.
 		
-		int32 splitV = newArea.t + repeat.v - phase.v;
-		int32 splitH = newArea.l + repeat.h - phase.h;
+		int32 splitV = SafeInt32Sub (SafeInt32Add (newArea.t, repeat.v),
+									 phase.v);
+		int32 splitH = SafeInt32Sub (SafeInt32Add (newArea.l, repeat.h),
+									 phase.h);
 			
 		// Top-left quadrant.
 		
@@ -451,6 +457,11 @@ void dng_image::GetEdge (dng_pixel_buffer &buffer,
 			
 		case edge_repeat_zero_last:
 			{
+
+			// CR-4208475 Q-M1: fPlane is absolute while fPlanes is a count.
+			// Preserve the subset origin when selecting its final plane.
+
+			DNG_REQUIRE (buffer.fPlanes > 0, "Empty pixel buffer plane range");
 			
 			if (buffer.fPlanes > 1)
 				{
@@ -468,7 +479,8 @@ void dng_image::GetEdge (dng_pixel_buffer &buffer,
 				
 			dng_pixel_buffer buffer2 (buffer);
 			
-			buffer2.fPlane	= buffer.fPlanes - 1;
+			buffer2.fPlane	= SafeUint32Add (buffer.fPlane,
+											 buffer.fPlanes - 1);
 			buffer2.fPlanes = 1;
 			
 			buffer2.fData = buffer.DirtyPixel (buffer2.fArea.t,
@@ -514,20 +526,22 @@ static void WrapLeft (dng_pixel_buffer &buffer,
 
 	DNG_REQUIRE (imageBounds.W () > 0, "WrapLeft: imageBounds.W");
 
-	int32 dstLeftPhase = (imageBounds.l - dstLeft) % imageBounds.W ();
+	int32 dstLeftPhase =
+		SafeInt32Sub (imageBounds.l, dstLeft) % imageBounds.W ();
 
 	while (remainingPixels > 0)
 		{
 
-		int32 srcRight = imageBounds.r - dstLeftPhase;
+		int32 srcRight = SafeInt32Sub (imageBounds.r, dstLeftPhase);
 
 		int32 pixelCount = Min_int32 (remainingPixels,
-									  maxPixelsPerIter - dstLeftPhase);
+									  SafeInt32Sub (maxPixelsPerIter,
+													  dstLeftPhase));
 
-		dstLeft -= pixelCount;
+		dstLeft = SafeInt32Sub (dstLeft, pixelCount);
 					
 		dng_rect srcArea (srcTop,
-						  srcRight - pixelCount,
+						  SafeInt32Sub (srcRight, pixelCount),
 						  srcBottom,
 						  srcRight);
 
@@ -543,7 +557,7 @@ static void WrapLeft (dng_pixel_buffer &buffer,
 		image.Get (tmpBuffer,
 				   dng_image::edge_none);
 
-		remainingPixels -= pixelCount;
+		remainingPixels = SafeInt32Sub (remainingPixels, pixelCount);
 
 		dstLeftPhase = 0; // Only valid/needed if remainingPixels > 0.
 
@@ -570,20 +584,22 @@ static void WrapRight (dng_pixel_buffer &buffer,
 
 	DNG_REQUIRE (imageBounds.W () > 0, "WrapRight: imageBounds.W");
 
-	int32 dstLeftPhase = (dstLeft - imageBounds.r) % imageBounds.W ();
+	int32 dstLeftPhase =
+		SafeInt32Sub (dstLeft, imageBounds.r) % imageBounds.W ();
 
 	while (remainingPixels > 0)
 		{
 
-		int32 srcLeft = imageBounds.l + dstLeftPhase;
+		int32 srcLeft = SafeInt32Add (imageBounds.l, dstLeftPhase);
 
 		int32 pixelCount = Min_int32 (remainingPixels,
-									  maxPixelsPerIter - dstLeftPhase);
+									  SafeInt32Sub (maxPixelsPerIter,
+													  dstLeftPhase));
 
 		dng_rect srcArea (srcTop,
 						  srcLeft,
 						  srcBottom,
-						  srcLeft + pixelCount);
+						  SafeInt32Add (srcLeft, pixelCount));
 
 		auto tmpBuffer = buffer;
 
@@ -597,9 +613,9 @@ static void WrapRight (dng_pixel_buffer &buffer,
 		image.Get (tmpBuffer,
 				   dng_image::edge_none);
 
-		dstLeft += pixelCount;
+		dstLeft = SafeInt32Add (dstLeft, pixelCount);
 
-		remainingPixels -= pixelCount;
+		remainingPixels = SafeInt32Sub (remainingPixels, pixelCount);
 
 		dstLeftPhase = 0; // Only valid/needed if remainingPixels > 0.
 
@@ -638,13 +654,21 @@ static void WrapCornerHorizontal (dng_pixel_buffer &buffer,
 
 	if (isTop)
 		{
-		tmpArea.t = tmpArea.b - iRepeatSize;
+		tmpArea.t = SafeInt32Sub (tmpArea.b, iRepeatSize);
 		}
 
 	else
 		{
-		tmpArea.b = tmpArea.t + iRepeatSize;
+		tmpArea.b = SafeInt32Add (tmpArea.t, iRepeatSize);
 		}
+
+	const int32 srcTop = isTop
+							? imageBounds.t
+							: SafeInt32Sub (imageBounds.b, iRepeatSize);
+
+	const int32 srcBottom = isTop
+								? SafeInt32Add (imageBounds.t, iRepeatSize)
+								: imageBounds.b;
 
 	if (isLeft)
 		{
@@ -652,8 +676,8 @@ static void WrapCornerHorizontal (dng_pixel_buffer &buffer,
 		WrapLeft (buffer,
 				  image,
 				  tmpArea,
-				  isTop ? (imageBounds.t) : (imageBounds.b - iRepeatSize),
-				  isTop ? (imageBounds.t + iRepeatSize) : (imageBounds.b));
+				  srcTop,
+				  srcBottom);
 
 		}
 
@@ -663,8 +687,8 @@ static void WrapCornerHorizontal (dng_pixel_buffer &buffer,
 		WrapRight (buffer,
 				   image,
 				   tmpArea,
-				   isTop ? (imageBounds.t) : (imageBounds.b - iRepeatSize),
-				   isTop ? (imageBounds.t + iRepeatSize) : (imageBounds.b));
+				   srcTop,
+				   srcBottom);
 		
 		}
 	
@@ -711,6 +735,21 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 		ThrowNotYetImplemented ("Unsupported edge option");
 		
 		}
+
+	// CR-4208475 M-L4: repeatV and repeatH are uint32 but every downstream
+	// edge-fill site narrows them to int32 (e.g. fBounds.t + (int32)
+	// repeatV, fBounds.r - (int32) repeatH) and feeds them into dng_rect
+	// arithmetic. Values above INT32_MAX would wrap to negative on the
+	// cast and silently corrupt the edge rects. In normal use these are
+	// small constants (Bayer pattern dimensions, mosaic kernel sizes),
+	// so reject obviously out-of-range inputs up front.
+
+	DNG_REQUIRE (repeatV <= (uint32) INT32_MAX &&
+				 repeatH <= (uint32) INT32_MAX,
+				 "dng_image::Get repeat sizes exceed int32 range");
+
+	const int32 repeatV32 = (int32) repeatV;
+	const int32 repeatH32 = (int32) repeatH;
 
 	// See if we need to pad the edge values.
 	
@@ -762,8 +801,8 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 						 edgeOption,
 						 dng_rect (fBounds.t,
 								   fBounds.l,
-								   fBounds.t + (int32) repeatV,
-								   fBounds.l + (int32) repeatH),
+								   SafeInt32Add (fBounds.t, repeatV32),
+								   SafeInt32Add (fBounds.l, repeatH32)),
 						 areaTL);
 
 				}
@@ -788,7 +827,7 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 					 tmpEdgeOption,
 					 dng_rect (fBounds.t,
 							   areaTM.l,
-							   fBounds.t + (int32) repeatV,
+							   SafeInt32Add (fBounds.t, repeatV32),
 							   areaTM.r),
 					 areaTM);
 			
@@ -819,8 +858,8 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 				GetEdge (buffer,
 						 edgeOption,
 						 dng_rect (fBounds.t,
-								   fBounds.r - (int32) repeatH,
-								   fBounds.t + (int32) repeatV,
+								   SafeInt32Sub (fBounds.r, repeatH32),
+								   SafeInt32Add (fBounds.t, repeatV32),
 								   fBounds.r),
 						 areaTR);
 
@@ -854,7 +893,7 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 						 dng_rect (areaLM.t,
 								   fBounds.l,
 								   areaLM.b,
-								   fBounds.l + (int32) repeatH),
+								   SafeInt32Add (fBounds.l, repeatH32)),
 						 areaLM);
 
 				}
@@ -885,7 +924,7 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 				GetEdge (buffer,
 						 edgeOption,
 						 dng_rect (areaRM.t,
-								   fBounds.r - (int32) repeatH,
+								   SafeInt32Sub (fBounds.r, repeatH32),
 								   areaRM.b,
 								   fBounds.r),
 						 areaRM);
@@ -918,10 +957,10 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 
 				GetEdge (buffer,
 						 edgeOption,
-						 dng_rect (fBounds.b - (int32) repeatV,
+						 dng_rect (SafeInt32Sub (fBounds.b, repeatV32),
 								   fBounds.l,
 								   fBounds.b,
-								   fBounds.l + (int32) repeatH),
+								   SafeInt32Add (fBounds.l, repeatH32)),
 						 areaBL);
 
 				}
@@ -944,7 +983,7 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 
 			GetEdge (buffer,
 					 tmpEdgeOption,
-					 dng_rect (fBounds.b - (int32) repeatV,
+					 dng_rect (SafeInt32Sub (fBounds.b, repeatV32),
 							   areaBM.l,
 							   fBounds.b,
 							   areaBM.r),
@@ -976,8 +1015,8 @@ void dng_image::Get (dng_pixel_buffer &buffer,
 
 				GetEdge (buffer,
 						 edgeOption,
-						 dng_rect (fBounds.b - (int32) repeatV,
-								   fBounds.r - (int32) repeatH,
+						 dng_rect (SafeInt32Sub (fBounds.b, repeatV32),
+								   SafeInt32Sub (fBounds.r, repeatH32),
 								   fBounds.b,
 								   fBounds.r),
 						 areaBR);

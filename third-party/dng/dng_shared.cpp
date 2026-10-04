@@ -15,6 +15,7 @@
 #include "dng_host.h"
 #include "dng_memory.h"
 #include "dng_parse_utils.h"
+#include "dng_safe_arithmetic.h"
 #include "dng_sdk_limits.h"
 #include "dng_tag_codes.h"
 #include "dng_tag_types.h"
@@ -1402,7 +1403,8 @@ bool dng_camera_profile_info::ParseTag (dng_stream &stream,
 			fProfileGainTableMap.reset
 				(dng_gain_table_map::GetStream (host,
 												stream,
-												useVersion2format));
+												useVersion2format,
+												tagCount));
 
 			auto pgtm = fProfileGainTableMap;
 			
@@ -1411,7 +1413,7 @@ bool dng_camera_profile_info::ParseTag (dng_stream &stream,
 			if (pgtm && gVerbose)
 				{
 
-				dng_md5_printer printer;
+				dng_md5_printer_le_stream printer;
 				
 				pgtm->AddDigest (printer);
 
@@ -1427,7 +1429,8 @@ bool dng_camera_profile_info::ParseTag (dng_stream &stream,
 
 			#endif	// qDNGValidate
 			
-			if (stream.Position () > tagOffset + (uint64) tagCount)
+			if (stream.Position () > SafeUint64Add (tagOffset,
+													(uint64) tagCount))
 				ThrowBadFormat ("tcProfileGainTableMap2 parse error");
 			
 			break;
@@ -1518,14 +1521,15 @@ bool dng_camera_profile_info::ParseTag (dng_stream &stream,
 
 			fMaskedRGBTables.reset (dng_masked_rgb_tables::GetStream (host,
 																	  stream,
-																	  isDraft));
+																	  isDraft,
+																	  tagCount));
 
 			#if qDNGValidate
 
 			if (gVerbose && fMaskedRGBTables)
 				{
 
-				dng_md5_printer printer;
+				dng_md5_printer_le_stream printer;
 				
 				fMaskedRGBTables->AddDigest (printer);
 
@@ -1543,7 +1547,8 @@ bool dng_camera_profile_info::ParseTag (dng_stream &stream,
 
 			#endif	// qDNGValidate
 			
-			if (stream.Position () > tagOffset + (uint64) tagCount)
+			if (stream.Position () > SafeUint64Add (tagOffset,
+													(uint64) tagCount))
 				{
 				
 				ThrowBadFormat ("tcRGBTables parse error");
@@ -1605,7 +1610,19 @@ bool dng_camera_profile_info::ParseExtended (dng_stream &stream)
 
 		uint32 offset = stream.Get_uint32 ();
 
-		stream.Skip (SafeUint32Sub (offset, 8u));
+		if (offset < 8)
+			{
+			return false;
+			}
+
+		const uint64 ifdOffset = SafeUint64Add (startPosition, offset);
+
+		if (ifdOffset > stream.Length ())
+			{
+			return false;
+			}
+
+		stream.SetReadPosition (ifdOffset);
 
 		// Start on IFD entries.
 
@@ -1615,11 +1632,23 @@ bool dng_camera_profile_info::ParseExtended (dng_stream &stream)
 			{
 			return false;
 			}
+
+		const uint32 entryTableBytes = SafeUint32Mult (ifdEntries, 12u);
+
+		if (SafeUint64Add (stream.Position (), entryTableBytes) > stream.Length ())
+			{
+			return false;
+			}
 		
 		for (uint32 tag_index = 0; tag_index < ifdEntries; tag_index++)
 			{
 			
-			stream.SetReadPosition (startPosition + 8 + 2 + tag_index * 12);
+			const uint64 entryOffset =
+				SafeUint64Add (ifdOffset,
+							   2u,
+							   SafeUint32Mult (tag_index, 12u));
+
+			stream.SetReadPosition (entryOffset);
 			
 			uint16 tagCode	= stream.Get_uint16 ();
 			uint32 tagType	= stream.Get_uint16 ();
@@ -1627,10 +1656,18 @@ bool dng_camera_profile_info::ParseExtended (dng_stream &stream)
 			
 			uint64 tagOffset = stream.Position ();
 
-			if (SafeUint32Mult (TagTypeSize (tagType), tagCount) > 4)
+			const uint32 tagSize = SafeUint32Mult (TagTypeSize (tagType),
+												   tagCount);
+
+			if (tagSize > 4)
 				{
 
-				tagOffset = startPosition + stream.Get_uint32 ();
+				tagOffset = SafeUint64Add (startPosition, stream.Get_uint32 ());
+
+				if (SafeUint64Add (tagOffset, tagSize) > stream.Length ())
+					{
+					return false;
+					}
 
 				stream.SetReadPosition (tagOffset);
 
@@ -1840,6 +1877,28 @@ bool dng_shared::ParseTag (dng_stream &stream,
 
 		}
 		
+	if (parentCode == 0 ||
+		(parentCode >= tcFirstChainedIFD &&
+		 parentCode <= tcLastChainedIFD))
+		{
+
+		// Parse tags allowed to appear in IFD0 or any IFD in the main chain.
+
+		if (Parse_main_chain_ifd (stream,
+								  exif,
+								  parentCode,
+								  tagCode,
+								  tagType,
+								  tagCount,
+								  tagOffset))
+			{
+
+			return true;
+
+			}
+
+		}
+
 	return false;
 		
 	}
@@ -1932,9 +1991,9 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 				
 					{
 					
-					dng_md5_printer printer;
+					dng_md5_direct_printer printer;
 		
-					printer.Process (data, count);
+					printer.ProcessPtr (data, count);
 					
 					printf ("IPTCDigest: ");
 					
@@ -1959,9 +2018,9 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 					if (removed != 0)
 						{
 					
-						dng_md5_printer printer;
+						dng_md5_direct_printer printer;
 			
-						printer.Process (data, count);
+						printer.ProcessPtr (data, count);
 						
 						printf ("IPTCDigest (ignoring zero padding): ");
 						
@@ -2068,7 +2127,7 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			break;
 			
 			}
-		
+			
 		case tcDNGVersion:
 			{
 			
@@ -2682,7 +2741,7 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			if (!CheckTagCount (parentCode, tagCode, tagCount, 16))
 				return false;
 				
-			stream.Get (fRawImageDigest.data, 16);
+			stream.Get (fRawImageDigest);
 				
 			#if qDNGValidate
 
@@ -2712,7 +2771,7 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			if (!CheckTagCount (parentCode, tagCode, tagCount, 16))
 				return false;
 				
-			stream.Get (fNewRawImageDigest.data, 16);
+			stream.Get (fNewRawImageDigest);
 			
 			#if qDNGValidate
 
@@ -2742,7 +2801,7 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			if (!CheckTagCount (parentCode, tagCode, tagCount, 16))
 				return false;
 				
-			stream.Get (fRawDataUniqueID.data, 16);
+			stream.Get (fRawDataUniqueID);
 				
 			#if qDNGValidate
 
@@ -2830,7 +2889,7 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			if (!CheckTagCount (parentCode, tagCode, tagCount, 16))
 				return false;
 				
-			stream.Get (fOriginalRawFileDigest.data, 16);
+			stream.Get (fOriginalRawFileDigest);
 				
 			#if qDNGValidate
 
@@ -3032,6 +3091,11 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 				
 			#endif
 			
+			if (tagCount > 1000)
+				{
+				ThrowBadFormat ("Too many ExtraCameraProfiles");
+				}
+
 			fExtraCameraProfiles.reserve (tagCount);
 			
 			for (uint32 index = 0; index < tagCount; index++)
@@ -3372,6 +3436,11 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			
 			uint32 count = tagCount >> 4;
 			
+			if (count > 10000)
+				{
+				ThrowBadFormat ("Too many BigTable entries");
+				}
+
 			fBigTableDigests.clear ();
 			fBigTableDigests.reserve (count);
 			
@@ -3386,7 +3455,7 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 				
 				dng_fingerprint fingerprint;
 				
-				stream.Get (fingerprint.data, 16);
+				stream.Get (fingerprint);
 				
 				fBigTableDigests.push_back (fingerprint);
 				
@@ -3493,8 +3562,9 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 				
 				fBigTableByteCounts [index] = (uint32) byteCount64;
 				
-				if (fBigTableByteCounts [index] +
-					fBigTableOffsets	[index] > stream.Length ())
+				if (fBigTableOffsets [index] > stream.Length () ||
+					fBigTableByteCounts [index] >
+						stream.Length () - fBigTableOffsets [index])
 					{
 					
 					DNG_REPORT ("Invalid big table byte count");
@@ -3555,8 +3625,8 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 				dng_fingerprint groupDigest;
 				dng_fingerprint instanceDigest;
 				
-				stream.Get (groupDigest	  .data, 16);
-				stream.Get (instanceDigest.data, 16);
+				stream.Get (groupDigest);
+				stream.Get (instanceDigest);
 
 				fBigTableGroupIndex.insert (std::make_pair (groupDigest,
 															instanceDigest));
@@ -3642,23 +3712,62 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 
 			char *ptr = &buf [0];
 
+			const uint64 startPosition = stream.Position ();
+
+			if (startPosition > 0xFFFFFFFFFFFFFFFFull - tagCount)
+				{
+				ThrowBadFormat ("Invalid ImageSequenceInfo tag count");
+				}
+
+			const uint64 endPosition = startPosition + tagCount;
+
+			auto getString = [&] ()
+				{
+
+				memset (ptr, 0, tagCount + 1);
+
+				uint32 index = 0;
+
+				while (stream.Position () < endPosition)
+					{
+
+					char c = (char) stream.Get_uint8 ();
+
+					if (index + 1 < tagCount)
+						ptr [index++] = c;
+
+					if (c == 0)
+						return;
+
+					}
+
+				ThrowBadFormat ("Unterminated ImageSequenceInfo string");
+
+				};
+
 			// Read sequence ID.
 
-			stream.Get_CString (ptr, tagCount);
+			getString ();
 
 			info.fSequenceID.Set (ptr);
 
 			// Read sequence type.
 			
-			stream.Get_CString (ptr, tagCount);
+			getString ();
 
 			info.fSequenceType.Set (ptr);
 
 			// Read frame info.
 
-			stream.Get_CString (ptr, tagCount);
+			getString ();
 
 			info.fFrameInfo.Set (ptr);
+
+			if (stream.Position () > endPosition ||
+				9 > endPosition - stream.Position ())
+				{
+				ThrowBadFormat ("Truncated ImageSequenceInfo fields");
+				}
 
 			// Get index, count, and final fields.
 
@@ -3668,6 +3777,8 @@ bool dng_shared::Parse_ifd0 (dng_stream &stream,
 			info.fCount = stream.Get_uint32 ();
 			
 			info.fIsFinal = stream.Get_uint8 ();
+
+			stream.SetReadPosition (endPosition);
 
 			#if qDNGValidate
 
@@ -4416,4 +4527,67 @@ bool dng_shared::IsValidDNG ()
 	
 	}
 	
+/*****************************************************************************/
+
+// Parses tags that may appear in any IFD in the main IFD chain
+// (IFD 0 or any chained IFD reached via the NextIFD pointer).
+// If a tag appears in more than one IFD then data from the last
+// occurrence will overwrite that of any previous occurrence.
+//
+// tcC2PAManifest:
+// Per the C2PA specification, the C2PA manifest tag shall be located
+// within the last IFD of the main-IFD chain.  For TIFF assets with a
+// single IFD, it resides in IFD 0.  For assets with more than one IFD,
+// it shall be in the last chained IFD.  Because any main-chain IFD is
+// a conformant location, we accept the tag from all of them and let
+// the last occurrence win (matching the C2PA spec's placement intent).
+
+bool dng_shared::Parse_main_chain_ifd (dng_stream &stream,
+									   dng_exif & /* exif */,
+									   uint32 parentCode,
+									   uint32 tagCode,
+									   uint32 tagType,
+									   uint32 tagCount,
+									   uint64 /* tagOffset */)
+	{
+
+	switch (tagCode)
+		{
+
+		case tcC2PAManifest:
+			{
+
+			CheckTagType (parentCode, tagCode, tagType, ttUndefined);
+
+			fC2PAManifestOffset = stream.Position ();
+			fC2PAManifestCount  = tagCount;
+
+			#if qDNGValidate
+
+			if (gVerbose)
+				{
+
+				printf ("C2PAManifest: offset = %llu, count = %u\n",
+						(unsigned long long) fC2PAManifestOffset,
+						(unsigned) 			 fC2PAManifestCount);
+
+				DumpHexAscii (stream, fC2PAManifestCount);
+
+				}
+
+			#endif
+
+			break;
+
+			}
+
+		default:
+			return false;
+
+		}
+
+	return true;
+
+	}
+
 /*****************************************************************************/

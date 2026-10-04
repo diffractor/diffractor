@@ -23,8 +23,10 @@
 
 #include "api/libheif/heif.h"
 #include "error.h"
+#include "security_limits.h"
 #include "nclx.h"
 #include <string>
+#include <utility>
 #include <vector>
 #include <memory>
 #include <mutex>
@@ -49,6 +51,14 @@ public:
   std::string content_type;
   std::string item_uri_type;
   std::vector<uint8_t> m_data;
+
+  // Accounts m_data against the context's total-memory budget for the lifetime of
+  // this metadata object. Metadata items may be (brotli/zlib) compressed and are
+  // held until the context is destroyed, so up to max_items of them accumulate.
+  // Without persistent accounting this cumulative decompressed memory bypasses the
+  // security limits (GHSA-24wx-9w62-c96w). MemoryHandle is move-only, which makes
+  // ImageMetadata move-only; it is only ever held via shared_ptr, so that is fine.
+  MemoryHandle m_memory_handle;
 };
 
 
@@ -157,9 +167,9 @@ public:
     return result;
   }
 
-  heif_property_id add_property(std::shared_ptr<Box> property, bool essential);
+  heif_property_id add_property(const std::shared_ptr<Box>& property, bool essential);
 
-  heif_property_id add_property_without_deduplication(std::shared_ptr<Box> property, bool essential);
+  heif_property_id add_property_without_deduplication(const std::shared_ptr<Box>& property, bool essential);
 
   void set_resolution(uint32_t w, uint32_t h)
   {
@@ -360,12 +370,25 @@ public:
   virtual Result<std::shared_ptr<HeifPixelImage>> decode_image(const heif_decoding_options& options,
                                                                bool decode_tile_only, uint32_t tile_x0,
                                                                uint32_t tile_y0,
-                                                               std::set<heif_item_id> processed_ids) const;
+                                                               DecodeTraversalState decode_state) const;
+
+  // Validate, before any decoding starts, that this item can be safely decoded:
+  // the graph of items reached by the decode recursion (derived-image 'dimg'
+  // inputs and the alpha 'auxl' auxiliary) must be acyclic. A reference cycle
+  // would otherwise let two parallel grid-tile workers take two item mutexes in
+  // opposite order and deadlock (GHSA-prgh-72vc-3xmc). Cycles are not rejected
+  // at file load, so that a file's independently valid items stay decodable;
+  // this per-item decode-time check is what makes a cyclic item safe. Called
+  // once per top-level decode in HeifContext::decode_image(). This is the single
+  // place to add further
+  // decodability constraints (e.g. no alpha auxiliary on an alpha image, MIAF
+  // derivation-chain limits).
+  Error verify_decodable() const;
 
   virtual Result<std::shared_ptr<HeifPixelImage>> decode_compressed_image(const heif_decoding_options& options,
                                                                           bool decode_tile_only, uint32_t tile_x0,
                                                                           uint32_t tile_y0,
-                                                                          std::set<heif_item_id> processed_ids) const;
+                                                                          DecodeTraversalState decode_state) const;
 
   // Validate the just-decoded pixel image against the size signaled for this item.
   // Called by decode_image() right after decode_compressed_image(), BEFORE transforms,
@@ -522,8 +545,12 @@ class ImageItem_Error : public ImageItem
 public:
   // dummy ImageItem class that is a placeholder for unsupported item types
 
-  ImageItem_Error(uint32_t item_type, heif_item_id id, Error err)
-    : ImageItem(nullptr, id), m_item_type(item_type), m_item_error(err) {}
+  // Carry the real context, like every other ImageItem. Error items used to be
+  // constructed with a null context, which made get_context()/get_file() a
+  // null-deref hazard for any code that reaches an error item (e.g. an error
+  // item attached as a depth/aux image, then handed to verify_decodable()).
+  ImageItem_Error(HeifContext* context, uint32_t item_type, heif_item_id id, Error err)
+    : ImageItem(context, id), m_item_type(item_type), m_item_error(std::move(err)) {}
 
   uint32_t get_infe_type() const override
   {
@@ -535,14 +562,14 @@ public:
   Result<std::shared_ptr<HeifPixelImage>> decode_image(const heif_decoding_options& options,
                                                        bool decode_tile_only, uint32_t tile_x0,
                                                        uint32_t tile_y0,
-                                                       std::set<heif_item_id> processed_ids) const override
+                                                       DecodeTraversalState decode_state) const override
   {
     return m_item_error;
   }
 
   Result<std::shared_ptr<HeifPixelImage>> decode_compressed_image(const heif_decoding_options& options,
                                                                   bool decode_tile_only, uint32_t tile_x0,
-                                                                  uint32_t tile_y0, std::set<heif_item_id> processed_ids) const override
+                                                                  uint32_t tile_y0, DecodeTraversalState decode_state) const override
   {
     return m_item_error;
   }

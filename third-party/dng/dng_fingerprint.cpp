@@ -10,6 +10,9 @@
 
 #include "dng_assertions.h"
 #include "dng_flags.h"
+#include "dng_types.h"
+
+#include <cstdint>
 
 /*****************************************************************************/
 
@@ -39,6 +42,41 @@ dng_fingerprint::dng_fingerprint (const char *hex)
 		
 	}
 		
+/*****************************************************************************/
+
+dng_fingerprint::dng_fingerprint (const dng_fingerprint& print)
+
+	{
+
+	for (uint32 j = 0; j < kDNGFingerprintSize; j++)
+		{
+
+		data [j] = print.data [j];
+
+		}
+
+	}
+
+/*****************************************************************************/
+
+dng_fingerprint& dng_fingerprint::operator= (const dng_fingerprint& print)
+	{
+
+	if (this != &print)
+		{
+
+		for (uint32 j = 0; j < kDNGFingerprintSize; j++)
+			{
+
+			data [j] = print.data [j];
+
+			}
+		}
+
+	return *this;
+
+	}
+
 /*****************************************************************************/
 
 bool dng_fingerprint::IsNull () const
@@ -180,7 +218,7 @@ dng_string dng_fingerprint::ToUtf8HexString () const
 
 /******************************************************************************/
 
-static int HexCharToNum (char hexChar)
+int dng_fingerprint::HexCharToNum (char hexChar)
 	{
 	
 	if (hexChar >= '0' && hexChar <= '9')
@@ -234,16 +272,54 @@ bool dng_fingerprint::FromUtf8HexString (const char inputStr [2 * kDNGFingerprin
 
 /******************************************************************************/
 
+dng_string dng_fingerprint::ToUtf8ClosestUUIDString () const
+	{
+
+	// Set version 3 (name-based MD5) and RFC 4122 variant bits.
+
+	uint8 d [kDNGFingerprintSize];
+
+	memcpy (d, data, kDNGFingerprintSize);
+
+	d [6] = (d [6] & 0x0F) | 0x30;   // version = 3
+	d [8] = (d [8] & 0x3F) | 0x80;   // variant = 10xx xxxx
+
+	char buf [37];
+
+	snprintf (buf, sizeof (buf),
+			  "%02x%02x%02x%02x-"
+			  "%02x%02x-"
+			  "%02x%02x-"
+			  "%02x%02x-"
+			  "%02x%02x%02x%02x%02x%02x",
+			  d [0],  d [1],  d [2],  d [3],
+			  d [4],  d [5],
+			  d [6],  d [7],
+			  d [8],  d [9],
+			  d [10], d [11], d [12], d [13], d [14], d [15]);
+
+	return dng_string (buf);
+
+	}
+
+/******************************************************************************/
+
 bool dng_fingerprint::FromUtf8HexString (const dng_string &inputStr)
 	{
-	
-	if (inputStr.Length () < kDNGFingerprintSize)
+
+	// CR-4208475 N-L16: preserve the legacy dng_string overload contract:
+	// callers may pass a longer string and this parser consumes the first
+	// 32 hex characters. This prefix behavior is not memory-unsafe, and
+	// changing it to exact-length rejection is a compatibility risk for
+	// existing clients that may carry adjacent metadata in the same string.
+
+	if (inputStr.Length () < kDNGFingerprintSize * 2)
 		{
 		return false;
 		}
 
 	return FromUtf8HexString (inputStr.Get ());
-	
+
 	}
 
 /******************************************************************************/
@@ -309,8 +385,8 @@ void dng_md5_printer::Reset ()
 
 /******************************************************************************/
 
-void dng_md5_printer::Process (const void *data,
-							   uint32 inputLen)
+void dng_md5_printer::ProcessPtr (const void *data,
+								  uint32 inputLen)
 	{
 	
 	DNG_ASSERT (!final, "Fingerprint already finalized!");
@@ -363,6 +439,42 @@ void dng_md5_printer::Process (const void *data,
 			inputLen - i);
 	
 	}
+
+/*****************************************************************************/
+
+void dng_md5_printer::Process_bool (bool x)
+	{
+
+	// sizeof(bool) is implemention-defined, which makes it non-portable.
+
+	// std::uint8_t exists in standard C++ since C++11 and is guaranteed to be
+	// exactly 8 bits (1 byte) by the standard.
+	
+	std::uint8_t value = x ? 1 : 0;
+
+	static_assert (sizeof (value) == 1, "uint8_t not 1 byte?");
+
+	ProcessPtr (&value, 1);
+
+	}
+
+/*****************************************************************************/
+
+void dng_md5_printer::Process_size (size_t x)
+	{
+
+	// sizeof(size_t) is implemention-defined, which makes it non-portable.
+
+	// std::uint64_t exists in standard C++ since C++11 and is guaranteed to
+	// be exactly 64 bits (8 bytes) by the standard.
+
+	std::uint64_t value = (std::uint64_t) x;
+
+	static_assert (sizeof (value) == 8, "uint64_t not 8 bytes?");
+
+	ProcessPtr (&value, 8);
+	
+	}
 		
 /******************************************************************************/
 
@@ -391,11 +503,11 @@ const dng_fingerprint & dng_md5_printer::Result ()
 		
 		uint32 padLen = (index < 56) ? (56 - index) : (120 - index);
 		
-		Process (PADDING, padLen);
+		ProcessPtr (PADDING, padLen);
 
 		// Append length (before padding)
 
-		Process (bits, 8);
+		ProcessPtr (bits, 8);
 
 		// Store state in digest
 		

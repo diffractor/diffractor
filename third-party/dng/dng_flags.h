@@ -19,6 +19,21 @@
 
 /*****************************************************************************/
 
+// Update these for each public DNG SDK release.
+
+#define kDNGSDK_MajorVersion 1
+#define kDNGSDK_MinorVersion 7
+#define kDNGSDK_DotVersion   1
+
+#define kDNGSDK_VersionString "1.7.1"
+
+#define kDNGSDK_BuildVersion 2724
+#define kDNGSDK_BuildString  "2724"
+
+#define kDNGSDK_GetInfoVersion	"1.7.1 (" kDNGSDK_BuildString ")"
+
+/*****************************************************************************/
+
 /// \def qMacOS 
 /// 1 if compiling for Mac OS X.
 
@@ -205,7 +220,7 @@
 #ifndef qDNGBigEndian
 
 #if defined(qDNGLittleEndian)
-#define qDNGBigEndian !qDNGLittleEndian
+#define qDNGBigEndian (!qDNGLittleEndian)
 
 #elif defined(__POWERPC__)
 #define qDNGBigEndian 1
@@ -244,7 +259,7 @@
 #ifndef qXCodeRez
 
 #ifndef qDNGLittleEndian
-#define qDNGLittleEndian !qDNGBigEndian
+#define qDNGLittleEndian (!qDNGBigEndian)
 #endif
 
 #endif
@@ -316,11 +331,37 @@
 
 #ifdef __cplusplus
 #if defined(__clang__) && !defined(__INTEL_LLVM_COMPILER)
-#define DNG_ALWAYS_INLINE __attribute((__always_inline__)) inline
+#define DNG_ALWAYS_INLINE __attribute__((__always_inline__)) inline
 #else
 #define DNG_ALWAYS_INLINE inline
 #endif
 #endif	/* __cplusplus */
+
+/*****************************************************************************/
+
+// Switch statement [[fallthrough]]; attribute defined for C++17 and C23.
+//
+// This can be used to indicate an intentional "fall through".
+// For example, if one is seeing the clang diagnostic warning or error:
+//         Unannotated fall-through between switch labels
+// then if "fall through" is desired, this macro can be placed at the
+// point of "fall through".
+
+#if defined(__cplusplus)
+#if __cplusplus >= 201703L
+#define DNG_FALLTHROUGH [[fallthrough]];
+#else
+#define DNG_FALLTHROUGH
+#endif
+#elif defined(__STDC_VERSION__)
+#if __STDC_VERSION__ >= 202311L
+#define DNG_FALLTHROUGH [[fallthrough]];
+#else
+#define DNG_FALLTHROUGH
+#endif
+#else
+#define DNG_FALLTHROUGH
+#endif
 
 /*****************************************************************************/
 
@@ -413,20 +454,88 @@
 
 /*****************************************************************************/
 
+/// \def qDNGUsingAddressSanitizer
+/// Set to 1 when using the Address Sanitizer tool.
+
+#ifndef qDNGUsingAddressSanitizer
+#if defined(__clang__) && defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define qDNGUsingAddressSanitizer (1)
+#endif
+#endif
+#endif
+
+#ifndef qDNGUsingAddressSanitizer
+#if defined(__SANITIZE_ADDRESS__)
+#define qDNGUsingAddressSanitizer (1)
+#endif
+#endif
+
+#ifndef qDNGUsingAddressSanitizer
+#define qDNGUsingAddressSanitizer (0)
+#endif
+
+/*****************************************************************************/
+
+/// \def qDNGUsingThreadSanitizer
+/// Set to 1 when using the Thread Sanitizer tool.
+
+#ifndef qDNGUsingThreadSanitizer
+#if defined(__clang__) && defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define qDNGUsingThreadSanitizer (1)
+#endif
+#endif
+#endif
+
+#ifndef qDNGUsingThreadSanitizer
+#if defined(__SANITIZE_THREAD__)
+#define qDNGUsingThreadSanitizer (1)
+#endif
+#endif
+
+#ifndef qDNGUsingThreadSanitizer
+#define qDNGUsingThreadSanitizer (0)
+#endif
+
+/*****************************************************************************/
+
+/// \def qDNGUsingUndefinedBehaviorSanitizer
+/// Set to 1 when using the UB Sanitizer tool.
+
+#ifndef qDNGUsingUndefinedBehaviorSanitizer
+#if defined(__clang__) && defined(__has_feature)
+#if __has_feature(undefined_behavior_sanitizer)
+#define qDNGUsingUndefinedBehaviorSanitizer (1)
+#endif
+#endif
+#endif
+
+// Currently no GCC macro available to check if UBSAN enabled.
+
+#ifndef qDNGUsingUndefinedBehaviorSanitizer
+#define qDNGUsingUndefinedBehaviorSanitizer (0)
+#endif
+
+/*****************************************************************************/
+
 /// \def qDNGUsingSanitizer
 /// Set to 1 when using a Sanitizer tool.
 
 #ifndef qDNGUsingSanitizer
-#define qDNGUsingSanitizer (0)
+#define qDNGUsingSanitizer ((qDNGUsingAddressSanitizer || qDNGUsingThreadSanitizer || qDNGUsingUndefinedBehaviorSanitizer) || 0)
 #endif
 
 /*****************************************************************************/
 
 #ifndef DNG_ATTRIB_NO_SANITIZE
+// Disabled if RC_INVOKED is defined to quiet RC.EXE RC4011 warning.
+#ifndef RC_INVOKED
 #if qDNGUsingSanitizer && defined(__clang__)
 #define DNG_ATTRIB_NO_SANITIZE(type) __attribute__((no_sanitize(type)))
 #else
 #define DNG_ATTRIB_NO_SANITIZE(type)
+#endif
 #endif
 #endif
 
@@ -460,6 +569,14 @@
 
 #ifndef qDNGUseCustomIntegralTypes
 #define qDNGUseCustomIntegralTypes 0
+#endif
+
+/*****************************************************************************/
+
+// Enable verbose exceptions
+
+#ifndef qDNGVerboseExceptions
+#define qDNGVerboseExceptions 1
 #endif
 
 /*****************************************************************************/

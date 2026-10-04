@@ -8,6 +8,13 @@
 
 #include "dng_local_string.h"
 
+#include "dng_exceptions.h"
+
+/*****************************************************************************/
+
+static const uint32 kMaxLocalStringTranslations = 1024;
+static const uint32 kMaxLocalStringTranslationBytes = 1024 * 1024;
+
 /*****************************************************************************/
 
 dng_local_string::dng_local_string ()
@@ -62,6 +69,12 @@ void dng_local_string::SetDefaultText (const dng_string &s)
 void dng_local_string::AddTranslation (const dng_string &language,
 									   const dng_string &translation)
 	{
+
+	if (fDictionary.size () >= kMaxLocalStringTranslations ||
+		translation.Length () > kMaxLocalStringTranslationBytes)
+		{
+		ThrowBadFormat ("Too many local string translations");
+		}
 	
 	dng_string safeLanguage (language);
 	

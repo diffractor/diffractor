@@ -111,14 +111,9 @@ template <typename D, typename S>
 SI D cast(const S& v) {
 #if N == 1
     return (D)v;
-#elif defined(__clang__)
-    return __builtin_convertvector(v, D);
 #else
-    D d;
-    for (int i = 0; i < N; i++) {
-        d[i] = v[i];
-    }
-    return d;
+    return __builtin_convertvector(v, D);
+
 #endif
 }
 
@@ -156,8 +151,13 @@ SI F F_from_Half(U16 half) {
 #elif defined(USING_AVX512F)
     return (F)_mm512_cvtph_ps((__m256i)half);
 #elif defined(USING_AVX_F16C)
+#if defined(__clang__) && __clang_major__ >= 15 // for _Float16 support
+    typedef _Float16 __attribute__((vector_size(16))) F16;
+    return __builtin_convertvector((F16)half, F);
+#else
     typedef int16_t __attribute__((vector_size(16))) I16;
     return __builtin_ia32_vcvtph2ps256((I16)half);
+#endif // defined(__clang))
 #else
     U32 wide = cast<U32>(half);
     // A half is 1-5-10 sign-exponent-mantissa, with 15 exponent bias.
@@ -211,6 +211,9 @@ SI U64 swap_endian_16x4(const U64& rgba) {
 #if defined(USING_NEON)
     SI F min_(F x, F y) { return (F)vminq_f32((float32x4_t)x, (float32x4_t)y); }
     SI F max_(F x, F y) { return (F)vmaxq_f32((float32x4_t)x, (float32x4_t)y); }
+#elif defined(__loongarch_sx)
+    SI F min_(F x, F y) { return (F)__lsx_vfmin_s(x, y); }
+    SI F max_(F x, F y) { return (F)__lsx_vfmax_s(x, y); }
 #else
     SI F min_(F x, F y) { return if_then_else(x > y, y, x); }
     SI F max_(F x, F y) { return if_then_else(x < y, y, x); }
@@ -231,6 +234,8 @@ SI F floor_(F x) {
     return __builtin_ia32_roundps256(x, 0x01/*_MM_FROUND_FLOOR*/);
 #elif defined(__SSE4_1__)
     return _mm_floor_ps(x);
+#elif defined(__loongarch_sx)
+    return __lsx_vfrintrm_s((__m128)x);
 #else
     // Round trip through integers with a truncating cast.
     F roundtrip = cast<F>(cast<I32>(x));
@@ -354,6 +359,14 @@ SI F apply_hlginv(const skcms_TransferFunction* tf, F x) {
     return bit_pun<F>(sign | bit_pun<U32>(v));
 }
 
+// Compute the luminance Y used in the HLG OOTF. This is equivalent to computing the dot product
+// with the vector [0.2627 0.678  0.0593] in Rec2020 primaries, but is performed in the XYZD50
+// space to simplify the pipeline.
+SI F compute_Y_in_xyzd50(F x, F y, F z) {
+  return -0.02831655f * x +
+          1.00995452f * y +
+          0.02102382f * z;
+}
 
 // Strided loads and stores of N values, starting from p.
 template <typename T, typename P>
@@ -480,16 +493,12 @@ SI U32 gather_32(const uint8_t* p, I32 ix) {
 }
 
 SI U32 gather_24(const uint8_t* p, I32 ix) {
-    // First, back up a byte.  Any place we're gathering from has a safe junk byte to read
-    // in front of it, either a previous table value, or some tag metadata.
-    p -= 1;
-
     // Load the i'th 24-bit value from p, and 1 extra byte.
     auto load_24_32 = [p](int i) {
         return load<uint32_t>(p + 3*i);
     };
 
-    // Now load multiples of 4 bytes (a junk byte, then r,g,b).
+    // Now load multiples of 4 bytes (r,g,b, then a junk byte).
 #if N == 1
     U32 v = load_24_32(ix);
 #elif N == 4
@@ -517,15 +526,12 @@ SI U32 gather_24(const uint8_t* p, I32 ix) {
     U32 v = (U32)_mm512_i32gather_epi32((__m512i)(3*ix), p4, 1);
 #endif
 
-    // Shift off the junk byte, leaving r,g,b in low 24 bits (and zero in the top 8).
-    return v >> 8;
+    // Mask off the junk byte, leaving r,g,b in low 24 bits.
+    return v & 0x00FFFFFF;
 }
 
 #if !defined(__arm__)
     SI void gather_48(const uint8_t* p, I32 ix, U64* v) {
-        // As in gather_24(), with everything doubled.
-        p -= 2;
-
         // Load the i'th 48-bit value from p, and 2 extra bytes.
         auto load_48_64 = [p](int i) {
             return load<uint64_t>(p + 6*i);
@@ -576,7 +582,7 @@ SI U32 gather_24(const uint8_t* p, I32 ix) {
         store((char*)v + 64, hi);
     #endif
 
-        *v >>= 16;
+        *v &= 0x0000FFFFFFFFFFFFULL;
     }
 #endif
 
@@ -644,7 +650,7 @@ SI void sample_clut_8(const uint8_t* grid_8, I32 ix, F* r, F* g, F* b, F* a) {
 }
 
 SI void sample_clut_16(const uint8_t* grid_16, I32 ix, F* r, F* g, F* b) {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__loongarch_sx)
     // This is up to 2x faster on 32-bit ARM than the #else-case fast path.
     *r = F_from_U16_BE(gather_16(grid_16, 3*ix+0));
     *g = F_from_U16_BE(gather_16(grid_16, 3*ix+1));
@@ -674,19 +680,22 @@ static void clut(uint32_t input_channels, uint32_t output_channels,
                  F* r, F* g, F* b, F* a) {
 
     const int dim = (int)input_channels;
-    assert (0 < dim && dim <= 4);
+    if (dim <= 0 || dim > 4) {
+        return;
+    }
     assert (output_channels == 3 ||
             output_channels == 4);
 
     // For each of these arrays, think foo[2*dim], but we use foo[8] since we know dim <= 4.
-    I32 index [8];  // Index contribution by dimension, first low from 0, then high from 4.
-    F   weight[8];  // Weight for each contribution, again first low, then high.
+    I32 index [8] = {0,0,0,0, 0,0,0,0};  // Index contribution by dimension, first low from 0, then high from 4.
+    F   weight[8] = {F0,F0,F0,F0, F0,F0,F0,F0};  // Weight for each contribution, again first low, then high.
 
     // O(dim) work first: calculate index,weight from r,g,b,a.
     const F inputs[] = { *r,*g,*b,*a };
     for (int i = dim-1, stride = 1; i >= 0; i--) {
         // x is where we logically want to sample the grid in the i-th dimension.
-        F x = inputs[i] * (float)(grid_points[i] - 1);
+        // We MUST clamp to [0,1] here to avoid negative indices.
+        F x = max_(F0, min_(inputs[i], F1)) * (float)(grid_points[i] - 1);
 
         // But we can't index at floats.  lo and hi are the two integer grid points surrounding x.
         I32 lo = cast<I32>(            x      ),   // i.e. trunc(x) == floor(x) here.
@@ -832,6 +841,12 @@ STAGE(load_g8, NoCtx) {
     r = g = b = F_from_U8(load<U8>(src + 1*i));
 }
 
+STAGE(load_ga88, NoCtx) {
+    U16 u16 = load<U16>(src + 2 * i);
+    r = g = b = cast<F>((u16 >> 0) & 0xff) * (1 / 255.0f);
+            a = cast<F>((u16 >> 8) & 0xff) * (1 / 255.0f);
+}
+
 STAGE(load_4444, NoCtx) {
     U16 abgr = load<U16>(src + 2*i);
 
@@ -893,13 +908,19 @@ STAGE(load_1010102, NoCtx) {
 }
 
 STAGE(load_101010x_XR, NoCtx) {
-    static constexpr float min = -0.752941f;
-    static constexpr float max = 1.25098f;
-    static constexpr float range = max - min;
     U32 rgba = load<U32>(src + 4*i);
-    r = cast<F>((rgba >>  0) & 0x3ff) * (1/1023.0f) * range + min;
-    g = cast<F>((rgba >> 10) & 0x3ff) * (1/1023.0f) * range + min;
-    b = cast<F>((rgba >> 20) & 0x3ff) * (1/1023.0f) * range + min;
+    r = cast<F>(((rgba >>  0) & 0x3ff) - 384) / 510.0f;
+    g = cast<F>(((rgba >> 10) & 0x3ff) - 384) / 510.0f;
+    b = cast<F>(((rgba >> 20) & 0x3ff) - 384) / 510.0f;
+}
+
+STAGE(load_10101010_XR, NoCtx) {
+    U64 rgba = load<U64>(src + 8 * i);
+    // Each channel is 16 bits, where the 6 low bits are padding.
+    r = cast<F>(((rgba >> ( 0+6)) & 0x3ff) - 384) / 510.0f;
+    g = cast<F>(((rgba >> (16+6)) & 0x3ff) - 384) / 510.0f;
+    b = cast<F>(((rgba >> (32+6)) & 0x3ff) - 384) / 510.0f;
+    a = cast<F>(((rgba >> (48+6)) & 0x3ff) - 384) / 510.0f;
 }
 
 STAGE(load_161616LE, NoCtx) {
@@ -1092,11 +1113,9 @@ STAGE(unpremul, NoCtx) {
 }
 
 STAGE(matrix_3x3, const skcms_Matrix3x3* matrix) {
-    const float* m = &matrix->vals[0][0];
-
-    F R = m[0]*r + m[1]*g + m[2]*b,
-      G = m[3]*r + m[4]*g + m[5]*b,
-      B = m[6]*r + m[7]*g + m[8]*b;
+    F R = matrix->vals[0][0]*r + matrix->vals[0][1]*g + matrix->vals[0][2]*b,
+      G = matrix->vals[1][0]*r + matrix->vals[1][1]*g + matrix->vals[1][2]*b,
+      B = matrix->vals[2][0]*r + matrix->vals[2][1]*g + matrix->vals[2][2]*b;
 
     r = R;
     g = G;
@@ -1104,11 +1123,12 @@ STAGE(matrix_3x3, const skcms_Matrix3x3* matrix) {
 }
 
 STAGE(matrix_3x4, const skcms_Matrix3x4* matrix) {
-    const float* m = &matrix->vals[0][0];
-
-    F R = m[0]*r + m[1]*g + m[ 2]*b + m[ 3],
-      G = m[4]*r + m[5]*g + m[ 6]*b + m[ 7],
-      B = m[8]*r + m[9]*g + m[10]*b + m[11];
+    F R = matrix->vals[0][0]*r + matrix->vals[0][1]*g + matrix->vals[0][2]*b
+        + matrix->vals[0][3],
+      G = matrix->vals[1][0]*r + matrix->vals[1][1]*g + matrix->vals[1][2]*b
+        + matrix->vals[1][3],
+      B = matrix->vals[2][0]*r + matrix->vals[2][1]*g + matrix->vals[2][2]*b
+        + matrix->vals[2][3];
 
     r = R;
     g = G;
@@ -1199,6 +1219,27 @@ STAGE(hlg_rgb, const skcms_TransferFunction* tf) {
     b = apply_hlg(tf, b);
 }
 
+// Apply the HLG Reference OOTF, as described in ITU-R BT.2100-3 Table 5.
+STAGE(hlg_ootf_scale, const void*) {
+    // Compute Y in the XYZD50 primaries.
+    F Y = compute_Y_in_xyzd50(r, g, b);
+
+    // Apply the gamma of 1.2.
+    const float gamma_minus_1 = 0.2f;
+    U32 sign;
+    Y = strip_sign(Y, &sign);
+    F Y_to_gamma_minus1 = apply_sign(approx_pow(Y, gamma_minus_1), sign);
+    r = r * Y_to_gamma_minus1;
+    g = g * Y_to_gamma_minus1;
+    b = b * Y_to_gamma_minus1;
+
+    // Scale to the reference peak white (1000 nits) to get display luminance. Then divide by the
+    // HDR reference white (203 nits), to get a value in relative linear color space.
+    r *= 1000.0f / 203.0f;
+    g *= 1000.0f / 203.0f;
+    b *= 1000.0f / 203.0f;
+}
+
 STAGE(hlginv_r, const skcms_TransferFunction* tf) { r = apply_hlginv(tf, r); }
 STAGE(hlginv_g, const skcms_TransferFunction* tf) { g = apply_hlginv(tf, g); }
 STAGE(hlginv_b, const skcms_TransferFunction* tf) { b = apply_hlginv(tf, b); }
@@ -1208,6 +1249,23 @@ STAGE(hlginv_rgb, const skcms_TransferFunction* tf) {
     r = apply_hlginv(tf, r);
     g = apply_hlginv(tf, g);
     b = apply_hlginv(tf, b);
+}
+
+// Perform the inverse of the operation in hlg_ootf_scale.
+STAGE(hlginv_ootf_scale, const void*) {
+    r *= (203.f / 1000.0f);
+    g *= (203.f / 1000.0f);
+    b *= (203.f / 1000.0f);
+
+    const float gamma_inv_minus_1 = 1.0f / 1.2f - 1.0f;
+    F Y = compute_Y_in_xyzd50(r, g, b);
+    U32 sign;
+    Y = strip_sign(Y, &sign);
+    F Y_to_gamma_minus1 = apply_sign(approx_pow(Y, gamma_inv_minus_1), sign);
+
+    r = r * Y_to_gamma_minus1;
+    g = g * Y_to_gamma_minus1;
+    b = b * Y_to_gamma_minus1;
 }
 
 STAGE(table_r, const skcms_Curve* curve) { r = table(curve, r); }
@@ -1237,6 +1295,12 @@ FINAL_STAGE(store_a8, NoCtx) {
 FINAL_STAGE(store_g8, NoCtx) {
     // g should be holding luminance (Y) (r,g,b ~~~> X,Y,Z)
     store(dst + 1*i, cast<U8>(to_fixed(g * 255)));
+}
+
+FINAL_STAGE(store_ga88, NoCtx) {
+    // g should be holding luminance (Y) (r,g,b ~~~> X,Y,Z)
+    store<U16>(dst + 2*i, cast<U16>(to_fixed(g * 255) << 0 )
+                        | cast<U16>(to_fixed(a * 255) << 8 ));
 }
 
 FINAL_STAGE(store_4444, NoCtx) {
@@ -1282,12 +1346,17 @@ FINAL_STAGE(store_8888, NoCtx) {
 }
 
 FINAL_STAGE(store_101010x_XR, NoCtx) {
-    static constexpr float min = -0.752941f;
-    static constexpr float max = 1.25098f;
-    static constexpr float range = max - min;
-    store(dst + 4*i, cast<U32>(to_fixed(((r - min) / range) * 1023)) <<  0
-                   | cast<U32>(to_fixed(((g - min) / range) * 1023)) << 10
-                   | cast<U32>(to_fixed(((b - min) / range) * 1023)) << 20);
+    store(dst + 4*i, cast<U32>(to_fixed((r * 510) + 384)) <<  0
+                   | cast<U32>(to_fixed((g * 510) + 384)) << 10
+                   | cast<U32>(to_fixed((b * 510) + 384)) << 20);
+}
+
+FINAL_STAGE(store_10101010_XR, NoCtx) {
+    // Each channel is 16 bits, where the 6 low bits are padding.
+    store(dst + 8*i, cast<U64>(to_fixed((r * 510) + 384)) << ( 0+6)
+                   | cast<U64>(to_fixed((g * 510) + 384)) << (16+6)
+                   | cast<U64>(to_fixed((b * 510) + 384)) << (32+6)
+                   | cast<U64>(to_fixed((a * 510) + 384)) << (48+6));
 }
 
 FINAL_STAGE(store_1010102, NoCtx) {
@@ -1493,11 +1562,14 @@ FINAL_STAGE(store_ffff, NoCtx) {
 // NOLINTNEXTLINE(misc-definitions-in-headers)
 void run_program(const Op* program, const void** contexts, SKCMS_MAYBE_UNUSED ptrdiff_t programSize,
                  const char* src, char* dst, int n,
-                 const size_t src_bpp, const size_t dst_bpp) {
+                size_t src_bpp, size_t dst_bpp) {
 #if SKCMS_HAS_MUSTTAIL
     // Convert the program into an array of tailcall stages.
-    StageFn stages[32];
+    StageFn stages[SKCMS_MAX_PROGRAM_OPS];
     assert(programSize <= ARRAY_COUNT(stages));
+    if (programSize > ARRAY_COUNT(stages)) {
+        return;
+    }
 
     static constexpr StageFn kStageFns[] = {
 #define M(name) &Exec_##name,
