@@ -3325,9 +3325,9 @@ msgstr[2] "{count} položek bylo ignorováno, protože byly dříve importovány
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "1 položka byla importována, ale její datum vytvoření se nepodařilo nastavit."
+msgstr[1] "{count} položky byly importovány, ale jejich datum vytvoření se nepodařilo nastavit."
+msgstr[2] "{count} položek bylo importováno, ale jejich datum vytvoření se nepodařilo nastavit."
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3824,7 +3824,7 @@ msgid "Transition (tenths of a second)"
 msgstr "Přechod (desetiny sekundy)"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "Rozjasnění/ztmavení (desetiny sekundy)"
 
 msgid "Fade in from black"
 msgstr "Rozjasnit z černé"
@@ -3896,22 +3896,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "Film se nepodařilo vykreslit. {}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "Film nemá žádnou délku."
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "Kodér tento film nepřijal."
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "Pro snímek filmu nebylo dost paměti."
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "Jeden z klipů se nepodařilo dekódovat."
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "Kodér se zastavil dříve, než byl film dokončen."
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "Tento název patří klipu v tomto filmu. Zvolte jiný název."
 
 msgid "Rendered {}."
 msgstr "Vykresleno: {}."

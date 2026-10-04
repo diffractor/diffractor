@@ -3191,8 +3191,8 @@ msgstr[1] "已忽略 {count} 个项目，因为这些项目以前已导入。"
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "已导入 1 个项目，但无法设置其创建日期。"
+msgstr[1] "已导入 {count} 个项目，但无法设置其创建日期。"
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3664,7 +3664,7 @@ msgid "Transition (tenths of a second)"
 msgstr "转场（十分之一秒）"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "淡入淡出（十分之一秒）"
 
 msgid "Fade in from black"
 msgstr "从黑场淡入"
@@ -3736,22 +3736,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "无法渲染影片。{}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "影片没有时长。"
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "编码器不接受此影片。"
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "内存不足，无法处理影片帧。"
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "无法解码某个剪辑。"
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "编码器在影片完成前停止。"
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "该名称属于此影片中的某个剪辑。请选择其他名称。"
 
 msgid "Rendered {}."
 msgstr "已渲染 {}。"

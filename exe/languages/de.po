@@ -3198,8 +3198,8 @@ msgstr[1] "{count} Items wurden ignoriert, weil diese zuvor importiert wurden."
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "1 Item wurde importiert, aber sein Erstellungsdatum konnte nicht gesetzt werden."
+msgstr[1] "{count} Items wurden importiert, aber ihr Erstellungsdatum konnte nicht gesetzt werden."
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3670,7 +3670,7 @@ msgid "Transition (tenths of a second)"
 msgstr "Übergang (Zehntelsekunden)"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "Auf-/Abblenden (Zehntelsekunden)"
 
 msgid "Fade in from black"
 msgstr "Von Schwarz aufblenden"
@@ -3742,22 +3742,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "Der Film konnte nicht gerendert werden. {}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "Der Film hat keine Länge."
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "Der Encoder hat diesen Film nicht akzeptiert."
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "Für ein Frame des Films war nicht genügend Speicher verfügbar."
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "Ein Clip konnte nicht decodiert werden."
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "Der Encoder hat angehalten, bevor der Film fertig war."
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "Dieser Name gehört zu einem Clip in diesem Film. Wählen Sie einen anderen Namen."
 
 msgid "Rendered {}."
 msgstr "{} wurde gerendert."

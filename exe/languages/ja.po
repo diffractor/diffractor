@@ -3193,8 +3193,8 @@ msgstr[1] "{count} 個のアイテムは以前にインポートされたため�
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "1 個のアイテムをインポートしましたが、作成日を設定できませんでした。"
+msgstr[1] "{count} 個のアイテムをインポートしましたが、作成日を設定できませんでした。"
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3666,7 +3666,7 @@ msgid "Transition (tenths of a second)"
 msgstr "トランジション (10 分の 1 秒)"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "フェード (10 分の 1 秒)"
 
 msgid "Fade in from black"
 msgstr "黒からフェードイン"
@@ -3738,22 +3738,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "ムービーをレンダリングできませんでした。{}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "ムービーの長さがありません。"
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "エンコーダーがこのムービーを受け付けませんでした。"
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "ムービーのフレームに使うメモリが足りませんでした。"
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "クリップをデコードできませんでした。"
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "ムービーが完成する前にエンコーダーが停止しました。"
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "その名前はこのムービー内のクリップで使われています。別の名前を選んでください。"
 
 msgid "Rendered {}."
 msgstr "{} をレンダリングしました。"

@@ -3223,10 +3223,10 @@ msgstr[3] "Пропущено {count} елемента, оскільки їх у
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
-msgstr[3] ""
+msgstr[0] "Імпортовано 1 елемент, але не вдалося встановити його дату створення."
+msgstr[1] "Імпортовано {count} елементи, але не вдалося встановити їхню дату створення."
+msgstr[2] "Імпортовано {count} елементів, але не вдалося встановити їхню дату створення."
+msgstr[3] "Імпортовано {count} елемента, але не вдалося встановити їхню дату створення."
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3728,7 +3728,7 @@ msgid "Transition (tenths of a second)"
 msgstr "Перехід (десяті частки секунди)"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "Поява/згасання (десяті частки секунди)"
 
 msgid "Fade in from black"
 msgstr "Поява з чорного"
@@ -3800,22 +3800,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "Не вдалося візуалізувати фільм. {}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "Фільм має нульову тривалість."
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "Кодувальник не прийняв цей фільм."
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "Не вистачило пам'яті для кадру фільму."
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "Не вдалося декодувати один із кліпів."
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "Кодувальник зупинився до завершення фільму."
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "Ця назва належить кліпу в цьому фільмі. Виберіть іншу назву."
 
 msgid "Rendered {}."
 msgstr "Візуалізовано: {}."

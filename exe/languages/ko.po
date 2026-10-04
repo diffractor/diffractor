@@ -3191,8 +3191,8 @@ msgstr[1] "{count} 항목은 이전에 가져왔기 때문에 무시되었습니
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "항목 1개를 가져왔지만 생성 날짜를 설정할 수 없습니다."
+msgstr[1] "항목 {count}개를 가져왔지만 생성 날짜를 설정할 수 없습니다."
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3664,7 +3664,7 @@ msgid "Transition (tenths of a second)"
 msgstr "전환 (10분의 1초)"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "페이드 (10분의 1초)"
 
 msgid "Fade in from black"
 msgstr "검은 화면에서 페이드 인"
@@ -3736,22 +3736,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "동영상을 렌더링할 수 없습니다. {}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "동영상의 길이가 없습니다."
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "인코더가 이 동영상을 받아들이지 않았습니다."
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "동영상 프레임에 사용할 메모리가 부족했습니다."
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "클립을 디코딩할 수 없습니다."
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "동영상이 완성되기 전에 인코더가 중지되었습니다."
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "이 이름은 이 동영상의 클립에서 사용 중입니다. 다른 이름을 선택하세요."
 
 msgid "Rendered {}."
 msgstr "{}을(를) 렌더링했습니다."

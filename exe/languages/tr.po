@@ -3193,8 +3193,8 @@ msgstr[1] "{count} öğe daha önce içe aktarıldıkları için yok sayıldı."
 msgid "1 item was imported but its created date could not be set."
 msgid_plural ""
 "{count} items were imported but their created date could not be set."
-msgstr[0] ""
-msgstr[1] ""
+msgstr[0] "1 öğe içe aktarıldı ancak oluşturulma tarihi ayarlanamadı."
+msgstr[1] "{count} öğe içe aktarıldı ancak oluşturulma tarihleri ayarlanamadı."
 
 msgid "{first-name} will be moved to the recycle bin."
 msgid_plural "{count} items ({size}) will be moved to the recycle bin."
@@ -3666,7 +3666,7 @@ msgid "Transition (tenths of a second)"
 msgstr "Geçiş (saniyenin onda biri)"
 
 msgid "Fade (tenths of a second)"
-msgstr ""
+msgstr "Açılma/kararma (saniyenin onda biri)"
 
 msgid "Fade in from black"
 msgstr "Siyahtan aç"
@@ -3738,22 +3738,22 @@ msgid "The movie could not be rendered. {}"
 msgstr "Film işlenemedi. {}"
 
 msgid "The movie has no length."
-msgstr ""
+msgstr "Filmin süresi yok."
 
 msgid "The encoder would not accept this movie."
-msgstr ""
+msgstr "Kodlayıcı bu filmi kabul etmedi."
 
 msgid "There was not enough memory for a movie frame."
-msgstr ""
+msgstr "Bir film karesi için yeterli bellek yoktu."
 
 msgid "A clip could not be decoded."
-msgstr ""
+msgstr "Bir klibin kodu çözülemedi."
 
 msgid "The encoder stopped before the movie was finished."
-msgstr ""
+msgstr "Kodlayıcı, film tamamlanmadan durdu."
 
 msgid "That name belongs to a clip in this movie. Choose another name."
-msgstr ""
+msgstr "Bu ad, bu filmdeki bir klibe ait. Başka bir ad seçin."
 
 msgid "Rendered {}."
 msgstr "{} işlendi."
