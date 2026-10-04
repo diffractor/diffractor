@@ -864,6 +864,24 @@ static void should_format_text()
 	assert_equal("22 x 33", std::format("{} x {}", 22, 33), "string_view");
 }
 
+// str::to_string(double) used a 128-byte buffer, and _fcvt_s ends the process - through the CRT's
+// invalid-parameter fail-fast, which no crash report records - when the fixed form of the value does
+// not fit, from about 1e120 up. A RAW file's maker notes can state a value that large. Restoring the
+// short buffer makes this test terminate the run instead of failing an assertion.
+static void should_format_a_double_of_any_magnitude()
+{
+	const auto huge = str::to_string(1e300, 3);
+	assert_equal(305_z, huge.size(), "301 integer digits, the point and three decimals");
+	assert_equal(true, huge.starts_with('1'), "led by the value's first digit");
+	assert_equal(true, huge.ends_with(".000"), "and closed by the decimals asked for");
+
+	const auto lowest = str::to_string(std::numeric_limits<double>::lowest(), 2);
+	assert_equal(313_z, lowest.size(), "the sign, all 309 integer digits, the point and two decimals");
+	assert_equal(true, lowest.starts_with("-17976931348623157"), "the most negative double formats whole");
+
+	assert_equal("2.5", str::to_string(2.5, -1), "an ordinary value is unchanged");
+}
+
 static std::string find_and_format_result(const std::string_view text, const std::string_view sub_string)
 {
 	const auto r = str::ifind2(text, sub_string, 0);
@@ -1461,6 +1479,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should parse command line"s, should_parse_command_line);
 	tests.add("Should trim strings"s, should_trim_strings);
 	tests.add("Should format text"s, should_format_text);
+	tests.add("Should format a double of any magnitude"s, should_format_a_double_of_any_magnitude);
 	tests.add("Should find text"s, should_find_text);
 
 	//

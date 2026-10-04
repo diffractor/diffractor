@@ -901,7 +901,10 @@ std::string str::to_string(const unsigned long long v)
 std::string str::to_string(const double v, int num_digits)
 {
 	std::string result;
-	static constexpr int size = 128;
+	// Room for any double: the fixed form of the largest has 309 integer digits. _fcvt_s treats a
+	// buffer too small for the value as an invalid parameter and ends the process, and a value from
+	// a file's metadata can be as large as the file says.
+	static constexpr int size = 309 + 40;
 	char text[size];
 	text[0] = 0;
 	int decimal = 0;
