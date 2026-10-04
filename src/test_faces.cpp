@@ -120,7 +120,8 @@ static void should_align_faces_without_shearing_them()
 		m.Y = 56.0 + (x * 0.6 + y * 0.8);
 	}
 
-	const auto* const r = faces::align_transform(rotated).coefficients();
+	const auto rotated_transform = faces::align_transform(rotated);
+	const auto* const r = rotated_transform.coefficients();
 	assert_near(r[0], r[3], 1e-9, "a rotated face fits by rotating back"sv);
 	assert_near(r[1], -r[2], 1e-9, "a rotated face fits by rotating back"sv);
 }

@@ -858,8 +858,9 @@ static void should_refuse_an_output_that_names_a_clip()
 
 	assert_equal(true, movie_output_names_a_clip(clips, movie_test_path("a.mp4")),
 	             "an output naming a video clip is refused");
-	assert_equal(true, movie_output_names_a_clip(clips, movie_test_path("B.JPG")),
-	             "the comparison folds case, as every other destination check does");
+	// On Linux B.JPG and b.jpg are two files, and writing one leaves the other intact.
+	assert_equal(df::case_insensitive_path_identity, movie_output_names_a_clip(clips, movie_test_path("B.JPG")),
+	             "the comparison folds case where the platform's paths do, as every other destination check does");
 	assert_equal(false, movie_output_names_a_clip(clips, movie_test_path("movie.mp4")),
 	             "an output naming nothing in the timeline is allowed");
 	assert_equal(false, movie_output_names_a_clip(clips, {}),

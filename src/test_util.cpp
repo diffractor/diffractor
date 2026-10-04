@@ -1041,11 +1041,11 @@ static void should_save_a_blob_without_truncating_the_destination()
 
 	const df::blob whole = {1, 2, 3, 4};
 	assert_equal(true, df::blob_save_to_file(whole, path), "a blob is saved");
-	assert_equal(4_z, platform::file_attributes(path).size, "and lands whole");
+	assert_equal(uint64_t{4}, platform::file_attributes(path).size, "and lands whole");
 
 	const df::blob empty;
 	assert_equal(true, df::blob_save_to_file(empty, path), "an empty blob replaces it");
-	assert_equal(0_z, platform::file_attributes(path).size, "with an empty file");
+	assert_equal(uint64_t{0}, platform::file_attributes(path).size, "with an empty file");
 
 	// Nothing can be written here, so nothing is reported as written.
 	const auto missing = scratch.combine("no-such-folder").combine_file("payload.bin");

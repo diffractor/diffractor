@@ -389,7 +389,7 @@ static void should_not_plan_a_convert_output_over_a_source()
 		}
 	}
 
-	assert_equal("c:\\a\\photo.png", plan[0].source.path.str(), "the row planned first is the one from elsewhere");
+	assert_equal(sources[0].path.str(), plan[0].source.path.str(), "the row planned first is the one from elsewhere");
 	assert_equal("photo (2).jpg", plan[0].destination.name(), "and it is moved off the other row's source");
 	assert_equal("photo.jpg", plan[1].destination.name(), "a row may still convert itself in place");
 }

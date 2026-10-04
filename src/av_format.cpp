@@ -2372,8 +2372,11 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 		const auto take = std::min(source_frames - source_frame, room);
 		if (take > 0)
 		{
-			std::copy_n(converted.begin() + source_frame * pcm_channels, take * pcm_channels,
-			            result.begin() + destination_frame * pcm_channels);
+			// The clamps above keep every offset inside both buffers, so it fits the iterators'
+			// difference type even where that is 32 bits.
+			std::copy_n(converted.begin() + static_cast<std::ptrdiff_t>(source_frame * pcm_channels),
+			            static_cast<std::ptrdiff_t>(take * pcm_channels),
+			            result.begin() + static_cast<std::ptrdiff_t>(destination_frame * pcm_channels));
 		}
 
 		next_destination_frame = output_end;
