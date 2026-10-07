@@ -7,7 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Tests for Windows platform integration. These are the only tests whose subject is the
-// operating system itself -- extended path syntax, DXGI device loss, the crash-guard recovery
+// operating system itself -- extended path syntax, DXGI device loss, adapter classification and the
+// texture budget taken from it, the adapter the decode device is made on, the crash-guard recovery
 // session, the system font stack, the registry settings store, the shell drag data object and the
 // common-control paint contract the flicker-free control buffering depends on.
 // Keeping them here is what lets every other test file stay free of system headers.
@@ -15,7 +16,13 @@
 #include "pch.h"
 #include "platform_win.h"
 #include "platform_win_visual.h"
+#include "av_format.h"
 #include "test_fixtures.h"
+
+extern "C" {
+#include "libavutil/hwcontext.h"
+#include "libavutil/hwcontext_d3d11va.h"
+}
 
 static void should_convert_extended_file_system_paths()
 {
@@ -97,6 +104,147 @@ static void should_classify_dxgi_device_loss()
 	assert_equal(false, is_device_loss_error(DXGI_STATUS_OCCLUDED), "occlusion is not device loss");
 	assert_equal(false, is_device_loss_error(E_FAIL), "generic failure is not device loss");
 	assert_equal(false, is_device_loss_error(S_OK), "success is not device loss");
+}
+
+// A machine with no working GPU driver is handed WARP posing as a hardware adapter. Drawn through, it
+// redrew the whole window on the CPU every frame, so it is recognised and the CPU backend used instead.
+static void should_recognise_the_basic_render_driver()
+{
+	assert_equal(true, is_software_adapter(0x1414, 0x8c, 0), "the Microsoft Basic Render Driver");
+	assert_equal(true, is_software_adapter(0x10de, 0x2684, DXGI_ADAPTER_FLAG_SOFTWARE),
+	             "any adapter that says it is software");
+	assert_equal(false, is_software_adapter(0x8086, 0x3ea0, 0), "an Intel integrated GPU");
+	assert_equal(false, is_software_adapter(0x10de, 0x2684, 0), "an NVIDIA card");
+	assert_equal(false, is_software_adapter(0x1414, 0x5353, 0), "the vendor alone does not make an adapter WARP");
+}
+
+// NV12 and P010 are drawn by sampling views of their planes. A device that could only hold the format
+// accepted the texture, refused its views, and the picture never appeared.
+static void should_need_sampling_for_planar_video()
+{
+	assert_equal(false, can_sample_texture_format(D3D11_FORMAT_SUPPORT_TEXTURE2D), "holding the format is not enough");
+	assert_equal(false, can_sample_texture_format(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE),
+	             "nor is sampling a format that cannot be a 2D texture");
+	assert_equal(false, can_sample_texture_format(0), "nothing supported");
+	assert_equal(true, can_sample_texture_format(D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
+		             D3D11_FORMAT_SUPPORT_DECODER_OUTPUT), "a device that samples it");
+}
+
+// Intel parts report the 128MB carved out at boot as dedicated memory, and allocate textures from shared
+// memory. Read as the card's own, it held every Intel laptop at the 64MB floor, and a photo over 16
+// megapixels was shown downscaled even at 100%.
+static void should_count_shared_memory_for_an_integrated_gpu()
+{
+	constexpr uint64_t mb = 1024ull * 1024ull;
+	constexpr uint64_t gb = 1024ull * mb;
+	constexpr auto laptop = static_cast<int64_t>(16 * gb);
+	const auto budget = [](const uint64_t gpu_bytes, const int64_t total_phys)
+	{
+		return static_cast<uint64_t>(calc_texture_budget(gpu_bytes, total_phys));
+	};
+
+	assert_equal(128 * mb + 8 * gb, gpu_texture_memory(128 * mb, 8 * gb, true), "an integrated part uses shared memory");
+	assert_equal(8 * gb, gpu_texture_memory(8 * gb, 16 * gb, false), "a discrete card uses its own");
+	assert_equal(8 * gb, gpu_texture_memory(0, 8 * gb, false), "an adapter with none of its own still has somewhere");
+
+	assert_equal(128 * mb, budget(gpu_texture_memory(128 * mb, 8 * gb, true), laptop),
+	             "an integrated laptop GPU is given the full ceiling");
+	assert_equal(64 * mb, budget(128 * mb, laptop), "which the carve-out alone held at the floor");
+	assert_equal(64 * mb, budget(512 * mb, laptop), "a small discrete card is still held back");
+	assert_equal(128 * mb, budget(8 * gb, laptop), "a large card is held to the ceiling");
+	assert_equal(96 * mb, budget(gpu_texture_memory(128 * mb, 768 * mb, true), static_cast<int64_t>(1536 * mb)),
+	             "physical memory still bounds a small machine");
+	assert_equal(128 * mb, budget(0, 0), "with nothing to ask, the shipped ceiling");
+}
+
+static bool same_adapter(const LUID a, const LUID b)
+{
+	return a.LowPart == b.LowPart && a.HighPart == b.HighPart;
+}
+
+struct listed_adapter
+{
+	LUID luid = {};
+	bool makes_video_devices = false;
+};
+
+// In the order Windows lists them, so the first is the default FFmpeg would take when left to choose.
+static std::vector<listed_adapter> list_adapters()
+{
+	std::vector<listed_adapter> result;
+	ComPtr<IDXGIFactory1> factory;
+	if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return result;
+
+	ComPtr<IDXGIAdapter1> adapter;
+
+	for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &adapter)); ++i)
+	{
+		DXGI_ADAPTER_DESC1 desc = {};
+		if (FAILED(adapter->GetDesc1(&desc))) continue;
+
+		ComPtr<ID3D11Device> device;
+		const auto makes_video = SUCCEEDED(D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+		                                                     D3D11_CREATE_DEVICE_VIDEO_SUPPORT, nullptr, 0,
+		                                                     D3D11_SDK_VERSION, &device, nullptr, nullptr));
+		result.push_back({desc.AdapterLuid, makes_video});
+	}
+
+	return result;
+}
+
+static LUID adapter_of(const AVBufferRef* hw_device)
+{
+	const auto* const ctx = reinterpret_cast<const AVHWDeviceContext*>(hw_device->data);
+	const auto* const hwctx = static_cast<const AVD3D11VADeviceContext*>(ctx->hwctx);
+	ComPtr<IDXGIDevice> dxgi_device;
+	ComPtr<IDXGIAdapter> adapter;
+	DXGI_ADAPTER_DESC desc = {};
+
+	if (hwctx->device && SUCCEEDED(hwctx->device->QueryInterface(IID_PPV_ARGS(&dxgi_device))) &&
+		SUCCEEDED(dxgi_device->GetAdapter(&adapter)) && SUCCEEDED(adapter->GetDesc(&desc)))
+	{
+		return desc.AdapterLuid;
+	}
+
+	return {};
+}
+
+// Left to itself FFmpeg made the decode device on whichever adapter was the default when the first
+// video opened. Where that was not the renderer's, the shared-texture bridge could not cross to it and
+// every frame went through system memory. The adapters asked about here are the last ones listed,
+// which are never that default wherever there are two: on every machine since Windows 8 the
+// Microsoft Basic Render Driver is listed after the GPUs.
+static void should_create_the_decode_device_on_the_render_adapter()
+{
+	assert_equal(true, av_platform_create_hw_device(AV_HWDEVICE_TYPE_DXVA2) == nullptr,
+	             "a device the renderer cannot present from is not made");
+
+	const auto adapters = list_adapters();
+	if (adapters.empty()) return;
+
+	const auto last = adapters.back().luid;
+	DXGI_ADAPTER_DESC1 found = {};
+	const auto adapter = find_adapter_by_luid(last);
+	assert_equal(true, adapter && SUCCEEDED(adapter->GetDesc1(&found)) && same_adapter(last, found.AdapterLuid),
+	             "an adapter is found by what it is, not where it is listed");
+	assert_equal(true, find_adapter_by_luid({}) == nullptr, "and none for the renderer that is not there");
+
+	const auto video = std::ranges::find_if(adapters.rbegin(), adapters.rend(),
+	                                        [](const listed_adapter& a) { return a.makes_video_devices; });
+	if (video == adapters.rend()) return;
+
+	const auto previous = render_adapter();
+	const df::scope_exit restore([previous] { publish_render_adapter(previous); });
+	publish_render_adapter(video->luid);
+
+	auto* device = av_platform_create_hw_device(AV_HWDEVICE_TYPE_D3D11VA);
+	const df::scope_exit release([&device] { av_buffer_unref(&device); });
+
+	assert_equal(true, device != nullptr, "a decode device is made");
+	if (!device) return;
+
+	assert_equal(true, same_adapter(video->luid, adapter_of(device)), "on the adapter the renderer draws with");
+	assert_equal(true, av_platform_hw_device_usable(device), "and FFmpeg can decode on it");
 }
 
 static void should_suppress_gpu_for_recovery_session()
@@ -746,6 +894,12 @@ void register_platform_tests(view_state& state, test_registry& tests)
 	tests.add("Should convert utf8 to ansi"s, should_convert_utf8_to_ansi);
 	tests.add("Should restore a window onto a display that still exists"s, should_restore_a_window_onto_a_display);
 	tests.add("Should classify DXGI device loss"s, should_classify_dxgi_device_loss);
+	tests.add("Should recognise the Microsoft Basic Render Driver as software"s,
+	          should_recognise_the_basic_render_driver);
+	tests.add("Should need shader sampling for planar video textures"s, should_need_sampling_for_planar_video);
+	tests.add("Should count shared memory for an integrated GPU"s, should_count_shared_memory_for_an_integrated_gpu);
+	tests.add("Should create the decode device on the render adapter"s,
+	          should_create_the_decode_device_on_the_render_adapter);
 	tests.add("Should suppress GPU for one recovery session"s, should_suppress_gpu_for_recovery_session);
 	tests.add("Issue #219: Should fall back for missing glyphs"s, should_fall_back_for_missing_glyphs);
 	tests.add("Issue #232/#189: Should cache font faces per face and size"s,

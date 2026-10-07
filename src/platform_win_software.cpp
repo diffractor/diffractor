@@ -223,6 +223,11 @@ public:
 
 		if (!_scaler) _scaler = std::make_unique<av_scaler>();
 
+		// A hardware picture is downloaded and converted below on the UI thread, which would repeat
+		// for every frame of the clip. The decode thread does it instead once asked, for the rest of
+		// the run - this backend never samples the decoder's surfaces.
+		if (av_get_d3d_info(frame).tex) av_request_cpu_video_frames();
+
 		_display_valid = false; // new frame - drop the display-scaled cache
 
 		// The first frame must report tex_created like the two overloads above: tex_updated maps to a

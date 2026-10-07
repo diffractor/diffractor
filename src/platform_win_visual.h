@@ -235,12 +235,14 @@ private:
 
 struct factories
 {
+	// Once a device exists, the factory that owns its adapter: swap chains must come from it.
 	ComPtr<IDXGIFactory1> dxgi;
 	ComPtr<IDWriteFactory> dwrite;
 	ComPtr<IWICImagingFactory> wic;
 
-	// True when Direct3D 11 hardware/WARP device creation failed and the app is running
-	// with the CPU software rendering backend.
+	// True when there is no Direct3D 11 hardware device to draw with - none could be created, the
+	// default adapter is the Microsoft Basic Render Driver, or the device was lost or could not
+	// present - and the app is running with the CPU software rendering backend.
 	bool software_mode = false;
 
 	// What the device says it can sample. Read once at init; ui::yuv_textures_enabled carries the
@@ -267,7 +269,8 @@ struct factories
 	bool init(bool use_gpu);
 
 	// Releases the Direct3D device and switches every draw context created from here on to
-	// the CPU software backend. Used when the GPU device is lost at runtime.
+	// the CPU software backend. Used when the GPU device is lost at runtime, or when a hardware
+	// window cannot present through it.
 	void downgrade_to_software();
 
 	void register_fonts() const;

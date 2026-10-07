@@ -14,7 +14,11 @@ Every window draws through `ui::draw_context_device` using one of two backends:
   GPU use is disabled.
 
 The window layer selects the backend and falls back to software after cleaning partial D3D state.
-The software path is the fallback renderer, not D3D WARP.
+The software path is the fallback renderer, not D3D WARP. The Microsoft Basic Render Driver, which
+is WARP offered as the default adapter when no GPU driver is working, therefore counts as no GPU,
+and so does Windows 7, which has no flip-model presentation. A hardware window that cannot build its
+Direct3D context switches the whole app to software as device loss does, so the animation and YUV
+gates never describe a GPU that no window is drawing with.
 
 ## Backend Parity
 
@@ -29,14 +33,21 @@ callers use `ui::animate_alpha` rather than bypassing that gate.
 
 ## Device And Frame Lifetime
 
-Shared D3D and DXGI factories live for the process. Each hardware window owns its swap chain and
-size-dependent targets. Device creation enables BGRA support and multithread protection because the
-video decoder and UI renderer can touch D3D resources from different owning contexts.
+Shared D3D and DXGI factories live for the process, and swap chains come from the factory that owns
+the device's adapter. Each hardware window owns its swap chain and size-dependent targets. Device
+creation enables BGRA support and multithread protection because the video decoder and UI renderer
+can touch D3D resources from different owning contexts.
 
 A frame records draw commands, submits the retained scene, and presents. Resize keeps the old target
-until a new one is ready, then replaces size-dependent resources together. Occluded windows avoid
-unnecessary presentation. Device loss releases GPU objects and requests recreation without dropping
-logical view, selection, zoom, or playback state.
+until a new one is ready, then replaces size-dependent resources together. A window that cannot be
+seen skips drawing and presenting: one whose top-level window is minimised, or whose present was
+answered with `DXGI_STATUS_OCCLUDED`, as behind the secure desktop of a UAC prompt or another user's
+session. A flip-model swap chain reports neither a minimised nor a covered window, so minimising is
+asked of the window itself. Visibility is answered afresh each frame, and a poll repaints the whole
+window once it can be seen again, so a skipped frame never leaves stale pixels behind. The app's own
+tick is not slowed, because playback consumes at most one video frame per tick and would fall behind
+its audio. Device loss releases GPU objects and requests recreation without dropping logical view,
+selection, zoom, or playback state.
 
 Resources are keyed by every input that changes their pixels or geometry. DPI, font, theme, device,
 and graphics resets invalidate the dependent caches. View-owned graphics objects are released when
@@ -48,6 +59,11 @@ Decoded surfaces and textures are bounded separately from encoded thumbnails and
 Visible content has priority; off-screen GPU textures and reproducible decoded surfaces are released
 before irreproducible or currently displayed data. A budget eviction must leave a cheaper path back,
 such as an encoded image or SQLite thumbnail, and must preserve layout dimensions.
+
+A displayed texture may cost a fraction of the memory its GPU allocates textures from, never more
+than the shipped ceiling. That memory is a discrete card's own; an integrated part reports only the
+carve-out it makes at boot as dedicated and draws on shared system memory, so for it the shared
+memory counts too.
 
 Texture upload occurs lazily on the UI thread because the draw context owns device resources. Decode
 and scaling remain on workers. Publication checks item identity and generation before installing a
@@ -80,7 +96,9 @@ theme, and source revision.
 
 The platform font layer resolves faces, fallback, shaping, metrics, and glyph coverage. Draw
 backends consume positioned glyphs. Hardware rendering stores coverage in glyph atlases keyed by
-font and device generation; software rendering blends the same coverage masks directly.
+font and device generation; software rendering blends the same coverage masks directly. An atlas row
+is as tall as its tallest glyph, since a fallback face can draw taller than the font's own line, and
+an atlas full at its size cap starts again empty rather than leaving new glyphs undrawn.
 
 Text measurement and drawing use the same shaping result. A font, DPI, locale, or device change
 invalidates both measurement and glyph resources so layout cannot describe different text from the
@@ -121,14 +139,18 @@ Hardware decode is chosen per stream, before the decoder is opened, and only whe
 acceleration covers the stream and the driver reports a decoder for its profile and format. A stream
 the driver still refuses decodes in software from the same context rather than producing no
 pictures. One D3D11 decode device serves every video in the process, and is replaced only once it is
-no longer usable.
+no longer usable. It is made on the adapter the renderer draws with, found by that adapter's LUID,
+because a shared texture cannot cross adapters. Left to choose, FFmpeg would take whichever adapter
+was the default when the first video opened, and docking or a new primary display can move that.
+Where the renderer has no adapter, or it is gone, the decode device falls back to that default.
 
 Completed textures are shared with the render device through keyed synchronization. The decoder
 publishes an immutable frame description; the UI copies it into a render-owned texture, which
 releases the decoder's surface at once - sampling the shared texture directly would hold the decoder
 until the frame was presented. Session generation is verified before display. A renderer that cannot
-open the shared texture asks for CPU frames, and from then on hardware pictures are downloaded and
-prepared on the decode thread.
+open the shared texture, or cannot sample its format because the device has no plane views or YUV
+presentation is closed, asks for CPU frames, and so does the CPU backend when a hardware picture
+reaches it. From then on hardware pictures are downloaded and prepared on the decode thread.
 
 When hardware decoding, shared textures, or YUV presentation are unavailable, playback falls back to
 software-decoded surfaces. The fallback preserves timing, orientation, color intent, and playback
@@ -174,8 +196,11 @@ initialized backend selected. Logical application state remains independent from
 
 ## Where this lives
 
-- [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp): hardware drawing, swap-chain resources,
-  texture upload, glyph atlases, and shared video textures.
+- [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp): device and adapter selection, image
+  budgets, hardware drawing, swap-chain resources, texture upload, glyph atlases, shared video
+  textures, and the decode device made on the renderer's adapter.
+- [platform_win_ui.cpp](../src/platform_win_ui.cpp): each window's backend choice, swap chain,
+  presentation and its hidden-window standby, and the switch to software on device loss.
 - [platform_win_software.cpp](../src/platform_win_software.cpp): CPU backend and Windows present
   target.
 - [platform_win_font.cpp](../src/platform_win_font.cpp): font resolution, shaping, and glyph masks.

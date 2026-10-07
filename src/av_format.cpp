@@ -1808,8 +1808,9 @@ static const AVCodecHWConfig* find_hw_config(const AVCodec* codec, const av_hw_d
 // One decode device for the process. A device per video cost its creation on every open, and the
 // renderer's cross-device handoff is keyed on the decode device, so each clip also rebuilt the shared
 // texture chain. FFmpeg serialises decoders on the device's own lock, and only the playing session
-// decodes in hardware. A device the driver has removed is replaced rather than handed out. It lives
-// for the process: nothing else releases a GPU device at exit, and the system reclaims it.
+// decodes in hardware. A device the driver has removed is replaced rather than handed out. The
+// platform makes it on the renderer's GPU, which is what lets the handoff share pictures at all. It
+// lives for the process: nothing else releases a GPU device at exit, and the system reclaims it.
 static AVBufferRef* acquire_hw_decode_device(const int device_type)
 {
 	static platform::mutex mutex;
@@ -1823,11 +1824,8 @@ static AVBufferRef* acquire_hw_decode_device(const int device_type)
 		av_buffer_unref(&shared);
 	}
 
-	if (!shared && av_hwdevice_ctx_create(&shared, static_cast<AVHWDeviceType>(device_type), nullptr, nullptr, 0) != 0)
-	{
-		shared = nullptr;
-		return nullptr;
-	}
+	if (!shared) shared = av_platform_create_hw_device(device_type);
+	if (!shared) return nullptr;
 
 	return av_buffer_ref(shared);
 }

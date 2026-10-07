@@ -655,6 +655,21 @@ public:
 	void present() const;
 	void handle_device_loss(HRESULT hr, std::string_view operation) const;
 
+	// Whether anything drawn now could reach the screen. A window whose top-level window is minimised
+	// cannot, and neither can one whose last present DXGI answered with DXGI_STATUS_OCCLUDED - the
+	// secure desktop of a UAC prompt or Ctrl+Alt+Del, another user's session. A flip-model chain
+	// reports nothing for a minimised or covered window, so that case is asked of the window itself.
+	// Answered afresh on every call rather than from a remembered state alone, so a missed
+	// notification cannot leave a window showing what it last drew.
+	bool can_be_seen() const;
+
+	// True when this frame is to be skipped: the window cannot be seen, and a poll is armed that
+	// repaints it whole once it can, since what was skipped would otherwise stay on screen until
+	// something next invalidated it. Ending the standby here invalidates the whole window as well.
+	bool skip_hidden_frame() const;
+	void poll_hidden_standby() const;
+	void end_hidden_standby() const;
+
 	virtual LRESULT handle_message(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) = 0;
 	virtual void on_render(const draw_context_device_ptr& ctx) = 0;
 	virtual void on_resize(sizei extent, bool is_minimized) = 0;
@@ -664,6 +679,10 @@ public:
 
 	ComPtr<IDXGISwapChain> _swap_chain;
 	mutable bool _device_loss_handled = false;
+	// Set when a present answers DXGI_STATUS_OCCLUDED; cleared by the first test present that does not.
+	mutable bool _present_occluded = false;
+	// Frames are being skipped and the poll that ends it is armed.
+	mutable bool _hidden_standby = false;
 
 	// Remembered so the context can be rebuilt after a device loss.
 	bool _use_d3d = false;
@@ -768,6 +787,18 @@ void frame_base::create_draw_context(const factories_ptr& f, const bool use_d3d,
 				// CPU software rendering below so the window still renders instead of staying blank.
 				df::log(__FUNCTION__, "Direct3D draw context unavailable - falling back to software rendering");
 				_swap_chain.Reset();
+
+				// The shared factories still describe a GPU: fades on, decoders asked for planar YUV, and
+				// hardware pictures shared with a device this window cannot present. The CPU backend
+				// drawing here would pay for all three on the UI thread, so the whole app switches, the
+				// same way it does when the device is lost. Nothing crashed, so like the other software
+				// fallbacks this one clears the GPU marker rather than leave a later crash blamed on it.
+				if (!platform::crash_guard_failed(platform::crash_guard::gpu_render))
+				{
+					platform::set_crash_guard(platform::crash_guard::gpu_render, false);
+				}
+
+				::PostMessage(m_hWnd, WM_DIFF_DEVICE_LOST, 0, 0);
 			}
 		}
 
@@ -817,6 +848,7 @@ void frame_base::recreate_draw_context()
 
 	_swap_chain.Reset();
 	_device_loss_handled = false;
+	_present_occluded = false;
 
 	if (f)
 	{
@@ -941,6 +973,64 @@ bool is_device_loss_error(const HRESULT hr)
 		hr == DXGI_ERROR_DEVICE_HUNG || hr == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
 }
 
+// Distinct from the frame tick (0) and the bubble fade (1), which handle_message routes on its own.
+static constexpr UINT_PTR hidden_standby_timer_id = 0xD1FF;
+static constexpr UINT hidden_standby_poll_ms = 250;
+
+bool frame_base::can_be_seen() const
+{
+	if (m_hWnd == nullptr) return false;
+
+	const auto root = GetAncestor(m_hWnd, GA_ROOT);
+	if (root != nullptr && IsIconic(root)) return false;
+
+	if (_present_occluded)
+	{
+		// The test present shows nothing, and is the documented way out of an occluded standby. Any
+		// answer but occlusion ends it - an error included, which the next real present then reports.
+		if (_swap_chain && _swap_chain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) return false;
+		_present_occluded = false;
+	}
+
+	return true;
+}
+
+bool frame_base::skip_hidden_frame() const
+{
+	if (can_be_seen())
+	{
+		end_hidden_standby();
+		return false;
+	}
+
+	// Skipped only once the poll is armed: without it nothing would repaint what was skipped.
+	if (!_hidden_standby && m_hWnd != nullptr)
+	{
+		_hidden_standby = SetTimer(m_hWnd, hidden_standby_timer_id, hidden_standby_poll_ms, nullptr) != 0;
+	}
+
+	if (_hidden_standby) df::bump(df::ui_perf.hidden_skips);
+	return _hidden_standby;
+}
+
+void frame_base::poll_hidden_standby() const
+{
+	if (can_be_seen()) end_hidden_standby();
+}
+
+void frame_base::end_hidden_standby() const
+{
+	if (!_hidden_standby) return;
+
+	_hidden_standby = false;
+
+	if (m_hWnd != nullptr)
+	{
+		KillTimer(m_hWnd, hidden_standby_timer_id);
+		InvalidateRect(m_hWnd, nullptr, FALSE);
+	}
+}
+
 void frame_base::present() const
 {
 	if (_swap_chain)
@@ -960,6 +1050,13 @@ void frame_base::present() const
 			return;
 		}
 
+		// A success code, so it is easily missed: nothing presented from here can be seen. The frames
+		// after this one are skipped until a test present answers otherwise.
+		if (hr == DXGI_STATUS_OCCLUDED)
+		{
+			_present_occluded = true;
+		}
+
 		// A successful present proves GPU device creation and rendering work. Clear the GPU
 		// crash guard on the first one so an unrelated later force-kill or power loss does not
 		// trigger software recovery. A later DXGI device-loss result explicitly marks it again.
@@ -971,10 +1068,16 @@ void frame_base::present() const
 	}
 }
 
-void frame_base::handle_render(const recti damage)
+void frame_base::handle_render(recti damage)
 {
+	// Leaving the standby has to draw everything that was skipped, not only what this paint was for.
+	const auto was_hidden = _hidden_standby;
+	if (skip_hidden_frame()) return;
+	if (was_hidden) damage = {};
+
 	df::bump(df::ui_perf.paints);
 	df::perf_timer timer(df::ui_perf.paint_us, &df::ui_perf.paint_max_us, &df::ui_perf.paint_latency);
+
 	const auto ctx = _draw_ctx;
 
 	if (ctx)
@@ -1031,6 +1134,13 @@ LRESULT frame_base::on_window_message(const HWND hwnd, const UINT uMsg, const WP
 			handle_graphics_device_lost(_f);
 			return 0;
 		}
+	case WM_TIMER:
+		if (wParam == hidden_standby_timer_id)
+		{
+			poll_hidden_standby();
+			return 0;
+		}
+		break;
 	case WM_DISPLAYCHANGE:
 		{
 			InvalidateRect(hwnd, nullptr, FALSE);
@@ -1521,6 +1631,9 @@ public:
 
 		if (is_valid_device())
 		{
+			// A video frame nobody can see is not worth drawing; the standby repaints once it can be.
+			if (skip_hidden_frame()) return;
+
 			// No begin_draw runs here, so any damage limit from the last paint is stale - the
 			// textures this re-present exists to show changed outside it.
 			_draw_ctx->reset_damage();

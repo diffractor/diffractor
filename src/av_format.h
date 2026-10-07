@@ -110,6 +110,11 @@ bool av_platform_hw_decode_supported(AVBufferRef* device, AVCodecID codec, int b
 // replaced rather than handed to the next session.
 bool av_platform_hw_device_usable(AVBufferRef* device);
 
+// Makes the hardware decode device, on the GPU the renderer draws with where there is one: a decoder
+// on another GPU cannot share its pictures with the renderer, so each would be copied through system
+// memory. Null when no device can be made, and the stream then decodes in software.
+AVBufferRef* av_platform_create_hw_device(int device_type);
+
 
 using av_packet_ptr = std::shared_ptr<av_packet>;
 using av_frame_ptr = std::shared_ptr<av_frame>;

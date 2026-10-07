@@ -361,8 +361,9 @@ void df::log_perf_summary()
 	}
 
 	append_perf_row(report, "UI", "Frame requests", format_count(load(u.frame_prepares)), "-", "-", "-",
-	                std::format("invalidates={}; redraws={}; paints/prepare={:.1f}; texture-uploads={}",
+	                std::format("invalidates={}; redraws={}; hidden-skips={}; paints/prepare={:.1f}; texture-uploads={}",
 	                            format_count(load(u.invalidates)), format_count(load(u.redraws)),
+	                            format_count(load(u.hidden_skips)),
 	                            load(u.frame_prepares) == 0
 		                            ? 0.0
 		                            : static_cast<double>(load(u.paints)) / load(u.frame_prepares),

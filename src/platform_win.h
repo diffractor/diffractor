@@ -66,13 +66,39 @@ constexpr float scene_clear_shade = 0.222f;
 HWND app_wnd();
 bool is_device_loss_error(HRESULT hr);
 
-// Private window message posted by a frame when a Direct3D device-loss result is seen. It
-// is posted (never sent) so recovery runs after the render or resize call stack has
-// unwound and no draw-context or device object is still live on the stack.
+// The Microsoft Basic Render Driver: WARP presented as a hardware adapter, which is what Windows
+// offers when no GPU driver is working. Drawn through, every frame is a full-window CPU redraw.
+bool is_software_adapter(uint32_t vendor_id, uint32_t device_id, uint32_t flags);
+
+// Whether a device answering this CheckFormatSupport mask can draw a texture of the format, which for
+// NV12 and P010 means sampling views of their planes - holding the format is not enough.
+bool can_sample_texture_format(UINT support);
+
+// The memory a GPU allocates textures from. An integrated part shares system memory, and the
+// "dedicated" figure it reports is only a carve-out made at boot (128MB on Intel parts).
+uint64_t gpu_texture_memory(uint64_t dedicated, uint64_t shared, bool unified_memory);
+
+// The bytes one displayed texture may cost, given that memory (0 when there is no GPU to ask) and
+// the machine's physical memory (0 when unknown).
+int64_t calc_texture_budget(uint64_t gpu_bytes, int64_t total_phys);
+
+// The adapter the renderer draws with, which a hardware decode device is made on so the two can share
+// pictures. Published once the render device exists; a zero LUID while there is none, and on the CPU
+// backend.
+void publish_render_adapter(LUID luid);
+LUID render_adapter();
+
+// The adapter with this LUID as Windows lists them now, or null once it is gone - or for a zero LUID.
+ComPtr<IDXGIAdapter1> find_adapter_by_luid(LUID luid);
+
+// Private window message posted by a frame when a Direct3D device-loss result is seen, or when a
+// hardware window cannot build a Direct3D context at all. It is posted (never sent) so recovery runs
+// after the render or resize call stack has unwound and no draw-context or device object is still
+// live on the stack.
 constexpr UINT WM_DIFF_DEVICE_LOST = WM_APP + 0x3d1;
 
-// Switches the whole process to CPU software rendering after the Direct3D device is lost,
-// then asks the app to release GPU resources and rebuild every frame's draw context.
+// Switches the whole process to CPU software rendering once the Direct3D device is lost or cannot
+// present, then asks the app to release GPU resources and rebuild every frame's draw context.
 void handle_graphics_device_lost(const factories_ptr& f);
 
 extern HINSTANCE get_resource_instance;

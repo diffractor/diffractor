@@ -414,6 +414,9 @@ namespace df
 		std::atomic_uint64_t frame_prepares = 0;
 		std::atomic_uint64_t invalidates = 0;
 		std::atomic_uint64_t redraws = 0;
+		// Paints and redraws skipped because the window could not be seen: minimised, or behind the
+		// secure desktop. Playing video while minimised should raise this, not paints.
+		std::atomic_uint64_t hidden_skips = 0;
 		// Which source kept asking for the next frame. An idle app should leave all three at zero;
 		// anything else is an animation that never settles.
 		std::atomic_uint64_t prepares_registered_anim = 0;

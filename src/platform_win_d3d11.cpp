@@ -6,8 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Direct3D 11 rendering backend. Implements GPU-accelerated texture rendering,
-// shader management, and hardware video decoding support.
+// Purpose: Direct3D 11 rendering backend. Chooses the device and decides whether the GPU is worth
+// drawing with, and implements GPU-accelerated texture rendering, shader management, and hardware
+// video decoding support.
 
 #include "pch.h"
 
@@ -91,26 +92,77 @@ static constexpr int texture_dimension_limit(const D3D_FEATURE_LEVEL fl)
 	return D3D_FL9_3_REQ_TEXTURE2D_U_OR_V_DIMENSION;
 }
 
+bool is_software_adapter(const uint32_t vendor_id, const uint32_t device_id, const uint32_t flags)
+{
+	constexpr uint32_t microsoft = 0x1414;
+	constexpr uint32_t basic_render_driver = 0x8c;
+	return (flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0 || (vendor_id == microsoft && device_id == basic_render_driver);
+}
+
+bool can_sample_texture_format(const UINT support)
+{
+	constexpr UINT needed = D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE;
+	return (support & needed) == needed;
+}
+
+uint64_t gpu_texture_memory(const uint64_t dedicated, const uint64_t shared, const bool unified_memory)
+{
+	return unified_memory || dedicated == 0 ? dedicated + shared : dedicated;
+}
+
+// An integrated part has no memory that is not local to it, which DXGI reports as a zero budget for
+// the non-local segment group. Before Windows 10 the question cannot be asked, and the answer is no.
+static bool is_unified_memory(IDXGIAdapter* const adapter)
+{
+	ComPtr<IDXGIAdapter3> adapter3;
+	DXGI_QUERY_VIDEO_MEMORY_INFO non_local = {};
+
+	return adapter && SUCCEEDED(adapter->QueryInterface(IID_PPV_ARGS(&adapter3))) &&
+		SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &non_local)) &&
+		non_local.Budget == 0;
+}
+
+// Packed so a decode worker can read it without a lock. No adapter is given the zero LUID, so zero
+// stands for none.
+static std::atomic<uint64_t> g_render_adapter{0};
+
+void publish_render_adapter(const LUID luid)
+{
+	g_render_adapter = static_cast<uint64_t>(static_cast<uint32_t>(luid.HighPart)) << 32 | luid.LowPart;
+}
+
+LUID render_adapter()
+{
+	const auto packed = g_render_adapter.load();
+	return {static_cast<DWORD>(packed & 0xffffffffu), static_cast<LONG>(static_cast<uint32_t>(packed >> 32))};
+}
+
+static constexpr int64_t image_budget_floor_bytes = 64ll * 1024ll * 1024ll;
+
+// A displayed image is one of several textures live at once (the compared image, its fade-out,
+// thumbnails, the glyph atlas, map tiles), so it gets a fraction of the card rather than the lot.
+int64_t calc_texture_budget(const uint64_t gpu_bytes, const int64_t total_phys)
+{
+	constexpr int64_t texture_ceiling = 128ll * 1024ll * 1024ll; // 32 megapixels, the historical fixed cap
+
+	auto texture_bytes = texture_ceiling;
+	if (gpu_bytes > 0) texture_bytes = std::min(texture_bytes, static_cast<int64_t>(gpu_bytes / 8));
+	if (total_phys > 0) texture_bytes = std::min(texture_bytes, total_phys / 16);
+	return std::max(image_budget_floor_bytes, texture_bytes);
+}
+
 // Publishes what one decoded image may cost. Both budgets only ever tighten the fixed ceilings the
 // app shipped with, so a large machine behaves exactly as before and a small one refuses earlier
 // instead of thrashing or failing the upload.
 //
-// vram_bytes is 0 when there is no GPU to ask, which leaves system memory as the only constraint.
-static void publish_image_budgets(const D3D_FEATURE_LEVEL fl, const uint64_t vram_bytes)
+// gpu_bytes is 0 when there is no GPU to ask, which leaves system memory as the only constraint.
+static void publish_image_budgets(const D3D_FEATURE_LEVEL fl, const uint64_t gpu_bytes)
 {
-	constexpr int64_t texture_ceiling = 128ll * 1024ll * 1024ll; // 32 megapixels, the historical fixed cap
 	constexpr int64_t decode_ceiling = 2048ll * 1024ll * 1024ll;
-	constexpr int64_t floor_bytes = 64ll * 1024ll * 1024ll;
 
 	MEMORYSTATUSEX mem = {};
 	mem.dwLength = sizeof(mem);
 	const auto total_phys = GlobalMemoryStatusEx(&mem) ? static_cast<int64_t>(mem.ullTotalPhys) : 0;
-
-	// A displayed image is one of several textures live at once (the compared image, its fade-out,
-	// thumbnails, the glyph atlas, map tiles), so it gets a fraction of the card rather than the lot.
-	auto texture_bytes = texture_ceiling;
-	if (vram_bytes > 0) texture_bytes = std::min(texture_bytes, static_cast<int64_t>(vram_bytes / 8));
-	if (total_phys > 0) texture_bytes = std::min(texture_bytes, total_phys / 16);
 
 	// Bounds the transient full-resolution frame a codec must materialise before anything can be
 	// scaled down. Total rather than available memory, so the same file behaves the same way twice.
@@ -118,8 +170,8 @@ static void publish_image_budgets(const D3D_FEATURE_LEVEL fl, const uint64_t vra
 	if (total_phys > 0) decode_bytes = std::min(decode_bytes, total_phys / 8);
 
 	df::max_texture_dimension = texture_dimension_limit(fl);
-	df::max_texture_bytes = std::max(floor_bytes, texture_bytes);
-	df::max_decode_bytes = std::max(floor_bytes, decode_bytes);
+	df::max_texture_bytes = calc_texture_budget(gpu_bytes, total_phys);
+	df::max_decode_bytes = std::max(image_budget_floor_bytes, decode_bytes);
 
 	df::log(__FUNCTION__, std::format("image budget: {} px edge, texture {}, decode {}",
 	                                  df::max_texture_dimension, df::file_size(df::max_texture_bytes).str(),
@@ -226,9 +278,19 @@ bool factories::init(const bool use_gpu)
 
 		constexpr auto driver_type = D3D_DRIVER_TYPE_HARDWARE;
 
+		// Every hardware window presents through a flip-model swap chain, which Windows 7 does not
+		// have. A device there could never reach the screen; it would only leave the fades and the
+		// YUV gates set for a GPU while every window drew on the CPU.
+		const auto can_present = IsWindows8OrGreater();
+
+		if (use_gpu && dxgi && !can_present)
+		{
+			df::log(__FUNCTION__, "flip-model presentation needs Windows 8 or later");
+		}
+
 		// Without a DXGI factory there is nothing to create a swap chain from, so a device would
 		// have no way to reach the screen.
-		if (use_gpu && dxgi)
+		if (use_gpu && dxgi && can_present)
 		{
 			// Mark GPU rendering as active before creating the device so a crash during
 			// device creation or subsequent rendering is attributed to the GPU on the next
@@ -307,6 +369,51 @@ bool factories::init(const bool use_gpu)
 		}
 	}
 
+	ComPtr<IDXGIAdapter1> adapter;
+	DXGI_ADAPTER_DESC1 adapter_desc = {};
+	auto has_adapter_desc = false;
+
+	if (SUCCEEDED(hr) && device)
+	{
+		ComPtr<IDXGIAdapter> device_adapter;
+
+		if (SUCCEEDED(dxgi_device->GetAdapter(&device_adapter)) && SUCCEEDED(device_adapter.As(&adapter)))
+		{
+			has_adapter_desc = SUCCEEDED(adapter->GetDesc1(&adapter_desc));
+		}
+
+		if (has_adapter_desc && is_software_adapter(adapter_desc.VendorId, adapter_desc.DeviceId, adapter_desc.Flags))
+		{
+			// What Windows hands out when no GPU driver is working: a virtual machine, a remote session
+			// without a GPU, a fresh install. Drawing through it redraws the whole window on the CPU every
+			// frame, where the CPU backend redraws only what changed and does not pay for fades.
+			df::log(__FUNCTION__, std::format("{} is not a GPU - using CPU software rendering",
+			                                  str::utf16_to_utf8(adapter_desc.Description)));
+			platform::set_crash_guard(platform::crash_guard::gpu_render, false);
+			software_mode = true;
+			set_can_animate(false);
+			set_yuv_textures(false);
+			adapter.Reset();
+			has_adapter_desc = false;
+			dxgi_device.Reset();
+			device.Reset();
+			context.Reset();
+		}
+	}
+
+	if (SUCCEEDED(hr) && device && adapter)
+	{
+		// Swap chains have to come from the factory that owns the device's adapter. A device created
+		// on the default adapter is given a factory of its own, and presenting it through the one made
+		// above is an error the DXGI debug layer reports.
+		ComPtr<IDXGIFactory1> device_factory;
+
+		if (SUCCEEDED(adapter->GetParent(IID_PPV_ARGS(&device_factory))))
+		{
+			dxgi = device_factory;
+		}
+	}
+
 	if (SUCCEEDED(hr) && device)
 	{
 		ComPtr<IDXGIDevice1> dxgi_device1;
@@ -319,13 +426,14 @@ bool factories::init(const bool use_gpu)
 
 	if (SUCCEEDED(hr) && device)
 	{
-		uint32_t support = 0;
+		const auto samples = [&device](const DXGI_FORMAT format)
+		{
+			UINT support = 0;
+			return SUCCEEDED(device->CheckFormatSupport(format, &support)) && can_sample_texture_format(support);
+		};
 
-		supports_p010 = SUCCEEDED(device->CheckFormatSupport(DXGI_FORMAT_P010, &support))
-			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
-
-		supports_nv12 = SUCCEEDED(device->CheckFormatSupport(DXGI_FORMAT_NV12, &support))
-			&& support & D3D11_FORMAT_SUPPORT_TEXTURE2D;
+		supports_p010 = samples(DXGI_FORMAT_P010);
+		supports_nv12 = samples(DXGI_FORMAT_NV12);
 
 		df::log(__FUNCTION__, supports_p010 ? "     p010 supported" : "     p010 not-supported");
 		df::log(__FUNCTION__, supports_nv12 ? "     nv12 supported" : "     nv12 not-supported");
@@ -348,40 +456,34 @@ bool factories::init(const bool use_gpu)
 
 		df::d3d_info = to_string(feature_level);
 
-		ComPtr<IDXGIAdapter> adapter;
-		uint64_t vram_bytes = 0;
+		uint64_t gpu_bytes = 0;
 
-		if (SUCCEEDED(dxgi_device->GetAdapter(&adapter)))
+		if (has_adapter_desc)
 		{
-			DXGI_ADAPTER_DESC adapter_desc;
+			const auto description = str::utf16_to_utf8(adapter_desc.Description);
+			const auto gpu_id = std::format("{:x}|{:x}|{:x}|{:x}", adapter_desc.VendorId, adapter_desc.DeviceId,
+			                                adapter_desc.SubSysId, adapter_desc.Revision);
 
-			if (SUCCEEDED(adapter->GetDesc(&adapter_desc)))
-			{
-				const auto description = str::utf16_to_utf8(adapter_desc.Description);
-				const auto gpu_id = std::format("{:x}|{:x}|{:x}|{:x}", adapter_desc.VendorId, adapter_desc.DeviceId,
-				                                adapter_desc.SubSysId, adapter_desc.Revision);
+			df::gpu_desc = description;
+			df::gpu_id = gpu_id;
+			publish_render_adapter(adapter_desc.AdapterLuid);
 
-				df::gpu_desc = description;
-				df::gpu_id = gpu_id;
+			const auto unified = is_unified_memory(adapter.Get());
+			gpu_bytes = gpu_texture_memory(adapter_desc.DedicatedVideoMemory, adapter_desc.SharedSystemMemory,
+			                               unified);
 
-				// Integrated parts report no dedicated memory and carve their working set out of the
-				// shared aperture instead.
-				vram_bytes = adapter_desc.DedicatedVideoMemory != 0
-					             ? adapter_desc.DedicatedVideoMemory
-					             : adapter_desc.SharedSystemMemory;
-
-				df::log(__FUNCTION__, "     "s + description);
-				df::log(__FUNCTION__, "     "s + gpu_id);
-				df::log(__FUNCTION__,
-				        "     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
-				df::log(__FUNCTION__,
-				        "     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
-				df::log(__FUNCTION__,
-				        "     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
-			}
+			df::log(__FUNCTION__, "     "s + description);
+			df::log(__FUNCTION__, "     "s + gpu_id);
+			df::log(__FUNCTION__,
+			        "     DedicatedVideoMemory "s + df::file_size(adapter_desc.DedicatedVideoMemory).str());
+			df::log(__FUNCTION__,
+			        "     DedicatedSystemMemory "s + df::file_size(adapter_desc.DedicatedSystemMemory).str());
+			df::log(__FUNCTION__,
+			        "     SharedSystemMemory "s + df::file_size(adapter_desc.SharedSystemMemory).str());
+			df::log(__FUNCTION__, unified ? "     unified memory" : "     memory of its own");
 		}
 
-		publish_image_budgets(feature_level, vram_bytes);
+		publish_image_budgets(feature_level, gpu_bytes);
 	}
 
 	if (SUCCEEDED(hr))
@@ -408,7 +510,7 @@ void factories::downgrade_to_software()
 		return;
 	}
 
-	df::log(__FUNCTION__, "Direct3D device lost - switching to CPU software rendering");
+	df::log(__FUNCTION__, "Direct3D device lost or unable to present - switching to CPU software rendering");
 
 	software_mode = true;
 	set_can_animate(false);
@@ -731,6 +833,8 @@ class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 	glyph_face_keys _glyph_keys;
 	font_renderer_ptr _font;
 	pointi _next_location;
+	// Height of the atlas row being filled: its tallest glyph so far.
+	int _row_height = 0;
 
 	ui::color _clr;
 	std::vector<ui::text_highlight_t> _highlights;
@@ -2240,6 +2344,11 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const rec
 
 			const auto tex_fmt = t->_format;
 			const auto& binding = t->binding();
+
+			// A texture whose view could not be made has nothing to sample. Drawn anyway, its quad would
+			// show whatever the previous atom left bound.
+			if (!binding) return;
+
 			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt, binding.tone_map != nullptr);
 			add_scene_atom(binding, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
 			               std::size(indexes), t->_cs);
@@ -2283,6 +2392,8 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const qua
 
 			const auto tex_fmt = t->_format;
 			const auto& binding = t->binding();
+			if (!binding) return;
+
 			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt, binding.tone_map != nullptr);
 			add_scene_atom(binding, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
 			               std::size(indexes), t->_cs);
@@ -2400,6 +2511,10 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	if (!_canvas || !_canvas->_shadow || !_canvas->_shadow->is_valid() || !_canvas->_f ||
 		!_canvas->_f->d3d_device || !_canvas->_f->d3d_context)
 		return;
+
+	// The shadows sample this; without a view they would sample whatever was bound before them.
+	const auto& shadow_binding = _canvas->_shadow->binding();
+	if (!shadow_binding) return;
 
 	// ~118KB of the UI thread's 1MB stack (vertex_2d is 48 bytes). Safe while this stays a leaf
 	// call; move to a member buffer if a deeper call chain ever lands underneath it.
@@ -2536,7 +2651,7 @@ void d3d11_vertices::update(recti rects[], ui::color colors[], const int num_bar
 	}
 
 	scene_atom shadow_atom = {
-		_canvas->_shadow->binding(),
+		shadow_binding,
 		_canvas->_pixel_shader_rgb.Get(),
 		ui::texture_format::RGB,
 		ui::texture_sampler::point,
@@ -2666,6 +2781,92 @@ bool av_platform_hw_device_usable(AVBufferRef* device)
 	return hwctx && hwctx->device && hwctx->device->GetDeviceRemovedReason() == S_OK;
 }
 
+// Looked up afresh rather than held: the decode device is made when the first video opens, and by then
+// the adapters may have changed - a dock, an external GPU, a driver update.
+ComPtr<IDXGIAdapter1> find_adapter_by_luid(const LUID luid)
+{
+	ComPtr<IDXGIFactory1> factory;
+
+	if ((luid.LowPart == 0 && luid.HighPart == 0) || FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+	{
+		return {};
+	}
+
+	ComPtr<IDXGIAdapter1> adapter;
+
+	for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &adapter)); ++i)
+	{
+		DXGI_ADAPTER_DESC1 desc = {};
+
+		if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.AdapterLuid.LowPart == luid.LowPart &&
+			desc.AdapterLuid.HighPart == luid.HighPart)
+		{
+			return adapter;
+		}
+	}
+
+	return {};
+}
+
+// Left to itself FFmpeg makes the device on whichever adapter is the default when the first video
+// opens. That need not be the renderer's - docking, or an external display becoming the primary one,
+// moves the default - and the shared-texture bridge cannot cross adapters, so every frame was then
+// downloaded and uploaded again.
+AVBufferRef* av_platform_create_hw_device(const int device_type)
+{
+	if (device_type != AV_HWDEVICE_TYPE_D3D11VA) return nullptr;
+
+	if (const auto adapter = find_adapter_by_luid(render_adapter()))
+	{
+		DXGI_ADAPTER_DESC1 desc = {};
+		adapter->GetDesc1(&desc);
+		const auto name = str::utf16_to_utf8(desc.Description);
+
+		// What FFmpeg's own creation asks for: the video interfaces, at the default feature levels.
+		ComPtr<ID3D11Device> device;
+		const auto hr = D3D11CreateDevice(adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
+		                                  D3D11_CREATE_DEVICE_VIDEO_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+		                                  &device, nullptr, nullptr);
+
+		if (SUCCEEDED(hr))
+		{
+			// Decode threads and the UI thread's copy out of the decoder's surfaces share the device, so
+			// it is protected the way FFmpeg protects the ones it makes.
+			ComPtr<ID3D10Multithread> multithread;
+			if (SUCCEEDED(device.As(&multithread))) multithread->SetMultithreadProtected(TRUE);
+
+			auto* ref = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA);
+
+			if (ref)
+			{
+				// The context owns the device from here, and releases it on a failed init as well as with
+				// its last reference. Init fills in the contexts, the video interfaces and the lock.
+				auto* const device_ctx = std::bit_cast<AVHWDeviceContext*>(ref->data);
+				static_cast<AVD3D11VADeviceContext*>(device_ctx->hwctx)->device = device.Detach();
+
+				if (av_hwdevice_ctx_init(ref) == 0)
+				{
+					df::log(__FUNCTION__, "hardware decode device on " + name);
+					return ref;
+				}
+
+				av_buffer_unref(&ref);
+			}
+
+			df::log(__FUNCTION__, std::format("FFmpeg refused the decode device on {} - using the default adapter",
+			                                  name));
+		}
+		else
+		{
+			df::log(__FUNCTION__, std::format("no decode device on {} ({:x}) - using the default adapter", name,
+			                                  static_cast<uint32_t>(hr)));
+		}
+	}
+
+	AVBufferRef* ref = nullptr;
+	return av_hwdevice_ctx_create(&ref, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0) == 0 ? ref : nullptr;
+}
+
 // Scoped hold of the FFmpeg D3D11VA device lock. The producer-side copy must run under it,
 // but it is released as early as possible (and on every error path) so decoding on the worker
 // thread is not serialised behind the render-device work that follows.
@@ -2776,15 +2977,26 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		const auto format_supported = tex_desc_src.Format == DXGI_FORMAT_P010 ||
 			tex_desc_src.Format == DXGI_FORMAT_NV12;
 
-		if (!format_supported)
+		// The same refusal where this device cannot sample the planes, or its driver has already
+		// faulted on them: those close the YUV gates, and a hardware picture then has to arrive
+		// packed like every other one. Sharing it anyway built a texture that drew nothing.
+		const auto format_sampled = video_tex_format == ui::texture_format::P010
+			                            ? ui::p010_textures_enabled
+			                            : ui::yuv_textures_enabled;
+		const auto format_bridged = format_supported && format_sampled;
+
+		if (!format_bridged)
 		{
 			// Noted against the same key the build refusal uses, so it is said once per stream
 			// rather than once per frame.
 			if (_shared_texture_refused_device != video_device ||
 				_shared_texture_refused_dimensions != texture_extent)
 			{
-				df::log(__FUNCTION__, std::format("Unsupported video texture format {} - scaling on the CPU",
-				                                  static_cast<uint32_t>(tex_desc_src.Format)));
+				df::log(__FUNCTION__, format_supported
+					                      ? std::format("{} video textures are not sampled here - scaling on the CPU",
+					                                    to_string(video_tex_format))
+					                      : std::format("Unsupported video texture format {} - scaling on the CPU",
+					                                    static_cast<uint32_t>(tex_desc_src.Format)));
 			}
 
 			_shared_texture_refused_device = video_device;
@@ -2803,7 +3015,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		// The decode device is part of the key: a second video decodes on its own FFmpeg device,
 		// and reusing a producer copy owned by the previous device makes CopySubresourceRegion a
 		// cross-device call that the runtime rejects, leaving stale frames on screen.
-		const auto build_already_refused = !format_supported ||
+		const auto build_already_refused = !format_bridged ||
 			(_shared_texture_refused_device == video_device &&
 				_shared_texture_refused_dimensions == texture_extent &&
 				_shared_texture_refused_format == video_tex_format);
@@ -2897,7 +3109,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			}
 		}
 
-		if (format_supported && _shared_texture && _shared_producer_mutex)
+		if (format_bridged && _shared_texture && _shared_producer_mutex)
 		{
 			// IDXGIKeyedMutex::AcquireSync returns WAIT_TIMEOUT (0x102) and WAIT_ABANDONED
 			// (0x80) as *success* HRESULTs, so it must be tested against S_OK - anything else
@@ -2959,6 +3171,12 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			}
 			else
 			{
+				// The key the chain was built for, held here because a failed release below drops it.
+				const auto bridge_device = _shared_texture_device;
+				const auto bridge_dimensions = _shared_texture_dimensions;
+				const auto bridge_format = _shared_texture_format;
+				auto bridge_refused = false;
+
 				if (!_texture || _dimensions != _shared_texture_dimensions || _format != _shared_texture_format)
 				{
 					D3D11_TEXTURE2D_DESC tex_desc_render = {};
@@ -2981,6 +3199,15 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 						_orientation = info.orientation;
 						result = ui::texture_update_result::tex_created;
 					}
+
+					// Asked now rather than at the first draw. A render device that will not hold or view
+					// this format refuses it on every frame, and a texture with no view draws nothing.
+					if (result == ui::texture_update_result::failed || !binding())
+					{
+						_texture.Reset();
+						result = ui::texture_update_result::failed;
+						bridge_refused = true;
+					}
 				}
 				else
 				{
@@ -3000,6 +3227,25 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 					_shared_consumer_mutex.Reset();
 					_shared_texture_device.Reset();
 					_shared_texture_format = ui::texture_format::None;
+				}
+
+				if (bridge_refused)
+				{
+					// Remembered like a refused build, and the chain dropped with it, so the decode device
+					// stops copying into a texture nothing presents. The decode thread prepares the
+					// pictures from here on.
+					df::log(__FUNCTION__, std::format("{} video texture refused by the render device - scaling on the CPU",
+					                                  to_string(bridge_format)));
+					_shared_texture_refused_device = bridge_device;
+					_shared_texture_refused_dimensions = bridge_dimensions;
+					_shared_texture_refused_format = bridge_format;
+					_shared_texture.Reset();
+					_shared_texture_render.Reset();
+					_shared_producer_mutex.Reset();
+					_shared_consumer_mutex.Reset();
+					_shared_texture_device.Reset();
+					_shared_texture_format = ui::texture_format::None;
+					av_request_cpu_video_frames();
 				}
 			}
 		}
@@ -3421,6 +3667,7 @@ void d3d11_text_renderer::create_a8_texture(const int xy)
 			_xy_tex = xy;
 			_next_location.x = 0;
 			_next_location.y = 0;
+			_row_height = 0;
 			df::bump(df::gpu_perf.textures_created);
 		}
 	}
@@ -3480,36 +3727,38 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 				return result;
 			}
 
+			// A row is as tall as the tallest glyph placed in it. The font's line height is no bound:
+			// a fallback face can draw taller than the face that asked for it, and a row stepped down
+			// by line height wrote the next glyphs over the bottom of that one.
 			if (_next_location.x + cx > static_cast<int>(_xy_tex))
 			{
 				_next_location.x = 0;
-				_next_location.y += _line_height;
+				_next_location.y += _row_height;
+				_row_height = 0;
 			}
 
-			// Grow while either axis still cannot hold this glyph; the loop below caps at max_atlas_xy.
-			while (_texture && (cx > static_cast<int>(_xy_tex) || _next_location.y + cy > static_cast<int>(_xy_tex)))
+			// Out of room: start again in a larger atlas or, at the cap, a fresh one of the same size.
+			// Either way the cached glyphs are rasterised again as they are next drawn. Refusing them
+			// instead left every glyph not yet seen undrawn for the rest of the session. Vertices
+			// already staged keep the atlas they were measured against alive through their binding.
+			if (cx > static_cast<int>(_xy_tex) || _next_location.y + cy > static_cast<int>(_xy_tex))
 			{
-				const auto grown = std::min(_xy_tex * 2u, max_atlas_xy);
+				auto size = _xy_tex;
 
-				if (grown <= _xy_tex) break;
-
-				_coords.clear();
-				_texture = nullptr;
-				create_a8_texture(grown);
-			}
-
-			if (_next_location.y + _line_height > static_cast<int>(_xy_tex)) // Out of room
-			{
-				const auto new_size = std::min(_xy_tex * 2u, max_atlas_xy);
-				if (new_size <= _xy_tex)
+				do
 				{
-					df::log(__FUNCTION__, "Font texture atlas reached maximum size, glyph rendering may fail");
-					return result; // Return empty coordinates if we can't grow further
+					size = std::min(size * 2u, max_atlas_xy);
+				}
+				while (size < max_atlas_xy && (cx > static_cast<int>(size) || cy > static_cast<int>(size)));
+
+				if (size == _xy_tex)
+				{
+					df::log(__FUNCTION__, "Font texture atlas full - starting a fresh one");
 				}
 
 				_coords.clear();
 				_texture = nullptr;
-				create_a8_texture(new_size);
+				create_a8_texture(size);
 			}
 
 			if (!_texture || _next_location.x + cx > static_cast<int>(_xy_tex) ||
@@ -3541,6 +3790,7 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 
 			_coords[key] = result = glyph_bounds;
 			_next_location.x += cx;
+			_row_height = std::max(_row_height, cy);
 		}
 		else
 		{
@@ -3608,6 +3858,7 @@ void d3d11_text_renderer::reset()
 	_base_line_height = 0;
 	_next_location.x = 0;
 	_next_location.y = 0;
+	_row_height = 0;
 }
 
 void d3d11_text_renderer::draw_text(const std::string_view text, const recti bounds,
@@ -4075,6 +4326,8 @@ void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd
 	};
 	constexpr WORD indexes[] = {0, 1, 2, 3, 0, 2};
 	const auto& binding = tt->binding();
+	if (!binding) return;
+
 	const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tt->_format, binding.tone_map != nullptr);
 
 	if (!_last_transform || *_last_transform != transform)
