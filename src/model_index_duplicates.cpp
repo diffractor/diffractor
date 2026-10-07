@@ -19,10 +19,6 @@
 #include "model.h"
 #include "util_text.h"
 
-// Hamming distance across 63 meaningful bits. Every hash sets exactly 31 of them, so a distance is
-// always even and only 0, 2, 4 and 6 are distinct settings; 6 is the loosest of the four.
-constexpr auto max_duplicate_phash_distance = 6;
-
 // Capture time is recorded to the second and cameras shoot faster than that. A picture that matches
 // this many others in the SAME orientation under one timestamp is a burst frame rather than a
 // re-save: continuous shooting produces frames that match each other at any threshold. A turned
@@ -42,33 +38,6 @@ constexpr size_t max_phash_requests_per_pass = 256;
 // The hash reads the file whole, so the bound is also the most a whole read may hold: above that the
 // read answers empty, and a file refused for its size was recorded as one that failed to decode.
 constexpr uint64_t max_phash_file_bytes = df::max_blob_size;
-
-
-// Shared by duplicate search and presence, so neither can claim a copy the other denies. Compared by
-// aspect rather than extent, so a resize still counts. The tolerance is an absolute block rather than
-// a percentage because lossless JPEG rotation trims to the MCU grid: a 1024x683 photograph turns into
-// 672x1024, not 683x1024, and a percentage tight enough to be useful on a large picture would reject
-// that. A quarter turn transposes the stored extent, so a transposed shape counts when rotations are
-// allowed. An unknown shape is not a different shape, so a picture with no stored extent is never
-// refused on this ground.
-static bool same_picture_shape(const sizei a, const sizei b, const bool allow_swap = true)
-{
-	if (a.is_empty() || b.is_empty()) return true;
-
-	const auto close = [](const sizei left, const sizei right)
-	{
-		constexpr double mcu_block = 16.0;
-		const auto left_aspect = static_cast<double>(left.cx) / left.cy;
-		const auto right_aspect = static_cast<double>(right.cx) / right.cy;
-		const auto shortest = std::min({left.cx, left.cy, right.cx, right.cy});
-		const auto tolerance = mcu_block / shortest + 0.01;
-		return std::abs(left_aspect - right_aspect) <= std::max(left_aspect, right_aspect) * tolerance;
-	};
-
-	if (close(a, b)) return true;
-
-	return allow_swap && close(a, {b.cy, b.cx});
-}
 
 
 static auto next_dup_group = 1000u;
@@ -99,6 +68,19 @@ std::vector<std::pair<df::file_path, df::index_file_item>> index_state::duplicat
 				}
 			}
 		}
+		else
+		{
+			for (const auto& file : ifn.second->files)
+			{
+				_items.update_file(df::file_path(ifn.first, file.name), [](const df::index_folder_item_ptr&,
+				                                                           const df::index_file_item& current_file)
+				{
+					if (current_file.exact_duplicate_group.load() == 0) return false;
+					current_file.exact_duplicate_group = 0;
+					return true;
+				});
+			}
+		}
 	}
 
 	return result;
@@ -125,10 +107,33 @@ void index_state::update_predictions()
 	};
 
 	std::vector<duplicate_candidate> files;
-	std::vector<std::pair<uint32_t, size_t>> dups;
+
+	enum class duplicate_evidence_kind : uint8_t
+	{
+		crc,
+		av_name_size,
+		name_created,
+	};
+
+	struct duplicate_evidence
+	{
+		duplicate_evidence_kind kind = duplicate_evidence_kind::crc;
+		std::string name;
+		uint64_t first = 0;
+		uint64_t second = 0;
+		size_t index = 0;
+		df::copy_grade grade = df::copy_grade::none;
+
+		auto key() const
+		{
+			return std::tie(kind, name, first, second);
+		}
+	};
+
+	std::vector<duplicate_evidence> dups;
 
 	{
-		// four candidate keys per file - reserve from the real count rather than a fixed guess
+		// Three complete evidence tuples per file - reserve from the real count rather than a fixed guess.
 		size_t indexed_file_count = 0;
 
 		for (const auto& ifn : folders)
@@ -136,7 +141,7 @@ void index_state::update_predictions()
 			if (ifn.second->is_in_collection) indexed_file_count += ifn.second->files.size();
 		}
 
-		dups.reserve(indexed_file_count * 4);
+		dups.reserve(indexed_file_count * 3);
 		files.reserve(indexed_file_count);
 	}
 
@@ -151,35 +156,51 @@ void index_state::update_predictions()
 				if (df::is_closing) return;
 				const auto file_index = files.size();
 				files.push_back({ifn.second, &file, ifn.first});
-				const auto md = file.metadata.load(); // important to hold ref
-
-				if (md)
-				{
-					const auto cd = md->created();
-
-					if (cd.is_valid())
-					{
-						dups.emplace_back(x64to32(cd.to_int64()), file_index);
-					}
-				}
-
-				dups.emplace_back(file.name.ihash(), file_index);
-				dups.emplace_back(x64to32(file.file_created.to_int64()), file_index);
 
 				if (file.crc32c)
 				{
-					dups.emplace_back(file.crc32c, file_index);
+					dups.emplace_back(duplicate_evidence_kind::crc, std::string{}, file.crc32c,
+					                  static_cast<uint64_t>(file.size.to_int64()), file_index,
+					                  df::copy_grade::identical);
 					++indexed_crc_count;
 				}
-				else
+
+				if (file.ft->has_trait(file_traits::av) && file.size.to_int64() != 0)
 				{
-					dups.emplace_back(x64to32(file.size.to_int64()), file_index);
+					dups.emplace_back(duplicate_evidence_kind::av_name_size, str::to_lower(file.name),
+					                  static_cast<uint64_t>(file.size.to_int64()), 0, file_index,
+					                  df::copy_grade::same_file);
 				}
+
+				const auto created = file.created();
+
+				if (created.is_valid())
+				{
+					dups.emplace_back(duplicate_evidence_kind::name_created, str::to_lower(file.name),
+					                  static_cast<uint64_t>(created.to_int64()), 0, file_index,
+					                  df::copy_grade::same_file);
+				}
+			}
+		}
+		else
+		{
+			for (const auto& file : ifn.second->files)
+			{
+				_items.update_file(df::file_path(ifn.first, file.name), [](const df::index_folder_item_ptr&,
+				                                                           const df::index_file_item& current_file)
+				{
+					if (current_file.exact_duplicate_group.load() == 0) return false;
+					current_file.exact_duplicate_group = 0;
+					return true;
+				});
 			}
 		}
 	}
 
-	std::ranges::sort(dups, [](auto&& left, auto&& right) { return left.first < right.first; });
+	std::ranges::sort(dups, [](const duplicate_evidence& left, const duplicate_evidence& right)
+	{
+		return left.key() < right.key();
+	});
 
 	std::vector<size_t> parents(files.size());
 	std::vector<uint8_t> ranks(files.size());
@@ -224,39 +245,54 @@ void index_state::update_predictions()
 	{
 		if (df::is_closing) return;
 
-		int compare_count = 0;
-		const auto it = cdups[i];
+		auto hi = i + 1;
+		while (hi < dup_size && cdups[hi].key() == cdups[i].key()) ++hi;
 
-		for (auto hi = i; hi < dup_size; ++hi)
+		const auto bucket_size = static_cast<int>(hi - i);
+		max_compare_count = std::max(max_compare_count, bucket_size);
+
+		if (bucket_size > 1)
 		{
-			const auto hit = cdups[hi];
+			const auto first = cdups[i].index;
 
-			if (hit.first != it.first)
+			for (auto member = i; member < hi; ++member)
 			{
-				max_compare_count = std::max(max_compare_count, compare_count);
-				break;
-			}
-
-			// a hash bucket can be arbitrarily large, so shutdown must be observed here too
-			if (df::is_closing) return;
-
-			compare_count += 1;
-
-			const auto* const file = files[it.second].file;
-			const auto* const other_file = files[hit.second].file;
-
-			if (file == other_file) continue;
-
-			const auto grade = dup_match_grade(file, other_file);
-
-			if (grade != df::copy_grade::none)
-			{
-				unite(it.second, hit.second);
-				record_grade(it.second, grade);
-				record_grade(hit.second, grade);
+				if (df::is_closing) return;
+				unite(first, cdups[member].index);
+				record_grade(cdups[member].index, cdups[member].grade);
 			}
 		}
+
+		i = hi - 1;
 	}
+
+	df::hash_map<size_t, df::int_counter> exact_component_counts;
+	for (auto i = 0u; i < files.size(); ++i)
+	{
+		++exact_component_counts[find_root(i)];
+	}
+
+	df::hash_map<size_t, uint32_t> exact_component_groups;
+	for (const auto& [root, count] : exact_component_counts)
+	{
+		if (count > 1) exact_component_groups[root] = ++next_dup_group;
+	}
+
+	for (auto i = 0u; i < files.size(); ++i)
+	{
+		const auto root = find_root(i);
+		const auto found = exact_component_groups.find(root);
+		const auto group = found == exact_component_groups.end() ? 0u : found->second;
+		_items.update_file(df::file_path(files[i].path, files[i].file->name),
+		                    [group](const df::index_folder_item_ptr&, const df::index_file_item& file)
+		{
+			if (file.exact_duplicate_group.load() == group) return false;
+			file.exact_duplicate_group = group;
+			return true;
+		});
+	}
+
+	std::vector<uint8_t> crowded(files.size(), 0);
 
 	// The perceptual stage. It is deliberately not part of the walk above: a picture match is a
 	// tolerance, not an equality, so it may not be closed over transitively. Every candidate is
@@ -310,7 +346,12 @@ void index_state::update_predictions()
 			// One photograph proves nothing, and past this a capture time is unambiguously continuous
 			// shooting. Presence applies the same bound, so neither surface can see a set the other
 			// cannot (docs/collections.md section 7).
-			if (members.size() < 2 || members.size() > max_photos_sharing_capture_time) continue;
+			if (members.size() < 2) continue;
+			if (members.size() > max_photos_sharing_capture_time)
+			{
+				for (const auto member : members) crowded[member] = 1;
+				continue;
+			}
 
 			// Sharing a capture second is a weak claim on its own. A picture whose neighbours are all
 			// a different shape cannot be a copy of any of them, and refusing it here is a decode
@@ -436,6 +477,7 @@ void index_state::update_predictions()
 
 			if (same_orientation_matches > max_similar_pictures_at_one_capture_time)
 			{
+				for (const auto member : shaped) crowded[member] = 1;
 				++crowded_count;
 				continue;
 			}
@@ -510,7 +552,19 @@ void index_state::update_predictions()
 		const auto found_group = component_groups.find(root);
 		const auto group = found_group == component_groups.end() ? 0u : found_group->second;
 		const auto grade = group == 0 ? df::copy_grade::none : grades[i];
-		files[i].file->update_duplicates(files[i].folder, df::duplicate_info{group, count, grade});
+		const auto dup_info = df::duplicate_info{group, count, crowded[i], grade};
+		_items.update_file(df::file_path(files[i].path, files[i].file->name),
+		                    [dup_info](const df::index_folder_item_ptr& folder, const df::index_file_item& file)
+		{
+			const auto existing = file.duplicates.load();
+			if (existing.count == dup_info.count && existing.group == dup_info.group &&
+				existing.grade == dup_info.grade && existing.same_picture_crowded == dup_info.same_picture_crowded)
+			{
+				return false;
+			}
+			file.update_duplicates(folder, dup_info);
+			return true;
+		});
 	}
 
 	stats.indexed_dup_folder_count = static_cast<int>(component_groups.size());
@@ -537,14 +591,13 @@ void index_state::queue_calc_perceptual_hashes(std::vector<phash_request> reques
 {
 	_async.queue_async(async_queue::crc, [this, requests = std::move(requests)]
 	{
-		auto usable = 0;
-
 		// Results are published in groups. Hashing a file takes milliseconds, so publishing each one on
 		// its own found both the work queue and the write queue empty every time and woke two threads
 		// per file for a few microseconds of work each.
 		constexpr size_t publish_group = 32;
 		std::vector<phash_result> hashed;
 		hashed.reserve(publish_group);
+		auto published_any = false;
 
 		for (const auto& request : requests)
 		{
@@ -580,7 +633,6 @@ void index_state::queue_calc_perceptual_hashes(std::vector<phash_request> reques
 			{
 				hashed.emplace_back(path, request.revision, hash);
 				df::bump(df::index_perf.phash_usable);
-				++usable;
 			}
 			else
 			{
@@ -590,20 +642,16 @@ void index_state::queue_calc_perceptual_hashes(std::vector<phash_request> reques
 
 			if (hashed.size() >= publish_group)
 			{
-				save_phashes(std::move(hashed));
+				published_any = true;
+				save_phashes(std::move(hashed), false);
 				hashed.clear();
 				hashed.reserve(publish_group);
 			}
 		}
 
 		// Published even when shutdown cut the loop short, so attempts already made are not repeated.
-		save_phashes(std::move(hashed));
-
-		// Only a hash that can actually match is worth another pass.
-		if (usable > 0 && !df::is_closing)
-		{
-			queue_update_predictions();
-		}
+		published_any = published_any || !hashed.empty();
+		save_phashes(std::move(hashed), published_any);
 	});
 }
 
@@ -660,12 +708,15 @@ static df::copy_grade dup_match_grade(const df::index_file_item& file, const pre
 
 	const auto name_match = icmp(file.name, other.path.name()) == 0;
 
-	if (name_match && file.ft->has_trait(file_traits::av) && file.size == other.size)
+	if (name_match && file.ft->has_trait(file_traits::av) &&
+		file.size.to_int64() != 0 && other.size.to_int64() != 0 &&
+		file.size == other.size)
 	{
 		return df::copy_grade::same_file;
 	}
 
-	return name_match && file.created() == other.media_created
+	const auto created = file.created();
+	return name_match && created.is_valid() && created == other.media_created
 		       ? df::copy_grade::same_file
 		       : df::copy_grade::none;
 }
@@ -813,6 +864,8 @@ static void resolve_similar_presence(index_state& index, const std::vector<prese
 
 				for (auto candidate = i; candidate != group_end; ++candidate)
 				{
+					if (candidate->duplicates.same_picture_crowded) continue;
+
 					// Shape narrows before the picture is decoded, exactly as duplicate search does.
 					if (!same_picture_shape(request.dimensions, candidate->dimensions)) continue;
 

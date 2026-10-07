@@ -198,9 +198,41 @@ static void should_key_glyph_cache_by_size()
 	             "a different glyph yields a distinct key");
 }
 
+class registry_test_root
+{
+	std::string _root;
+	std::wstring _root_w;
+
+public:
+	explicit registry_test_root(const std::string_view name)
+	{
+		_root = std::format("Software\\DiffractorTest\\{}-{}", name, platform::tick_count());
+		_root_w = str::utf8_to_utf16(_root);
+	}
+
+	~registry_test_root()
+	{
+		RegDeleteTreeW(HKEY_CURRENT_USER, _root_w.c_str());
+	}
+
+	registry_test_root(const registry_test_root&) = delete;
+	registry_test_root& operator=(const registry_test_root&) = delete;
+
+	const std::string& path() const
+	{
+		return _root;
+	}
+
+	std::wstring subkey(const std::string_view section) const
+	{
+		return str::utf8_to_utf16(std::format("{}\\{}", _root, section));
+	}
+};
+
 static void should_persist_to_registry()
 {
-	const auto archive = platform::create_registry_settings();
+	const registry_test_root root("strings");
+	const auto archive = platform::create_registry_settings(root.path());
 
 	const std::vector<std::string> vals = {
 		"Hello World"s,
@@ -223,27 +255,42 @@ static void should_persist_to_registry()
 
 static void should_validate_registry_value_types_and_sizes()
 {
+	const registry_test_root root("malformed");
 	const auto section = std::format("test-malformed-{}", platform::tick_count());
-	const auto sectionW = str::utf8_to_utf16(std::format("Software\\Diffractor\\{}", section));
+	const auto sectionW = root.subkey(section);
 	HKEY key = nullptr;
 	assert_equal(static_cast<int>(ERROR_SUCCESS),
 	             static_cast<int>(RegCreateKeyExW(HKEY_CURRENT_USER, sectionW.c_str(), 0, nullptr,
 	                                              REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, nullptr, &key, nullptr)),
 	             "create registry test section");
+	const df::scope_exit close_key([&key] { if (key) RegCloseKey(key); });
 
 	constexpr wchar_t text[] = L"text";
 	constexpr uint16_t short_number = 42;
 	constexpr wchar_t unterminated[] = {L'r', L'a', L'w'};
-	RegSetValueExW(key, L"wrong-number-type", 0, REG_SZ, reinterpret_cast<const BYTE*>(text), sizeof(text));
-	RegSetValueExW(key, L"short-number", 0, REG_DWORD, reinterpret_cast<const BYTE*>(&short_number),
-	               sizeof(short_number));
-	RegSetValueExW(key, L"unterminated-string", 0, REG_SZ, reinterpret_cast<const BYTE*>(unterminated),
-	               sizeof(unterminated));
-	RegSetValueExW(key, L"wrong-binary-type", 0, REG_SZ, reinterpret_cast<const BYTE*>(text), sizeof(text));
+	assert_equal(static_cast<int>(ERROR_SUCCESS),
+	             static_cast<int>(RegSetValueExW(key, L"wrong-number-type", 0, REG_SZ,
+	                                             reinterpret_cast<const BYTE*>(text), sizeof(text))),
+	             "write wrong-number-type");
+	assert_equal(static_cast<int>(ERROR_SUCCESS),
+	             static_cast<int>(RegSetValueExW(key, L"short-number", 0, REG_DWORD,
+	                                             reinterpret_cast<const BYTE*>(&short_number),
+	                                             sizeof(short_number))),
+	             "write short-number");
+	assert_equal(static_cast<int>(ERROR_SUCCESS),
+	             static_cast<int>(RegSetValueExW(key, L"unterminated-string", 0, REG_SZ,
+	                                             reinterpret_cast<const BYTE*>(unterminated),
+	                                             sizeof(unterminated))),
+	             "write unterminated-string");
+	assert_equal(static_cast<int>(ERROR_SUCCESS),
+	             static_cast<int>(RegSetValueExW(key, L"wrong-binary-type", 0, REG_SZ,
+	                                             reinterpret_cast<const BYTE*>(text), sizeof(text))),
+	             "write wrong-binary-type");
 	RegCloseKey(key);
+	key = nullptr;
 
 	{
-		const auto archive = platform::create_registry_settings();
+		const auto archive = platform::create_registry_settings(root.path());
 		uint32_t number = 99;
 		assert_equal(false, archive->read(section, "wrong-number-type", number), "reject numeric type");
 		assert_equal(99u, number, "preserve numeric output after wrong type");
@@ -261,7 +308,6 @@ static void should_validate_registry_value_types_and_sizes()
 		             "reject binary type");
 	}
 
-	RegDeleteTreeW(HKEY_CURRENT_USER, sectionW.c_str());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -329,6 +375,130 @@ static void should_offer_each_drag_format_once()
 	             "greedy consumer (both file formats) would import each clip twice");
 }
 
+static int WINAPI shell_success_w(SHFILEOPSTRUCTW*)
+{
+	return 0;
+}
+
+static int WINAPI shell_aborts_w(SHFILEOPSTRUCTW* op)
+{
+	op->fAnyOperationsAborted = TRUE;
+	return 0;
+}
+
+static int WINAPI shell_fails_w(SHFILEOPSTRUCTW*)
+{
+	return ERROR_ACCESS_DENIED;
+}
+
+static int WINAPI shell_aborts_a(SHFILEOPSTRUCTA* op)
+{
+	op->fAnyOperationsAborted = TRUE;
+	return 0;
+}
+
+static void should_double_terminate_shell_destination_buffers()
+{
+	const auto target = df::folder_path("C:\\photos");
+	const auto wide_destination = platform::probe_shell_destination_w(target);
+	const auto narrow_destination = platform::probe_shell_destination_a(target);
+
+	assert_equal(L'\0', wide_destination[wide_destination.size() - 1], "wide destination final terminator");
+	assert_equal(L'\0', wide_destination[wide_destination.size() - 2], "wide destination penultimate terminator");
+	assert_equal('\0', narrow_destination[narrow_destination.size() - 1], "narrow destination final terminator");
+	assert_equal('\0', narrow_destination[narrow_destination.size() - 2], "narrow destination penultimate terminator");
+}
+
+static void should_classify_an_aborted_shell_operation_as_cancelled()
+{
+	assert_equal(static_cast<int>(platform::file_op_result_code::CANCELLED),
+	             static_cast<int>(platform::probe_shell_file_operation_w(shell_aborts_w).result.code),
+	             "wide shell abort is cancellation");
+	assert_equal(static_cast<int>(platform::file_op_result_code::CANCELLED),
+	             static_cast<int>(platform::probe_shell_file_operation_a(shell_aborts_a).result.code),
+	             "narrow shell abort is cancellation");
+	assert_equal(static_cast<int>(platform::file_op_result_code::OK),
+	             static_cast<int>(platform::probe_shell_delete_operation(shell_success_w, true).result.code),
+	             "zero and no abort is success");
+	assert_equal(static_cast<int>(platform::file_op_result_code::FAILED),
+	             static_cast<int>(platform::probe_shell_delete_operation(shell_fails_w, true).result.code),
+	             "nonzero shell result is failure");
+}
+
+static void should_let_windows_confirm_recycle_that_would_destroy()
+{
+	const auto recycle_flags = platform::probe_shell_delete_flags(true);
+	assert_equal(true, (recycle_flags & FOF_ALLOWUNDO) != 0, "requested recycle allows undo");
+	assert_equal(true, (recycle_flags & FOF_WANTNUKEWARNING) != 0,
+	             "requested recycle keeps Windows permanent-delete warning");
+	assert_equal(true, (recycle_flags & FOF_SILENT) != 0, "requested recycle suppresses progress UI");
+	assert_equal(false, (recycle_flags & FOF_NOCONFIRMATION) != 0,
+	             "requested recycle lets Windows ask before permanent fallback");
+
+	const auto permanent_flags = platform::probe_shell_delete_flags(false);
+	assert_equal(true, (permanent_flags & FOF_NOCONFIRMATION) != 0,
+	             "explicit permanent delete suppresses duplicate shell confirmation");
+	assert_equal(false, (permanent_flags & FOF_ALLOWUNDO) != 0, "explicit permanent delete does not allow undo");
+	assert_equal(false, (permanent_flags & FOF_WANTNUKEWARNING) != 0,
+	             "explicit permanent delete was already confirmed by the application");
+}
+
+static void should_materialize_advertised_clipboard_images()
+{
+	files ff;
+	const auto loaded = ff.load(test_files_folder.combine_file("Test.jpg"), false);
+	assert_equal(true, loaded.success, "test image loads");
+
+	const auto probe = platform::probe_drag_data_object(loaded);
+
+	assert_equal(true, probe.advertises_bitmap, "captured image advertises CF_BITMAP");
+	assert_equal(true, probe.advertises_dib, "captured image advertises CF_DIB");
+	assert_equal(true, probe.bitmap_retrieved, "advertised bitmap retrieves");
+	assert_equal(true, probe.dib_retrieved, "advertised DIB retrieves");
+	assert_equal(loaded.dimensions().cx, probe.bitmap_dimensions.cx, "bitmap width");
+	assert_equal(loaded.dimensions().cy, probe.bitmap_dimensions.cy, "bitmap height");
+	assert_equal(loaded.dimensions().cx, probe.dib_dimensions.cx, "DIB width");
+	assert_equal(loaded.dimensions().cy, probe.dib_dimensions.cy, "DIB height");
+	assert_equal(2, static_cast<int>(probe.image_formats.size()), "two image formats advertised");
+	assert_equal(static_cast<uint32_t>(CF_BITMAP), probe.image_formats[0], "bitmap is first image offer");
+	assert_equal(static_cast<uint32_t>(TYMED_GDI), probe.image_tymed[0], "bitmap uses GDI medium");
+	assert_equal(static_cast<uint32_t>(CF_DIB), probe.image_formats[1], "DIB is second image offer");
+	assert_equal(static_cast<uint32_t>(TYMED_HGLOBAL), probe.image_tymed[1], "DIB uses global memory");
+}
+
+static void should_publish_pasted_bitmap_after_closing_stage()
+{
+	const auto folder = _temps.folder().combine(std::format("pasted-bitmap-{}", platform::tick_count()));
+	assert_equal(true, platform::create_folder(folder).success(), "create bitmap paste temp folder");
+
+	const uint32_t pixels[] = {
+		0xffff0000, 0xff00ff00,
+		0xff0000ff, 0xffffffff
+	};
+	const auto bitmap = CreateBitmap(2, 2, 1, 32, pixels);
+	assert_equal(true, bitmap != nullptr, "create test bitmap");
+	const df::scope_exit delete_bitmap([bitmap] { DeleteObject(bitmap); });
+
+	const auto result = save_bitmap_info(folder, "pasted", true, bitmap);
+
+	assert_equal(true, result.success(), "bitmap save succeeds");
+	assert_equal(1, static_cast<int>(result.created_files.files.size()), "one published file");
+	const auto final_path = result.created_files.files.front();
+	assert_equal(true, final_path.exists(), "published file exists");
+
+	const auto attributes = GetFileAttributesW(platform::to_file_system_path(final_path).c_str());
+	assert_equal(false, attributes == INVALID_FILE_ATTRIBUTES, "published file attributes read");
+	assert_equal(false, (attributes & FILE_ATTRIBUTE_TEMPORARY) != 0, "published file is not temporary");
+
+	auto stage_count = 0;
+	for (const auto& entry : std::filesystem::directory_iterator(platform::to_file_system_path(folder)))
+	{
+		const auto name = entry.path().filename().wstring();
+		if (name.starts_with(L"diffractor_")) ++stage_count;
+	}
+	assert_equal(0, stage_count, "owned stage file was removed or published");
+}
+
 // Native common controls are double buffered (buffered_control_paint) so a resize or splitter drag
 // never composites a control that has been erased but not yet drawn. That only works if the control
 // renders itself into the device context it is handed; a control that ignored the request would
@@ -362,6 +532,90 @@ static void should_render_common_controls_into_a_buffer()
 	assert_equal(true, probe.button_colors > 1, "button draws more than a flat fill");
 }
 
+static void should_replace_the_full_trailing_spelling_word()
+{
+	const auto invalid = [](const std::string_view word)
+	{
+		return word != "teh" && word != "x";
+	};
+
+	const auto replace_first = [](std::wstring text, const std::vector<platform::edit_spelling_range>& ranges)
+	{
+		assert_equal(1_z, ranges.size(), "one misspelling is found");
+		text.replace(static_cast<size_t>(ranges.front().pos_start),
+		             static_cast<size_t>(ranges.front().pos_end - ranges.front().pos_start), L"the");
+		return text;
+	};
+
+	assert_equal(L"the"s, replace_first(L"teh", platform::probe_edit_spelling_ranges(L"teh", invalid)),
+	             "a final word includes its last character");
+	assert_equal(L"prefix the"s, replace_first(L"prefix teh", platform::probe_edit_spelling_ranges(L"prefix teh", invalid)),
+	             "surrounding prefix text is untouched");
+	assert_equal(L"the "s, replace_first(L"teh ", platform::probe_edit_spelling_ranges(L"teh ", invalid)),
+	             "a word followed by whitespace keeps the separator");
+
+	const auto one = platform::probe_edit_spelling_ranges(L"x", invalid);
+	assert_equal(1_z, one.size(), "a one-character final word is found");
+	assert_equal(0, one.front().pos_start, "one-character start");
+	assert_equal(1, one.front().pos_end, "one-character end remains exclusive");
+}
+
+static void should_hit_test_the_last_trailing_spelling_character()
+{
+	const auto point_x = [](const DWORD p) { return static_cast<int>(static_cast<short>(LOWORD(p))); };
+	const auto point_y = [](const DWORD p) { return static_cast<int>(static_cast<short>(HIWORD(p))); };
+
+	const auto parent = CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 0, 0, 240, 60, nullptr, nullptr,
+	                                   get_resource_instance, nullptr);
+	assert_equal(true, parent != nullptr, "parent window created");
+	const df::scope_exit destroy_parent([parent] { if (parent) DestroyWindow(parent); });
+
+	const auto edit = CreateWindowExW(0, L"EDIT", L"prefix teh", WS_CHILD | WS_VISIBLE, 0, 0, 220, 30, parent,
+	                                 nullptr, get_resource_instance, nullptr);
+	assert_equal(true, edit != nullptr, "edit control created");
+	const df::scope_exit destroy_edit([edit] { if (edit) DestroyWindow(edit); });
+
+	const auto last_char = static_cast<DWORD>(SendMessageW(edit, EM_POSFROMCHAR, 9, 0));
+	const auto end_pos = static_cast<DWORD>(SendMessageW(edit, EM_POSFROMCHAR, 10, 0));
+	assert_equal(true, point_x(last_char) >= 0, "last character has a native edit position");
+	assert_equal(-1, point_x(end_pos), "exclusive end is past the last native edit character");
+
+	const auto bounds = platform::probe_edit_spelling_bounds(edit, 7, 10);
+	assert_equal(true, !bounds.is_empty(), "the spelling bounds include a trailing word whose end is exclusive");
+	assert_equal(true, bounds.contains({point_x(last_char) + 1, point_y(last_char) + 1}),
+	             "the spelling hit-test reaches the final character");
+}
+
+static void should_delegate_ordinary_edit_context_menus()
+{
+	using route = platform::edit_context_menu_route;
+
+	assert_equal(static_cast<int>(route::native_edit_procedure),
+	             static_cast<int>(platform::probe_edit_context_menu_route(false, false)),
+	             "spelling-disabled or correctly-spelled text is delegated");
+	assert_equal(static_cast<int>(route::native_edit_procedure),
+	             static_cast<int>(platform::probe_edit_context_menu_route(true, false)),
+	             "a failed custom menu creation is delegated");
+	assert_equal(static_cast<int>(route::custom_spelling_menu),
+	             static_cast<int>(platform::probe_edit_context_menu_route(true, true)),
+	             "a real misspelling shows exactly the custom spelling menu");
+}
+
+static void should_read_coherent_number_format_snapshots()
+{
+	platform::set_number_format_probe_snapshots({
+		                                            {L".", L",", 1, 1},
+		                                            {L",", L".", 1, 1},
+	                                            },
+	                                            true);
+	const df::scope_exit restore([] { platform::clear_number_format_probe_snapshots(); });
+
+	assert_equal("1,234", platform::format_number("1234"), "the first format uses one complete snapshot");
+	assert_equal(",", platform::number_dec_sep(), "invalidation during refresh remains pending for the next read");
+	assert_equal("1.234", platform::format_number("1234"), "the second format uses the next complete snapshot");
+	assert_equal(",", platform::number_dec_sep(), "the separator belongs to the same refreshed snapshot");
+}
+
 static void should_bound_the_software_buffer_as_the_client_grows()
 {
 	const auto probe = platform::probe_software_tiling();
@@ -372,6 +626,94 @@ static void should_bound_the_software_buffer_as_the_client_grows()
 	             "the buffer stayed bounded while the client grew");
 	assert_equal(probe.grown_client_pixels, probe.grown_writable_pixels,
 	             "a grown client is writable to its new edges without reallocating the tile");
+}
+
+static void should_translate_highlight_spans_to_utf16_clusters()
+{
+	const auto highlight = ui::color(1.0f, 0.0f, 0.0f, 1.0f);
+	const auto plain = ui::color(0.0f, 0.0f, 1.0f, 1.0f);
+	const std::string text = "\xf0\x9f\x98\x80" "caf\xc3\xa9" "X";
+	const auto converted = ui::utf8_to_utf16(text, {{4, 5, highlight}});
+
+	assert_equal(7_z, converted.text.size(), "emoji is preserved as a surrogate pair");
+	assert_equal(0xd83d, static_cast<int>(converted.text[0]), "lead surrogate");
+	assert_equal(0xde00, static_cast<int>(converted.text[1]), "trail surrogate");
+	assert_equal(1_z, converted.highlights.size(), "one highlight survives conversion");
+	assert_equal(2u, converted.highlights[0].offset, "highlight begins after the surrogate pair");
+	assert_equal(4u, converted.highlights[0].length, "highlight length is UTF-16 text, not UTF-8 bytes");
+
+	const uint16_t clusters[] = {0, 0, 1};
+	const auto first = ui::text_cluster_span_for_glyph(0, 2, clusters, 3, 10);
+	const auto second = ui::text_cluster_span_for_glyph(1, 2, clusters, 3, 10);
+	assert_equal(10u, first.offset, "cluster offset includes run text position");
+	assert_equal(2u, first.length, "one glyph cluster can span multiple text units");
+	assert_equal(12u, second.offset, "the next glyph starts after the multi-unit cluster");
+	assert_equal(highlight.r, ui::text_cluster_color(plain, first, {{10, 2, highlight}}).r,
+	             "a complete cluster is highlighted");
+	assert_equal(highlight.r, ui::text_cluster_color(plain, first, {{10, 1, highlight}}).r,
+	             "a base letter highlight colours its combining-mark cluster");
+}
+
+static void should_build_text_cluster_spans_once_per_run()
+{
+	const uint16_t clusters[] = {0, 0, 1, 2, 2};
+	const auto spans = ui::text_cluster_spans_for_glyph_run(3, clusters, 5, 4);
+
+	assert_equal(3_z, spans.size(), "one span per glyph");
+	assert_equal(4u, spans[0].offset, "first cluster starts at run text position");
+	assert_equal(2u, spans[0].length, "first cluster spans two text units");
+	assert_equal(6u, spans[1].offset, "second cluster follows");
+	assert_equal(1u, spans[1].length, "second cluster is one text unit");
+	assert_equal(7u, spans[2].offset, "third cluster follows");
+	assert_equal(2u, spans[2].length, "third cluster spans two text units");
+}
+
+static void should_apply_positive_ascender_offsets_upward()
+{
+	assert_equal(80.0f, ui::glyph_top_from_baseline(100.0f, 20, 0.0f), "no ascender offset");
+	assert_equal(77.0f, ui::glyph_top_from_baseline(100.0f, 20, 3.0f), "positive ascender moves up");
+	assert_equal(83.0f, ui::glyph_top_from_baseline(100.0f, 20, -3.0f), "negative ascender moves down");
+}
+
+static void should_clear_text_highlights_between_draws()
+{
+	std::vector<ui::text_highlight_t> highlights = {{0, 3, ui::color(1.0f, 0.0f, 0.0f, 1.0f)}};
+	ui::clear_text_highlights(highlights);
+	assert_equal(true, highlights.empty(), "plain/layout draws start without stale highlight intervals");
+}
+
+static void should_gate_native_bubble_alpha_steps()
+{
+	const auto restore_animations = ui::animations_enabled;
+	const df::scope_exit restore_scope([restore_animations] { ui::animations_enabled = restore_animations; });
+
+	ui::animations_enabled = true;
+	assert_equal(72, ui::fade_alpha_step(0, 255), "enabled fade advances toward visible");
+	assert_equal(0, ui::fade_alpha_step(1, 0), "enabled fade snaps the terminal hidden alpha");
+
+	ui::animations_enabled = false;
+	auto alpha = 0;
+	alpha = ui::gated_fade_alpha_step(alpha, 255);
+	assert_equal(255, alpha, "disabled show snaps visible");
+	alpha = ui::gated_fade_alpha_step(alpha, 0);
+	assert_equal(0, alpha, "disabled hide snaps hidden");
+}
+
+static void should_handle_unavailable_font_layout()
+{
+	text_layout_impl layout(nullptr, ui::style::font_face::dialog);
+
+	layout.update("text", ui::style::text_style::single_line);
+	const auto measured = layout.measure_text(100, 100);
+	assert_equal(0, measured.cx, "unavailable font has no measured width");
+	assert_equal(0, measured.cy, "unavailable font has no measured height");
+
+	const auto offsets = layout.offset_xs({0, 2, 4}, 100, 100);
+	assert_equal(3_z, offsets.size(), "unavailable font still answers each requested offset");
+	assert_equal(0, offsets[0], "first unavailable offset");
+	assert_equal(0, offsets[1], "middle unavailable offset");
+	assert_equal(0, offsets[2], "last unavailable offset");
+	assert_equal(true, should_retry_font_renderer(nullptr), "GPU renderer retries a transient null font");
 }
 
 static void should_refuse_an_impossible_movie()
@@ -412,9 +754,43 @@ void register_platform_tests(view_state& state, test_registry& tests)
 	tests.add("Should persist strings in registry"s, should_persist_to_registry);
 	tests.add("Should validate registry value types and sizes"s, should_validate_registry_value_types_and_sizes);
 	tests.add("Premiere dup: drag offers each format once"s, should_offer_each_drag_format_once);
+	// PLAT-002 - shell destination double-NUL.
+	tests.add("Should double-terminate shell destination buffers"s,
+	          should_double_terminate_shell_destination_buffers);
+	// PLAT-003 - shell aborted flag sequencing.
+	tests.add("Should classify an aborted shell operation as cancelled"s,
+	          should_classify_an_aborted_shell_operation_as_cancelled);
+	// PLAT-001 - Windows owns permanent-delete confirmation for recycle fallback.
+	tests.add("Should let Windows confirm recycle that would destroy"s,
+	          should_let_windows_confirm_recycle_that_would_destroy);
+	// PLAT-004 - advertised clipboard image formats are materializable.
+	tests.add("Should materialize advertised clipboard images"s, should_materialize_advertised_clipboard_images);
+	// PLAT-006 - pasted bitmap stages close before publication and cleanup.
+	tests.add("Should publish pasted bitmap after closing stage"s, should_publish_pasted_bitmap_after_closing_stage);
 	tests.add("Should reject unusable file names"s, should_reject_unusable_file_names);
 	tests.add("Should render common controls into a buffer"s, should_render_common_controls_into_a_buffer);
+	// PLAT-011 - trailing spelling correction range.
+	tests.add("Should replace the full trailing spelling word"s, should_replace_the_full_trailing_spelling_word);
+	tests.add("Should hit test the last trailing spelling character"s,
+	          should_hit_test_the_last_trailing_spelling_character);
+	// PLAT-012 - native edit context-menu routing.
+	tests.add("Should delegate ordinary common controls edit context menus"s,
+	          should_delegate_ordinary_edit_context_menus);
+	// PLAT-018 - coherent locale-format snapshots.
+	tests.add("Should read coherent number format snapshots"s, should_read_coherent_number_format_snapshots);
 	tests.add("Should bound the software buffer as the client grows"s,
 	          should_bound_the_software_buffer_as_the_client_grows);
+	// UI-006 - Unicode highlights must be translated to the UTF-16 clusters DirectWrite draws.
+	tests.add("Should translate highlight spans to utf16 clusters"s, should_translate_highlight_spans_to_utf16_clusters);
+	// UI-006 - cluster spans are computed once for the run instead of scanning for each glyph.
+	tests.add("Should build text cluster spans once per run"s, should_build_text_cluster_spans_once_per_run);
+	// PLAT-015 - DirectWrite positive ascender offsets are upward in screen coordinates.
+	tests.add("Should apply positive ascender offsets upward"s, should_apply_positive_ascender_offsets_upward);
+	// PLAT-014 - plain and layout draws must drop transient highlight state from previous draws.
+	tests.add("Should clear text highlights between draws"s, should_clear_text_highlights_between_draws);
+	// PLAT-017 - Native bubble fades must honor the shared animation gate.
+	tests.add("Should gate native bubble alpha steps"s, should_gate_native_bubble_alpha_steps);
+	// PLAT-016 - a missing font renderer is a degraded text outcome, not a null dereference.
+	tests.add("Should handle unavailable font layout"s, should_handle_unavailable_font_layout);
 	tests.add("Should refuse an impossible movie"s, should_refuse_an_impossible_movie);
 }

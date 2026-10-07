@@ -43,6 +43,8 @@ class locate_view final :
 	// Geotagged collection/current-list items shown as aggregated markers. Collection-only
 	// entries stay lightweight until hovered; current-list entries reuse their item element.
 	std::vector<marker_item> _marker_items;
+	std::vector<marker_item> _pending_marker_items;
+	uint32_t _pending_marker_generation = 0;
 	// Collection-wide markers are built off the UI thread, so a result that lands after the
 	// user has zoomed again describes a map that no longer exists.
 	uint32_t _marker_generation = 0;

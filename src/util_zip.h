@@ -27,6 +27,7 @@ namespace df
 		bool create(file_path path);
 		bool close();
 
+		bool add(file_path path, std::string_view name, date_t modified) const;
 		bool add(file_path path, std::string_view name) const;
 		bool add(file_path path);
 

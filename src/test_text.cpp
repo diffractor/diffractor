@@ -130,6 +130,86 @@ static void should_select_slavic_plural_forms()
 	assert_equal(true, cs.title_item_count_fmt.extra_form(0).empty(), "clear drops extra plural forms");
 }
 
+static void should_clear_duplicate_text_instances()
+{
+	app_text_t text;
+	std::vector<po_entry> entries;
+
+	po_entry print;
+	print.id = "Print";
+	print.str = "Druck";
+	entries.emplace_back(std::move(print));
+
+	po_entry plural;
+	plural.id = "{count} item";
+	plural.id_plural = "{count} items";
+	plural.str = "{count} Ding";
+	plural.str_plural = "{count} Dinge";
+	plural.str_extra = {"{count} Dingern"};
+	entries.emplace_back(std::move(plural));
+
+	text.load_lang("de.po", entries);
+
+	assert_equal("Druck", text.command_print.sv(), "first Print instance is translated");
+	assert_equal("Druck", text.print_title.sv(), "second Print instance is translated");
+	assert_equal("{count} Ding", text.title_item_count_fmt.one.sv(), "plural singular form is translated");
+	assert_equal("{count} Dinge", text.title_item_count_fmt.plural.sv(), "plural primary form is translated");
+	assert_equal("{count} Dingern", text.title_item_count_fmt.extra_form(0), "extra plural form is translated");
+
+	text.clear();
+
+	assert_equal("Print", text.command_print.sv(), "first Print instance returns to English");
+	assert_equal("Print", text.print_title.sv(), "second Print instance returns to English");
+	assert_equal("{count} item", text.title_item_count_fmt.one.sv(), "plural singular form returns to English");
+	assert_equal("{count} items", text.title_item_count_fmt.plural.sv(), "plural primary form returns to English");
+	assert_equal(true, text.title_item_count_fmt.extra_form(0).empty(), "extra plural forms are cleared");
+}
+
+static void should_reject_unsupported_plural_indices()
+{
+	const auto write_catalog = [](const df::file_path path, const std::string_view indexed_line)
+	{
+		std::ofstream fs(platform::to_stream_path(path));
+		fs << "msgid \"one apple\"\n";
+		fs << "msgid_plural \"{count} apples\"\n";
+		fs << "msgstr[0] \"one apple\"\n";
+		fs << "msgstr[1] \"{count} apples\"\n";
+		fs << indexed_line << "\n";
+	};
+
+	const auto accepted = _temps.next_path(".po");
+	write_catalog(accepted, "msgstr[2] \"{count} apples many\"");
+	const auto accepted_report = load_po_report(accepted);
+	assert_equal(true, accepted_report.errors.empty(), "highest supported plural index is accepted");
+	assert_equal(1_z, accepted_report.entries.front().str_extra.size(), "supported extra form is retained");
+
+	const auto fourth = _temps.next_path(".po");
+	write_catalog(fourth, "msgstr[3] \"{count} apples fourth\"");
+	const auto fourth_report = load_po_report(fourth);
+	assert_equal(true, fourth_report.errors.empty(), "shipped fourth plural index is accepted");
+	assert_equal(2_z, fourth_report.entries.front().str_extra.size(), "supported fourth form is retained");
+
+	const auto unsupported = _temps.next_path(".po");
+	write_catalog(unsupported, "msgstr[4] \"{count} apples unsupported\"");
+	const auto unsupported_report = load_po_report(unsupported);
+	assert_equal(false, unsupported_report.errors.empty(), "one beyond supported plural index is rejected");
+	assert_equal(0_z, unsupported_report.entries.front().str_extra.size(), "unsupported form is not allocated");
+
+	const auto large = _temps.next_path(".po");
+	write_catalog(large, "msgstr[2147483647] \"{count} apples huge\"");
+	const auto large_report = load_po_report(large);
+	assert_equal(false, large_report.errors.empty(), "large plural index is rejected before allocation");
+	assert_equal(0_z, large_report.entries.front().str_extra.size(), "large plural index is not allocated");
+
+	const auto negative = _temps.next_path(".po");
+	write_catalog(negative, "msgstr[-1] \"{count} apples negative\"");
+	assert_equal(false, load_po_report(negative).errors.empty(), "negative plural index is rejected");
+
+	const auto malformed = _temps.next_path(".po");
+	write_catalog(malformed, "msgstr[2x] \"{count} apples malformed\"");
+	assert_equal(false, load_po_report(malformed).errors.empty(), "malformed plural index is rejected");
+}
+
 // The spell checker only reaches the user through metadata field editing, and it fails soft: a
 // missing dictionary must leave every word "valid" rather than underlining the whole caption. Both
 // halves are pinned here because a broken load looks exactly like a clean one from the caller.
@@ -184,6 +264,179 @@ static void should_keep_the_custom_dictionary_where_it_can_be_written()
 	             "the shipped dictionary is where the read fallback looks");
 }
 
+static void write_minimal_dictionary(df::folder_path folder, bool include_dic);
+
+static void should_load_spelling_dictionaries_asynchronously()
+{
+	auto& checker = spell();
+	deferred_async_strategy async;
+	const auto shipped_folder = _temps.next_folder("spell-shipped");
+	const auto user_folder = _temps.next_folder("spell-user");
+	auto load_started = false;
+
+	write_minimal_dictionary(shipped_folder, true);
+
+	checker.configure_paths_for_tests(shipped_folder, user_folder);
+	checker.clear_test_hooks();
+	checker.set_load_gate_for_tests([&load_started] { load_started = true; });
+	checker.configure_async(&async);
+	const df::scope_exit restore([&checker]
+	{
+		checker.configure_async(nullptr);
+		checker.clear_test_hooks();
+		checker.reset_paths_for_tests();
+	});
+
+	checker.queue_load(async);
+
+	assert_equal(1_z, async.pending_worker_count(async_queue::work), "dictionary load is queued to a worker");
+	assert_equal(true, checker.is_word_valid("qwertyuiopasdfgh"),
+	             "spelling remains fail-soft while the worker has not loaded a dictionary");
+	assert_equal(false, load_started, "the UI path did not run the loader");
+
+	checker.configure_paths_for_tests(shipped_folder, user_folder);
+	assert_equal(true, async.run_next(async_queue::work), "the stale worker can finish");
+	async.drain_ui();
+
+	assert_equal(false, checker.is_ready(), "a stale dictionary load completion is ignored");
+}
+
+static void write_minimal_dictionary(const df::folder_path folder, const bool include_dic)
+{
+	write_test_file(folder.combine_file("en_US.aff"), "SET UTF-8\nTRY abcdefghijklmnopqrstuvwxyz\n");
+	if (include_dic)
+	{
+		write_test_file(folder.combine_file("en_US.dic"), "1\nphotograph\n");
+	}
+}
+
+static void should_reload_spelling_after_dictionary_download()
+{
+	auto& checker = spell();
+	deferred_async_strategy async;
+	const auto shipped_folder = _temps.next_folder("spell-download-shipped");
+	const auto user_folder = _temps.next_folder("spell-download-user");
+
+	write_minimal_dictionary(shipped_folder, false);
+
+	checker.configure_paths_for_tests(shipped_folder, user_folder);
+	checker.clear_test_hooks();
+	checker.configure_async(&async);
+	const df::scope_exit restore([&checker]
+	{
+		checker.configure_async(nullptr);
+		checker.clear_test_hooks();
+		checker.reset_paths_for_tests();
+	});
+
+	checker.queue_load(async);
+	assert_equal(true, async.run_next(async_queue::work), "the incomplete dictionary load runs");
+	async.drain_ui();
+	assert_equal(false, checker.is_ready(), "an aff without its dic fails soft");
+
+	write_minimal_dictionary(shipped_folder, true);
+	checker.dictionary_downloaded(async);
+
+	assert_equal(1_z, async.pending_worker_count(async_queue::work),
+	             "download completion re-queues dictionary loading");
+	assert_equal(true, async.run_next(async_queue::work), "the completed dictionary load runs");
+	async.drain_ui();
+	assert_equal(true, checker.is_ready(), "the completed dictionary is published in-session");
+	assert_equal(true, checker.is_word_valid("photograph"), "the reloaded dictionary answers words");
+}
+
+static void should_report_custom_dictionary_persistence_results()
+{
+	auto& checker = spell();
+	deferred_async_strategy async;
+	const auto shipped_folder = _temps.next_folder("custom-dic-shipped");
+	const auto user_folder = _temps.next_folder("custom-dic-user");
+
+	checker.configure_paths_for_tests(shipped_folder, user_folder);
+	checker.clear_test_hooks();
+	checker.configure_async(&async);
+	const df::scope_exit restore([&checker]
+	{
+		checker.configure_async(nullptr);
+		checker.clear_test_hooks();
+		checker.reset_paths_for_tests();
+	});
+
+	std::vector<custom_dictionary_add_result> results;
+	checker.add_word("persisted", [&results](const custom_dictionary_add_result result)
+	{
+		results.emplace_back(result);
+	});
+
+	assert_equal(1_z, async.pending_worker_count(async_queue::work), "custom dictionary write is queued");
+	assert_equal(0_z, results.size(), "persistence is not reported before storage completes");
+	assert_equal(true, async.run_next(async_queue::work), "the custom word is written on a worker");
+	async.drain_ui();
+
+	assert_equal(1_z, results.size(), "the persisted result is published");
+	assert_equal(static_cast<int>(custom_dictionary_add_status::persisted), static_cast<int>(results.back().status),
+	             "append and flush succeeded");
+	assert_equal(true, checker.custom_dictionary_path().exists(), "the test custom dictionary was written");
+
+	checker.set_custom_dictionary_writer_for_tests([](const df::file_path&, std::string_view)
+	{
+		return custom_dictionary_add_result{custom_dictionary_add_status::failed, "flush failed"};
+	});
+
+	checker.add_word("failed", [&results](const custom_dictionary_add_result result)
+	{
+		results.emplace_back(result);
+	});
+	assert_equal(true, async.run_next(async_queue::work), "the failing writer runs on a worker");
+	async.drain_ui();
+
+	assert_equal(static_cast<int>(custom_dictionary_add_status::failed), static_cast<int>(results.back().status),
+	             "flush failure is reported");
+	assert_equal("flush failed", results.back().message, "the bounded failure message is preserved");
+
+	checker.add_word("stale", [&results](const custom_dictionary_add_result result)
+	{
+		results.emplace_back(result);
+	});
+	checker.configure_paths_for_tests(shipped_folder, user_folder);
+	assert_equal(true, async.run_next(async_queue::work), "the stale writer runs");
+	async.drain_ui();
+
+	assert_equal(static_cast<int>(custom_dictionary_add_status::stale), static_cast<int>(results.back().status),
+	             "stale persistence completion is ignored");
+}
+
+static void should_flush_pending_custom_dictionary_words_on_shutdown()
+{
+	auto& checker = spell();
+	deferred_async_strategy async;
+	const auto shipped_folder = _temps.next_folder("custom-dic-flush-shipped");
+	const auto user_folder = _temps.next_folder("custom-dic-flush-user");
+
+	checker.configure_paths_for_tests(shipped_folder, user_folder);
+	checker.clear_test_hooks();
+	checker.configure_async(&async);
+	const df::scope_exit restore([&checker]
+	{
+		checker.configure_async(nullptr);
+		checker.clear_test_hooks();
+		checker.reset_paths_for_tests();
+	});
+
+	std::vector<custom_dictionary_add_result> results;
+	checker.add_word("queued-before-close", [&results](const custom_dictionary_add_result result)
+	{
+		results.emplace_back(result);
+	});
+
+	assert_equal(1_z, async.pending_worker_count(async_queue::work), "the custom dictionary write is queued");
+	checker.flush_pending_custom_words();
+
+	assert_equal(true, checker.custom_dictionary_path().exists(),
+	             "shutdown flush writes a word that the worker queue has not reached");
+	assert_equal(0_z, results.size(), "worker completion is not faked by the shutdown flush");
+}
+
 void register_text_tests(view_state& state, test_registry& tests)
 {
 	//
@@ -197,6 +450,10 @@ void register_text_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should load po"s, should_load_po);
 	tests.add("Should select Slavic plural forms"s, should_select_slavic_plural_forms);
+	// APP-010 - returning to English must clear every registered instance, not only the lookup map.
+	tests.add("Should clear duplicate text instances"s, should_clear_duplicate_text_instances);
+	// APP-012 - malformed catalogs must fail validation without allocating unsupported plural forms.
+	tests.add("Should reject unsupported plural indices"s, should_reject_unsupported_plural_indices);
 
 	//
 	// Spell checking
@@ -204,4 +461,12 @@ void register_text_tests(view_state& state, test_registry& tests)
 	tests.add("Should check spelling"s, should_check_spelling);
 	tests.add("Should keep the custom dictionary where it can be written"s,
 	          should_keep_the_custom_dictionary_where_it_can_be_written);
+	// SRC-008 - asynchronous dictionary loading.
+	tests.add("Should load spelling dictionaries asynchronously"s, should_load_spelling_dictionaries_asynchronously);
+	tests.add("Should reload spelling after dictionary download"s, should_reload_spelling_after_dictionary_download);
+	// SRC-009 - custom dictionary persistence results.
+	tests.add("Should report custom dictionary persistence results"s,
+	          should_report_custom_dictionary_persistence_results);
+	tests.add("Should flush pending custom dictionary words on shutdown"s,
+	          should_flush_pending_custom_dictionary_words_on_shutdown);
 }

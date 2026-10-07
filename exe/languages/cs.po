@@ -3329,11 +3329,11 @@ msgstr[0] "1 položka byla importována, ale její datum vytvoření se nepodař
 msgstr[1] "{count} položky byly importovány, ale jejich datum vytvoření se nepodařilo nastavit."
 msgstr[2] "{count} položek bylo importováno, ale jejich datum vytvoření se nepodařilo nastavit."
 
-msgid "{first-name} will be moved to the recycle bin."
-msgid_plural "{count} items ({size}) will be moved to the recycle bin."
-msgstr[0] "{first-name} bude přesunuto do koše."
-msgstr[1] "{count} položky ({size}) budou přesunuty do koše."
-msgstr[2] "{count} položek ({size}) bude přesunuto do koše."
+msgid "{first-name} will be moved to the recycle bin when Windows can recycle it."
+msgid_plural "{count} items ({size}) will be moved to the recycle bin when Windows can recycle them."
+msgstr[0] "{first-name} bude přesunut do Koše, pokud jej Windows dokáže přesunout do Koše."
+msgstr[1] "{count} položek ({size}) bude přesunuto do Koše, pokud je Windows dokáže přesunout do Koše."
+msgstr[2] "{count} položek ({size}) bude přesunuto do Koše, pokud je Windows dokáže přesunout do Koše."
 
 msgid "{first-name} will be permanently deleted."
 msgid_plural "{count} items ({size}) will be permanently deleted."

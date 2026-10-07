@@ -21,6 +21,8 @@
 #include "av_format.h"
 #include "av_player.h"
 
+#include <zlib.h>
+
 static void should_replace_tokens()
 {
 	files ff;
@@ -216,6 +218,67 @@ static void should_apply_xmp_gps_as_a_pair()
 		prop::item_metadata md;
 		metadata_xmp::parse(md, write_sidecar("<exif:GPSLongitude>0,5.910W</exif:GPSLongitude>"));
 		assert_equal(false, md.coordinate.is_valid(), "half a pair alone locates nothing");
+	}
+
+	const auto assert_rejected = [&write_sidecar](const std::string_view latitude, const std::string_view longitude,
+	                                             const std::string_view message)
+	{
+		prop::item_metadata md;
+		md.coordinate = gps_coordinate(35.68, 139.69);
+		metadata_xmp::parse(md, write_sidecar(std::format("<exif:GPSLatitude>{}</exif:GPSLatitude>"
+			"<exif:GPSLongitude>{}</exif:GPSLongitude>", latitude, longitude)));
+		assert_equal(gps_coordinate(35.68, 139.69), md.coordinate, message);
+	};
+
+	assert_rejected("91,0N", "0,5.910W", "invalid latitude keeps the existing coordinate");
+	assert_rejected("51,30.852E", "0,5.910W", "wrong latitude hemisphere keeps the existing coordinate");
+	assert_rejected("51,30.852X", "0,5.910W", "unknown latitude hemisphere keeps the existing coordinate");
+	assert_rejected("51,30.852N trailing", "0,5.910W", "trailing latitude junk keeps the existing coordinate");
+	assert_rejected("51,60.0N", "0,5.910W", "invalid latitude minutes keeps the existing coordinate");
+	assert_rejected("51,30,60N", "0,5.910W", "invalid latitude seconds keeps the existing coordinate");
+	assert_rejected("51,30.852N", "180,0E", "invalid longitude keeps the existing coordinate");
+}
+
+static void should_read_xmp_disc_number()
+{
+	const auto write_sidecar = [](const std::string_view dm_body)
+	{
+		const auto path = _temps.next_path(".xmp");
+		const auto xml = std::format(
+			"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+			"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+			"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+			"<rdf:Description rdf:about=\"\" "
+			"xmlns:xmpDM=\"http://ns.adobe.com/xmp/1.0/DynamicMedia/\">{}</rdf:Description>"
+			"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+			dm_body);
+
+		std::ofstream f(platform::to_stream_path(path), std::ios::binary | std::ios::trunc);
+		f.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+		f.close();
+		return path;
+	};
+
+	{
+		prop::item_metadata md;
+		metadata_xmp::parse(md, write_sidecar("<xmpDM:discNumber>2/3</xmpDM:discNumber>"));
+		assert_equal(2, static_cast<int>(md.disk.x), "disc number");
+		assert_equal(3, static_cast<int>(md.disk.y), "disc total");
+	}
+
+	{
+		prop::item_metadata md;
+		md.disk = {1, 4};
+		metadata_xmp::parse(md, write_sidecar("<xmpDM:discNumber>2/3</xmpDM:discNumber>"));
+		assert_equal(2, static_cast<int>(md.disk.x), "xmp disc number replaces lower priority value");
+		assert_equal(3, static_cast<int>(md.disk.y), "xmp disc total replaces lower priority value");
+	}
+
+	{
+		prop::item_metadata md;
+		metadata_xmp::parse(md, write_sidecar("<xmpDM:discNumber>2</xmpDM:discNumber>"));
+		assert_equal(2, static_cast<int>(md.disk.x), "single disc number is parsed");
+		assert_equal(0, static_cast<int>(md.disk.y), "single disc total remains unspecified");
 	}
 }
 
@@ -421,6 +484,19 @@ static void should_scan_mp4()
 	assert_equal(false, loaded.success && is_valid(loaded.thumbnail_surface), "m4a load thumbnail");
 }
 
+static void should_preserve_high_audio_sample_rates()
+{
+	file_scan_result scanned;
+	scanned.audio_sample_rate = 192000;
+	scanned.audio_channels = 6;
+
+	const auto props = scanned.to_props();
+
+	assert_equal(192000u, props->audio_sample_rate, "192 kHz stays exact in indexed metadata");
+	assert_equal(6, static_cast<int>(props->audio_channels), "channel count still converts beside it");
+	assert_equal("192kHz", prop::format_audio_sample_rate(props->audio_sample_rate), "high rate formats exactly");
+}
+
 // Issue #3 - Cannot remove MP4 tags added in an old version.
 // Old versions left tags in the native MP4 'KEYW' atom (surfaced by FFmpeg as the
 // "keywords" tag). When a file also carries embedded XMP, dc:subject is the
@@ -428,6 +504,17 @@ static void should_scan_mp4()
 // that was removed via XMP.
 static void should_not_resurrect_container_tags()
 {
+	metadata_edits unrelated_edits;
+	unrelated_edits.title = "unrelated xmp";
+	std::string unrelated_xmp;
+	metadata_xmp::update(unrelated_xmp, unrelated_edits);
+
+	file_scan_result absent_subject;
+	absent_subject.ffmpeg_metadata.emplace_back(str::cache("keywords"), "nativekey");
+	absent_subject.metadata.xmp.assign(unrelated_xmp.begin(), unrelated_xmp.end());
+	assert_equal("nativekey"_c, absent_subject.to_props()->tags,
+	             "unrelated xmp does not suppress native keywords");
+
 	// Serialise an XMP packet whose dc:subject holds only the kept tag - this
 	// represents the state right after the stuck tag was removed via XMP.
 	metadata_edits edits;
@@ -444,6 +531,20 @@ static void should_not_resurrect_container_tags()
 
 	// Only the XMP tag survives; the stale KEYW keyword is not merged back in.
 	assert_equal("keeptag"_c, md->tags, "xmp authoritative over stale container keyword");
+
+	metadata_edits empty_edits;
+	empty_edits.add_tags = tag_set("temporary");
+	std::string empty_xmp;
+	metadata_xmp::update(empty_xmp, empty_edits);
+	metadata_edits clear_edits;
+	clear_edits.remove_tags = tag_set("temporary");
+	metadata_xmp::update(empty_xmp, clear_edits);
+
+	file_scan_result empty_subject;
+	empty_subject.ffmpeg_metadata.emplace_back(str::cache("keywords"), "nativekey");
+	empty_subject.metadata.xmp.assign(empty_xmp.begin(), empty_xmp.end());
+	assert_equal(true, empty_subject.to_props()->tags.is_empty(),
+	             "empty xmp subject suppresses native keywords");
 }
 
 static void should_apply_property_level_windows_metadata_precedence()
@@ -606,13 +707,27 @@ static void should_scan_raw()
 	expected.focal_length = 100;
 	expected.iso_speed = 100;
 	expected.pixel_format = "RGBG"_c;
-	expected.dates.add_utc(prop::date_source::embedded_created, df::date_t(2011, 9, 23, 23, 49, 16));
+	expected.dates.add(prop::date_source::embedded_created, df::date_t(2011, 9, 23, 23, 49, 16));
 
 	null_async_strategy as;
 	const location_cache locations;
 	index_state index(as, locations);
 	const auto actual = metadata_from_cache(index, load_path);
 	assert_metadata(expected, *actual, "Screws.CR2");
+}
+
+// SRC-022 - a zero-valued axis is a valid RAW coordinate when the other axis carries a fix.
+static void should_keep_raw_gps_on_a_zero_axis()
+{
+	assert_equal(true, is_raw_gps_fix_present(true, 0.0, 37.0667), "equator with longitude");
+	assert_equal(true, is_raw_gps_fix_present(true, 51.4778, 0.0), "latitude on Greenwich meridian");
+	assert_equal(true, is_raw_gps_fix_present(true, 0.0, -37.0667), "western hemisphere on equator");
+	assert_equal(true, is_raw_gps_fix_present(true, -51.4778, 0.0), "southern hemisphere on meridian");
+
+	assert_equal(false, is_raw_gps_fix_present(false, 0.0, 37.0667), "absent parsed fix");
+	assert_equal(false, is_raw_gps_fix_present(true, 0.0, 0.0), "exact no-fix pair");
+	assert_equal(false, is_raw_gps_fix_present(true, 91.0, 10.0), "invalid latitude");
+	assert_equal(false, is_raw_gps_fix_present(true, 10.0, 180.0), "invalid longitude");
 }
 
 static void should_scan_mod()
@@ -626,8 +741,10 @@ static void should_scan_mod()
 
 	assert_equal("giana!"_c, props->title, "title", file_name);
 	assert_equal("Generic ProTracker or compatible"_c, props->encoder, "encoder", file_name);
-	assert_equal(48000, props->audio_sample_rate, "audio_sample_rate", file_name);
+	assert_equal(48000u, props->audio_sample_rate, "audio_sample_rate", file_name);
 }
+
+static std::string png_test_xmp(int rating);
 
 static void should_scan_heic()
 {
@@ -641,6 +758,18 @@ static void should_scan_heic()
 	assert_equal(4000, props->width, "width", file_name);
 	assert_equal(2252, props->height, "height", file_name);
 	assert_equal("yuv420", props->pixel_format, "pixel_format", file_name);
+}
+
+// SRC-018 - libheif writes XMP as item type "mime" with content type "application/rdf+xml".
+// A non-XMP MIME item must not be mistaken for an XMP packet, while the older spelling remains
+// accepted for files previous builds deliberately supported.
+static void should_scan_heif_xmp_mime_metadata()
+{
+	assert_equal(true, is_heif_xmp_metadata_type("mime", "application/rdf+xml"), "standard XMP MIME item");
+	assert_equal(true, is_heif_xmp_metadata_type("XMP", ""), "legacy XMP item spelling");
+	assert_equal(false, is_heif_xmp_metadata_type("mime", "text/plain"), "unrelated MIME item");
+	assert_equal(false, is_heif_xmp_metadata_type("iptc", "application/rdf+xml"), "IPTC item type is not XMP");
+	assert_equal(false, is_heif_xmp_metadata_type("Exif", "application/rdf+xml"), "content type alone is not enough");
 }
 
 static void should_not_double_apply_heif_rotation()
@@ -707,6 +836,163 @@ static void should_scan_avif()
 	assert_equal("yuv420", props->pixel_format, "pixel_format", file_name);
 }
 
+static ui::surface_ptr make_png_metadata_surface()
+{
+	auto surface = std::make_shared<ui::surface>();
+	surface->alloc(4, 4, ui::texture_format::RGB);
+
+	for (auto y = 0; y < 4; ++y)
+	{
+		auto* const line = surface->pixels_line(y);
+		for (auto x = 0; x < 4; ++x)
+		{
+			line[x * 4 + 0] = static_cast<uint8_t>(20 + x * 10);
+			line[x * 4 + 1] = static_cast<uint8_t>(30 + y * 10);
+			line[x * 4 + 2] = 40;
+			line[x * 4 + 3] = 0xff;
+		}
+	}
+
+	return surface;
+}
+
+static void append_png_be32(df::blob& out, const uint32_t value)
+{
+	out.push_back(static_cast<uint8_t>(value >> 24));
+	out.push_back(static_cast<uint8_t>(value >> 16));
+	out.push_back(static_cast<uint8_t>(value >> 8));
+	out.push_back(static_cast<uint8_t>(value));
+}
+
+static void insert_png_chunk_before_iend(df::blob& png, const char (&type)[5], const df::cspan data,
+                                         const bool valid_crc = true)
+{
+	df::blob chunk;
+	append_png_be32(chunk, static_cast<uint32_t>(data.size));
+	const auto type_start = chunk.size();
+	chunk.insert(chunk.end(), type, type + 4);
+	chunk.insert(chunk.end(), data.data, data.data + data.size);
+
+	auto crc = crc32(0, Z_NULL, 0);
+	crc = crc32(crc, chunk.data() + type_start, static_cast<uInt>(4 + data.size));
+	append_png_be32(chunk, valid_crc ? crc : crc ^ 0x01020304u);
+
+	assert_equal(true, png.size() >= 12u, "png has an IEND chunk");
+	png.insert(png.end() - 12, chunk.begin(), chunk.end());
+}
+
+static df::blob make_png_text_chunk_payload(const bool compressed, const std::string_view xmp)
+{
+	constexpr auto png_xmp_text_key = "XML:com.adobe.xmp";
+	df::blob data;
+	data.insert(data.end(), png_xmp_text_key, png_xmp_text_key + strlen(png_xmp_text_key) + 1);
+	data.push_back(compressed ? 1 : 0);
+	data.push_back(0); // zlib
+	data.push_back(0); // empty language tag
+	data.push_back(0); // empty translated keyword
+
+	if (compressed)
+	{
+		uLongf compressed_size = compressBound(static_cast<uLong>(xmp.size()));
+		const auto old_size = data.size();
+		data.resize(old_size + compressed_size);
+		assert_equal(Z_OK, compress2(data.data() + old_size, &compressed_size,
+		                             reinterpret_cast<const Bytef*>(xmp.data()), static_cast<uLong>(xmp.size()),
+		                             Z_BEST_SPEED), "compress xmp");
+		data.resize(old_size + compressed_size);
+	}
+	else
+	{
+		data.insert(data.end(), xmp.begin(), xmp.end());
+	}
+
+	return data;
+}
+
+static df::file_path write_png_with_trailing_chunk(const std::string_view type, const df::blob& data)
+{
+	files ff;
+	const auto image = ff.surface_to_image(make_png_metadata_surface(), {}, {}, ui::image_format::PNG);
+	const auto& encoded = image->data();
+	df::blob png(encoded.data(), encoded.data() + encoded.size());
+
+	assert_equal(4_z, type.size(), "png chunk type is four bytes");
+	const char chunk_type[5] = {type[0], type[1], type[2], type[3], 0};
+	insert_png_chunk_before_iend(png, chunk_type, data);
+
+	const auto path = _temps.next_path(".png");
+	df::blob_save_to_file(png, path);
+	return path;
+}
+
+static std::string png_test_xmp(const int rating)
+{
+	return std::format(
+		"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+		"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+		"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+		"<rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" "
+		"xmp:Rating=\"{}\"/>"
+		"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+		rating);
+}
+
+// SRC-019 - trailing PNG ancillary metadata is valid and must be read without decoding pixels.
+static void should_read_png_metadata_after_idat()
+{
+	const auto before_path = [&]
+	{
+		files ff;
+		metadata_parts metadata;
+		const auto xmp = png_test_xmp(3);
+		metadata.xmp.assign(xmp.begin(), xmp.end());
+		const auto image = ff.surface_to_image(make_png_metadata_surface(), metadata, {}, ui::image_format::PNG);
+		const auto path = _temps.next_path(".png");
+		df::blob_save_to_file(image->data(), path);
+		return path;
+	}();
+
+	const auto trailing_xmp = png_test_xmp(3);
+	const auto after_path = write_png_with_trailing_chunk("iTXt", make_png_text_chunk_payload(false, trailing_xmp));
+
+	files ff;
+	const auto before = ff_scan_file(ff, before_path).to_props();
+	const auto after = ff_scan_file(ff, after_path).to_props();
+	assert_equal(before->rating, after->rating, "an XMP packet after IDAT reads like one before IDAT");
+	assert_equal(3, after->rating, "trailing XMP rating");
+
+	auto prefixed_exif = make_orientation_exif(ui::orientation::right_top);
+	prefixed_exif.insert(prefixed_exif.begin(), exif_signature.begin(), exif_signature.end());
+	const auto prefixed_exif_path = write_png_with_trailing_chunk("eXIf", prefixed_exif);
+	assert_equal(static_cast<int>(ui::orientation::right_top),
+	             static_cast<int>(ff_scan_file(ff, prefixed_exif_path).orientation),
+	             "Exif-prefixed trailing eXIf orientation reads");
+
+	const auto compressed_path = write_png_with_trailing_chunk("iTXt", make_png_text_chunk_payload(true, png_test_xmp(4)));
+	assert_equal(4, ff_scan_file(ff, compressed_path).to_props()->rating, "compressed trailing XMP reads");
+
+	const auto bad_crc_image = ff.surface_to_image(make_png_metadata_surface(), {}, {}, ui::image_format::PNG);
+	const auto& bad_crc_encoded = bad_crc_image->data();
+	df::blob bad_crc(bad_crc_encoded.data(), bad_crc_encoded.data() + bad_crc_encoded.size());
+	const auto bad = make_png_text_chunk_payload(false, png_test_xmp(5));
+	insert_png_chunk_before_iend(bad_crc, "iTXt", bad, false);
+	const auto bad_crc_path = _temps.next_path(".png");
+	df::blob_save_to_file(bad_crc, bad_crc_path);
+	assert_equal(0, ff_scan_file(ff, bad_crc_path).to_props()->rating, "bad CRC metadata is ignored");
+
+	const auto truncated_image = ff.surface_to_image(make_png_metadata_surface(), {}, {}, ui::image_format::PNG);
+	const auto& truncated_encoded = truncated_image->data();
+	df::blob truncated(truncated_encoded.data(), truncated_encoded.data() + truncated_encoded.size());
+	const auto payload = make_png_text_chunk_payload(false, png_test_xmp(5));
+	append_png_be32(truncated, static_cast<uint32_t>(payload.size() + 100));
+	constexpr uint8_t itxt_type[] = {'i', 'T', 'X', 't'};
+	truncated.insert(truncated.end(), std::begin(itxt_type), std::end(itxt_type));
+	truncated.insert(truncated.end(), payload.begin(), payload.end());
+	const auto truncated_path = _temps.next_path(".png");
+	df::blob_save_to_file(truncated, truncated_path);
+	assert_equal(0, ff_scan_file(ff, truncated_path).to_props()->rating, "truncated trailing metadata is ignored");
+}
+
 static void should_scan_webp()
 {
 	constexpr auto file_name = "lake.webp";
@@ -758,6 +1044,23 @@ static const metadata_kv* find_row(const metadata_block& block, const std::strin
 	}
 
 	return nullptr;
+}
+
+static const metadata_kv* find_row(const metadata_kv_list& rows, const std::string_view key)
+{
+	for (const auto& r : rows)
+	{
+		if (r.key == key) return &r;
+	}
+
+	return nullptr;
+}
+
+static std::string row_value_or_empty(const metadata_kv_list& rows, const std::string_view key)
+{
+	const auto* const row = find_row(rows, key);
+	assert_equal(true, row != nullptr, "metadata row exists", key);
+	return row ? row->value : std::string{};
 }
 
 // The block written for an orientation alone linked an empty IFD1 whose next-IFD offset was cut to
@@ -1512,6 +1815,190 @@ static void should_read_icc_tags_that_share_a_region()
 		assert_equal(true, read >= 1, "a region that fits is read");
 		assert_equal(true, static_cast<size_t>(read) * region_bytes <= profile.size(),
 		             "overlapping regions are charged in full, up to the profile's own size");
+	}
+}
+
+static std::vector<uint8_t> make_icc_profile_with_tags(
+	const std::vector<std::pair<uint32_t, std::vector<uint8_t>>>& tags)
+{
+	const auto put32 = [](std::vector<uint8_t>& out, const size_t at, const uint32_t v)
+	{
+		out[at] = static_cast<uint8_t>(v >> 24);
+		out[at + 1] = static_cast<uint8_t>(v >> 16);
+		out[at + 2] = static_cast<uint8_t>(v >> 8);
+		out[at + 3] = static_cast<uint8_t>(v);
+	};
+
+	std::vector<uint8_t> profile(128 + 4 + tags.size() * 12, 0);
+	put32(profile, 36, 0x61637370u); // acsp
+	put32(profile, 128, static_cast<uint32_t>(tags.size()));
+
+	for (size_t i = 0; i < tags.size(); ++i)
+	{
+		const auto offset = static_cast<uint32_t>(profile.size());
+		profile.insert(profile.end(), tags[i].second.begin(), tags[i].second.end());
+
+		const auto entry = 132 + i * 12;
+		put32(profile, entry, tags[i].first);
+		put32(profile, entry + 4, offset);
+		put32(profile, entry + 8, static_cast<uint32_t>(tags[i].second.size()));
+	}
+
+	put32(profile, 0, static_cast<uint32_t>(profile.size()));
+	return profile;
+}
+
+static std::vector<uint8_t> make_icc_desc_tag(const std::string_view text)
+{
+	std::vector<uint8_t> tag;
+	const auto append32 = [&tag](const uint32_t v)
+	{
+		tag.push_back(static_cast<uint8_t>(v >> 24));
+		tag.push_back(static_cast<uint8_t>(v >> 16));
+		tag.push_back(static_cast<uint8_t>(v >> 8));
+		tag.push_back(static_cast<uint8_t>(v));
+	};
+
+	append32(0x64657363u); // desc
+	append32(0);
+	append32(static_cast<uint32_t>(text.size() + 1));
+	tag.insert(tag.end(), text.begin(), text.end());
+	tag.push_back(0);
+	return tag;
+}
+
+static std::vector<uint8_t> make_icc_text_tag(const std::string_view text)
+{
+	std::vector<uint8_t> tag;
+	const auto append32 = [&tag](const uint32_t v)
+	{
+		tag.push_back(static_cast<uint8_t>(v >> 24));
+		tag.push_back(static_cast<uint8_t>(v >> 16));
+		tag.push_back(static_cast<uint8_t>(v >> 8));
+		tag.push_back(static_cast<uint8_t>(v));
+	};
+
+	append32(0x74657874u); // text
+	append32(0);
+	tag.insert(tag.end(), text.begin(), text.end());
+	tag.push_back(0);
+	return tag;
+}
+
+static std::vector<uint8_t> make_icc_mluc_tag(const std::vector<std::string_view>& texts)
+{
+	std::vector<uint8_t> tag;
+	const auto append16 = [&tag](const uint16_t v)
+	{
+		tag.push_back(static_cast<uint8_t>(v >> 8));
+		tag.push_back(static_cast<uint8_t>(v));
+	};
+	const auto append32 = [&tag](const uint32_t v)
+	{
+		tag.push_back(static_cast<uint8_t>(v >> 24));
+		tag.push_back(static_cast<uint8_t>(v >> 16));
+		tag.push_back(static_cast<uint8_t>(v >> 8));
+		tag.push_back(static_cast<uint8_t>(v));
+	};
+
+	append32(0x6d6c7563u); // mluc
+	append32(0);
+	append32(static_cast<uint32_t>(texts.size()));
+	append32(12);
+
+	std::vector<std::vector<uint8_t>> encoded;
+	for (const auto text : texts)
+	{
+		std::vector<uint8_t> bytes;
+		for (const auto c : text)
+		{
+			bytes.push_back(0);
+			bytes.push_back(static_cast<uint8_t>(c));
+		}
+		encoded.emplace_back(std::move(bytes));
+	}
+
+	auto offset = static_cast<uint32_t>(4 + 12 + texts.size() * 12);
+	for (size_t i = 0; i < texts.size(); ++i)
+	{
+		append16(0x656eu); // en
+		append16(static_cast<uint16_t>(0x5553u + i)); // US, then another country code
+		append32(static_cast<uint32_t>(encoded[i].size()));
+		append32(offset);
+		offset += static_cast<uint32_t>(encoded[i].size());
+	}
+
+	for (const auto& bytes : encoded)
+	{
+		tag.insert(tag.end(), bytes.begin(), bytes.end());
+	}
+
+	return tag;
+}
+
+static void should_decode_icc_text_exactly()
+{
+	const std::string long_profile(512, 'P');
+	const std::string long_copyright(512, 'C');
+	const auto profile = make_icc_profile_with_tags({
+		{0x64657363u, make_icc_desc_tag(long_profile)},
+		{0x63707274u, make_icc_text_tag(long_copyright)}
+	});
+
+	for (auto i = 0; i < 8; ++i)
+	{
+		std::vector<std::string> churn(128, std::string(1024, static_cast<char>('a' + i)));
+		const auto rows = metadata_icc::to_info({profile.data(), profile.size()});
+
+		assert_equal(long_profile, row_value_or_empty(rows, "Profile"), "profile description");
+		assert_equal(long_copyright, row_value_or_empty(rows, "Copyright"), "copyright text");
+		assert_equal(long_profile, row_value_or_empty(rows, "desc"), "description tag text");
+		assert_equal(long_copyright, row_value_or_empty(rows, "cprt"), "copyright tag text");
+	}
+}
+
+static void should_decode_icc_mluc_offsets()
+{
+	{
+		const auto profile = make_icc_profile_with_tags({{0x64657363u, make_icc_mluc_tag({"AB"})}});
+		const auto rows = metadata_icc::to_info({profile.data(), profile.size()});
+		assert_equal("AB", row_value_or_empty(rows, "Profile"), "short mluc");
+		assert_equal("AB", row_value_or_empty(rows, "desc"), "short mluc tag");
+	}
+
+	{
+		const std::string long_text(300, 'L');
+		const auto profile = make_icc_profile_with_tags({{0x64657363u, make_icc_mluc_tag({long_text})}});
+		const auto rows = metadata_icc::to_info({profile.data(), profile.size()});
+		assert_equal(long_text, row_value_or_empty(rows, "Profile"), "long mluc");
+	}
+
+	{
+		const auto profile = make_icc_profile_with_tags({{0x64657363u, make_icc_mluc_tag({"First", "Second"})}});
+		const auto rows = metadata_icc::to_info({profile.data(), profile.size()});
+		assert_equal("First", row_value_or_empty(rows, "Profile"), "first valid mluc record");
+	}
+
+	{
+		auto tag = make_icc_mluc_tag({"Odd"});
+		tag[4 + 16] = 0;
+		tag[4 + 17] = 0;
+		tag[4 + 18] = 0;
+		tag[4 + 19] = 5;
+		const auto profile = make_icc_profile_with_tags({{0x64657363u, tag}});
+		const auto rows = metadata_icc::to_info({profile.data(), profile.size()});
+		assert_equal("binary, 34 bytes", row_value_or_empty(rows, "desc"), "odd mluc string is rejected");
+	}
+
+	{
+		auto tag = make_icc_mluc_tag({"Bad"});
+		tag[4 + 20] = 0xff;
+		tag[4 + 21] = 0xff;
+		tag[4 + 22] = 0xff;
+		tag[4 + 23] = 0xff;
+		const auto profile = make_icc_profile_with_tags({{0x64657363u, tag}});
+		const auto rows = metadata_icc::to_info({profile.data(), profile.size()});
+		assert_equal("binary, 34 bytes", row_value_or_empty(rows, "desc"), "out-of-range mluc offset is rejected");
 	}
 }
 
@@ -2506,6 +2993,34 @@ static void should_pack_dates_canonically_regardless_of_parse_order()
 	assert_equal(true, forward == with_empty, "an absent date changes nothing");
 }
 
+// SRC-035 - equal current-machine wall clocks do not prove the same stored representation. A
+// floating capture date and a UTC file-created instant can display alike today but must not collapse
+// into one group, or changing timezone later shifts the wrong concept and compatibility storage
+// loses the instant.
+static void should_preserve_date_representation_when_coalescing_sources()
+{
+	const auto utc_created = df::date_t(2024, 3, 9, 8, 0, 0);
+	const auto floating_original = utc_created.system_to_local();
+
+	prop::date_pack forward;
+	forward.add(prop::date_source::exif_original, floating_original);
+	forward.add_utc(prop::date_source::container_created, utc_created);
+
+	prop::date_pack reverse;
+	reverse.add_utc(prop::date_source::container_created, utc_created);
+	reverse.add(prop::date_source::exif_original, floating_original);
+
+	for (const auto& pack : {forward, reverse})
+	{
+		assert_equal(2, pack.group_count(), "floating and UTC representations stay distinct");
+		assert_equal(floating_original, pack.original(), "the original remains a floating wall clock");
+		assert_equal(floating_original, pack.created(), "the created instant displays as local time");
+		assert_equal(utc_created, pack.created_as_utc_instant(), "compatibility storage keeps the instant");
+		assert_equal(true, pack.has_source(prop::date_source::exif_original), "original source retained");
+		assert_equal(true, pack.has_source(prop::date_source::container_created), "created source retained");
+	}
+}
+
 // Overflow only ever evicts the lowest-authority distinct values, so no resolution can change -
 // but the sources are recorded rather than dropped, so the panel can say how many it did not keep.
 static void should_record_dates_that_do_not_fit()
@@ -2608,6 +3123,9 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should fall back through created to modified date"s, should_fall_back_through_created_to_modified);
 	tests.add("Should pack dates canonically regardless of parse order"s,
 	          should_pack_dates_canonically_regardless_of_parse_order);
+	// SRC-035 - preserve date representation when coalescing sources.
+	tests.add("Should preserve date representation when coalescing sources"s,
+	          should_preserve_date_representation_when_coalescing_sources);
 	tests.add("Should record dates that do not fit"s, should_record_dates_that_do_not_fit);
 
 	//
@@ -2620,20 +3138,29 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should scan webm metadata"s, [] { should_scan_matroska("tagged.webm", "vp8"); });
 	tests.add("Should scan mp3 metadata"s, should_scan_mp3);
 	tests.add("Should scan mp4 metadata"s, should_scan_mp4);
+	// MOD-013 - scan-to-property conversion preserves supported high audio sample rates.
+	tests.add("Should preserve high audio sample rates"s, should_preserve_high_audio_sample_rates);
 
 	// Issue #3 - container tags added by an old version cannot be removed
 	tests.add("Should not resurrect container tags"s, should_not_resurrect_container_tags);
 	tests.add("Should apply property level Windows metadata precedence"s,
 	          should_apply_property_level_windows_metadata_precedence);
 	tests.add("Should scan raw metadata"s, should_scan_raw);
+	// SRC-022 - RAW GPS preserves valid coordinates on a zero-valued axis.
+	tests.add("Should keep raw gps on a zero axis"s, should_keep_raw_gps_on_a_zero_axis);
 	tests.add("Should scan mod metadata"s, should_scan_mod);
 	tests.add("Should scan webp metadata"s, should_scan_webp);
 	tests.add("Should scan jxl metadata"s, should_scan_jxl);
 	tests.add("Should scan heif metadata"s, should_scan_heic);
+	// SRC-018 - HEIF XMP is normally a MIME metadata item.
+	tests.add("Should scan heif Xmp MIME metadata"s, should_scan_heif_xmp_mime_metadata);
 	tests.add("Should not double apply heif rotation"s, should_not_double_apply_heif_rotation);
 	tests.add("Should scan avif metadata"s, should_scan_avif);
+	// SRC-019 - PNG metadata may be stored after IDAT.
+	tests.add("Should read png metadata after idat"s, should_read_png_metadata_after_idat);
 	tests.add("Should parse Xmp"s, should_parse_xmp);
 	tests.add("Should apply Xmp GPS as a pair"s, should_apply_xmp_gps_as_a_pair);
+	tests.add("Should read Xmp disc number"s, should_read_xmp_disc_number);
 	tests.add("Should clear tags from an empty Xmp subject"s, should_clear_tags_from_an_empty_xmp_subject);
 	tests.add("Should read the declared panorama projection"s, should_read_the_declared_panorama_projection);
 	tests.add("Should present exif metadata by ifd"s, should_present_exif_block_by_ifd);
@@ -2647,6 +3174,8 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should present raw metadata sections"s, should_present_raw_block_sections);
 	tests.add("Should present icc metadata sections"s, should_present_icc_block_sections);
 	tests.add("Should read icc tags that share a region"s, should_read_icc_tags_that_share_a_region);
+	tests.add("Should decode icc text exactly"s, should_decode_icc_text_exactly);
+	tests.add("Should decode icc mluc offsets"s, should_decode_icc_mluc_offsets);
 	tests.add("Should present jpeg structure"s, should_present_jpeg_structure_block);
 	tests.add("Should present jpeg embedded images"s, should_present_jpeg_embedded_images);
 	tests.add("Should present webp structure"s, should_present_webp_structure_block);

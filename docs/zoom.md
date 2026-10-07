@@ -35,8 +35,10 @@ fullscreen commands; commands whose target or effect is not visible are suppress
 5. A newer item, request, or generation cannot be replaced by stale decode work.
 6. Navigation preserves source-space subject position when source geometry permits it.
 7. Escape removes region selection before zoom mode and never skips directly to closing the view.
-8. Above source-pixel magnification, final pixels use point sampling; provisional pixels remain
-   smooth and visibly provisional.
+8. Flat-image pixels use point sampling at exactly 1:1, bicubic above 1:1 through 3x, and point
+   sampling above 3x. Interactive magnification uses bilinear sampling inside that 1:1-to-3x
+   interval; above 3x it also uses point sampling. Magnified stand-ins stay smooth until source
+   pixels arrive.
 
 ## Rendering Tiers
 
@@ -55,9 +57,11 @@ steps between fixed adjacent values. Fit is inserted as the floor when its calcu
 between ladder values. Toggle Fit restores the scale and center Fit replaced when one exists: an
 explicit scale, or a Fit width or Fill that goes on following the viewport.
 
-Pointer drag, keyboard pan, auto-pan, and navigator repositioning all update the same center. Pan
-acceleration derives from displacement rather than event frequency. Wheel fractions accumulate
-before producing a step so precision devices do not lose motion.
+Pointer drag, keyboard pan, auto-pan, and navigator repositioning all update the same center. Stored
+pan is clamped to the same visible interval used for drawing, so reversing at an edge moves the
+picture immediately rather than consuming hidden overscroll. Pan acceleration derives from
+displacement rather than event frequency. Wheel fractions accumulate before producing a step so
+precision devices do not lose motion.
 
 Region zoom selects a source rectangle and chooses the largest ladder value that fits it, centered
 on the selected region. A gesture below the drag threshold remains a click.
@@ -79,8 +83,10 @@ of a planar center. Drag turns the camera; stepping adjusts field of view; the n
 camera's covered source region.
 
 Partial panoramas use GPano full dimensions and crop offsets to map stored texels onto the sphere.
-Longitude wraps only when the declared panorama spans the full width. GPU projection uses a shader;
-software rendering uses the shared panorama rasterizer and publishes generation-checked surfaces.
+Longitude wraps only when the declared panorama spans the full width. A same-path source whose
+dimensions change rereads declaration geometry without resetting the user's camera or flat/projected
+choice; unchanged-source refreshes keep both. GPU projection uses a shader; software rendering uses
+the shared panorama rasterizer and publishes generation-checked surfaces.
 
 ## Navigator
 
@@ -100,8 +106,9 @@ the wheel keeps the behavior of the view under the pointer.
 ### Pinch
 
 Pinch on magnifiable media anchors at the gesture center and steps the same ladder. Touch pan updates
-the same source-space center, and double-tap toggles between Fit and 100% at the tapped point. Mouse,
-touch, keyboard, and menu paths do not create separate zoom state.
+the same source-space center in Items and Fullscreen when the gesture starts on magnified media, and
+double-tap toggles between Fit and 100% at the tapped point. Mouse, touch, keyboard, and menu paths
+do not create separate zoom state.
 
 ## Quality And Memory
 

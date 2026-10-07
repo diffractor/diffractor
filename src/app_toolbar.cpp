@@ -29,6 +29,7 @@
 #include "view_batch.h"
 #include "view_locate.h"
 #include "view_movie.h"
+#include "view_edit.h"
 
 #include "app_sidebar.h"
 #include "app_commands.h"
@@ -499,15 +500,12 @@ void app_frame::update_button_state(const bool resize)
 	// on a bare selection, it offered itself for offline items and outside the item views only to
 	// refuse once chosen.
 	_commands[commands::edit_cut]->enable = can_process_local_items;
-	_commands[commands::edit_item_auto_color]->enable = is_edit_view && _state._edit_item &&
-		_state._edit_item->file_type()->has_trait(file_traits::bitmap);
-	_commands[commands::edit_item_auto_document]->enable = is_edit_view && _state._edit_item &&
-		_state._edit_item->file_type()->has_trait(file_traits::bitmap);
-	_commands[commands::edit_item_auto_straighten]->enable = is_edit_view && _state._edit_item &&
-		_state._edit_item->file_type()->has_trait(file_traits::bitmap);
-	_commands[commands::edit_item_preview]->enable = is_edit_view && _state._edit_item &&
-		_state._edit_item->file_type()->has_trait(file_traits::bitmap);
-	_commands[commands::edit_item_color_reset]->enable = is_edit_view;
+	const auto can_edit_pixels = is_edit_view && _view_edit && _view_edit->can_edit_pixels();
+	_commands[commands::edit_item_auto_color]->enable = can_edit_pixels;
+	_commands[commands::edit_item_auto_document]->enable = can_edit_pixels;
+	_commands[commands::edit_item_auto_straighten]->enable = can_edit_pixels;
+	_commands[commands::edit_item_preview]->enable = can_edit_pixels;
+	_commands[commands::edit_item_color_reset]->enable = can_edit_pixels;
 	_commands[commands::edit_item_save]->enable = is_edit_view && _state._edit_item && edit_has_changes();
 	// In the locate view these run the same operation as locate_run, so they answer to the same
 	// test: an enabled button that writes nothing reads as a broken command.
@@ -529,7 +527,7 @@ void app_frame::update_button_state(const bool resize)
 		                                                             ? std::string{}
 		                                                             : std::string(
 			                                                             tt.command_save_and_next_tooltip.sv());
-	_commands[commands::edit_item_save_as]->enable = is_edit_view;
+	_commands[commands::edit_item_save_as]->enable = can_edit_pixels;
 	_commands[commands::edit_paste]->enable = is_items_view && has_save_folder;
 	_commands[commands::english]->enable = true;
 	_commands[commands::exit]->enable = true;
@@ -711,7 +709,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_movie_add]->enable = is_movie_view && !movie_project_busy;
 	_commands[commands::tool_movie_open]->enable = is_movie_view && !movie_project_busy;
 	_commands[commands::tool_movie_import]->enable = is_movie_view && !movie_project_busy;
-	_commands[commands::tool_movie_save]->enable = is_movie_view && !movie_project_busy && _view_movie->has_clips();
+	_commands[commands::tool_movie_save]->enable = is_movie_view && !movie_project_busy && _view_movie->can_save_project();
 	_commands[commands::tool_movie_remove]->enable = is_movie_view && _view_movie->has_clips();
 	_commands[commands::tool_movie_send_to_end]->enable = is_movie_view && _view_movie->has_clips();
 	_commands[commands::tool_movie_select_all]->enable = is_movie_view && _view_movie->has_clips();
@@ -1416,19 +1414,16 @@ void app_frame::tooltip(view_hover_element& hover, const commands id) const
 
 		if (i)
 		{
-			const auto& image = i->thumbnail();
+			const auto surface = i->thumbnail_surface();
 
-			if (is_valid(image))
+			if (is_valid(surface))
 			{
-				files ff;
-				const auto surface = ff.image_to_surface(image);
-
-				if (is_valid(surface))
-				{
-					hover.elements->add(
-						std::make_shared<surface_element>(surface, 200,
-						                                  flex_item::center | flex_item::new_line));
-				}
+				hover.elements->add(
+					std::make_shared<surface_element>(surface, 200, flex_item::center | flex_item::new_line));
+			}
+			else if (is_valid(i->thumbnail()))
+			{
+				i->stage_thumbnail_surface(_state._async, false, true);
 			}
 
 			hover.elements->add(std::make_shared<text_element>(i->name()));

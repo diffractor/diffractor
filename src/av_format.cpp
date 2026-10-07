@@ -155,6 +155,188 @@ static df::blob unescape_xmp(const char* sz)
 	return {result.data(), result.data() + result.size()};
 }
 
+static int64_t codec_working_bytes_per_pixel(const AVCodecID codec_id)
+{
+	switch (codec_id)
+	{
+	case AV_CODEC_ID_MJPEG:
+	case AV_CODEC_ID_MJPEGB:
+	case AV_CODEC_ID_LJPEG:
+		// Progressive 4:4:4 JPEG/MJPEG can hold full sample planes plus coefficient and
+		// non-zero-count arrays before the BGRA destination exists. Ten bytes per pixel is a
+		// conservative admission bound for that finite working set.
+		return 10;
+	default:
+		return 4;
+	}
+}
+
+static int64_t codec_pixel_ceiling(const AVCodecID codec_id)
+{
+	if (df::max_decode_bytes <= 0) return 0;
+	return std::max<int64_t>(1, df::max_decode_bytes / codec_working_bytes_per_pixel(codec_id));
+}
+
+static void set_probe_decode_ceiling(AVDictionary** const opts, const AVCodecID codec_id)
+{
+	const auto max_pixels = codec_pixel_ceiling(codec_id);
+	if (max_pixels > 0) av_dict_set_int(opts, "max_pixels", max_pixels, 0);
+}
+
+static AVDictionary** alloc_stream_probe_options(const AVFormatContext* const fc)
+{
+	if (!fc || fc->nb_streams == 0 || df::max_decode_bytes <= 0) return nullptr;
+
+	auto** result = static_cast<AVDictionary**>(av_calloc(fc->nb_streams, sizeof(AVDictionary*)));
+	if (!result) return nullptr;
+
+	for (unsigned i = 0; i < fc->nb_streams; ++i)
+	{
+		const auto* const stream = fc->streams[i];
+		if (stream && stream->codecpar) set_probe_decode_ceiling(&result[i], stream->codecpar->codec_id);
+	}
+
+	return result;
+}
+
+static void free_stream_probe_options(AVDictionary*** const opts, const unsigned count)
+{
+	if (!opts || !*opts) return;
+	for (unsigned i = 0; i < count; ++i) av_dict_free(&(*opts)[i]);
+	av_freep(opts);
+}
+
+static bool reject_over_budget_codec_working(load_diagnostic* const diagnostic, const AVCodecID codec_id,
+                                             const sizei source_dimensions, const std::string_view format)
+{
+	if (diagnostic) diagnostic->source_dimensions = source_dimensions;
+
+	const auto bytes = static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy *
+		codec_working_bytes_per_pixel(codec_id);
+	if (bytes <= df::max_decode_bytes) return false;
+
+	if (diagnostic) diagnostic->over_budget = true;
+
+	df::log(__FUNCTION__, std::format("{} {} x {} needs {} of codec working storage, over the {} budget",
+	                                  format, source_dimensions.cx, source_dimensions.cy,
+	                                  df::file_size(bytes).str(), df::file_size(df::max_decode_bytes).str()));
+	return true;
+}
+
+static bool frame_palette_uses_alpha(const AVFrame& frame)
+{
+	if (!frame.data[0] || !frame.data[1] || frame.width <= 0 || frame.height <= 0) return false;
+
+	std::array<bool, 256> used{};
+
+	for (auto y = 0; y < frame.height; ++y)
+	{
+		const auto* const line = frame.data[0] + static_cast<ptrdiff_t>(y) * frame.linesize[0];
+
+		for (auto x = 0; x < frame.width; ++x)
+		{
+			used[line[x]] = true;
+		}
+	}
+
+	const auto* const palette = std::bit_cast<const uint32_t*>(frame.data[1]);
+
+	for (auto index = 0u; index < used.size(); ++index)
+	{
+		if (used[index] && ((palette[index] >> 24) & 0xff) != 0xff) return true;
+	}
+
+	return false;
+}
+
+static bool frame_packed_alpha_is_used(const AVFrame& frame, const AVPixFmtDescriptor& desc)
+{
+	if (desc.nb_components < 4 || frame.width <= 0 || frame.height <= 0) return false;
+
+	const auto alpha = desc.comp[desc.nb_components - 1];
+	if (alpha.depth != 8 || alpha.plane < 0 || alpha.plane >= 4 || !frame.data[alpha.plane]) return true;
+
+	auto all_zero = true;
+	auto all_opaque = true;
+
+	for (auto y = 0; y < frame.height; ++y)
+	{
+		const auto* const line = frame.data[alpha.plane] + static_cast<ptrdiff_t>(y) * frame.linesize[alpha.plane];
+
+		for (auto x = 0; x < frame.width; ++x)
+		{
+			const auto a = line[x * alpha.step + alpha.offset];
+			all_zero &= a == 0;
+			all_opaque &= a == 0xff;
+
+			if (!all_zero && !all_opaque) return true;
+		}
+	}
+
+	return false;
+}
+
+static bool av_frame_uses_alpha(const AVFrame& frame)
+{
+	const auto fmt = static_cast<AVPixelFormat>(frame.format);
+	const auto* const desc = av_pix_fmt_desc_get(fmt);
+	if (!desc || !(desc->flags & AV_PIX_FMT_FLAG_ALPHA)) return false;
+	if (fmt == AV_PIX_FMT_PAL8) return frame_palette_uses_alpha(frame);
+	return frame_packed_alpha_is_used(frame, *desc);
+}
+
+static std::string normalize_still_extension_hint(const std::string_view extension_hint)
+{
+	if (extension_hint.empty() || extension_hint.front() == '.') return std::string(extension_hint);
+	return std::format(".{}", extension_hint);
+}
+
+static bool tga_declares_alpha(const df::cspan data, const std::string_view extension_hint)
+{
+	if (str::icmp(extension_hint, ".tga") != 0 || data.size < 18) return true;
+	if (data.data[16] != 32) return true;
+	return (data.data[17] & 0x0f) != 0;
+}
+
+static sizei hinted_tga_dimensions(const df::cspan data, const std::string_view extension_hint)
+{
+	if (str::icmp(extension_hint, ".tga") != 0 || data.size < 18) return {};
+	return {
+		static_cast<int>(data.data[12] | (data.data[13] << 8)),
+		static_cast<int>(data.data[14] | (data.data[15] << 8))
+	};
+}
+
+static sizei hinted_bmp_dimensions(const df::cspan data, const std::string_view extension_hint)
+{
+	if (str::icmp(extension_hint, ".bmp") != 0 || data.size < 26 || data.data[0] != 'B' || data.data[1] != 'M')
+	{
+		return {};
+	}
+
+	const auto width = static_cast<int32_t>(data.data[18] | (data.data[19] << 8) | (data.data[20] << 16) |
+		(data.data[21] << 24));
+	const auto height = static_cast<int32_t>(data.data[22] | (data.data[23] << 8) | (data.data[24] << 16) |
+		(data.data[25] << 24));
+	return {std::abs(width), std::abs(height)};
+}
+
+static bool reject_hinted_over_budget_still(load_diagnostic* const diagnostic, const df::cspan data,
+                                            const std::string_view extension_hint)
+{
+	if (const auto tga_dimensions = hinted_tga_dimensions(data, extension_hint); !tga_dimensions.is_empty())
+	{
+		return reject_over_budget_source(diagnostic, tga_dimensions, "ffmpeg");
+	}
+
+	if (const auto bmp_dimensions = hinted_bmp_dimensions(data, extension_hint); !bmp_dimensions.is_empty())
+	{
+		return reject_over_budget_source(diagnostic, bmp_dimensions, "ffmpeg");
+	}
+
+	return false;
+}
+
 // Decodes a 3x3 display matrix into a clockwise rotation normalised onto [0,360).
 // Shared by the container-level (stream) and frame-level side data so both map
 // onto the same set of orientations.
@@ -936,7 +1118,7 @@ static int get_stream_type(const AVFormatContext* ctx, const int stream_num)
 bool av_format_decoder::seek(const double wanted) const
 {
 	auto success = false;
-	_sequential_time = -1;
+	clear_sequential_frame_bracket();
 
 	auto* const fc = _format_context;
 
@@ -982,6 +1164,25 @@ bool av_format_decoder::seek(const double wanted) const
 		}
 	}
 	return success;
+}
+
+void av_format_decoder::clear_sequential_frame_bracket() const
+{
+	_sequential_time = -1;
+	_sequential_prev.reset();
+	_sequential_next.reset();
+}
+
+bool av_format_decoder::scale_sequential_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
+                                               const av_frame& frame) const
+{
+	if (!_scaler)
+	{
+		_scaler = std::make_unique<av_scaler>();
+	}
+
+	return _scaler->scale_frame(frame.frm, dest_surface, max_dim, frame.time, frame.orientation,
+	                            _video_stream_aspect_ratio);
 }
 
 av_packet_ptr av_format_decoder::read_packet() const
@@ -1128,7 +1329,7 @@ void av_format_decoder::close()
 
 	_pts_vid.clear();
 	_pts_aud.clear();
-	_sequential_time = -1;
+	clear_sequential_frame_bracket();
 
 	AVFormatContext* fc = nullptr;
 	std::swap(fc, _format_context);
@@ -1337,8 +1538,8 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 	// 7 frames, up to 20 - and nothing a metadata scan reports uses that answer. Two separate bounds
 	// hold it back, both applied AFTER open_input so container metadata is already gathered and
 	// demuxers that consume probesize in their own header read (mpeg-ts) are untouched.
-	AVDictionary** stream_opts = nullptr;
 	const auto opts_stream_count = fc->nb_streams;
+	AVDictionary** stream_opts = alloc_stream_probe_options(fc);
 
 	if (intent == media_intent::metadata)
 	{
@@ -1349,8 +1550,6 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 		// bound below it needs no guarantee about the header - a stream the demuxer has to discover is
 		// still discovered, just without the entropy decode. find_stream_info takes one dictionary per
 		// stream and hands it to that stream's probe decoder at avcodec_open2.
-		stream_opts = static_cast<AVDictionary**>(av_calloc(opts_stream_count, sizeof(AVDictionary*)));
-
 		if (stream_opts)
 		{
 			for (unsigned i = 0; i < opts_stream_count; ++i)
@@ -1376,11 +1575,7 @@ bool av_format_decoder::open(const platform::file_ptr& file, const df::file_path
 
 	avformat_find_stream_info(fc, stream_opts);
 
-	if (stream_opts)
-	{
-		for (unsigned i = 0; i < opts_stream_count; ++i) av_dict_free(&stream_opts[i]);
-		av_freep(&stream_opts);
-	}
+	free_stream_probe_options(&stream_opts, opts_stream_count);
 
 	if (!has_presentable_stream(fc))
 	{
@@ -1644,7 +1839,10 @@ void av_format_decoder::init_streams(int video_track, int audio_track, const boo
 
 				// codecpar can understate what the bitstream then asks for, so the ceiling the check
 				// above applied is restated where the decoder itself enforces it.
-				if (df::max_decode_bytes > 0) vc->max_pixels = df::max_decode_bytes / 4;
+				if (const auto max_pixels = codec_pixel_ceiling(video_codec->id); max_pixels > 0)
+				{
+					vc->max_pixels = max_pixels;
+				}
 
 				if (avcodec_open2(vc, video_codec, nullptr) == 0)
 				{
@@ -1933,10 +2131,53 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 	// in turn cost a bicubic pass and a fresh surface per frame of the GOP, and all but the last
 	// were thrown away.
 	av_frame best;
-	auto best_time = 0.0;
-	auto best_dist = std::numeric_limits<double>::max();
-	auto found = false;
-	auto reached = false;
+	av_nearest_frame_choice choice;
+
+	const auto accept_frame = [&](av_frame& frame)
+	{
+		const auto pts = _pts_vid.guess(frame.frm.best_effort_timestamp, frame.frm.pts, frame.frm.pkt_dts,
+		                                frame.frm.duration);
+		const auto time = to_video_seconds(pts);
+
+		frame.time = time;
+		frame.orientation = calc_orientation();
+
+		if (time <= wanted_time || !_sequential_prev)
+		{
+			_sequential_prev = std::make_shared<av_frame>(frame);
+		}
+
+		if (time >= wanted_time)
+		{
+			_sequential_next = std::make_shared<av_frame>(frame);
+		}
+
+		// Frames arrive in presentation order, so the distance to the target shrinks until we
+		// pass it; the last improvement is the nearest frame.
+		if (choice.consider(time, wanted_time, tolerance))
+		{
+			av_frame_unref(&best.frm);
+			av_frame_ref(&best.frm, &frame.frm);
+		}
+	};
+
+	const auto drain_delayed_frames = [&]()
+	{
+		if (try_avcodec_send_packet(ctx, nullptr) != 0)
+		{
+			return;
+		}
+
+		av_frame frame;
+
+		while (!choice.reached && avcodec_receive_frame(ctx, &frame.frm) == 0)
+		{
+			accept_frame(frame);
+			av_frame_unref(&frame.frm);
+		}
+
+		avcodec_flush_buffers(ctx);
+	};
 
 	// The walk normally stops the moment it passes wanted_time; this only bounds a stream that
 	// never gets there (a truncated or corrupt file). It therefore has to be wide enough to
@@ -1944,12 +2185,16 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 	// over a thousand - or the caller silently gets a frame short of the position it asked for.
 	constexpr int max_packets = 8192;
 
-	for (int i = 0; i < max_packets && !reached && !df::is_closing; i++)
+	for (int i = 0; i < max_packets && !choice.reached && !df::is_closing; i++)
 	{
 		const auto packet = read_packet();
 
 		if (!packet || packet->eof)
 		{
+			if (packet && packet->eof && should_drain_delayed_video_frames_at_eof(choice))
+			{
+				drain_delayed_frames();
+			}
 			break;
 		}
 
@@ -1965,47 +2210,23 @@ bool av_format_decoder::decode_nearest_frame(ui::surface_ptr& dest_surface, cons
 
 		av_frame frame;
 
-		while (!reached && avcodec_receive_frame(ctx, &frame.frm) == 0)
+		while (!choice.reached && avcodec_receive_frame(ctx, &frame.frm) == 0)
 		{
-			const auto pts = _pts_vid.guess(frame.frm.best_effort_timestamp, frame.frm.pts, frame.frm.pkt_dts,
-			                                frame.frm.duration);
-			const auto time = to_video_seconds(pts);
-			const auto dist = fabs(time - wanted_time);
-
-			// Frames arrive in presentation order, so the distance to the target shrinks until we
-			// pass it; the last improvement is the nearest frame.
-			if (dist < best_dist)
-			{
-				best_dist = dist;
-				best_time = time;
-				found = true;
-				av_frame_unref(&best.frm);
-				av_frame_move_ref(&best.frm, &frame.frm);
-			}
-			else
-			{
-				av_frame_unref(&frame.frm);
-			}
-
-			// Either the walk has passed the target, or it holds a frame near enough for a caller that
-			// allowed slack. Refining further would only improve a frame already accepted.
-			if (time >= wanted_time || (found && best_dist <= tolerance))
-			{
-				reached = true;
-			}
+			accept_frame(frame);
+			av_frame_unref(&frame.frm);
 		}
 
 		// The caller always needs something to show, so the first frame decoded is never given up -
 		// only the refinement toward the exact one is. A pointer that has already moved on makes that
 		// refinement worthless.
-		if (found && abandon.is_cancelled())
+		if (choice.found && abandon.is_cancelled())
 		{
 			break;
 		}
 	}
 
-	return found && _scaler->scale_frame(best.frm, dest_surface, max_dim, best_time, calc_orientation(),
-	                                     _video_stream_aspect_ratio);
+	return choice.found && _scaler->scale_frame(best.frm, dest_surface, max_dim, choice.best_time,
+	                                            calc_orientation(), _video_stream_aspect_ratio);
 }
 
 bool av_format_decoder::extract_seek_frame(ui::surface_ptr& dest_surface, const sizei max_dim,
@@ -2120,11 +2341,44 @@ bool av_format_decoder::extract_frame_at(ui::surface_ptr& dest_surface, const si
 	const auto start = start_time();
 	const auto target = std::clamp(wanted_time, start, std::max(start, end_time()));
 
+	if (_sequential_prev && fabs(_sequential_prev->time - target) <= tolerance_seconds)
+	{
+		_sequential_time = _sequential_prev->time;
+		return scale_sequential_frame(dest_surface, max_dim, *_sequential_prev);
+	}
+
+	if (_sequential_next && fabs(_sequential_next->time - target) <= tolerance_seconds)
+	{
+		_sequential_time = _sequential_next->time;
+		return scale_sequential_frame(dest_surface, max_dim, *_sequential_next);
+	}
+
+	if (_sequential_prev && _sequential_next &&
+		_sequential_prev->time <= target && target <= _sequential_next->time)
+	{
+		const auto& nearest = fabs(_sequential_prev->time - target) <= fabs(_sequential_next->time - target)
+			                      ? _sequential_prev
+			                      : _sequential_next;
+		_sequential_time = nearest->time;
+		return scale_sequential_frame(dest_surface, max_dim, *nearest);
+	}
+
+	if (_sequential_prev && target < _sequential_prev->time)
+	{
+		clear_sequential_frame_bracket();
+	}
+	else if (_sequential_next && target > _sequential_next->time)
+	{
+		_sequential_prev = _sequential_next;
+		_sequential_next.reset();
+		_sequential_time = _sequential_prev->time;
+	}
+
 	// Walking forward is the whole point, but only while walking is the cheaper answer. Past this
 	// much unread stream a seek reaches the target sooner than decoding every frame between.
 	constexpr double max_forward_walk_seconds = 3.0;
 
-	if (_sequential_time < 0 || target < _sequential_time || target > _sequential_time + max_forward_walk_seconds)
+	if (_eof || _sequential_time < 0 || target < _sequential_time || target > _sequential_time + max_forward_walk_seconds)
 	{
 		// A container-level seek does not flush the decoder, so buffered pre-seek frames are dropped
 		// and the timestamp estimator reset - the same pairing every other seeking caller here uses.
@@ -2135,7 +2389,7 @@ bool av_format_decoder::extract_frame_at(ui::surface_ptr& dest_surface, const si
 
 		avcodec_flush_buffers(_video_context);
 		_pts_vid.clear();
-		_sequential_time = -1;
+		clear_sequential_frame_bracket();
 	}
 
 	ui::surface_ptr decoded;
@@ -2146,6 +2400,12 @@ bool av_format_decoder::extract_frame_at(ui::surface_ptr& dest_surface, const si
 		// it - so the next call must seek rather than assume it can step on from here.
 		_sequential_time = -1;
 		return false;
+	}
+
+	if (_sequential_prev && should_use_kept_sequential_frame(_sequential_prev->time, decoded->time(), target))
+	{
+		_sequential_time = _sequential_prev->time;
+		return scale_sequential_frame(dest_surface, max_dim, *_sequential_prev);
 	}
 
 	_sequential_time = decoded->time();
@@ -2790,9 +3050,19 @@ namespace
 	}
 }
 
-ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const std::string_view extension_hint)
+ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const std::string_view extension_hint,
+                                load_diagnostic* const diagnostic)
 {
 	if (data.data == nullptr || data.size == 0) return {};
+
+	const auto normalized_extension_hint = normalize_still_extension_hint(extension_hint);
+	const auto still_can_use_alpha = tga_declares_alpha(data, normalized_extension_hint);
+
+	if (const auto hinted_dimensions = hinted_tga_dimensions(data, normalized_extension_hint); !hinted_dimensions.is_empty() &&
+		reject_hinted_over_budget_still(diagnostic, data, normalized_extension_hint))
+	{
+		return {};
+	}
 
 	memory_source source{data.data, static_cast<int64_t>(data.size), 0};
 
@@ -2821,13 +3091,16 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 
 	// The probe reads the extension off this name. There is no file to open: pb already holds the
 	// bytes, and a format with a signature is found whether or not a name is given.
-	const auto probe_name = extension_hint.empty() ? std::string{} : std::format("image{}", extension_hint);
+	const auto probe_name = normalized_extension_hint.empty()
+		                        ? std::string{}
+		                        : std::format("image{}", normalized_extension_hint);
 
 	if (avformat_open_input(&fc, probe_name.empty() ? nullptr : probe_name.c_str(), nullptr, nullptr) != 0)
 	{
 		// open_input frees fc itself on failure, but not the context it was given.
 		av_freep(&pb->buffer);
 		avio_context_free(&pb);
+		if (diagnostic) reject_hinted_over_budget_still(diagnostic, data, normalized_extension_hint);
 		return {};
 	}
 
@@ -2838,10 +3111,48 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 		avio_context_free(&pb);
 	});
 
-	if (avformat_find_stream_info(fc, nullptr) < 0) return {};
+	fc->max_streams = fc->nb_streams;
+	const auto opts_stream_count = fc->nb_streams;
+	AVDictionary** stream_opts = alloc_stream_probe_options(fc);
+	const df::scope_exit free_probe_options([&stream_opts, opts_stream_count]
+	{
+		free_stream_probe_options(&stream_opts, opts_stream_count);
+	});
+
+	if (avformat_find_stream_info(fc, stream_opts) < 0)
+	{
+		for (unsigned i = 0; i < fc->nb_streams; ++i)
+		{
+			const auto* const stream = fc->streams[i];
+			if (!stream || !stream->codecpar) continue;
+
+			const sizei probed_dimensions{stream->codecpar->width, stream->codecpar->height};
+			if (!probed_dimensions.is_empty() &&
+				(reject_over_budget_source(diagnostic, probed_dimensions, "ffmpeg") ||
+					reject_over_budget_codec_working(diagnostic, stream->codecpar->codec_id, probed_dimensions,
+					                                 "ffmpeg")))
+			{
+				break;
+			}
+		}
+
+		if (diagnostic && !diagnostic->over_budget)
+		{
+			reject_hinted_over_budget_still(diagnostic, data, normalized_extension_hint);
+		}
+
+		return {};
+	}
 
 	const auto stream_index = av_find_best_stream(fc, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-	if (stream_index < 0) return {};
+	if (stream_index < 0)
+	{
+		if (diagnostic && !diagnostic->over_budget)
+		{
+			reject_hinted_over_budget_still(diagnostic, data, normalized_extension_hint);
+		}
+		return {};
+	}
 
 	const auto* const params = fc->streams[stream_index]->codecpar;
 
@@ -2850,7 +3161,9 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 	// the fallback re-decodes what the budget just refused. It is also the only gate the formats
 	// ffmpeg alone carries (TGA, SGI, the portable pixmaps, DPX) ever get, because scan_photo reads
 	// no header for them and the caller's check is skipped when the geometry is unknown.
-	if (reject_over_budget_source(nullptr, {params->width, params->height}, "ffmpeg")) return {};
+	const sizei source_dimensions{params->width, params->height};
+	if (reject_over_budget_source(diagnostic, source_dimensions, "ffmpeg")) return {};
+	if (reject_over_budget_codec_working(diagnostic, params->codec_id, source_dimensions, "ffmpeg")) return {};
 
 	const auto* const codec = avcodec_find_decoder(params->codec_id);
 	if (!codec) return {};
@@ -2864,9 +3177,16 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 
 	// codecpar can understate what the bitstream then asks for, so the ceiling is restated where the
 	// decoder itself will enforce it.
-	if (df::max_decode_bytes > 0) cc->max_pixels = df::max_decode_bytes / 4;
+	if (const auto max_pixels = codec_pixel_ceiling(params->codec_id); max_pixels > 0) cc->max_pixels = max_pixels;
 
-	if (avcodec_open2(cc, codec, nullptr) != 0) return {};
+	if (avcodec_open2(cc, codec, nullptr) != 0)
+	{
+		if (diagnostic && !diagnostic->over_budget)
+		{
+			reject_hinted_over_budget_still(diagnostic, data, normalized_extension_hint);
+		}
+		return {};
+	}
 
 	auto* frame = av_frame_alloc();
 	auto* packet = av_packet_alloc();
@@ -2893,7 +3213,8 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 			ui::surface_ptr result;
 			av_scaler scaler;
 
-			if (scaler.scale_frame(*frame, result, max_dim, 0.0, ui::orientation::top_left))
+			if (scaler.scale_frame(*frame, result, max_dim, 0.0, ui::orientation::top_left, {},
+			                       still_can_use_alpha))
 			{
 				return result;
 			}
@@ -2902,6 +3223,10 @@ ui::surface_ptr av_decode_still(const df::cspan data, const sizei max_dim, const
 		}
 	}
 
+	if (diagnostic && !diagnostic->over_budget)
+	{
+		reject_hinted_over_budget_still(diagnostic, data, normalized_extension_hint);
+	}
 	return {};
 }
 
@@ -3110,7 +3435,8 @@ bool av_scaler::scale_surface(const av_frame_ptr& frame_in, const ui::surface_pt
 }
 
 bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, const sizei max_dim, const double time,
-                            const ui::orientation orientation, const av_rational container_sar)
+                            const ui::orientation orientation, const av_rational container_sar,
+                            const bool preserve_alpha)
 {
 	bool success = false;
 	const auto fmt = static_cast<AVPixelFormat>(frame.format);
@@ -3146,7 +3472,11 @@ bool av_scaler::scale_frame(const AVFrame& frame, ui::surface_ptr& surface, cons
 
 		surface = std::make_shared<ui::surface>();
 
-		if (!surface->alloc(dst_dims.cx, dst_dims.cy, ui::texture_format::RGB, orientation, time))
+		const auto destination_format = preserve_alpha && av_frame_uses_alpha(frame)
+			                                ? ui::texture_format::ARGB
+			                                : ui::texture_format::RGB;
+
+		if (!surface->alloc(dst_dims.cx, dst_dims.cy, destination_format, orientation, time))
 		{
 			surface.reset();
 			return false;
@@ -3374,11 +3704,14 @@ void av_session::state(const av_play_state new_state)
 	}
 }
 
-void av_session::seek(const double pos, const bool scrubbing)
+void av_session::seek(const double pos, const bool scrubbing, const bool force)
 {
-	_scrubbing = scrubbing;
+	const auto was_scrubbing = _scrubbing.exchange(scrubbing);
 
-	if (fabs(_last_seek - pos) > 0.1 || pos < 0.1)
+	const auto duplicate_pending = should_coalesce_seek_request(_last_seek, pos, _pending_time_sync, was_scrubbing,
+	                                                            scrubbing, force);
+
+	if (!duplicate_pending)
 	{
 		platform::shared_lock lock(_decoder_rw);
 

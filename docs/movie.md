@@ -16,18 +16,26 @@ an existing destination, and timeline edits are undoable during the session.
 **Movie mixer** is a task view. Its command is offered when the visible selection contains at least
 one photo or video, or when an existing Movie timeline can be resumed.
 
-A timeline seeded from a selection remains replaceable until the user edits it. Re-entering Movie
-with a different selection replaces an untouched seed. A timeline that has been trimmed, reordered,
-extended, reduced or opened from a project is a document and is preserved.
+Entering Movie with a selection of photos and videos that differs from the one its timeline was built
+from, in its items or their listing order, builds a new timeline from it in listing order. Entering
+with the same selection, or with none, returns to the timeline left behind, including edits that were
+saved; a project opened in Movie answers to the selection the timeline it replaced was built from.
 
-Leaving the view keeps the timeline for the current Diffractor session. Before a modified timeline is
-replaced by Open or Import, or discarded by application shutdown, Movie offers Save project, discard
-or cancel. This applies even when another view is active. A cancelled or failed save never counts as
-permission to discard the timeline.
+Leaving Movie settles unsaved edits. When the timeline has changed since it was built, opened or
+saved, Close, Items and Escape offer Save project, Discard or Cancel. An edited timeline that has
+had every clip removed is still unsaved work; a pristine empty timeline is not. Save writes a valid
+project, including one with no clips, and leaves once the project is written; Discard throws the
+timeline away and keeps the movie settings; Cancel stays with the draft and its undo history. A
+cancelled or failed save never counts as permission to discard the timeline. A running render is
+asked about first. Open, Import and quitting while Movie is open ask the same question before the
+timeline is replaced or lost.
 
-Project Open, Save and Relink perform file access on workers. Save writes a sibling temporary file and
-replaces the destination only after the complete project has been written. Edits made while a save is
-running remain marked as unsaved.
+Only a change is an edit. Undoing back to the state last built, opened or saved leaves nothing to
+ask about, and a handle pressed and released in place, or a setting chosen again, changes nothing.
+
+Project Open, Save and Relink perform file access on workers. Save writes a sibling temporary file
+and replaces the destination only after the complete project has been written. Edits made while a
+save is running remain marked as unsaved.
 
 ## 3. View and timeline
 
@@ -36,7 +44,8 @@ horizontal timeline, and a right-hand controls panel.
 
 Timeline tiles have equal width and play left to right. A tile shows its thumbnail, retained duration,
 trim state, missing-source state and playback position. The timeline scrolls horizontally without
-growing vertically.
+growing vertically: by its scroll bar, by either wheel axis or a touchpad, and by holding a dragged
+block near either end.
 
 Selection, focus and playback are separate:
 
@@ -51,7 +60,7 @@ order and focus, and a no-op drop creates no undo entry.
 
 Files dropped on the timeline insert at the displayed boundary; files dropped elsewhere append.
 Photos and videos are accepted and other files are ignored. Remove, reorder, send to end, trim, add and
-relink are undoable. One Relink operation is one undo step regardless of how many paths it repairs.
+relink are undoable. One Add, drop or Relink is one undo step regardless of how many files it carries.
 
 ## 4. Preview and clip controls
 
@@ -60,17 +69,24 @@ never stretched or cropped, and unused canvas area is black. A crossfade holds b
 and mixes them with the same weights used for audio.
 
 The movie transport provides previous clip, play/pause, next clip, elapsed time, total time and a
-whole-movie scrubber. Selecting a clip parks the preview on its first retained frame. Starting movie
-playback or clip playback stops the other.
+whole-movie scrubber. Selecting a clip parks the preview on its first retained frame and stops movie
+playback; while the movie plays, previous and next clip instead carry playback on from that clip's
+start. Starting movie playback or clip playback stops the other.
 
 Video controls provide in and out points, a two-handle range scrubber, retained-region playback,
 endpoint frames, an audio-level track and Reset. The out-point preview shows the last retained frame.
-Photo controls provide a duration and an option to follow the movie default.
+Photo controls provide a duration and an option to follow the movie default; turning the default off
+keeps the photo's current length. The controls always show the document's values, including after
+Undo, Open or a change of focus.
 
 Playing preview video uses two persistent frame sessions, bound to clip identity and opened ahead of a
 crossfade. Photo and parked frames use the bounded frame cache. Preview audio is decoded off the UI
-thread in bounded chunks across each contributing clip's retained interval and mixed at the endpoint
-rate. A seek discards queued sound from the old position.
+thread in bounded windows of each contributing clip's retained interval, held by source window so a
+crossfade's incoming clip keeps its sound, and read ahead of the playhead. It is mixed at the endpoint
+rate and the user's media volume into an endpoint ring long enough to outlast the UI tick that
+refills it. When playback starts or jumps, the picture waits briefly for its sound so the two begin
+together; a window still unread after that plays as silence rather than stalling, and sound that
+falls behind the picture restarts at the playhead. A seek discards queued sound from the old position.
 
 ## 5. Movie settings
 
@@ -88,8 +104,9 @@ Output is read-only and reports the derived dimensions, frame rate and duration.
 ## 6. Project files
 
 The native project format is OpenTimelineIO (`.otio`). Movie writes one video track containing clips,
-source ranges and uniform transitions. Source paths are relative to the project folder when possible.
-Photos are represented as image references with retained durations.
+source ranges and uniform transitions. A saved project may have no clips. Source paths are relative
+to the project folder when possible. Photos are represented as image references with retained
+durations.
 
 Movie reads the first video track and reports constructs it cannot represent. A foreign OTIO project
 defaults to cuts and no end fades. A foreign dissolve is adopted only when every clip boundary carries
@@ -148,8 +165,8 @@ no HEVC or AV1 output. Rendering is unavailable where the platform reports no mo
 
 ## Where this lives
 
-The timeline, timing, output derivation and project readers are in
-[model_movie.h](../src/model_movie.h) and [model_movie.cpp](../src/model_movie.cpp).
+The timeline, timing, output derivation, project readers and the decision entering Movie makes about
+the timeline it holds are in [model_movie.h](../src/model_movie.h) and [model_movie.cpp](../src/model_movie.cpp).
 
 The task view, timeline controls, preview, project workflows and render worker are in
 [view_movie.h](../src/view_movie.h) and [view_movie.cpp](../src/view_movie.cpp). Persistent Movie state
@@ -158,7 +175,9 @@ is in [model.h](../src/model.h); application entry, shutdown and command availab
 [app_toolbar.cpp](../src/app_toolbar.cpp).
 
 Frame and audio extraction are in [av_format.h](../src/av_format.h),
-[av_format.cpp](../src/av_format.cpp) and [av_player.h](../src/av_player.h). The platform writer contract
+[av_format.cpp](../src/av_format.cpp) and [av_player.h](../src/av_player.h). The audio endpoint the
+preview mixes into is [av_sound.h](../src/av_sound.h), with the Windows implementation in
+[platform_win_sound.cpp](../src/platform_win_sound.cpp). The platform writer contract
 is in [platform.h](../src/platform.h), with Windows implementation in
 [platform_win_encode.cpp](../src/platform_win_encode.cpp) and the unavailable-platform answer in
 [platform_linux_desktop.cpp](../src/platform_linux_desktop.cpp).

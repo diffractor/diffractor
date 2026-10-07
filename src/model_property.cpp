@@ -112,6 +112,8 @@ prop::key prop::audio_channels('ch', "", "audio.channels", tt.prop_name_channels
 prop::key prop::audio_sample_rate('sr', "", "audio.sample.rate", tt.prop_name_samplerate, icon_index::star,
                                   data_type::int32, style::groupable | style::sortable | style::auto_complete,
                                   search_presence_mask::audio_codec);
+prop::key prop::audio_sample_rate_full('sR', "", "audio.sample.rate.full", tt.prop_name_samplerate, icon_index::star,
+                                       data_type::int32, style::none, search_presence_mask::audio_codec);
 prop::key prop::audio_sample_type('sa', "", "audio.sample.type", tt.prop_name_sampletype, icon_index::star,
                                   data_type::int32, style::groupable | style::sortable | style::auto_complete,
                                   search_presence_mask::audio_codec);
@@ -911,6 +913,11 @@ std::string prop::format_magnitude(const df::file_size& s)
 
 std::string prop::format_audio_sample_rate(const int v)
 {
+	return v <= 0 ? std::string{} : format_audio_sample_rate(static_cast<uint32_t>(v));
+}
+
+std::string prop::format_audio_sample_rate(const uint32_t v)
+{
 	const auto remainder = v % 1000 / 100;
 	const auto khz = v / 1000;
 
@@ -922,13 +929,7 @@ std::string prop::format_audio_sample_rate(const int v)
 
 std::string prop::format_audio_sample_rate(const uint16_t v)
 {
-	const auto remainder = v % 1000 / 100;
-	const auto khz = v / 1000;
-
-	if (v > 1000 && remainder == 0) return std::format("{}kHz", khz);
-	if (v > 1000) return std::format("{}{}{}kHz", khz, platform::number_dec_sep(), remainder);
-	if (v > 0) return std::format("{}Hz", v);
-	return {};
+	return format_audio_sample_rate(static_cast<uint32_t>(v));
 }
 
 std::string prop::format_audio_sample_type(const audio_sample_t v)

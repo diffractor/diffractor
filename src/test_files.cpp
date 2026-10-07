@@ -22,6 +22,7 @@
 #include "webp/decode.h"
 #include "webp/encode.h"
 #include "webp/mux.h"
+#include <zlib.h>
 
 static void should_check_overwrite()
 {
@@ -48,6 +49,66 @@ static void should_report_zip_create_failure()
 	assert_equal(false, path.exists(), "failed zip was not created");
 }
 
+class recording_file final : public platform::file
+{
+	df::file_path _path;
+	df::blob _prefix;
+	uint64_t _size = 0;
+	mutable uint64_t _pos = 0;
+
+public:
+	mutable uint64_t max_read = 0;
+	mutable uint64_t read_calls = 0;
+
+	recording_file(df::file_path path, df::blob prefix, const uint64_t size) :
+		_path(std::move(path)), _prefix(std::move(prefix)), _size(size)
+	{
+	}
+
+	uint64_t size() const override { return _size; }
+
+	uint64_t read(uint8_t* buf, const uint64_t buf_size) const override
+	{
+		const auto available = _pos < _size ? std::min(buf_size, _size - _pos) : 0;
+		memset(buf, 0, static_cast<size_t>(available));
+
+		if (_pos < _prefix.size())
+		{
+			const auto copied = std::min<uint64_t>(available, _prefix.size() - _pos);
+			memcpy(buf, _prefix.data() + static_cast<size_t>(_pos), static_cast<size_t>(copied));
+		}
+
+		_pos += available;
+		max_read = std::max(max_read, available);
+		++read_calls;
+		return available;
+	}
+
+	uint64_t write(const uint8_t*, uint64_t) override { return 0; }
+	bool flush() const override { return true; }
+
+	uint64_t seek(const uint64_t pos, const whence w) const override
+	{
+		switch (w)
+		{
+		case whence::begin:
+			_pos = pos;
+			break;
+		case whence::current:
+			_pos += pos;
+			break;
+		case whence::end:
+			_pos = _size + pos;
+			break;
+		}
+		return _pos;
+	}
+
+	uint64_t pos() const override { return _pos; }
+	bool trunc(uint64_t) const override { return false; }
+	df::file_path path() const override { return _path; }
+};
+
 // The copy loop stops when read64k answers false, which it does for the end of the file and for a
 // read that failed alike - so a truncated copy used to close as a successful entry. What is written
 // is now held to what the file holds. A real short read cannot be staged here without a fault
@@ -72,6 +133,85 @@ static void should_add_a_multi_chunk_file_to_a_zip()
 	assert_equal(1_z, listed.size(), "the archive holds the one entry");
 	assert_equal(static_cast<uint64_t>(payload.size()), listed.front().uncompressed_size.to_int64(),
 	             "and it holds every byte of the source");
+}
+
+static void should_round_trip_zip_entry_names()
+{
+	const auto source = _temps.next_path(".bin");
+	const df::blob payload = {1, 2, 3};
+	df::blob_save_to_file(payload, source);
+
+	const auto check_name = [&](const std::string& name)
+	{
+		const auto archive = _temps.next_path(".zip");
+		df::zip_file zip;
+		assert_equal(true, zip.create(archive), "the archive is created");
+		assert_equal(true, zip.add(source, name, df::date_t(2024, 1, 2, 3, 4, 6)), "the long-name entry is added");
+		assert_equal(true, zip.close(), "the archive closes");
+
+		const auto listed = df::zip_file::list(archive);
+		assert_equal(1_z, listed.size(), "the archive holds one long-name entry");
+		assert_equal(name.size(), listed.front().filename.size(), "the complete entry name length is listed");
+		assert_equal(true, listed.front().filename == name, "the complete entry name is listed exactly");
+	};
+
+	check_name(std::string(255, 'a'));
+	check_name(std::string(256, 'b'));
+	check_name(std::string(257, 'c'));
+	check_name(std::string(UINT16_MAX, 'd'));
+
+	df::zip_file zip;
+	assert_equal(true, zip.create(_temps.next_path(".zip")), "the archive for an oversized name is created");
+	assert_equal(false, zip.add(source, std::string(static_cast<size_t>(UINT16_MAX) + 1u, 'e'),
+	                            df::date_t(2024, 1, 2, 3, 4, 6)),
+	             "an entry name beyond the ZIP 16-bit length is refused");
+}
+
+static void should_round_trip_zip_entry_dates()
+{
+	const auto source = _temps.next_path(".bin");
+	const df::blob payload = {1, 2, 3};
+	df::blob_save_to_file(payload, source);
+
+	const std::array dates = {
+		df::date_t(2024, 1, 31, 23, 58, 56),
+		df::date_t(2024, 12, 31, 1, 2, 4),
+		df::date_t(2024, 2, 29, 6, 8, 10),
+		df::date_t(1975, 6, 15, 12, 0, 0),
+		df::date_t(1601, 1, 1, 0, 0, 0),
+	};
+
+	const std::array expected = {
+		df::date_t(2024, 1, 31, 23, 58, 56),
+		df::date_t(2024, 12, 31, 1, 2, 4),
+		df::date_t(2024, 2, 29, 6, 8, 10),
+		df::date_t(1980, 1, 1, 0, 0, 0).local_to_system(),
+		df::date_t(1980, 1, 1, 0, 0, 0).local_to_system(),
+	};
+
+	const auto archive = _temps.next_path(".zip");
+	df::zip_file zip;
+	assert_equal(true, zip.create(archive), "the date archive is created");
+
+	for (auto i = 0_z; i < dates.size(); ++i)
+	{
+		assert_equal(true, zip.add(source, std::format("dated-{}.bin", i), dates[i]), "the dated entry is added");
+	}
+
+	assert_equal(true, zip.close(), "the date archive closes");
+
+	const auto listed = df::zip_file::list(archive);
+	assert_equal(dates.size(), listed.size(), "every dated entry is present");
+
+	for (auto i = 0_z; i < dates.size(); ++i)
+	{
+		assert_equal(expected[i].date().year, listed[i].created.date().year, "zip date year");
+		assert_equal(expected[i].date().month, listed[i].created.date().month, "zip date month");
+		assert_equal(expected[i].date().day, listed[i].created.date().day, "zip date day");
+		assert_equal(expected[i].date().hour, listed[i].created.date().hour, "zip date hour");
+		assert_equal(expected[i].date().minute, listed[i].created.date().minute, "zip date minute");
+		assert_equal(expected[i].date().second, listed[i].created.date().second, "zip date second");
+	}
 }
 
 static void should_create_original_before_replace()
@@ -125,6 +265,280 @@ static void should_report_move_or_copy_collision_paths()
 	assert_equal(true, result.created_files.folders.front().exists(), "reported folder exists");
 	platform::delete_items({}, {root}, false);
 }
+
+#ifndef _WIN32
+static void should_refuse_linux_copy_identity_overwrites()
+{
+	const auto root = _temps.next_folder("linux-copy-identity");
+	const auto source = root.combine_file("source.bin");
+	const auto alias = root.combine_file("alias.bin");
+	const df::blob bytes = {1, 2, 3, 4};
+	df::blob_save_to_file(bytes, source);
+	std::filesystem::create_hard_link(platform::to_stream_path(source), platform::to_stream_path(alias));
+
+	const auto same_path = platform::copy_file(source, source, false, false);
+	assert_equal(true, same_path.failed(), "copy to self fails");
+	assert_equal(true, df::blob_from_file(source) == bytes, "copy to self preserves source");
+
+	const auto hard_link = platform::copy_file(source, alias, false, false);
+	assert_equal(true, hard_link.failed(), "copy to hard-link alias fails");
+	assert_equal(true, df::blob_from_file(source) == bytes, "hard-link source bytes survive");
+	assert_equal(true, df::blob_from_file(alias) == bytes, "hard-link destination bytes survive");
+}
+
+static void should_report_linux_copy_flush_failures()
+{
+	const auto root = _temps.next_folder("linux-copy-flush");
+	const auto source = root.combine_file("source.bin");
+	const auto destination = root.combine_file("destination.bin");
+	const df::blob source_bytes = {9, 8, 7, 6, 5, 4};
+	const df::blob original_destination = {1, 2, 3};
+	df::blob_save_to_file(source_bytes, source);
+	df::blob_save_to_file(original_destination, destination);
+
+	platform::linux_copy_file_test_failures partial;
+	partial.max_write_bytes = 2;
+	partial.interrupt_first_write = true;
+	platform::test_linux_copy_file_failures(partial);
+	const auto partial_result = platform::copy_file(source, root.combine_file("partial.bin"), true, false);
+	platform::test_linux_clear_copy_file_failures();
+	assert_equal(true, partial_result.success(), "partial and interrupted writes complete");
+	assert_equal(true, df::blob_from_file(root.combine_file("partial.bin")) == source_bytes,
+	             "partial write copy has every byte");
+
+	platform::linux_copy_file_test_failures write_failure;
+	write_failure.fail_write_after_calls = 0;
+	platform::test_linux_copy_file_failures(write_failure);
+	const auto write_result = platform::copy_file(source, destination, false, false);
+	platform::test_linux_clear_copy_file_failures();
+	assert_equal(true, write_result.failed(), "write failure is reported");
+	assert_equal(true, df::blob_from_file(destination) == original_destination,
+	             "write failure preserves prior destination");
+
+	platform::linux_copy_file_test_failures close_failure;
+	close_failure.fail_destination_close = true;
+	platform::test_linux_copy_file_failures(close_failure);
+	const auto close_result = platform::copy_file(source, destination, false, false);
+	platform::test_linux_clear_copy_file_failures();
+	assert_equal(true, close_result.failed(), "late close failure is reported");
+	assert_equal(true, df::blob_from_file(destination) == original_destination,
+	             "late close failure preserves prior destination");
+}
+
+static void should_claim_linux_auto_rename_destinations_atomically()
+{
+	const auto root = _temps.next_folder("linux-auto-rename");
+	const auto source_folder = root.combine("source");
+	const auto target = root.combine("target");
+	platform::create_folder(source_folder);
+	platform::create_folder(target);
+
+	const auto source = source_folder.combine_file("photo.txt");
+	const df::blob source_bytes = {7};
+	const df::blob competing_bytes = {3};
+	df::blob_save_to_file(source_bytes, source);
+
+	bool competed = false;
+	platform::test_linux_before_claim_file_path = [&](const df::file_path candidate)
+	{
+		if (!competed)
+		{
+			competed = true;
+			df::blob_save_to_file(competing_bytes, candidate);
+		}
+	};
+
+	const auto result = platform::move_or_copy({source}, {}, target, false);
+	platform::test_linux_before_claim_file_path = {};
+
+	assert_equal(true, result.success(), "copy retries after a raced file candidate");
+	assert_equal(1_z, result.created_files.files.size(), "one copied file is reported");
+	assert_equal(true, result.created_files.files.front() != target.combine_file("photo.txt"),
+	             "the raced name was not reported as copied");
+	assert_equal(true, df::blob_from_file(target.combine_file("photo.txt")) == competing_bytes,
+	             "competing file bytes survive");
+	assert_equal(true, df::blob_from_file(result.created_files.files.front()) == source_bytes,
+	             "reported file has source bytes");
+
+	const auto replace_source = source_folder.combine_file("replace.txt");
+	const auto replace_target = target.combine_file("replace.txt");
+	df::blob_save_to_file(source_bytes, replace_source);
+	df::blob_save_to_file(competing_bytes, replace_target);
+	const auto replace = platform::move_or_copy({replace_source}, {}, target, false, true);
+	assert_equal(true, replace.success(), "explicit replace still succeeds");
+	assert_equal(true, df::blob_from_file(replace_target) == source_bytes, "replace writes source bytes");
+}
+
+static void should_reject_linux_recursive_copy_into_descendant()
+{
+	const auto root = _temps.next_folder("linux-descendant-copy");
+	const auto source = root.combine("source");
+	const auto child = source.combine("child");
+	platform::create_folder(child);
+	df::blob_save_to_file(df::blob{1}, source.combine_file("photo.txt"));
+
+	const auto result = platform::move_or_copy({}, {source}, child, false);
+	assert_equal(true, result.failed(), "copy into descendant fails");
+	assert_equal(false, platform::exists(child.combine("source")), "descendant target is not created");
+	assert_equal(true, platform::exists(source.combine_file("photo.txt")), "source remains available");
+}
+
+static void should_delete_linux_directory_symlinks()
+{
+	const auto root = _temps.next_folder("linux-delete-symlink");
+	const auto source = root.combine("source");
+	const auto target = root.combine("target");
+	const auto link = source.combine("linked");
+	platform::create_folder(source);
+	platform::create_folder(target);
+	df::blob_save_to_file(df::blob{1}, source.combine_file("file.txt"));
+	df::blob_save_to_file(df::blob{2}, target.combine_file("target.txt"));
+	std::filesystem::create_directory_symlink(platform::to_stream_path(target), platform::to_stream_path(link));
+
+	const auto result = platform::delete_items({}, {source}, false);
+	assert_equal(true, result.success(), std::format("delete succeeds ({})", result.format_error()));
+	assert_equal(false, platform::exists(source), "source folder is removed");
+	assert_equal(true, platform::exists(target.combine_file("target.txt")), "symlink target survives");
+}
+
+static void should_move_or_copy_linux_directory_symlinks()
+{
+	const auto root = _temps.next_folder("linux-copy-symlink");
+	const auto source = root.combine("source");
+	const auto target = root.combine("target");
+	const auto link_target = root.combine("linked-target");
+	platform::create_folder(source);
+	platform::create_folder(target);
+	platform::create_folder(link_target);
+	std::filesystem::create_directory_symlink(platform::to_stream_path(link_target),
+	                                          platform::to_stream_path(source.combine("linked")));
+
+	const auto result = platform::move_or_copy({}, {source}, target, false);
+	assert_equal(true, result.success(), std::format("copy succeeds ({})", result.format_error()));
+	assert_equal(1_z, result.created_files.folders.size(), "one folder reported");
+	const auto copied_link = result.created_files.folders.front().combine("linked");
+	assert_equal(true, std::filesystem::is_symlink(platform::to_stream_path(copied_link)),
+	             "directory symlink is recreated");
+	assert_equal(platform::to_stream_path(link_target).string(),
+	             std::filesystem::read_symlink(platform::to_stream_path(copied_link)).string(),
+	             "link target spelling is preserved");
+}
+
+static void should_move_or_copy_into_its_own_folder_with_auto_rename()
+{
+	const auto root = _temps.next_folder("linux-copy-self-parent");
+	const auto file = root.combine_file("photo.txt");
+	const auto folder = root.combine("album");
+	df::blob_save_to_file(df::blob{7}, file);
+	platform::create_folder(folder);
+	df::blob_save_to_file(df::blob{8}, folder.combine_file("inside.txt"));
+
+	const auto file_result = platform::move_or_copy({file}, {}, root, false);
+	assert_equal(true, file_result.success(), std::format("file copy succeeds ({})", file_result.format_error()));
+	assert_equal(1_z, file_result.created_files.files.size(), "one copied file reported");
+	assert_equal(true, file_result.created_files.files.front() != file, "copy uses a new file name");
+	assert_equal(true, df::blob_from_file(file_result.created_files.files.front()) == df::blob{7},
+	             "copied file has the source bytes");
+
+	const auto folder_result = platform::move_or_copy({}, {folder}, root, false);
+	assert_equal(true, folder_result.success(), std::format("folder copy succeeds ({})", folder_result.format_error()));
+	assert_equal(1_z, folder_result.created_files.folders.size(), "one copied folder reported");
+	assert_equal(true, folder_result.created_files.folders.front() != folder, "copy uses a new folder name");
+	assert_equal(true, platform::exists(folder_result.created_files.folders.front().combine_file("inside.txt")),
+	             "copied folder has the source contents");
+}
+
+static void should_move_or_copy_stop_on_inner_linux_folder_collision()
+{
+	const auto root = _temps.next_folder("linux-inner-collision");
+	const auto source = root.combine("album");
+	const auto target = root.combine("target");
+	platform::create_folder(source);
+	platform::create_folder(target);
+	df::blob_save_to_file(df::blob{5}, source.combine_file("inside.txt"));
+
+	bool competed = false;
+	platform::test_linux_before_copy_folder_file_path = [&](const df::file_path candidate)
+	{
+		if (!competed)
+		{
+			competed = true;
+			df::blob_save_to_file(df::blob{6}, candidate);
+		}
+	};
+
+	const auto result = platform::move_or_copy({}, {source}, target, false);
+	platform::test_linux_before_copy_folder_file_path = {};
+
+	assert_equal(true, result.failed(), "inner collision fails the claimed tree");
+	assert_equal(false, platform::exists(target.combine("album (2)")), "inner collision does not retry the top folder");
+	assert_equal(true, df::blob_from_file(target.combine("album").combine_file("inside.txt")) == df::blob{6},
+	             "competing inner file survives");
+}
+
+static void should_move_linux_no_replace_without_renameat_or_links()
+{
+	const auto root = _temps.next_folder("linux-move-fallback");
+	const auto source = root.combine_file("source.txt");
+	const auto destination = root.combine_file("destination.txt");
+	const df::blob bytes = {4, 3, 2};
+	df::blob_save_to_file(bytes, source);
+
+	platform::test_linux_move_file_failures({true, true});
+	const auto result = platform::move_file(source, destination, true);
+	platform::test_linux_clear_move_file_failures();
+
+	assert_equal(true, result.success(), std::format("fallback move succeeds ({})", result.format_error()));
+	assert_equal(false, platform::exists(source), "source is removed after the exclusive copy");
+	assert_equal(true, df::blob_from_file(destination) == bytes, "destination has source bytes");
+}
+
+static void should_refuse_or_preserve_linux_replace_permissions()
+{
+	const auto root = _temps.next_folder("linux-copy-permissions");
+	const auto source = root.combine_file("source.txt");
+	const auto read_only = root.combine_file("read-only.txt");
+	const auto private_file = root.combine_file("private.txt");
+	const df::blob source_bytes = {9};
+	const df::blob original_bytes = {1};
+	df::blob_save_to_file(source_bytes, source);
+	df::blob_save_to_file(original_bytes, read_only);
+	df::blob_save_to_file(original_bytes, private_file);
+
+	namespace fs = std::filesystem;
+	fs::permissions(platform::to_stream_path(read_only),
+	                fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read,
+	                fs::perm_options::replace);
+	const auto refused = platform::copy_file(source, read_only, false, false);
+	assert_equal(true, refused.failed(), "read-only destination refuses replace");
+	assert_equal(true, df::blob_from_file(read_only) == original_bytes, "read-only destination bytes survive");
+
+	fs::permissions(platform::to_stream_path(private_file), fs::perms::owner_read | fs::perms::owner_write,
+	                fs::perm_options::replace);
+	const auto replaced = platform::copy_file(source, private_file, false, false);
+	assert_equal(true, replaced.success(), std::format("replace succeeds ({})", replaced.format_error()));
+	const auto mode = fs::status(platform::to_stream_path(private_file)).permissions() & fs::perms::all;
+	assert_equal(true, mode == (fs::perms::owner_read | fs::perms::owner_write),
+	             "replace preserves destination permissions");
+}
+
+static void should_move_or_copy_reject_linux_destination_alias_inside_source()
+{
+	const auto root = _temps.next_folder("linux-copy-alias-descendant");
+	const auto source = root.combine("source");
+	const auto nested = source.combine("a").combine("b");
+	const auto target = root.combine("target-link");
+	platform::create_folder(nested);
+	df::blob_save_to_file(df::blob{1}, source.combine_file("top.txt"));
+	df::blob_save_to_file(df::blob{2}, source.combine("a").combine_file("mid.txt"));
+	std::filesystem::create_directory_symlink(platform::to_stream_path(nested), platform::to_stream_path(target));
+
+	const auto result = platform::move_or_copy({}, {source}, target, false);
+	assert_equal(true, result.failed(), "alias into source is rejected");
+	assert_equal(false, platform::exists(nested.combine("source")), "copy does not create output inside source");
+	assert_equal(true, platform::exists(source.combine_file("top.txt")), "source remains available");
+}
+#endif
 
 static void should_fail_replace_when_flush_fails()
 {
@@ -231,6 +645,56 @@ static void should_settle_transport_stream_extension_by_header()
 
 	assert_equal(true, files::media_header_matches(".mp4", {header.data(), typescript.size()}),
 	             "an extension with no rule always matches");
+}
+
+static df::blob make_test_xmp_packet(const std::string_view body)
+{
+	const auto xml = std::format(
+		"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+		"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+		"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+		"<rdf:Description rdf:about=\"\" "
+		"xmlns:dc=\"http://purl.org/dc/elements/1.1/\">{}</rdf:Description>"
+		"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+		body);
+	return {std::bit_cast<const uint8_t*>(xml.data()), std::bit_cast<const uint8_t*>(xml.data() + xml.size())};
+}
+
+static ui::surface_ptr make_gradient_surface(int cx, int cy);
+
+static void should_fail_webp_save_when_metadata_chunk_insertion_fails()
+{
+	files ff;
+	const auto surface = make_gradient_surface(16, 16);
+	file_encode_params params;
+	params.webp_lossless = true;
+
+	const auto assert_failed_chunk = [&](const std::string_view fourcc, const metadata_parts& metadata,
+	                                     const ui::const_surface_ptr& source)
+	{
+		files_test_hooks::fail_next_webp_chunk(fourcc);
+		const auto saved = save_webp(source, metadata, params);
+		assert_equal(false, is_valid(saved), std::format("{} insertion failure fails the save", fourcc));
+	};
+
+	metadata_parts icc;
+	icc.icc = {1, 2, 3, 4};
+	assert_failed_chunk("ICCP", icc, surface);
+
+	metadata_parts exif;
+	exif.exif = {'E', 'x', 'i', 'f', 0, 0, 'I', 'I', 0x2a, 0};
+	assert_failed_chunk("EXIF", exif, surface);
+
+	metadata_parts orientation_metadata;
+	const auto rotated = std::make_shared<ui::surface>();
+	rotated->copy(*surface, surface->dimensions());
+	rotated->orientation(ui::orientation::right_top);
+	assert_failed_chunk("EXIF", orientation_metadata, rotated);
+
+	metadata_parts xmp;
+	xmp.xmp = make_test_xmp_packet(
+		"<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">webp</rdf:li></rdf:Alt></dc:title>");
+	assert_failed_chunk("XMP ", xmp, surface);
 }
 
 static void should_scan_d64()
@@ -348,6 +812,204 @@ static void should_scan_and_load_bitmap_psd()
 	assert_equal(black, rgb(row0[12]), "bitmap psd 12,0 is black");
 	assert_equal(white, rgb(row1[0]), "bitmap psd 0,1 is white");
 	assert_equal(black, rgb(row1[15]), "bitmap psd 15,1 is black");
+}
+
+static void append_be16(std::vector<uint8_t>& b, const uint16_t v)
+{
+	b.push_back(static_cast<uint8_t>(v >> 8));
+	b.push_back(static_cast<uint8_t>(v));
+}
+
+static void append_be32(std::vector<uint8_t>& b, const uint32_t v)
+{
+	b.push_back(static_cast<uint8_t>(v >> 24));
+	b.push_back(static_cast<uint8_t>(v >> 16));
+	b.push_back(static_cast<uint8_t>(v >> 8));
+	b.push_back(static_cast<uint8_t>(v));
+}
+
+static void append_photoshop_resource(std::vector<uint8_t>& out, uint16_t id, std::string_view name,
+                                      df::cspan payload);
+
+static df::blob make_lab_psd(const std::vector<uint8_t>& l, const std::vector<uint8_t>& a,
+                             const std::vector<uint8_t>& b)
+{
+	std::vector<uint8_t> psd;
+	psd.insert(psd.end(), {'8', 'B', 'P', 'S'});
+	append_be16(psd, 1);
+	psd.insert(psd.end(), 6, 0);
+	append_be16(psd, 3);
+	append_be32(psd, 1);
+	append_be32(psd, static_cast<uint32_t>(l.size()));
+	append_be16(psd, 8);
+	append_be16(psd, 9);
+	append_be32(psd, 0);
+	append_be32(psd, 0);
+	append_be32(psd, 0);
+	append_be16(psd, 0);
+	psd.insert(psd.end(), l.begin(), l.end());
+	psd.insert(psd.end(), a.begin(), a.end());
+	psd.insert(psd.end(), b.begin(), b.end());
+	return {psd.begin(), psd.end()};
+}
+
+static void should_convert_psd_lab_samples_to_lab_coordinates()
+{
+	const auto psd = make_lab_psd({0, 64, 128, 191, 255}, {128, 128, 128, 128, 128}, {128, 128, 128, 128, 128});
+	mem_read_stream stream(psd);
+	const auto surface = load_psd(stream);
+
+	assert_equal(true, ui::is_valid(surface), "Lab PSD loaded");
+
+	const auto black = surface->get_pixel(0, 0);
+	const auto gray = surface->get_pixel(1, 0);
+	const auto mid25 = surface->get_pixel(1, 0);
+	const auto mid50 = surface->get_pixel(2, 0);
+	const auto mid75 = surface->get_pixel(3, 0);
+	const auto white = surface->get_pixel(4, 0);
+
+	assert_equal(true, ui::get_r(black) < 4 && ui::get_g(black) < 4 && ui::get_b(black) < 4,
+	             "Lab black is black");
+	assert_equal(true, std::abs(static_cast<int>(ui::get_r(mid50)) - static_cast<int>(ui::get_g(mid50))) <= 2 &&
+	             std::abs(static_cast<int>(ui::get_g(mid50)) - static_cast<int>(ui::get_b(mid50))) <= 2,
+	             "Lab neutral gray is neutral");
+	assert_near(59.0, static_cast<double>(ui::get_r(mid25)), 1.0, "Lab L25 sRGB");
+	assert_near(119.0, static_cast<double>(ui::get_r(mid50)), 1.0, "Lab L50 sRGB");
+	assert_near(185.0, static_cast<double>(ui::get_r(mid75)), 1.0, "Lab L75 sRGB");
+	assert_equal(true, ui::get_r(white) > 250 && ui::get_g(white) > 250 && ui::get_b(white) > 250,
+	             "Lab white is white");
+}
+
+class counting_read_stream final : public read_stream
+{
+	df::blob _prefix;
+
+public:
+	size_t max_read = 0;
+
+	counting_read_stream(df::blob prefix, const uint64_t size) : _prefix(std::move(prefix))
+	{
+		_file_size = size;
+	}
+
+	template <typename T>
+	T peek(const uint64_t pos)
+	{
+		check_range(pos, sizeof(T));
+		T result{};
+		if (pos < _prefix.size())
+		{
+			const auto copied = std::min<uint64_t>(sizeof(T), _prefix.size() - pos);
+			memcpy(&result, _prefix.data() + static_cast<size_t>(pos), static_cast<size_t>(copied));
+		}
+		return result;
+	}
+
+	uint8_t peek8(const uint64_t pos) override { return peek<uint8_t>(pos); }
+	uint16_t peek16(const uint64_t pos) override { return peek<uint16_t>(pos); }
+	uint32_t peek32(const uint64_t pos) override { return peek<uint32_t>(pos); }
+	uint64_t peek64(const uint64_t pos) override { return peek<uint64_t>(pos); }
+	pack128 peek128(const uint64_t pos) override { return peek<pack128>(pos); }
+	df::blob read_all() override { return {}; }
+
+	df::blob read(const uint64_t pos, const size_t len) override
+	{
+		df::blob result(len);
+		read(pos, result.data(), len);
+		return result;
+	}
+
+	void read(const uint64_t pos, uint8_t* buffer, const size_t len) override
+	{
+		check_range(pos, len);
+		memset(buffer, 0, len);
+		if (pos < _prefix.size())
+		{
+			const auto copied = std::min<uint64_t>(len, _prefix.size() - pos);
+			memcpy(buffer, _prefix.data() + static_cast<size_t>(pos), static_cast<size_t>(copied));
+		}
+		max_read = std::max(max_read, len);
+	}
+};
+
+static df::blob make_psd_prefix(const uint16_t channels, const uint32_t rows, const uint32_t columns,
+                                const uint16_t depth, const uint16_t mode, const uint32_t color_len,
+                                const uint32_t resource_len)
+{
+	std::vector<uint8_t> psd;
+	psd.insert(psd.end(), {'8', 'B', 'P', 'S'});
+	append_be16(psd, 1);
+	psd.insert(psd.end(), 6, 0);
+	append_be16(psd, channels);
+	append_be32(psd, rows);
+	append_be32(psd, columns);
+	append_be16(psd, depth);
+	append_be16(psd, mode);
+	append_be32(psd, color_len);
+	append_be32(psd, resource_len);
+	return {psd.begin(), psd.end()};
+}
+
+static void should_bound_psd_resource_allocations()
+{
+	const auto prefix = make_psd_prefix(3, 1, 1, 8, 3, 0, 16u * 1024u * 1024u + 1u);
+	counting_read_stream stream(prefix.clone(), prefix.size() + 16u * 1024u * 1024u + 1u);
+	const auto scanned = scan_psd(stream);
+
+	assert_equal(true, scanned.success, "oversized resource section is a bounded scan");
+	assert_equal(true, scanned.metadata.iptc.empty(), "oversized resource is not published");
+	assert_equal(true, stream.max_read < df::two_fifty_six_k, "oversized resource bytes are skipped, not allocated");
+}
+
+static void should_read_small_psd_metadata_after_large_unused_resource()
+{
+	const df::blob exif = {'E', 'x', 'i', 'f', 0, 0, 'I', 'I', 0x2a, 0};
+	std::vector<uint8_t> resources;
+	append_photoshop_resource(resources, 0x0422, "", exif);
+	const df::blob large_unused(16u * 1024u * 1024u, 0);
+	append_photoshop_resource(resources, 0x03ed, "", large_unused);
+
+	const auto prefix = make_psd_prefix(3, 1, 1, 8, 3, 0, static_cast<uint32_t>(resources.size()));
+	auto data = prefix.clone();
+	data.insert(data.end(), resources.begin(), resources.end());
+	counting_read_stream stream(std::move(data), prefix.size() + resources.size());
+	const auto scanned = scan_psd(stream);
+
+	assert_equal(true, scanned.success, "large unused resource section scans");
+	assert_equal(true, scanned.metadata.exif == exif, "small EXIF resource is still read");
+	assert_equal(true, stream.max_read < df::two_fifty_six_k, "unused large resource is skipped");
+}
+
+static void should_load_valid_psd_indexed_palette()
+{
+	std::vector<uint8_t> psd;
+	psd.insert(psd.end(), {'8', 'B', 'P', 'S'});
+	append_be16(psd, 1);
+	psd.insert(psd.end(), 6, 0);
+	append_be16(psd, 1);
+	append_be32(psd, 1);
+	append_be32(psd, 1);
+	append_be16(psd, 8);
+	append_be16(psd, 2);
+	append_be32(psd, 768);
+	std::array<uint8_t, 768> palette = {};
+	palette[7] = 10;
+	palette[256 + 7] = 20;
+	palette[512 + 7] = 30;
+	psd.insert(psd.end(), palette.begin(), palette.end());
+	append_be32(psd, 0); // resources length
+	append_be32(psd, 0); // layer and mask length
+	append_be16(psd, 0); // raw compression
+	psd.push_back(7); // palette index
+
+	const df::blob bytes{psd.begin(), psd.end()};
+	mem_read_stream stream(bytes);
+	const auto surface = load_psd(stream);
+	assert_equal(true, ui::is_valid(surface), "indexed psd loaded");
+	const auto c = surface->get_pixel(0, 0);
+	assert_equal(30u, ui::get_r(c), "palette red");
+	assert_equal(20u, ui::get_g(c), "palette green");
+	assert_equal(10u, ui::get_b(c), "palette blue");
 }
 
 static void should_keep_dimensions_from_truncated_gif()
@@ -487,6 +1149,257 @@ static void should_read_jpeg_orientation()
 	             "and is upright rather than keeping the last one's rotation");
 }
 
+static df::blob make_iptc_caption(const std::string_view caption)
+{
+	df::blob result;
+	result.push_back(0x1c);
+	result.push_back(0x02);
+	result.push_back(120);
+	result.push_back(static_cast<uint8_t>(caption.size() >> 8));
+	result.push_back(static_cast<uint8_t>(caption.size()));
+	result.insert(result.end(), caption.begin(), caption.end());
+	return result;
+}
+
+static void append_photoshop_resource(std::vector<uint8_t>& out, const uint16_t id, const std::string_view name,
+                                      const df::cspan payload)
+{
+	out.insert(out.end(), {'8', 'B', 'I', 'M'});
+	append_be16(out, id);
+	out.push_back(static_cast<uint8_t>(name.size()));
+	out.insert(out.end(), name.begin(), name.end());
+	if ((name.size() & 1u) == 0) out.push_back(0);
+	append_be32(out, static_cast<uint32_t>(payload.size));
+	out.insert(out.end(), payload.begin(), payload.end());
+	if (payload.size & 1u) out.push_back(0);
+}
+
+static df::blob jpeg_with_app13_resources(const ui::const_image_ptr& jpeg, const df::blob& resources)
+{
+	std::vector<uint8_t> out;
+	const auto& source = jpeg->data();
+	out.insert(out.end(), source.data(), source.data() + 2);
+	out.push_back(0xff);
+	out.push_back(0xed);
+	const auto len = static_cast<uint16_t>(resources.size() + 2u);
+	append_be16(out, len);
+	out.insert(out.end(), resources.begin(), resources.end());
+	out.insert(out.end(), source.data() + 2, source.data() + source.size());
+	return {out.begin(), out.end()};
+}
+
+static void append_jpeg_marker(std::vector<uint8_t>& out, const uint8_t marker, const df::cspan payload)
+{
+	out.push_back(0xff);
+	out.push_back(marker);
+	const auto len = static_cast<uint16_t>(payload.size + 2u);
+	append_be16(out, len);
+	out.insert(out.end(), payload.begin(), payload.end());
+}
+
+static df::blob jpeg_with_metadata_markers(const ui::const_image_ptr& jpeg, const std::vector<df::blob>& payloads,
+                                           const std::vector<uint8_t>& markers)
+{
+	std::vector<uint8_t> out;
+	const auto& source = jpeg->data();
+	out.insert(out.end(), source.data(), source.data() + 2);
+	for (auto i = 0_z; i < payloads.size(); ++i) append_jpeg_marker(out, markers[i], payloads[i]);
+	out.insert(out.end(), source.data() + 2, source.data() + source.size());
+	return {out.begin(), out.end()};
+}
+
+static void should_parse_jpeg_photoshop_iptc_resources()
+{
+	files ff;
+	const auto jpeg = ff.surface_to_image(make_gradient_surface(8, 8), {}, {}, ui::image_format::JPEG);
+	assert_equal(true, is_valid(jpeg), "jpeg encoded");
+
+	const auto iptc = make_iptc_caption("resource caption");
+	std::vector<uint8_t> resources;
+	constexpr std::string_view sig = "Photoshop 3.0\0"sv;
+	resources.insert(resources.end(), sig.begin(), sig.end());
+	const df::blob other = {1, 2, 3};
+	append_photoshop_resource(resources, 0x03ed, "name", other);
+	append_photoshop_resource(resources, 0x0404, "iptc", iptc);
+
+	const auto wrapped = jpeg_with_app13_resources(jpeg, {resources.begin(), resources.end()});
+	mem_read_stream stream(wrapped);
+	const auto scanned = scan_jpg(stream);
+	prop::item_metadata md;
+	metadata_iptc::parse(md, scanned.metadata.iptc);
+
+	assert_equal("resource caption", md.description, "named IPTC resource parsed");
+
+	const auto marker = make_photoshop_iptc_resource(iptc, true);
+	metadata_parts parsed;
+	assert_equal(true, parse_photoshop_resources(parsed, marker, true), "written marker parses independently");
+	assert_equal(true, parsed.iptc == iptc, "written marker length and padding preserve payload");
+}
+
+static void should_keep_app13_from_overriding_jpeg_app1_and_app2_metadata()
+{
+	files ff;
+	const auto jpeg = ff.surface_to_image(make_gradient_surface(8, 8), {}, {}, ui::image_format::JPEG);
+	assert_equal(true, is_valid(jpeg), "jpeg encoded");
+
+	const df::blob app1_xmp = {'a', 'p', 'p', '1', '-', 'x', 'm', 'p'};
+	const df::blob app13_xmp = {'a', 'p', 'p', '1', '3', '-', 'x', 'm', 'p'};
+	const df::blob app1_exif = {'I', 'I', 0x2a, 0, 8, 0, 0, 0};
+	const df::blob app13_exif = {'M', 'M', 0, 0x2a};
+	const df::blob app2_icc = {'i', 'c', 'c', '-', 'a', 'p', 'p', '2'};
+	const df::blob app13_icc = {'i', 'c', 'c', '-', 'a', 'p', 'p', '1', '3'};
+
+	std::vector<uint8_t> app13;
+	constexpr std::string_view sig = "Photoshop 3.0\0"sv;
+	app13.insert(app13.end(), sig.begin(), sig.end());
+	append_photoshop_resource(app13, 0x0424, "", app13_xmp);
+	append_photoshop_resource(app13, 0x0422, "", app13_exif);
+	append_photoshop_resource(app13, 0x040f, "", app13_icc);
+
+	df::blob xmp_marker;
+	xmp_marker.insert(xmp_marker.end(), xmp_signature.begin(), xmp_signature.end());
+	xmp_marker.insert(xmp_marker.end(), app1_xmp.begin(), app1_xmp.end());
+	df::blob exif_marker;
+	exif_marker.insert(exif_marker.end(), exif_signature.begin(), exif_signature.end());
+	exif_marker.insert(exif_marker.end(), app1_exif.begin(), app1_exif.end());
+	df::blob icc_marker;
+	icc_marker.insert(icc_marker.end(), icc_signature.begin(), icc_signature.end());
+	icc_marker.push_back(1);
+	icc_marker.push_back(1);
+	icc_marker.insert(icc_marker.end(), app2_icc.begin(), app2_icc.end());
+
+	std::vector<df::blob> payloads;
+	payloads.emplace_back(std::move(xmp_marker));
+	payloads.emplace_back(std::move(exif_marker));
+	payloads.emplace_back(std::move(icc_marker));
+	payloads.emplace_back(app13.begin(), app13.end());
+	const auto wrapped = jpeg_with_metadata_markers(jpeg, payloads, {0xe1, 0xe1, 0xe2, 0xed});
+	mem_read_stream stream(wrapped);
+	const auto scanned = scan_jpg(stream);
+	assert_equal(true, scanned.metadata.xmp == app1_xmp, "APP1 XMP remains authoritative");
+	assert_equal(true, scanned.metadata.exif == app1_exif, "APP1 EXIF remains authoritative");
+	assert_equal(true, scanned.metadata.icc == app2_icc, "APP13 ICC is not appended to APP2 ICC");
+}
+
+static void should_preserve_non_iptc_jpeg_photoshop_resources()
+{
+	files ff;
+	const auto jpeg = ff.surface_to_image(make_gradient_surface(8, 8), {}, {}, ui::image_format::JPEG);
+	assert_equal(true, is_valid(jpeg), "jpeg encoded");
+
+	const auto iptc = make_iptc_caption("resource caption");
+	const df::blob other = {9, 8, 7, 6, 5};
+	std::vector<uint8_t> app13;
+	constexpr std::string_view sig = "Photoshop 3.0\0"sv;
+	app13.insert(app13.end(), sig.begin(), sig.end());
+	append_photoshop_resource(app13, 0x0404, "iptc", iptc);
+	append_photoshop_resource(app13, 0x03ed, "keep", other);
+
+	const auto wrapped = jpeg_with_app13_resources(jpeg, {app13.begin(), app13.end()});
+	mem_read_stream stream(wrapped);
+	const auto scanned = scan_jpg(stream);
+	const auto encoded = save_jpeg(make_gradient_surface(8, 8), scanned.metadata, {});
+	assert_equal(true, is_valid(encoded), "jpeg re-encoded");
+
+	mem_read_stream out_stream(encoded->data());
+	const auto rescanned = scan_jpg(out_stream);
+	std::vector<uint8_t> expected;
+	append_photoshop_resource(expected, 0x03ed, "keep", other);
+	assert_equal(true, rescanned.metadata.photoshop_resources == df::blob{expected.begin(), expected.end()},
+	             "non-IPTC Photoshop resource survives re-encode");
+}
+
+static void should_roundtrip_split_jpeg_photoshop_resources()
+{
+	files ff;
+	const auto jpeg = ff.surface_to_image(make_gradient_surface(8, 8), {}, {}, ui::image_format::JPEG);
+	assert_equal(true, is_valid(jpeg), "jpeg encoded");
+
+	const df::blob first_payload(40000, 0x31);
+	const df::blob second_payload(40000, 0x32);
+	std::vector<uint8_t> first;
+	std::vector<uint8_t> second;
+	constexpr std::string_view sig = "Photoshop 3.0\0"sv;
+	first.insert(first.end(), sig.begin(), sig.end());
+	second.insert(second.end(), sig.begin(), sig.end());
+	append_photoshop_resource(first, 0x03ed, "first", first_payload);
+	append_photoshop_resource(second, 0x03ee, "second", second_payload);
+
+	std::vector<df::blob> payloads;
+	payloads.emplace_back(first.begin(), first.end());
+	payloads.emplace_back(second.begin(), second.end());
+	const auto wrapped = jpeg_with_metadata_markers(jpeg, payloads, {0xed, 0xed});
+	mem_read_stream stream(wrapped);
+	const auto scanned = scan_jpg(stream);
+
+	std::vector<uint8_t> expected;
+	append_photoshop_resource(expected, 0x03ed, "first", first_payload);
+	append_photoshop_resource(expected, 0x03ee, "second", second_payload);
+	assert_equal(true, scanned.metadata.photoshop_resources == df::blob{expected.begin(), expected.end()},
+	             "split APP13 resources are joined in order");
+
+	const auto encoded = save_jpeg(make_gradient_surface(8, 8), scanned.metadata, {});
+	assert_equal(true, is_valid(encoded), "split APP13 resources re-encode");
+	mem_read_stream out_stream(encoded->data());
+	const auto rescanned = scan_jpg(out_stream);
+	assert_equal(true, rescanned.metadata.photoshop_resources == df::blob{expected.begin(), expected.end()},
+	             "split APP13 resources survive re-encode");
+}
+
+static df::blob split_app13_payload(const std::vector<uint8_t>& joined, const size_t split_at)
+{
+	constexpr std::string_view sig = "Photoshop 3.0\0"sv;
+	std::vector<df::blob> payloads;
+	for (auto pos = 0_z; pos < joined.size(); pos += split_at)
+	{
+		std::vector<uint8_t> payload;
+		payload.insert(payload.end(), sig.begin(), sig.end());
+		const auto count = std::min(split_at, joined.size() - pos);
+		payload.insert(payload.end(), joined.begin() + static_cast<ptrdiff_t>(pos),
+		               joined.begin() + static_cast<ptrdiff_t>(pos + count));
+		payloads.emplace_back(payload.begin(), payload.end());
+	}
+
+	files ff;
+	const auto jpeg = ff.surface_to_image(make_gradient_surface(8, 8), {}, {}, ui::image_format::JPEG);
+	return jpeg_with_metadata_markers(jpeg, payloads, std::vector<uint8_t>(payloads.size(), 0xed));
+}
+
+static void should_join_straddled_jpeg_photoshop_resources()
+{
+	const df::blob first_payload(65490, 0x41);
+	const df::blob second_payload(5000, 0x42);
+	std::vector<uint8_t> joined;
+	append_photoshop_resource(joined, 0x03ed, "first", first_payload);
+	append_photoshop_resource(joined, 0x03ee, "second", second_payload);
+
+	const auto wrapped = split_app13_payload(joined, 65519);
+	mem_read_stream stream(wrapped);
+	const auto scanned = scan_jpg(stream);
+	assert_equal(true, scanned.metadata.photoshop_resources == df::blob{joined.begin(), joined.end()},
+	             "straddled APP13 record survives the byte-level join");
+}
+
+static void should_cap_joined_jpeg_photoshop_resources()
+{
+	const df::blob payload(1200, 0x43);
+	std::vector<uint8_t> joined;
+	append_photoshop_resource(joined, 0x03ed, "first", payload);
+	append_photoshop_resource(joined, 0x03ee, "second", payload);
+
+	files_test_hooks::set_jpeg_photoshop_resource_cap(1600);
+	const df::scope_exit restore_cap([] { files_test_hooks::set_jpeg_photoshop_resource_cap(0); });
+
+	const auto wrapped = split_app13_payload(joined, 800);
+	mem_read_stream stream(wrapped);
+	const auto scanned = scan_jpg(stream);
+
+	std::vector<uint8_t> expected;
+	append_photoshop_resource(expected, 0x03ed, "first", payload);
+	assert_equal(true, scanned.metadata.photoshop_resources == df::blob{expected.begin(), expected.end()},
+	             "joined APP13 payload is capped at a complete resource");
+}
+
 // IFD1 describes the embedded thumbnail, which cameras commonly store already upright while the
 // primary image is not. Taking its orientation over IFD0's displayed the photograph at its
 // thumbnail's rotation; it may only stand in where the primary image gave none.
@@ -561,6 +1474,133 @@ static void should_prefer_primary_orientation_over_the_thumbnail_ifd()
 	assert_equal(static_cast<int>(ui::orientation::top_left),
 	             static_cast<int>(scan_with_exif(1, 6)),
 	             "and an upright primary is not rotated by its thumbnail");
+}
+
+static void should_use_thumbnail_orientation_only_when_primary_is_absent()
+{
+	const auto build_exif = []()
+	{
+		std::vector<uint8_t> b;
+		const auto put16 = [&b](const uint16_t v)
+		{
+			b.push_back(static_cast<uint8_t>(v));
+			b.push_back(static_cast<uint8_t>(v >> 8));
+		};
+		const auto put32 = [&b](const uint32_t v)
+		{
+			for (auto i = 0; i < 4; ++i) b.push_back(static_cast<uint8_t>(v >> (8 * i)));
+		};
+
+		put16(0x4949);
+		put16(0x002a);
+		put32(8); // IFD0 follows the header
+
+		constexpr uint32_t ifd1_offset = 8 + 2 + 4;
+		put16(0); // IFD0 has no primary orientation
+		put32(ifd1_offset);
+
+		put16(1); // IFD1 carries the thumbnail-orientation fallback
+		put16(0x0112); // Orientation
+		put16(3); // FMT_USHORT
+		put32(1);
+		put16(6); // right_top
+		put16(0);
+		put32(0); // no further IFD
+		return b;
+	};
+
+	files ff;
+	const auto plain = ff.surface_to_image(make_gradient_surface(32, 32), {}, {}, ui::image_format::JPEG);
+	const auto tiff = build_exif();
+	const auto& source = plain->data();
+
+	std::vector<uint8_t> jpeg;
+	jpeg.insert(jpeg.end(), source.data(), source.data() + 2); // SOI
+
+	const auto payload = static_cast<uint16_t>(2 + 6 + tiff.size());
+	jpeg.push_back(0xFF);
+	jpeg.push_back(0xE1);
+	jpeg.push_back(static_cast<uint8_t>(payload >> 8));
+	jpeg.push_back(static_cast<uint8_t>(payload));
+
+	constexpr uint8_t signature[] = {'E', 'x', 'i', 'f', 0, 0};
+	jpeg.insert(jpeg.end(), std::begin(signature), std::end(signature));
+	jpeg.insert(jpeg.end(), tiff.begin(), tiff.end());
+	jpeg.insert(jpeg.end(), source.data() + 2, source.data() + source.size());
+
+	mem_read_stream scan_stream({jpeg.data(), jpeg.size()});
+	const auto scanned = scan_photo(scan_stream);
+
+	jpeg_decoder_x decoder;
+	assert_equal(true, decoder.read_header({jpeg.data(), jpeg.size()}), "decoder reads IFD1-only jpeg");
+	assert_equal(static_cast<int>(ui::orientation::right_top),
+	             static_cast<int>(scanned.orientation),
+	             "scan uses IFD1 orientation when IFD0 is absent");
+	assert_equal(static_cast<int>(scanned.orientation),
+	             static_cast<int>(decoder._orientation_out),
+	             "decoder and scanner agree on IFD1-only orientation");
+}
+
+static std::vector<uint8_t> make_tiff_with_orientations(const uint16_t ifd0_orientation,
+                                                        const uint16_t ifd1_orientation)
+{
+	std::vector<uint8_t> b;
+	const auto put16 = [&b](const uint16_t v)
+	{
+		b.push_back(static_cast<uint8_t>(v));
+		b.push_back(static_cast<uint8_t>(v >> 8));
+	};
+	const auto put32 = [&b](const uint32_t v)
+	{
+		for (auto i = 0; i < 4; ++i) b.push_back(static_cast<uint8_t>(v >> (8 * i)));
+	};
+	const auto put_entry = [&](const uint16_t tag, const uint16_t fmt, const uint32_t count, const uint32_t value)
+	{
+		put16(tag);
+		put16(fmt);
+		put32(count);
+		put32(value);
+	};
+	const auto put_orientation = [&](const uint16_t orientation)
+	{
+		put16(0x0112); // Orientation
+		put16(3); // FMT_USHORT
+		put32(1);
+		put16(orientation);
+		put16(0);
+	};
+
+	put16(0x4949);
+	put16(42);
+	put32(8);
+
+	constexpr uint32_t ifd1_offset = 8 + 2 + 3 * 12 + 4;
+	put16(3);
+	put_entry(0x0100, 4, 1, 32); // ImageWidth
+	put_entry(0x0101, 4, 1, 16); // ImageLength
+	put_orientation(ifd0_orientation);
+	put32(ifd1_offset);
+	put16(1);
+	put_orientation(ifd1_orientation);
+	put32(0);
+	return b;
+}
+
+static void should_prefer_primary_tiff_orientation_over_the_thumbnail_ifd()
+{
+	const auto scan_orientation = [](const uint16_t ifd0_orientation, const uint16_t ifd1_orientation)
+	{
+		const auto tiff = make_tiff_with_orientations(ifd0_orientation, ifd1_orientation);
+		mem_read_stream stream({tiff.data(), tiff.size()});
+		return scan_photo(stream).orientation;
+	};
+
+	assert_equal(static_cast<int>(ui::orientation::right_top),
+	             static_cast<int>(scan_orientation(6, 1)),
+	             "the primary TIFF orientation is kept");
+	assert_equal(static_cast<int>(ui::orientation::top_left),
+	             static_cast<int>(scan_orientation(1, 6)),
+	             "the thumbnail TIFF orientation does not rotate an upright primary");
 }
 
 // The payload of the first DQT segment, which is the table the encoder quantized with.
@@ -996,6 +2036,52 @@ static void should_apply_png_gamma()
 	should_decode_bands("gamma.png", {0, 136, 186, 224}, 2);
 }
 
+static void append_png_be32(df::blob& out, const uint32_t value)
+{
+	out.push_back(static_cast<uint8_t>(value >> 24));
+	out.push_back(static_cast<uint8_t>(value >> 16));
+	out.push_back(static_cast<uint8_t>(value >> 8));
+	out.push_back(static_cast<uint8_t>(value));
+}
+
+static void insert_png_chunk_before_iend(df::blob& png, const char (&type)[5], const df::cspan data)
+{
+	df::blob chunk;
+	append_png_be32(chunk, static_cast<uint32_t>(data.size));
+	const auto type_start = chunk.size();
+	chunk.insert(chunk.end(), type, type + 4);
+	chunk.insert(chunk.end(), data.data, data.data + data.size);
+
+	auto crc = crc32(0, Z_NULL, 0);
+	crc = crc32(crc, chunk.data() + type_start, static_cast<uInt>(4 + data.size));
+	append_png_be32(chunk, crc);
+
+	assert_equal(true, png.size() >= 12u, "png has an IEND chunk");
+	png.insert(png.end() - 12, chunk.begin(), chunk.end());
+}
+
+// SRC-019 - pixel decode must finish metadata reading so eXIf after IDAT still orients the loaded
+// surface.
+static void should_read_png_orientation_after_idat()
+{
+	files ff;
+	const auto image = ff.surface_to_image(make_gradient_surface(16, 8), {}, {}, ui::image_format::PNG);
+	const auto& encoded = image->data();
+	df::blob png(encoded.data(), encoded.data() + encoded.size());
+
+	auto exif = make_orientation_exif(ui::orientation::right_top);
+	exif.insert(exif.begin(), exif_signature.begin(), exif_signature.end());
+	insert_png_chunk_before_iend(png, "eXIf", {exif.data(), exif.size()});
+
+	const auto path = _temps.next_path(".png");
+	df::blob_save_to_file(png, path);
+
+	const auto loaded = load_png(df::blob_from_file(path));
+	assert_equal(true, is_valid(loaded), "png loaded");
+	assert_equal(static_cast<int>(ui::orientation::right_top), static_cast<int>(loaded->orientation()),
+	             "trailing eXIf orientation");
+}
+
 static void should_decode_12bit_gray_jpeg()
 {
 	should_decode_deep_precision_jpeg("deep12gray.jpg");
@@ -1014,6 +2100,33 @@ static void should_decode_16bit_gray_jpeg()
 static void should_decode_16bit_colour_jpeg()
 {
 	should_decode_deep_precision_jpeg("deep16.jpg");
+}
+
+static void should_decode_thin_jpeg_when_planar_is_preferred()
+{
+	files ff;
+
+	const auto decode = [&](const int cx, const int cy, const sizei target_extent, const std::string_view name)
+	{
+		const auto encoded = ff.surface_to_image(make_gradient_surface(cx, cy), {}, {}, ui::image_format::JPEG);
+		assert_equal(true, is_valid(encoded), std::format("{} encoded", name));
+
+		const auto packed = ff.image_to_surface(encoded, target_extent, false, {}, decode_intent::display);
+		assert_equal(true, ui::is_valid(packed), std::format("{} packed decode succeeds", name));
+
+		const auto planar_preferred = ff.image_to_surface(encoded, target_extent, true, {}, decode_intent::display);
+		assert_equal(true, ui::is_valid(planar_preferred), std::format("{} planar-preferred decode succeeds", name));
+		assert_equal(true, planar_preferred->format() == ui::texture_format::RGB,
+		             std::format("{} falls back to packed RGB", name));
+		assert_equal(true, packed->dimensions() == planar_preferred->dimensions(),
+		             std::format("{} keeps packed dimensions", name));
+		assert_equal(packed->orientation(), planar_preferred->orientation(),
+		             std::format("{} keeps orientation", name));
+	};
+
+	decode(1, 8, {}, "one-pixel width");
+	decode(8, 1, {}, "one-pixel height");
+	decode(8, 8, {1, 1}, "scaled to one pixel");
 }
 
 // The pixel format is what the properties panel and list rows show, and it is indexed for search.
@@ -1887,14 +3000,96 @@ static void should_keep_file_handles_detached_until_last_operation()
 // Decoder robustness
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-static void write_binary_file(const df::file_path path, const uint8_t* const data, const int size)
+static bool write_binary_file(const df::file_path path, const uint8_t* const data, const int size)
 {
-	const auto f = open_file(path, platform::file_open_mode::create);
+	auto f = open_file(path, platform::file_open_mode::create);
 
-	if (f)
+	if (!f)
 	{
-		f->write(data, size);
+		return false;
 	}
+
+	const auto written = f->write(data, size);
+	f.reset();
+
+	return written == static_cast<uint64_t>(size) && path.exists() && platform::file_attributes(path).size ==
+		static_cast<uint64_t>(size);
+}
+
+static file_scan_result scan_recorded_jpeg(files& ff, const df::blob& prefix, const uint64_t reported_size,
+                                           const bool load_thumbnail, std::shared_ptr<recording_file>& recorded)
+{
+	const auto path = _temps.next_path(".jpg");
+	recorded = std::make_shared<recording_file>(path, prefix.clone(), reported_size);
+	return ff.scan_file(recorded, path, load_thumbnail, files::file_type_from_name(path), {},
+	                    {64, 64});
+}
+
+static df::blob blob_slice(const df::blob& bytes, const size_t offset, const size_t len)
+{
+	return {bytes.begin() + static_cast<ptrdiff_t>(offset), bytes.begin() + static_cast<ptrdiff_t>(offset + len)};
+}
+
+static void should_apply_encoded_ceiling_to_bitmap_thumbnail_scans()
+{
+	const auto source = df::blob_from_file(test_files_folder.combine_file("Test.jpg"));
+	assert_equal(true, source.size() > sizeof(pack128), "jpeg fixture loaded");
+
+	files ff;
+
+	std::shared_ptr<recording_file> below;
+	const auto below_scan = scan_recorded_jpeg(ff, source, source.size(), true, below);
+	assert_equal(true, below_scan.success, "below-ceiling thumbnail scan reads metadata");
+	assert_equal(true, is_valid(below_scan.thumbnail_image), "below-ceiling thumbnail is available");
+	assert_equal(static_cast<uint64_t>(source.size()), below->max_read, "below-ceiling read is the whole file");
+
+	std::shared_ptr<recording_file> at_ceiling;
+	const auto at_scan = scan_recorded_jpeg(ff, source, df::max_blob_size, true, at_ceiling);
+	assert_equal(true, at_scan.success, "at-ceiling thumbnail scan reads metadata");
+	assert_equal(static_cast<uint64_t>(df::max_blob_size), at_ceiling->max_read,
+	             "at-ceiling thumbnail read is still admitted");
+
+	std::shared_ptr<recording_file> above_thumbnail;
+	const auto above_scan = scan_recorded_jpeg(ff, source, static_cast<uint64_t>(df::max_blob_size) + 1u, true,
+	                                           above_thumbnail);
+	assert_equal(true, above_scan.success, "above-ceiling thumbnail scan keeps header metadata");
+	assert_equal(false, is_valid(above_scan.thumbnail_image), "above-ceiling scan does not publish a partial thumbnail");
+	assert_equal(true, above_thumbnail->max_read < static_cast<uint64_t>(df::max_blob_size),
+	             "above-ceiling scan never reads or allocates the whole file");
+
+	std::shared_ptr<recording_file> above_metadata;
+	const auto metadata_scan = scan_recorded_jpeg(ff, source, static_cast<uint64_t>(df::max_blob_size) + 1u, false,
+	                                              above_metadata);
+	assert_equal(true, metadata_scan.success, "above-ceiling metadata-only scan still succeeds");
+	assert_equal(false, is_valid(metadata_scan.thumbnail_image), "metadata-only scan has no thumbnail");
+	assert_equal(true, above_metadata->max_read < static_cast<uint64_t>(df::max_blob_size),
+	             "metadata-only scan remains bounded");
+}
+
+static void should_reset_sliding_reader_when_reopened()
+{
+	const auto a = _temps.next_path(".bin");
+	const auto b = _temps.next_path(".bin");
+	const df::blob bytes_a = {0, 1, 2, 3, 4, 5, 6, 7};
+	const df::blob bytes_b = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
+	df::blob_save_to_file(bytes_a, a);
+	df::blob_save_to_file(bytes_b, b);
+
+	file_read_stream stream;
+	assert_equal(true, stream.open(a), "open first file");
+	assert_equal(true, blob_slice(bytes_a, 2, 4) == stream.read(2, 4), "first file read populates the window");
+
+	assert_equal(true, stream.open(b), "reopen without close");
+	assert_equal(true, blob_slice(bytes_b, 2, 4) == stream.read(2, 4), "reopen discards cached bytes");
+	assert_equal(true, blob_slice(bytes_b, 6, 4) == stream.read(6, 4), "boundary-crossing read comes from reopened file");
+
+	stream.close();
+	assert_equal(true, stream.open(a), "reopen after close");
+	assert_equal(true, blob_slice(bytes_a, 1, 5) == stream.read(1, 5), "close clears cached range and storage");
+
+	assert_equal(false, stream.open(platform::file_ptr{}), "failed open is reported");
+	assert_equal(true, stream.open(b), "open after failed open");
+	assert_equal(true, blob_slice(bytes_b, 0, 3) == stream.read(0, 3), "failed open left no stale cached state");
 }
 
 static void should_not_crash(const std::string_view name)
@@ -1939,7 +3134,9 @@ static void should_not_crash(const std::string_view name)
 	for (auto i = 0u; i < truncation_steps && !df::is_closing; i++)
 	{
 		const auto save_path = _temps.next_path(ext);
-		write_binary_file(save_path, data, df::mul_div(static_cast<int>(size), i, truncation_steps));
+		const auto byte_count = df::mul_div(static_cast<int>(size), i, truncation_steps);
+		assert_equal(true, write_binary_file(save_path, data, byte_count),
+		             std::format("{} truncation fixture {} was written", name, i));
 		ff_scan_and_load_thumb(ff, save_path);
 		++truncated;
 	}
@@ -1966,8 +3163,43 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should check overwrite"s, should_check_overwrite);
 	tests.add("Should report zip create failure"s, should_report_zip_create_failure);
 	tests.add("Should add a multi chunk file to a zip"s, should_add_a_multi_chunk_file_to_a_zip);
+	// SRC-010 - long names must not be consumed as a truncated C string.
+	tests.add("Should round trip zip entry names"s, should_round_trip_zip_entry_names);
+	// SRC-011 - application months are 1-12 while minizip takes 0-11.
+	tests.add("Should round trip zip entry dates"s, should_round_trip_zip_entry_dates);
 	tests.add("Should create original before replace"s, should_create_original_before_replace);
 	tests.add("Should report move or copy collision paths"s, should_report_move_or_copy_collision_paths);
+#ifndef _WIN32
+	// PLAT-007 - Linux replacement copy truncated source/destination aliases before reading.
+	tests.add("Should refuse Linux copy identity overwrites"s, should_refuse_linux_copy_identity_overwrites);
+	// PLAT-007 - Linux copy ignored short writes and delayed close failures.
+	tests.add("Should report Linux copy flush failures"s, should_report_linux_copy_flush_failures);
+	// PLAT-008 - Linux auto-rename used a pre-check then an overwrite-capable copy.
+	tests.add("Should move or copy by claiming Linux auto rename destinations atomically"s,
+	          should_claim_linux_auto_rename_destinations_atomically);
+	// PLAT-009 - Linux recursive folder copy could copy into its own destination.
+	tests.add("Should move or copy reject Linux recursive copy into descendant"s,
+	          should_reject_linux_recursive_copy_into_descendant);
+	// G21 review - directory symlinks must be listed so delete can unlink them.
+	tests.add("Should delete Linux directory symlinks"s, should_delete_linux_directory_symlinks);
+	// G21 review - folder copy must not silently drop directory symlinks.
+	tests.add("Should move or copy Linux directory symlinks"s, should_move_or_copy_linux_directory_symlinks);
+	// G21 review - copying into the source's own parent should auto-rename, not fail on identity.
+	tests.add("Should move or copy into its own folder with auto rename"s,
+	          should_move_or_copy_into_its_own_folder_with_auto_rename);
+	// G21 review - an inner collision belongs to the claimed tree, not the outer name picker.
+	tests.add("Should move or copy stop on inner Linux folder collision"s,
+	          should_move_or_copy_stop_on_inner_linux_folder_collision);
+	// G21 review - filesystems without renameat2/link support still need a safe no-replace move.
+	tests.add("Should move Linux no replace without renameat or links"s,
+	          should_move_linux_no_replace_without_renameat_or_links);
+	// G21 review - replacement copy must respect destination writeability and mode.
+	tests.add("Should refuse or preserve Linux replace permissions"s,
+	          should_refuse_or_preserve_linux_replace_permissions);
+	// G21 review - containment checks must follow aliases into the source subtree.
+	tests.add("Should move or copy reject Linux destination alias inside source"s,
+	          should_move_or_copy_reject_linux_destination_alias_inside_source);
+#endif
 	tests.add("Should fail replace when flush fails"s, should_fail_replace_when_flush_fails);
 #ifdef _WIN32
 	tests.add("Should cleanup failed update temps"s, should_cleanup_failed_update_temps);
@@ -2006,6 +3238,16 @@ void register_files_tests(view_state& state, test_registry& tests)
 	// Codec decode
 	//
 	tests.add("Should scan and load bitmap psd"s, should_scan_and_load_bitmap_psd);
+	// SRC-026 - PSD stores Lab as byte L plus biased a/b samples
+	tests.add("Should convert psd lab samples to lab coordinates"s,
+	          should_convert_psd_lab_samples_to_lab_coordinates);
+	// SRC-028 - PSD resource sections are metadata, not unbounded allocation requests
+	tests.add("Should bound psd resource allocations"s, should_bound_psd_resource_allocations);
+	// SRC-028 - large unused resources do not hide bounded metadata resources
+	tests.add("Should read small psd metadata after large unused resource"s,
+	          should_read_small_psd_metadata_after_large_unused_resource);
+	// SRC-028 - the only PSD colour table allocation needed by the loader is the valid palette
+	tests.add("Should load valid psd indexed palette"s, should_load_valid_psd_indexed_palette);
 	tests.add("Should keep dimensions from truncated gif"s, should_keep_dimensions_from_truncated_gif);
 	tests.add("Should reject absurd tiff dimensions"s, should_reject_absurd_tiff_dimensions);
 	tests.add("Should extract embedded thumbnails only on demand"s,
@@ -2015,8 +3257,30 @@ void register_files_tests(view_state& state, test_registry& tests)
 	// JPEG
 	//
 	tests.add("Should read jpeg orientation"s, should_read_jpeg_orientation);
+	// SRC-034 - APP13 can hold named and reordered Photoshop resources
+	tests.add("Should parse jpeg photoshop iptc resources"s,
+	          should_parse_jpeg_photoshop_iptc_resources);
+	// Review G04 - APP13 PSIR must not override APP1/APP2 metadata
+	tests.add("Should keep app13 from overriding jpeg app1 and app2 metadata"s,
+	          should_keep_app13_from_overriding_jpeg_app1_and_app2_metadata);
+	// Review G04 - non-IPTC Photoshop resources survive a JPEG re-encode
+	tests.add("Should preserve non iptc jpeg photoshop resources"s,
+	          should_preserve_non_iptc_jpeg_photoshop_resources);
+	// Review G04 - Photoshop resources may span consecutive APP13 segments
+	tests.add("Should roundtrip split jpeg photoshop resources"s,
+	          should_roundtrip_split_jpeg_photoshop_resources);
+	// Review G04 - XMP Toolkit splits Photoshop resources without regard to resource boundaries
+	tests.add("Should join straddled jpeg photoshop resources"s,
+	          should_join_straddled_jpeg_photoshop_resources);
+	// Review G04 - crafted APP13 runs are capped before they grow without bound
+	tests.add("Should cap joined jpeg photoshop resources"s,
+	          should_cap_joined_jpeg_photoshop_resources);
 	tests.add("Should prefer primary orientation over the thumbnail ifd"s,
 	          should_prefer_primary_orientation_over_the_thumbnail_ifd);
+	tests.add("Should use thumbnail orientation only when primary is absent"s,
+	          should_use_thumbnail_orientation_only_when_primary_is_absent);
+	tests.add("Should prefer primary tiff orientation over the thumbnail ifd"s,
+	          should_prefer_primary_tiff_orientation_over_the_thumbnail_ifd);
 	tests.add("Should reuse source jpeg tables"s, should_reuse_source_jpeg_tables);
 	tests.add("Should refuse imperfect lossless rotate"s, should_refuse_imperfect_lossless_rotate);
 	tests.add("Should survive truncated lossless rotate"s, should_survive_truncated_lossless_rotate);
@@ -2035,12 +3299,17 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should decode 12bit colour jpeg"s, should_decode_12bit_colour_jpeg);
 	tests.add("Should decode 16bit gray jpeg"s, should_decode_16bit_gray_jpeg);
 	tests.add("Should decode 16bit colour jpeg"s, should_decode_16bit_colour_jpeg);
+	// SRC-029 - one-pixel axes cannot form NV12
+	tests.add("Should decode thin jpeg when planar is preferred"s,
+	          should_decode_thin_jpeg_when_planar_is_preferred);
 
 	//
 	// PNG
 	//
 	tests.add("Should scale 16bit png"s, should_scale_16bit_png);
 	tests.add("Should apply png gamma"s, should_apply_png_gamma);
+	// SRC-019 - PNG metadata may be stored after IDAT.
+	tests.add("Should read png orientation after idat"s, should_read_png_orientation_after_idat);
 
 	//
 	// WebP
@@ -2057,18 +3326,26 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should refuse truncated webp decode"s, should_refuse_truncated_webp_decode);
 	tests.add("Should bound and time animated webp"s, should_bound_and_time_animated_webp);
 	tests.add("Should preserve webp chunks on metadata save"s, should_preserve_webp_chunks_on_metadata_save);
+	// SRC-031 - requested WebP metadata chunks are all-or-fail
+	tests.add("Should fail webp save when metadata chunk insertion fails"s,
+	          should_fail_webp_save_when_metadata_chunk_insertion_fails);
 
 	//
 	// RAW
 	//
 	tests.add("Should convert raw to jpeg"s, should_convert_raw_to_jpeg);
 	tests.add("Should refuse a file too large to hold"s, should_refuse_a_file_too_large_to_hold);
+	// SRC-017 - encoded-byte ceiling applies to bitmap thumbnail scans
+	tests.add("Should apply encoded ceiling to bitmap thumbnail scans"s,
+	          should_apply_encoded_ceiling_to_bitmap_thumbnail_scans);
 
 	//
 	// File handle lifetime
 	//
 	tests.add("Should keep file handles detached until last operation"s,
 	          should_keep_file_handles_detached_until_last_operation);
+	// SRC-032 - sliding reader reopen clears the cached window
+	tests.add("Should reset sliding reader when reopened"s, should_reset_sliding_reader_when_reopened);
 
 	//
 	// Decoder robustness

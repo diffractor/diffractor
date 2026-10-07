@@ -22,8 +22,10 @@
 #include "ui_date_edit.h"
 #include "app_sidebar.h"
 #include "view_items.h"
+#include "view_edit.h"
 #include "view_list.h"
 #include "view_media.h"
+#include "view_movie.h"
 #include "view_selector.h"
 #include "view_tags.h"
 
@@ -32,10 +34,329 @@ static void assert_zoom_near(const double expected, const double actual, const s
 	assert_equal(true, std::abs(expected - actual) < 0.000001, message);
 }
 
+static void should_decide_when_movie_clip_sessions_are_retired()
+{
+	assert_equal(false, should_retire_movie_clip_session_for_stop(movie_view_state::playing_t::nothing),
+	             "stopping nothing leaves the clip session alone");
+	assert_equal(true, should_retire_movie_clip_session_for_stop(movie_view_state::playing_t::clip),
+	             "stopping clip playback retires its session");
+	assert_equal(true, should_retire_movie_clip_session_for_stop(movie_view_state::playing_t::movie),
+	             "stopping movie playback also releases the clip-player slot");
+
+	assert_equal(false, should_retire_movie_clip_session_for_document_focus_change(false),
+	             "a document operation that cannot change focus need not close the clip session");
+	assert_equal(true, should_retire_movie_clip_session_for_document_focus_change(true),
+	             "removing or replacing the focused clip must close the clip session first");
+	assert_equal(true, should_rewind_movie_clip_after_document_focus_change(true),
+	             "and then park the new focused clip at its in point");
+
+	auto clip = make_movie_clip(df::file_path(df::windows_path_semantics ? "c:\\movie\\b.mp4" : "/movie/b.mp4"), {});
+	clip.start = 12.0;
+	assert_equal(12.0, rewound_movie_clip_playhead(&clip), "rewind parks at the focused clip's in point");
+	assert_equal(0.0, rewound_movie_clip_playhead(nullptr), "an empty timeline rewinds to zero");
+}
+
+static void should_reject_stale_movie_cache_completions_before_state_changes()
+{
+	const auto stale_frame = decide_movie_frame_cache_completion(2, 1, true);
+	assert_equal(false, stale_frame.accept, "a stale frame answer is rejected");
+	assert_equal(false, stale_frame.clear_in_flight, "before it clears the current in-flight latch");
+	assert_equal(false, stale_frame.dispatch_next, "and before it dispatches a current queued request");
+
+	const auto current_frame = decide_movie_frame_cache_completion(2, 2, true);
+	assert_equal(true, current_frame.accept, "a current frame answer is accepted");
+	assert_equal(true, current_frame.clear_in_flight, "clears its own in-flight latch");
+	assert_equal(true, current_frame.dispatch_next, "and then dispatches the next queued request");
+
+	const auto current_last_frame = decide_movie_frame_cache_completion(2, 2, false);
+	assert_equal(true, current_last_frame.clear_in_flight, "a current final answer still clears the latch");
+	assert_equal(false, current_last_frame.dispatch_next, "but has no queue to dispatch");
+
+	const auto stale_peak = decide_movie_peak_completion(4, 3);
+	assert_equal(false, stale_peak.accept, "a stale peak answer is rejected");
+	assert_equal(false, stale_peak.clear_pending_path, "before it erases the new generation's pending path");
+
+	const auto current_peak = decide_movie_peak_completion(4, 4);
+	assert_equal(true, current_peak.accept, "a current peak answer is accepted");
+	assert_equal(true, current_peak.clear_pending_path, "and releases its own pending path");
+}
+
+static void should_bound_movie_probe_retries_for_moving_sources()
+{
+	assert_equal(true, decide_movie_changed_probe_action(1, 2) == movie_probe_changed_action::retry,
+	             "the first changed-during-probe result is retried");
+	assert_equal(true, decide_movie_changed_probe_action(2, 2) == movie_probe_changed_action::retry,
+	             "the last budgeted retry is still retryable");
+	assert_equal(true, decide_movie_changed_probe_action(3, 2) == movie_probe_changed_action::mark_missing,
+	             "past the retry budget the clip reaches an explicit unresolved state");
+
+	const auto shared = df::file_path(df::windows_path_semantics ? "c:\\movie\\shared.mp4" : "/movie/shared.mp4");
+	std::vector<movie_probe_result> results(3);
+	for (auto& result : results)
+	{
+		result.path = shared;
+		result.changed_during_probe = true;
+	}
+
+	df::hash_map<df::file_path, int, df::ihash, df::ieq> retries;
+	const auto first = decide_movie_changed_probe_retries(results, retries, 2);
+	assert_equal(1_z, first.retry_paths.size(), "one changed source costs one retry, even with several clips");
+	assert_equal(0_z, first.missing_paths.size(), "so no shared clip is marked missing on the first movement");
+	assert_equal(1, retries[shared], "the retry counter is per source probe, not per clip");
+
+	const auto second = decide_movie_changed_probe_retries(results, retries, 2);
+	assert_equal(1_z, second.retry_paths.size(), "the second source movement is still retryable");
+	const auto third = decide_movie_changed_probe_retries(results, retries, 2);
+	assert_equal(0_z, third.retry_paths.size(), "the third movement exhausts the budget");
+	assert_equal(1_z, third.missing_paths.size(), "and records one missing source decision for every matching clip");
+	assert_equal(true, should_erase_movie_probe_retry_after_missing(true),
+	             "an exhausted retry entry is erased once the source is recorded missing");
+	assert_equal(true, should_clear_movie_probe_retries_after_document_replace(true),
+	             "a replaced Movie document starts with a fresh probe retry budget");
+}
+
+static void should_retire_movie_source_caches_only_after_successful_replacement()
+{
+	assert_equal(false, should_retire_movie_sources_after_project_change(false),
+	             "a cancelled or failed Open leaves the current source generation alone");
+	assert_equal(true, should_retire_movie_sources_after_project_change(true),
+	             "a successful reload or relink retires source caches and preview sessions");
+	assert_equal(true, should_clear_movie_preview_audio_after_source_retire(true),
+	             "retiring source caches also clears same-path preview PCM windows");
+
+	const auto old_generation = 7;
+	const auto new_generation = next_movie_preview_audio_source_generation(old_generation);
+	assert_equal(false, should_accept_movie_preview_pcm_loaded(new_generation, old_generation),
+	             "a PCM read that started before source retirement cannot refill the same key");
+	assert_equal(true, should_accept_movie_preview_pcm_loaded(new_generation, new_generation),
+	             "a read from the current source generation can fill the window");
+}
+
+static df::item_element_ptr make_versioned_photo_item(const df::file_path path, const df::date_t file_modified,
+                                                      const df::date_t thumbnail_modified)
+{
+	df::index_file_item info;
+	info.ft = files::file_type_from_name(path.name());
+	info.file_created = file_modified;
+	info.file_modified = file_modified;
+	auto result = std::make_shared<df::item_element>(path, info);
+	result->thumbnail(nullptr, nullptr, thumbnail_modified);
+	return result;
+}
+
+static void update_versioned_photo_item(const df::item_element_ptr& item, const df::file_path path,
+                                        const df::date_t file_modified, const df::date_t thumbnail_modified)
+{
+	df::index_file_item info;
+	info.ft = files::file_type_from_name(path.name());
+	info.file_created = file_modified;
+	info.file_modified = file_modified;
+	item->update(path, info);
+	item->thumbnail(nullptr, nullptr, thumbnail_modified);
+}
+
+// MOD-016 - display freshness compares the source file stamp for inequality, not a monotone maximum
+// or the late-arriving thumbnail stamp.
+static void should_reload_displayed_photo_when_source_version_moves_backward()
+{
+	deferred_async_strategy as;
+	const auto path = df::file_path("c:\\source-version.jpg");
+	const auto item = make_versioned_photo_item(path, df::date_t(200), df::date_t(200));
+	auto texture = std::make_shared<texture_state>(as, item);
+
+	texture->load_image(item);
+	assert_equal(1_z, as.pending_worker_count(async_queue::load), "the initial load is queued");
+
+	update_versioned_photo_item(item, path, df::date_t(100), df::date_t(200));
+	texture->refresh(item);
+	assert_equal(2_z, as.pending_worker_count(async_queue::load),
+	             "a changed file stamp reloads even when the maximum timestamp is unchanged");
+	texture->refresh(item);
+	assert_equal(2_z, as.pending_worker_count(async_queue::load), "the same tuple does not reload again");
+
+	update_versioned_photo_item(item, path, df::date_t(100), df::date_t(100));
+	texture->refresh(item);
+	assert_equal(2_z, as.pending_worker_count(async_queue::load),
+	             "thumbnail stamp changes alone do not full-decode the displayed photo again");
+
+	texture->mark_visuals_current();
+	update_versioned_photo_item(item, path, df::date_t(50), df::date_t(100));
+	texture->refresh(item);
+	assert_equal(2_z, as.pending_worker_count(async_queue::load),
+	             "a metadata-only write keeps the current visual across its new stamp");
+	texture->refresh(item);
+	assert_equal(2_z, as.pending_worker_count(async_queue::load),
+	             "the retained metadata-only version is adopted rather than reloading later");
+
+	file_load_result written;
+	written.success = true;
+	const auto written_stamp = df::date_t(2026, 1, 5, 12, 0, 0);
+	texture->publish_written_image(path, std::move(written), written_stamp);
+	update_versioned_photo_item(item, path, written_stamp, {});
+	texture->refresh(item);
+	assert_equal(2_z, as.pending_worker_count(async_queue::load),
+	             "a written image adopted from the save is not read back again");
+}
+
+// MOD-017 - texture-budget eviction skips displayed entries and keeps looking for eligible offscreen
+// entries rather than stopping at a displayed tail.
+static void should_skip_displayed_textures_when_evicting_retained_texture_budget()
+{
+	const std::array entries{
+		retained_texture_budget_entry{false, 10},
+		retained_texture_budget_entry{false, 20},
+		retained_texture_budget_entry{false, 30},
+		retained_texture_budget_entry{true, 0},
+	};
+
+	const auto evicted = retained_texture_eviction_indexes(entries, 30);
+	assert_equal(1_z, evicted.size(), "only enough offscreen entries are evicted");
+	assert_equal(2_z, evicted.front(), "the oldest displayed tail is skipped for the next eligible entry");
+
+	const std::array two_displayed{
+		retained_texture_budget_entry{false, 10},
+		retained_texture_budget_entry{true, 0},
+		retained_texture_budget_entry{false, 30},
+		retained_texture_budget_entry{true, 0},
+	};
+
+	const auto evicted_with_two_displayed = retained_texture_eviction_indexes(two_displayed, 10);
+	assert_equal(1_z, evicted_with_two_displayed.size(), "displayed entries do not count against the budget");
+	assert_equal(2_z, evicted_with_two_displayed.front(), "the active entries survive while offscreen cache shrinks");
+}
+
+struct texture_release_counts
+{
+	std::atomic_int worker = 0;
+	int ui = 0;
+};
+
+static texture_state_ptr make_counted_texture(async_strategy& as, const df::item_element_ptr& item,
+                                              texture_release_counts& counts)
+{
+	return texture_state_ptr(new texture_state(as, item), [&counts](texture_state* texture)
+	{
+		if (ui::is_ui_thread()) ++counts.ui;
+		else ++counts.worker;
+		delete texture;
+	});
+}
+
+class media_preview_test_async final : public null_async_strategy
+{
+	std::deque<std::function<void()>> _ui;
+	std::function<void(media_preview_state&)> _preview;
+
+public:
+	void queue_ui(const std::function<void()> f) override
+	{
+		_ui.emplace_back(f);
+	}
+
+	void queue_media_preview(std::function<void(media_preview_state&)> f, bool) override
+	{
+		_preview = std::move(f);
+	}
+
+	void drain_ui()
+	{
+		while (!_ui.empty())
+		{
+			auto f = std::move(_ui.front());
+			_ui.pop_front();
+			f();
+		}
+	}
+
+	size_t pending_ui_count() const
+	{
+		return _ui.size();
+	}
+
+	void drop_preview_on_worker()
+	{
+		auto preview = std::move(_preview);
+		std::thread worker([preview = std::move(preview)]() mutable
+		{
+		});
+		worker.join();
+	}
+
+	void run_preview_on_worker()
+	{
+		auto preview = std::move(_preview);
+		std::thread worker([preview = std::move(preview)]() mutable
+		{
+			media_preview_state state;
+			preview(state);
+		});
+		worker.join();
+	}
+};
+
+// MOD-018 - comparison preview carries UI-owned texture identity through success, stale rejection,
+// and dropped worker-task exits, so final texture release is posted back to the UI queue.
+static void should_release_comparison_preview_textures_on_ui_after_worker_exit()
+{
+	const auto path1 = df::file_path("c:\\compare-a.jpg");
+	const auto path2 = df::file_path("c:\\compare-b.jpg");
+
+	const auto run_case = [&](const bool run_preview, const bool keep_current_until_ui, const std::string_view label)
+	{
+		media_preview_test_async as;
+		common_display_state_t common;
+		auto display = std::make_shared<display_state_t>(as, common);
+		texture_release_counts counts;
+
+		auto texture1 = make_counted_texture(as, make_versioned_photo_item(path1, df::date_t(1), {}), counts);
+		auto texture2 = make_counted_texture(as, make_versioned_photo_item(path2, df::date_t(1), {}), counts);
+		display->_selected_texture1 = texture1;
+		display->_selected_texture2 = texture2;
+		display->calc_pixel_difference();
+
+		texture1.reset();
+		texture2.reset();
+
+		if (!keep_current_until_ui)
+		{
+			display->_selected_texture1.reset();
+			display->_selected_texture2.reset();
+		}
+
+		if (run_preview) as.run_preview_on_worker();
+		else as.drop_preview_on_worker();
+
+		assert_equal(0, counts.worker.load(), std::format("{}: worker releases no texture", label));
+		assert_equal(true, as.pending_ui_count() >= (run_preview ? 1_z : 2_z),
+		             std::format("{}: hand-back reaches UI queue", label));
+
+		as.drain_ui();
+
+		if (keep_current_until_ui)
+		{
+			assert_equal(0, counts.worker.load(), std::format("{}: successful callback still releases no worker texture", label));
+			assert_equal(0, counts.ui, std::format("{}: display still owns the successful textures", label));
+			display->_selected_texture1.reset();
+			display->_selected_texture2.reset();
+		}
+
+		assert_equal(0, counts.worker.load(), std::format("{}: final release is not on the worker", label));
+		assert_equal(2, counts.ui, std::format("{}: both texture identities release on UI", label));
+	};
+
+	run_case(false, false, "early return");
+	run_case(true, false, "stale rejection");
+	run_case(true, true, "success");
+}
+
 static void should_select_settled_zoom_sampler()
 {
 	assert_equal(true, calc_sampler({1000, 500}, {1000, 500}, ui::orientation::top_left) ==
 	             ui::texture_sampler::point, "one-to-one is exact");
+	assert_equal(true, calc_sampler({1003, 500}, {1000, 500}, ui::orientation::top_left) ==
+	             ui::texture_sampler::bicubic, "just above one-to-one is settled smooth");
+	assert_equal(true, calc_sampler({1500, 750}, {1000, 500}, ui::orientation::top_left) ==
+	             ui::texture_sampler::bicubic, "one and a half times is settled smooth");
 	assert_equal(true, calc_sampler({3000, 1500}, {1000, 500}, ui::orientation::top_left) ==
 	             ui::texture_sampler::bicubic, "three times remains smooth");
 	assert_equal(true, calc_sampler({3001, 1500}, {1000, 500}, ui::orientation::top_left) ==
@@ -44,10 +365,12 @@ static void should_select_settled_zoom_sampler()
 	             ui::texture_sampler::bicubic, "a magnified stand-in stays smooth rather than blocky");
 	assert_equal(true, calc_sampler({1000, 500}, {1000, 500}, ui::orientation::top_left, false, true) ==
 	             ui::texture_sampler::point, "a stand-in at one-to-one is still exact");
+	assert_equal(true, calc_sampler({1003, 500}, {1000, 500}, ui::orientation::top_left, true) ==
+	             ui::texture_sampler::bilinear, "interactive magnification just above one-to-one uses fast sampler");
 	assert_equal(true, calc_sampler({1500, 750}, {1000, 500}, ui::orientation::top_left, true) ==
 	             ui::texture_sampler::bilinear, "interactive magnification uses fast sampler");
-	assert_equal(true, calc_sampler({1500, 750}, {1000, 500}, ui::orientation::top_left) ==
-	             ui::texture_sampler::bicubic, "settled magnification uses quality sampler");
+	assert_equal(true, calc_sampler({3001, 1500}, {1000, 500}, ui::orientation::top_left, true) ==
+	             ui::texture_sampler::point, "interactive magnification above three times keeps source pixels exact");
 }
 
 static void should_accumulate_precision_wheel_deltas()
@@ -259,18 +582,31 @@ static void should_clamp_zoom_model_pan_to_edges()
 	constexpr sized viewport{1000, 800};
 	zoom.set_explicit(2.0);
 	zoom.pan_source({-source.Width, -source.Height}, source, viewport, 0.25);
-	assert_zoom_near(0.0, zoom.center().X, "stored source center reaches left edge");
-	assert_zoom_near(0.0, zoom.center().Y, "stored source center reaches top edge");
+	assert_zoom_near(viewport.Width / (2.0 * source.Width * 2.0), zoom.center().X,
+	                 "stored source center clamps to the visible left edge");
+	assert_zoom_near(viewport.Height / (2.0 * source.Height * 2.0), zoom.center().Y,
+	                 "stored source center clamps to the visible top edge");
 	const auto first = zoom.geometry(source, viewport, 0.25);
 	assert_zoom_near(viewport.Width / (2.0 * source.Width * 2.0), first.center.X, "draw center clamps left");
 	assert_zoom_near(viewport.Height / (2.0 * source.Height * 2.0), first.center.Y, "draw center clamps top");
+	zoom.pan_source({1.0 / 2.0, 0.0}, source, viewport, 0.25);
+	assert_zoom_near(first.center.X + 1.0 / (2.0 * source.Width), zoom.center().X,
+	                 "one displayed pixel of reversal moves immediately");
 
 	zoom.pan_source({source.Width * 2.0, source.Height * 2.0}, source, viewport, 0.25);
-	assert_zoom_near(1.0, zoom.center().X, "stored source center reaches right edge");
-	assert_zoom_near(1.0, zoom.center().Y, "stored source center reaches bottom edge");
+	assert_zoom_near(1.0 - viewport.Width / (2.0 * source.Width * 2.0), zoom.center().X,
+	                 "stored source center clamps to the visible right edge");
+	assert_zoom_near(1.0 - viewport.Height / (2.0 * source.Height * 2.0), zoom.center().Y,
+	                 "stored source center clamps to the visible bottom edge");
 	const auto second = zoom.geometry(source, viewport, 0.25);
 	assert_zoom_near(1.0 - viewport.Width / (2.0 * source.Width * 2.0), second.center.X, "draw center clamps right");
 	assert_zoom_near(1.0 - viewport.Height / (2.0 * source.Height * 2.0), second.center.Y, "draw center clamps bottom");
+
+	df::zoom_view_state narrow;
+	narrow.set_explicit(1.0);
+	narrow.pan_source({source.Width, source.Height}, {100, 100}, viewport, 1.0);
+	assert_zoom_near(0.5, narrow.center().X, "an axis smaller than the viewport remains centred");
+	assert_zoom_near(0.5, narrow.center().Y, "both small axes remain centred");
 }
 
 static void should_toggle_fit_to_last_explicit_zoom()
@@ -600,6 +936,54 @@ static void should_place_a_partial_panorama_on_the_sphere()
 	assert_equal(false, panorama_wraps_longitude(strip_half), "half a turn does not close the circle");
 	assert_equal(2.0f, panorama_shader_params(strip_half, seam_view, square).u_scale,
 	             "and it covers half of what a full file would");
+}
+
+static void should_refresh_same_path_panorama_declaration_without_resetting_view()
+{
+	null_async_strategy as;
+	common_display_state_t common;
+	display_state_t display(as, common);
+	const df::file_path path("c:\\same-path-panorama.jpg");
+	const df::file_path other_path("c:\\other-panorama.jpg");
+	const prop::panorama_geometry old_decl{4000, 2000, 0, 0, 4000, 2000};
+	const prop::panorama_geometry stale_decl{4000, 2000, 100, 0, 2000, 1000};
+	const prop::panorama_geometry new_decl{8000, 5000, 0, 500, 8000, 4000};
+	const prop::panorama_geometry same_size_decl{8000, 5000, 0, 750, 8000, 4000};
+
+	display.panorama_item(path, {4000, 2000}, df::date_t(1));
+	display.panorama_geometry(path, old_decl, {4000, 2000}, df::date_t(1));
+	assert_equal(true, common._panorama.resolved, "the first declaration resolves");
+
+	const auto start = common._panorama.view;
+	common._panorama.view.drag({400, 0}, {800, 600}, start);
+	const auto yaw = common._panorama.view.yaw();
+	common._panorama.flat = true;
+
+	display.panorama_item(path, {8000, 4000}, df::date_t(2));
+	assert_equal(false, common._panorama.resolved, "changed same-path dimensions need a new declaration");
+	assert_equal(true, common._panorama.flat, "the user's flat choice is retained for the same path");
+	assert_zoom_near(yaw, common._panorama.view.yaw(), "the camera is retained for the same path");
+
+	display.panorama_geometry(path, stale_decl, {4000, 2000}, df::date_t(1));
+	assert_equal(false, common._panorama.resolved, "a stale declaration for the old source cannot win");
+
+	display.panorama_geometry(path, new_decl, {8000, 4000}, df::date_t(2));
+	assert_equal(true, common._panorama.resolved, "the latest declaration resolves");
+	assert_equal(new_decl.cropped_top, common._panorama.geometry.cropped_top, "the latest crop is applied");
+	assert_equal(true, common._panorama.flat, "the declaration does not reset the flat choice");
+	assert_zoom_near(yaw, common._panorama.view.yaw(), "the declaration does not reset the camera");
+
+	display.panorama_item(path, {8000, 4000}, df::date_t(3));
+	assert_equal(false, common._panorama.resolved, "same-size source revision needs a new declaration");
+	display.panorama_geometry(path, same_size_decl, {8000, 4000}, df::date_t(3));
+	assert_equal(same_size_decl.cropped_top, common._panorama.geometry.cropped_top,
+	             "same-size declaration edits are applied");
+	assert_zoom_near(yaw, common._panorama.view.yaw(), "same-path declaration edits still keep the camera");
+
+	display.panorama_item(other_path, {8000, 4000}, df::date_t(4));
+	common._panorama.view.drag({400, 0}, {800, 600}, common._panorama.view);
+	display.panorama_geometry(other_path, same_size_decl, {8000, 4000}, df::date_t(4));
+	assert_zoom_near(0.0, common._panorama.view.yaw(), "a new panorama recentres when its declaration arrives");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -947,6 +1331,35 @@ static void should_range_select_across_selector()
 	// thumbnails for the view that is.
 	selector->deactivate();
 	assert_equal(0_z, selector->selection_range(shown[0]).size(), "an inactive strip selects nothing");
+}
+
+static void should_reuse_selector_entries_with_one_lookup()
+{
+	constexpr auto retained_count = 512_z;
+	const auto stats = selector_view::test_rebuild_reuse(retained_count);
+
+	assert_equal(retained_count, stats.lookup_entries, "each old entry is indexed once");
+	assert_equal(retained_count + 1, stats.probes, "each incoming item is probed once");
+	assert_equal(retained_count, stats.reused, "all retained entries are reused");
+	assert_equal(retained_count, stats.preserved_markers, "reused entries keep their per-entry state");
+}
+
+static void should_bound_selector_retained_resources_to_visible_band()
+{
+	constexpr auto item_count = 100_z;
+	constexpr sizei extent{100, 40};
+	constexpr auto item_width = 10;
+	constexpr auto scroll_x = 500;
+	constexpr auto max_band_entries = static_cast<size_t>(extent.cx * 2 / item_width + 4);
+
+	const auto stats = selector_view::test_resource_retirement(item_count, extent, item_width, scroll_x);
+
+	assert_equal(item_count, stats.before, "the test starts with one retained resource per visited entry");
+	assert_equal(true, stats.after_retire <= max_band_entries, "scrolling retires resources outside the band");
+	assert_equal(stats.after_retire, stats.after_stale_publish, "an off-band completion is rejected");
+	assert_equal(true, stats.after_reentry_publish <= max_band_entries,
+	             "re-entering keeps retention bounded to the new band");
+	assert_equal(true, stats.after_reentry_publish > 0_z, "the re-entered item can publish again");
 }
 
 // Selecting an item the browser has already drawn must fill the panel from what the item already
@@ -1425,6 +1838,26 @@ static void should_reserve_view_scroller_footer()
 	assert_equal(0, scroller.scrollbar_pos_to_logical(track.top), "track start maps to list start");
 }
 
+class scroller_test_host final : public std::enable_shared_from_this<scroller_test_host>, public view_host
+{
+public:
+	const ui::frame_ptr frame() const override { return ui::no_frame(); }
+	const ui::control_frame_ptr owner() override { return nullptr; }
+
+	void on_window_layout(ui::measure_context& mc, const sizei extent, bool is_minimized) override {}
+	void on_window_paint(ui::draw_context& dc) override {}
+	void tick() override {}
+	void activate(bool is_active) override {}
+	bool key_down(const int c, const ui::key_state keys) override { return false; }
+	void invoke(const commands cmd) override {}
+	bool is_command_checked(const commands cmd) override { return false; }
+	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override {}
+	void controller_changed() override {}
+	void invalidate_element(const view_element_ptr& e) override {}
+	void invalidate_view(const view_invalid invalid) override {}
+	view_controller_ptr controller_from_location(pointi loc, hit_test_context& ctx) override { return nullptr; }
+};
+
 static void should_drag_view_scroller_thumb_from_grab_point()
 {
 	view_scroller scroller;
@@ -1441,13 +1874,19 @@ static void should_drag_view_scroller_thumb_from_grab_point()
 
 	// A drag holds the point it grabbed: releasing without moving must leave the thumb where it
 	// was, rather than re-centring it on the cursor as an unheld press on bare track does.
+	const auto host = std::make_shared<scroller_test_host>();
 	const auto grab = scroller.thumb_origin() + 3;
-	const auto held = scroller.scrollbar_pos_to_logical(grab - 3);
-	assert_equal(scroller.logical_to_scrollbar_pos(400), scroller.logical_to_scrollbar_pos(held),
-	             "grabbing the thumb does not move it");
-	assert_equal(scroller.scrollbar_pos_to_logical(scroller.thumb_origin() + 10),
-	             scroller.scrollbar_pos_to_logical(grab + 10 - 3),
-	             "grab offset cancels out of the drag");
+	scroll_controller held(host, scroller, scroller.scroll_bounds());
+	held.on_mouse_left_button_down({95, grab}, {});
+	held.on_mouse_left_button_up({95, grab}, {});
+	assert_equal(400, scroller.scroll_offset().y, "grabbing the thumb does not move it");
+
+	const auto expected = scroller.scrollbar_pos_to_logical(scroller.thumb_origin() + 10);
+	scroll_controller dragged(host, scroller, scroller.scroll_bounds());
+	dragged.on_mouse_left_button_down({95, grab}, {});
+	dragged.on_mouse_move({95, grab + 10});
+	dragged.on_mouse_left_button_up({95, grab + 10}, {});
+	assert_equal(expected, scroller.scroll_offset().y, "grab offset is preserved while dragging");
 }
 
 static void should_close_view_scroller_bands_over_track()
@@ -1614,6 +2053,59 @@ static void should_not_perform_a_cancelled_gesture_on_release()
 
 	host->on_mouse_left_button_up({12, 12}, {});
 	assert_equal(0, host->built.front()->performed, "the release did not perform the cancelled gesture");
+}
+
+class idle_escape_test_controller final : public view_controller
+{
+public:
+	bool escaped = false;
+
+	idle_escape_test_controller(view_host_ptr host, const recti bounds) : view_controller(std::move(host), bounds)
+	{
+	}
+
+	bool escape() override
+	{
+		escaped = true;
+		return true;
+	}
+};
+
+class idle_escape_test_host final : public std::enable_shared_from_this<idle_escape_test_host>, public view_host
+{
+public:
+	std::shared_ptr<idle_escape_test_controller> built;
+
+	const ui::frame_ptr frame() const override { return ui::no_frame(); }
+	const ui::control_frame_ptr owner() override { return nullptr; }
+
+	void on_window_layout(ui::measure_context& mc, const sizei extent, bool is_minimized) override {}
+	void on_window_paint(ui::draw_context& dc) override {}
+	void tick() override {}
+	void activate(bool is_active) override {}
+	bool key_down(const int c, const ui::key_state keys) override { return false; }
+	void invoke(const commands cmd) override {}
+	bool is_command_checked(const commands cmd) override { return false; }
+	void track_menu(const recti bounds, const std::vector<ui::command_ptr>& commands) override {}
+	void controller_changed() override {}
+	void invalidate_element(const view_element_ptr& e) override {}
+	void invalidate_view(const view_invalid invalid) override {}
+
+	view_controller_ptr controller_from_location(const pointi loc, hit_test_context& ctx) override
+	{
+		built = std::make_shared<idle_escape_test_controller>(shared_from_this(), recti(0, 0, 200, 400));
+		return built;
+	}
+};
+
+static void should_offer_escape_to_an_idle_controller()
+{
+	const auto host = std::make_shared<idle_escape_test_host>();
+	host->_extent = {200, 400};
+	host->on_mouse_move({10, 10}, false);
+	host->on_mouse_move({10, 10}, false);
+	assert_equal(true, host->escape_controller(), "escape reaches the active controller");
+	assert_equal(true, host->built->escaped, "controller consumed escape");
 }
 
 // Answers one controller over a fixed region, having first recorded an occluder, so what the host
@@ -1798,6 +2290,634 @@ public:
 	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override { return {}; }
 };
 
+class single_line_test_layout final : public ui::text_layout
+{
+public:
+	std::string text;
+	int* updates = nullptr;
+
+	explicit single_line_test_layout(int& update_count) : updates(&update_count)
+	{
+	}
+
+	void update(const std::string_view text_in, ui::style::text_style style) override
+	{
+		text = text_in;
+		++*updates;
+	}
+
+	sizei measure_text(int cx, int cy) override
+	{
+		return {std::min(cx, static_cast<int>(text.size()) * 8), 20};
+	}
+
+	std::vector<int> offset_xs(const std::vector<size_t>& utf8_offsets, int cx, int cy) override
+	{
+		std::vector<int> result;
+		result.reserve(utf8_offsets.size());
+		for (const auto offset : utf8_offsets) result.emplace_back(static_cast<int>(offset) * 8);
+		return result;
+	}
+};
+
+class edit_test_measure_context final : public ui::measure_context
+{
+public:
+	int layout_updates = 0;
+	int prefix_measures = 0;
+
+	sizei measure_text(const std::string_view text, ui::style::font_face font, ui::style::text_style style,
+	                   const int cx, int cy = 0) override
+	{
+		++prefix_measures;
+		return {std::min(cx, static_cast<int>(text.size()) * 8), 20};
+	}
+
+	int text_line_height(ui::style::font_face font) override { return 20; }
+
+	ui::text_layout_ptr create_text_layout(ui::style::font_face font) override
+	{
+		return std::make_shared<single_line_test_layout>(layout_updates);
+	}
+};
+
+class forwarding_test_controller final : public view_controller
+{
+public:
+	forwarding_test_controller(view_host_ptr host, const recti bounds) : view_controller(std::move(host), bounds)
+	{
+	}
+};
+
+class forwarding_child_element final : public view_element
+{
+public:
+	int control_area_requests = 0;
+	int controller_requests = 0;
+
+	forwarding_child_element() : view_element(view_element_style::can_invoke)
+	{
+		bounds = {10, 20, 70, 40};
+	}
+
+	bool is_control_area(const pointi loc, const pointi element_offset) const override
+	{
+		++const_cast<forwarding_child_element*>(this)->control_area_requests;
+		return is_visible() && bounds.offset(element_offset).contains(loc);
+	}
+
+	view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+	                                             const pointi element_offset, hit_test_context& ctx) override
+	{
+		++controller_requests;
+		const auto device_bounds = bounds.offset(element_offset);
+		return device_bounds.contains(loc) ? std::make_shared<forwarding_test_controller>(host, device_bounds) : nullptr;
+	}
+};
+
+static ui::surface_ptr make_test_surface(const sizei dimensions, const ui::orientation orientation = ui::orientation::top_left)
+{
+	auto surface = std::make_shared<ui::surface>();
+	surface->alloc(dimensions, ui::texture_format::ARGB, orientation);
+	surface->make_blank();
+	return surface;
+}
+
+static ui::const_image_ptr make_valid_test_image()
+{
+	files ff;
+	return ff.surface_to_thumbnail(make_test_surface({16, 12}));
+}
+
+static void should_keep_edit_load_failure_separate_from_placeholder_pixels()
+{
+	file_load_result loaded;
+	loaded.success = true;
+	loaded.s = make_test_surface({16, 12});
+
+	file_load_result unreadable;
+	unreadable.reason = file_load_result::failure::unreadable;
+
+	file_load_result placeholder_for_unreadable;
+	placeholder_for_unreadable.success = true;
+	placeholder_for_unreadable.reason = file_load_result::failure::unreadable;
+	placeholder_for_unreadable.s = make_test_surface({16, 16});
+
+	file_load_result too_large;
+	too_large.reason = file_load_result::failure::too_large;
+	too_large.source_dimensions = {40000, 30000};
+
+	assert_equal(true, edit_load_has_source_pixels(loaded), "decoded source pixels are editable");
+	assert_equal(false, edit_load_has_source_pixels(unreadable), "an unreadable source has no editable pixels");
+	assert_equal(false, edit_load_has_source_pixels(placeholder_for_unreadable),
+	             "a placeholder for an unreadable source is not editable pixels");
+	assert_equal(false, edit_load_has_source_pixels(too_large), "a too-large refusal has no editable pixels");
+	assert_equal_strict(std::string(tt.loading.sv()), std::string(edit_load_status_text({}, true)),
+	                    "pending source load is reported as loading");
+	assert_equal_strict(std::string(tt.image_display_failed.sv()), std::string(edit_load_status_text(unreadable, false)),
+	                    "unreadable source keeps its bounded error");
+	assert_equal_strict(std::string(tt.image_too_large.sv()), std::string(edit_load_status_text(too_large, false)),
+	                    "too-large source keeps its bounded error");
+}
+
+static void should_reject_stale_edit_load_preview_and_analysis_results()
+{
+	assert_equal(true, should_accept_edit_async_result(4, 4), "current source load is accepted");
+	assert_equal(false, should_accept_edit_async_result(5, 4), "old source load is rejected");
+
+	assert_equal(true, should_accept_edit_preview_result(3, 3, 7, 7, {640, 480}, {640, 480}),
+	             "current same-size preview is accepted");
+	assert_equal(false, should_accept_edit_preview_result(4, 3, 7, 7, {640, 480}, {640, 480}),
+	             "preview for an old display is rejected");
+	assert_equal(false, should_accept_edit_preview_result(3, 3, 8, 7, {640, 480}, {640, 480}),
+	             "preview for an old request is rejected");
+	assert_equal(false, should_accept_edit_preview_result(3, 3, 7, 7, {800, 600}, {640, 480}),
+	             "preview for an old size is rejected");
+
+	assert_equal(true, should_accept_edit_analysis(9, 9, 2, 2), "current analysis is accepted");
+	assert_equal(false, should_accept_edit_analysis(10, 9, 2, 2), "analysis for an old display is rejected");
+	assert_equal(false, should_accept_edit_analysis(9, 9, 3, 2),
+	             "analysis captured before a crop gesture is rejected");
+}
+
+static void should_apply_pending_edit_crop_after_async_load()
+{
+	file_load_result loaded;
+	loaded.success = true;
+	loaded.s = make_test_surface({200, 100});
+
+	const auto pending = rectd(0.25, 0.25, 0.5, 0.5);
+	const auto crop = edit_pending_crop_for_loaded_photo(pending, loaded, false);
+
+	assert_equal(true, crop.has_value(), "async bitmap load keeps the crop that opened Edit");
+	const auto bounds = crop ? crop->bounding_rect() : rectd{};
+	assert_equal(50, df::round(bounds.left()), "pending crop maps left to source pixels");
+	assert_equal(25, df::round(bounds.top()), "pending crop maps top to source pixels");
+	assert_equal(150, df::round(bounds.right()), "pending crop maps right to source pixels");
+	assert_equal(75, df::round(bounds.bottom()), "pending crop maps bottom to source pixels");
+
+	file_load_result empty;
+	assert_equal(false, edit_pending_crop_for_loaded_photo(pending, empty, false).has_value(),
+	             "failed load does not fabricate an editable crop");
+}
+
+static void should_draw_retained_edit_preview_while_replacement_is_pending()
+{
+	const auto retained = decide_edit_preview_render(true, false, true);
+	assert_equal(true, retained.draw_texture, "a retained texture remains visible while the next preview decodes");
+	assert_equal(true, retained.crop_interactive, "visible retained pixels keep the crop handles live");
+	assert_equal(false, retained.show_loading, "loading text does not replace a visible retained preview");
+
+	const auto empty = decide_edit_preview_render(false, false, true);
+	assert_equal(false, empty.draw_texture, "no texture means nothing pixel-backed can be drawn");
+	assert_equal(false, empty.crop_interactive, "crop handles are cleared while no picture is visible");
+	assert_equal(true, empty.show_loading, "no retained texture shows the bounded loading state");
+}
+
+static void should_coalesce_edit_load_and_preview_requests_to_the_latest()
+{
+	auto first = decide_edit_request_coalescing(false);
+	assert_equal(true, first.start_now, "the first request starts immediately");
+	assert_equal(false, first.remember_latest, "with no in-flight request there is nothing to coalesce");
+
+	auto second = decide_edit_request_coalescing(true);
+	auto third = decide_edit_request_coalescing(true);
+	assert_equal(false, second.start_now, "an in-flight request blocks immediate duplicate work");
+	assert_equal(true, second.remember_latest, "the blocked request becomes the latest wanted work");
+	assert_equal(false, third.start_now, "a later in-flight request is also coalesced");
+	assert_equal(true, third.remember_latest, "and replaces the previous latest wanted work");
+	assert_equal(true, should_start_edit_follow_up_request(true), "completion starts one follow-up");
+	assert_equal(false, should_start_edit_follow_up_request(false), "with no latest request, completion starts none");
+}
+
+static void should_withhold_edit_pixel_controls_until_source_pixels_are_loaded()
+{
+	assert_equal(false, edit_pixel_controls_visible(true, false),
+	             "bitmap controls are withheld until source pixels exist");
+	assert_equal(true, edit_pixel_controls_visible(true, true), "bitmap controls appear once pixels are loaded");
+	assert_equal(false, edit_pixel_controls_visible(false, true), "non-bitmaps never show pixel controls");
+}
+
+static std::shared_ptr<display_state_t> make_zoom_pan_display(async_strategy& async,
+                                                              common_display_state_t& common)
+{
+	auto display = std::make_shared<display_state_t>(async, common);
+	display->_is_one = true;
+	display->_can_zoom = true;
+	display->zoom_layout({1000, 800}, {500, 400}, {0, 0});
+	display->zoom(true);
+	return display;
+}
+
+static void should_pan_items_touch_on_magnified_media_like_fullscreen()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state state(ss, as, index, make_test_player());
+	items_view items(state, nullptr);
+	items._regions.media = {0, 0, 500, 400};
+
+	common_display_state_t expected_common;
+	const auto expected = make_zoom_pan_display(as, expected_common);
+	const auto start_zoom = expected->zoom_state();
+	expected->pan_zoom({80, 40}, start_zoom);
+
+	common_display_state_t items_common;
+	items._display = make_zoom_pan_display(as, items_common);
+	items.pan_start({100, 100});
+	items.pan({100, 100}, {180, 140});
+	items.pan_end({100, 100}, {180, 140});
+
+	assert_zoom_near(expected->zoom_state().center().X, items._display->zoom_state().center().X,
+	                 "items touch pan uses the shared zoom center x");
+	assert_zoom_near(expected->zoom_state().center().Y, items._display->zoom_state().center().Y,
+	                 "items touch pan uses the shared zoom center y");
+
+	common_display_state_t fitted_common;
+	items._display = std::make_shared<display_state_t>(as, fitted_common);
+	items._display->_is_one = true;
+	items._display->_can_zoom = true;
+	items._display->zoom_layout({1000, 800}, {500, 400}, {0, 0});
+	const auto fitted_center = items._display->zoom_state().center();
+	items.pan_start({100, 100});
+	items.pan({100, 100}, {180, 140});
+	items.pan_end({100, 100}, {180, 140});
+	assert_zoom_near(fitted_center.X, items._display->zoom_state().center().X,
+	                 "fitted media ignores touch pan x");
+	assert_zoom_near(fitted_center.Y, items._display->zoom_state().center().Y,
+	                 "fitted media ignores touch pan y");
+}
+
+static ui::const_image_ptr make_corrupt_test_image()
+{
+	return std::make_shared<ui::image>(df::blob{0xff, 0xd8, 0xff, 0xd9}, sizei{32, 32},
+	                                   ui::image_format::JPEG, ui::orientation::top_left);
+}
+
+static df::item_element_ptr make_thumbnail_test_item(const std::string& name,
+                                                     const ui::const_image_ptr& thumbnail)
+{
+	df::index_file_item indexed;
+	indexed.name = str::cache(name);
+	indexed.ft = files::file_type_from_name(indexed.name);
+
+	const auto item = std::make_shared<df::item_element>(df::file_path("c:\\" + name), indexed);
+	item->thumbnail(thumbnail, {}, {});
+	return item;
+}
+
+static void should_refresh_tooltip_when_staged_thumbnail_lands()
+{
+	deferred_async_strategy as;
+	const auto item = make_thumbnail_test_item("tooltip.jpg", make_valid_test_image());
+
+	item->stage_thumbnail_surface(as, false, true);
+	item->stage_thumbnail_surface(as, false, true);
+	assert_equal(1_z, as.pending_worker_count(async_queue::render), "tooltip staging queues one decode");
+
+	assert_equal(true, as.run_next(async_queue::render), "decode runs");
+	as.drain_ui();
+
+	assert_equal(true, item->has_cached_surface(), "staging produced a surface");
+	assert_equal(true, as.was_invalidated(view_invalid::tooltip), "tooltip is rebuilt when the surface lands");
+	assert_equal(true, as.was_invalidated(view_invalid::view_redraw), "view redraw accompanies tooltip refresh");
+}
+
+static void should_not_refresh_tooltip_for_fresh_request_when_only_cover_art_is_cached()
+{
+	deferred_async_strategy stage;
+	const auto item = make_thumbnail_test_item("cover-only.jpg", make_corrupt_test_image());
+	item->thumbnail(make_corrupt_test_image(), make_valid_test_image(), {});
+
+	item->stage_thumbnail_surface(stage);
+	assert_equal(true, stage.run_next(async_queue::render), "cover-art decode runs");
+	stage.drain_ui();
+	assert_equal(true, item->has_cached_surface(), "cover art can cache even when the thumbnail failed");
+	assert_equal(false, ui::is_valid(item->thumbnail_surface()), "thumbnail surface is still absent");
+
+	deferred_async_strategy tooltip;
+	item->stage_thumbnail_surface(tooltip, false, true);
+
+	assert_equal(false, tooltip.was_invalidated(view_invalid::tooltip),
+	             "a fresh tooltip request must not endlessly rebuild against cover-art-only cache");
+	assert_equal(false, tooltip.was_invalidated(view_invalid::view_redraw),
+	             "a fresh tooltip request against cover-art-only cache needs no redraw");
+}
+
+static void should_retry_scroll_tooltip_after_failed_stage()
+{
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	const auto failed = make_thumbnail_test_item("failed.jpg", make_corrupt_test_image());
+	const auto next = make_thumbnail_test_item("next.jpg", make_valid_test_image());
+	const df::item_group group(s, {failed, next}, df::item_group_display::icons, {});
+	const auto elements = std::make_shared<view_elements>();
+
+	group.scroll_tooltip(failed, elements, as);
+	assert_equal(true, as.run_next(async_queue::render), "failed decode runs");
+	as.drain_ui();
+
+	group.scroll_tooltip(next, elements, as);
+	assert_equal(1_z, as.pending_worker_count(async_queue::render),
+	             "a failed previous stage does not block the new hover item");
+}
+
+static void should_stage_one_scroll_tooltip_thumbnail()
+{
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	df::item_elements items;
+	const auto thumbnail = make_valid_test_image();
+
+	for (auto i = 0; i < 32; ++i)
+	{
+		items.emplace_back(make_thumbnail_test_item("scroll" + std::to_string(i) + ".jpg", thumbnail));
+	}
+
+	const df::item_group group(s, items, df::item_group_display::icons, {});
+	const auto elements = std::make_shared<view_elements>();
+
+	group.scroll_tooltip(nullptr, elements, as);
+	group.scroll_tooltip(nullptr, elements, as);
+
+	assert_equal(1_z, as.pending_worker_count(async_queue::render),
+	             "one hover queues at most one fallback thumbnail stage");
+}
+
+static void should_publish_async_selection_thumbnail_strip()
+{
+	deferred_async_strategy as;
+	auto strip = std::make_shared<ui::selection_thumbnails_control>(ui::no_control_frame());
+	const std::vector<ui::const_image_ptr> images{make_valid_test_image(), make_valid_test_image()};
+
+	strip->selection_async(images, images.size(), as);
+	assert_equal(1_z, as.pending_worker_count(async_queue::render), "strip decode is queued");
+
+	assert_equal(true, as.run_next(async_queue::render), "strip decode runs");
+	as.drain_ui();
+
+	list_test_measure_context mc;
+	const auto measured = strip->measure(mc, 300);
+	assert_equal(true, measured.cy > 0, "published surfaces measure the thumbnail strip");
+	assert_equal(true, strip->is_visible(), "strip becomes visible after async publication");
+}
+
+static void should_discard_async_selection_strip_after_clear()
+{
+	deferred_async_strategy as;
+	auto strip = std::make_shared<ui::selection_thumbnails_control>(ui::no_control_frame());
+	const std::vector<ui::const_image_ptr> images{make_valid_test_image()};
+
+	strip->selection_async(images, images.size(), as);
+	strip->selection({}, 0);
+
+	assert_equal(true, as.run_next(async_queue::render), "stale strip decode runs");
+	as.drain_ui();
+
+	assert_equal(false, strip->is_visible(), "cleared strips reject stale async thumbnails");
+}
+
+static void should_preview_rotation_with_inverse_destination_transform()
+{
+	assert_equal(static_cast<int>(simple_transform::rot_270),
+	             static_cast<int>(ui::before_after_control::preview_destination_transform(simple_transform::rot_90)),
+	             "clockwise source edit previews with the inverse destination transform");
+	assert_equal(static_cast<int>(simple_transform::rot_90),
+	             static_cast<int>(ui::before_after_control::preview_destination_transform(simple_transform::rot_270)),
+	             "anticlockwise source edit previews with the inverse destination transform");
+}
+
+static void should_rearm_selector_decode_after_resource_event()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	selector_view selector(s, nullptr, nullptr);
+	selector.test_add_pending_decode_for_resource_event();
+
+	selector.broadcast_event({view_element_event_type::free_graphics_resources});
+
+	assert_equal(true, selector.test_resource_event_cleared_pending_decode(),
+	             "resource reset clears pending decode latches through broadcast_event");
+}
+
+class absent_frame_complete_strategy final : public ui::complete_strategy_t
+{
+public:
+	std::string no_results_message() override { return {}; }
+	void selected(const ui::auto_complete_match_ptr&, select_type) override {}
+	ui::auto_complete_match_ptr selected() const override { return {}; }
+	void search(const std::string&, std::function<void(const ui::auto_complete_results&)> complete) override
+	{
+		complete({});
+	}
+	void initialise(std::function<void(const ui::auto_complete_results&)> complete) override
+	{
+		complete({});
+	}
+};
+
+class null_list_frame_control_frame final : public ui::control_frame
+{
+public:
+	std::any handle() const override { return {}; }
+	void destroy() override {}
+	void enable(bool) override {}
+	std::string window_text() const override { return {}; }
+	void window_text(std::string_view) override {}
+	void focus() override {}
+	sizei measure(int) const override { return {}; }
+	bool is_visible() const override { return false; }
+	bool has_focus() const override { return false; }
+	recti window_bounds() const override { return {}; }
+	void window_bounds(recti, bool) override {}
+	void show(bool) override {}
+	void options_changed() override {}
+	void invalidate(recti = {}, bool = false) override {}
+	void layout() override {}
+	void redraw() override {}
+	void redraw_now() override {}
+	void scroll(int, int, recti, bool) override {}
+	void track_menu(recti, const std::vector<ui::command_ptr>&) override {}
+	void close(bool = false) override {}
+	bool is_enabled() const override { return false; }
+	bool is_maximized() const override { return false; }
+	bool is_occluded() const override { return true; }
+	void set_cursor(ui::style::cursor) override {}
+	void reset_graphics() override {}
+	pointi cursor_location() override { return {-1, -1}; }
+
+	ui::edit_ptr create_edit(const ui::edit_styles& styles, std::string_view text,
+	                         std::function<void(const std::string&)> changed) override
+	{
+		return ui::no_control_frame()->create_edit(styles, text, std::move(changed));
+	}
+
+	ui::trackbar_ptr create_slider(int min, int max, std::function<void(int, bool)> changed) override
+	{
+		return ui::no_control_frame()->create_slider(min, max, std::move(changed));
+	}
+
+	ui::toolbar_ptr create_toolbar(const ui::toolbar_styles& styles,
+	                               const std::vector<ui::command_ptr>& buttons) override
+	{
+		return ui::no_control_frame()->create_toolbar(styles, buttons);
+	}
+
+	ui::button_ptr create_button(std::string_view text, std::function<void()> invoke, bool default_button) override
+	{
+		return ui::no_control_frame()->create_button(text, std::move(invoke), default_button);
+	}
+
+	ui::button_ptr create_button(icon_index icon, std::string_view title, std::string_view details,
+	                             std::function<void()> invoke, bool default_button) override
+	{
+		return ui::no_control_frame()->create_button(icon, title, details, std::move(invoke), default_button);
+	}
+
+	ui::button_ptr create_check_button(bool val, std::string_view text, bool is_radio,
+	                                  std::function<void(bool)> changed, int radio_group) override
+	{
+		return ui::no_control_frame()->create_check_button(val, text, is_radio, std::move(changed), radio_group);
+	}
+
+	ui::date_time_control_ptr create_date_time_control(df::date_t text, std::function<void(df::date_t)> changed,
+	                                                   bool include_time) override
+	{
+		return ui::no_control_frame()->create_date_time_control(text, std::move(changed), include_time);
+	}
+
+	ui::control_frame_ptr create_dlg(ui::frame_host_weak_ptr host, bool is_popup) override
+	{
+		return ui::no_control_frame()->create_dlg(std::move(host), is_popup);
+	}
+
+	ui::frame_ptr create_frame(ui::frame_host_weak_ptr, const ui::frame_style&) override { return nullptr; }
+	ui::bubble_window_ptr create_bubble() override { return ui::no_control_frame()->create_bubble(); }
+	void apply_layout(const ui::control_layouts&, pointi) override {}
+	ui::close_result wait_for_close(uint32_t) override { return ui::close_result::cancel; }
+	void focus_first() override {}
+	void position(recti) override {}
+	void save_window_position(platform::setting_file_ptr&) override {}
+	bool is_canceled() const override { return true; }
+	double scale_factor() const override { return 1.0; }
+};
+
+class slot_test_texture final : public ui::texture
+{
+public:
+	int source_index = -1;
+	bool fail_update = false;
+
+	slot_test_texture(const int source_index_in, const bool fail_update_in) :
+		source_index(source_index_in), fail_update(fail_update_in)
+	{
+	}
+
+	ui::texture_update_result update(const av_frame_ptr&) override { return ui::texture_update_result::failed; }
+
+	ui::texture_update_result update(const ui::const_surface_ptr& surface) override
+	{
+		if (fail_update) return ui::texture_update_result::failed;
+		_dimensions = surface->dimensions();
+		_src_extent = surface->dimensions();
+		_orientation = surface->orientation();
+		_format = surface->format();
+		return ui::texture_update_result::tex_created;
+	}
+
+	ui::texture_update_result update(sizei dims, ui::texture_format format, ui::orientation orientation,
+	                                 const uint8_t*, size_t, size_t) override
+	{
+		if (fail_update) return ui::texture_update_result::failed;
+		_dimensions = dims;
+		_src_extent = dims;
+		_orientation = orientation;
+		_format = format;
+		return ui::texture_update_result::tex_created;
+	}
+
+	bool is_valid() const override { return !fail_update; }
+};
+
+class slot_test_draw_context final : public ui::draw_context
+{
+public:
+	struct draw_call
+	{
+		int source_index = -1;
+		recti destination;
+		recti source;
+	};
+
+	std::vector<bool> fail_uploads;
+	std::vector<draw_call> draws;
+	int created = 0;
+
+	explicit slot_test_draw_context(std::vector<bool> fail_uploads_in) : fail_uploads(std::move(fail_uploads_in))
+	{
+		colors.alpha = 1.0f;
+	}
+
+	void clear(ui::color) override {}
+	void draw_rounded_rect(recti, ui::color, int) override {}
+	void draw_rect(recti, ui::color) override {}
+	void draw_text(std::string_view, recti, ui::style::font_face, ui::style::text_style, ui::color, ui::color) override {}
+	void draw_text(std::string_view, const std::vector<ui::text_highlight_t>&, recti, ui::style::font_face,
+	               ui::style::text_style, ui::color, ui::color) override {}
+	void draw_text(const ui::text_layout_ptr&, recti, ui::color, ui::color) override {}
+	void draw_border(recti, recti, ui::color, ui::color) override {}
+	void draw_texture(const ui::texture_ptr& t, recti dst, float, ui::texture_sampler) override
+	{
+		const auto texture = std::dynamic_pointer_cast<slot_test_texture>(t);
+		draws.push_back({texture ? texture->source_index : -1, dst, recti({}, t->dimensions())});
+	}
+	void draw_texture(const ui::texture_ptr& t, recti dst, recti src, float, ui::texture_sampler, float) override
+	{
+		const auto texture = std::dynamic_pointer_cast<slot_test_texture>(t);
+		draws.push_back({texture ? texture->source_index : -1, dst, src});
+	}
+	void draw_texture(const ui::texture_ptr& t, const quadd& dst, recti src, float, ui::texture_sampler) override
+	{
+		const auto texture = std::dynamic_pointer_cast<slot_test_texture>(t);
+		draws.push_back({texture ? texture->source_index : -1, dst.bounding_rect_i(), src});
+	}
+	void draw_texture(const ui::texture_ptr& t, const quadd& dst, recti src, float, ui::texture_sampler,
+	                  const ui::texture_transform&) override
+	{
+		const auto texture = std::dynamic_pointer_cast<slot_test_texture>(t);
+		draws.push_back({texture ? texture->source_index : -1, dst.bounding_rect_i(), src});
+	}
+	void draw_vertices(const ui::vertices_ptr&) override {}
+	sizei measure_text(std::string_view text, ui::style::font_face, ui::style::text_style, int width,
+	                   int = 0) override
+	{
+		return {std::min(width, static_cast<int>(text.size()) * 8), 20};
+	}
+	int text_line_height(ui::style::font_face) override { return 20; }
+	ui::texture_ptr create_texture() override
+	{
+		const auto index = created++;
+		const auto fail = static_cast<size_t>(index) < fail_uploads.size() && fail_uploads[index];
+		return std::make_shared<slot_test_texture>(index, fail);
+	}
+	ui::vertices_ptr create_vertices() override { return {}; }
+	ui::text_layout_ptr create_text_layout(ui::style::font_face) override { return {}; }
+	recti clip_bounds() const override { return {}; }
+	void clip_bounds(recti) override {}
+	void restore_clip() override {}
+};
+
 
 class processing_test_view final : public list_view
 {
@@ -1887,6 +3007,114 @@ static void should_answer_a_null_frame_without_side_effects()
 	assert_equal(true, f->cursor_location() == pointi(-1, -1), "cursor is outside every client rect");
 }
 
+static void should_forward_checkbox_hits_to_visible_checked_child()
+{
+	const auto host = std::make_shared<detached_test_host>();
+	host->_extent = {200, 100};
+	auto checked = true;
+	auto checkbox = std::make_shared<ui::check_control>(ui::no_control_frame(), "Rating", checked);
+	const auto child = std::make_shared<forwarding_child_element>();
+	checkbox->child(child);
+
+	hit_test_context ctx{{15, 25}, recti(0, 0, 200, 100)};
+	assert_equal(true, checkbox->is_control_area({15, 25}, {}), "checked child contributes control area");
+	const auto controller = checkbox->controller_from_location(host, {15, 25}, {}, ctx);
+	assert_equal(true, controller != nullptr, "checked child receives controller lookup");
+	assert_equal(1, child->controller_requests, "controller lookup was forwarded to child");
+
+	checkbox->checked(false);
+	assert_equal(false, checkbox->is_control_area({15, 25}, {}), "unchecked child is not interactive");
+	hit_test_context unchecked_ctx{{15, 25}, recti(0, 0, 200, 100)};
+	assert_equal(true, checkbox->controller_from_location(host, {15, 25}, {}, unchecked_ctx) == nullptr,
+	             "unchecked child receives no controller lookup");
+
+	checkbox->checked(true);
+	checkbox->collapse_child_when_unchecked();
+	checkbox->checked(false);
+	assert_equal(false, checkbox->is_control_area({15, 25}, {}), "collapsed child is not interactive");
+	hit_test_context collapsed_ctx{{15, 25}, recti(0, 0, 200, 100)};
+	assert_equal(true, checkbox->controller_from_location(host, {15, 25}, {}, collapsed_ctx) == nullptr,
+	             "collapsed child receives no controller lookup");
+}
+
+static void should_reject_failed_dialog_thumbnail_decodes()
+{
+	const auto valid_image = make_valid_test_image();
+	assert_equal(true, ui::is_valid(valid_image), "test fixture has a valid encoded image");
+
+	const auto corrupt = std::make_shared<ui::image>(df::blob{0xff, 0xd8, 0xff, 0xd9}, sizei{32, 32},
+	                                                 ui::image_format::JPEG, ui::orientation::top_left);
+	std::vector<ui::const_image_ptr> images;
+	images.emplace_back(corrupt);
+	for (auto i = 0; i < 7; ++i) images.emplace_back(valid_image);
+
+	ui::title_control2 title(ui::no_control_frame(), icon_index::none, "Title", "Selection", images, images.size());
+	const auto dims = title.surface_dims();
+	assert_equal(8u, static_cast<unsigned>(dims.size()), "failed decode did not consume a thumbnail slot");
+
+	list_test_measure_context mc;
+	ui::selection_thumbnails_control strip(ui::no_control_frame());
+	std::vector<ui::const_surface_ptr> surfaces;
+	for (auto i = 0; i < 7; ++i) surfaces.emplace_back(make_test_surface({16, 12}));
+	strip.selection(surfaces, images.size());
+	const auto measured = strip.measure(mc, 700);
+	assert_equal(true, measured.cy > 0, "staged surfaces measure the strip");
+
+	ui::selection_thumbnails_control failed_strip(ui::no_control_frame());
+	failed_strip.selection(std::vector<ui::const_surface_ptr>{}, 2);
+	assert_equal(false, failed_strip.is_visible(), "thumbnail strips without staged surfaces stay hidden");
+}
+
+static void should_use_non_null_search_list_frame()
+{
+	auto value = std::string{};
+	auto completes = std::make_shared<absent_frame_complete_strategy>();
+	const auto frame = std::make_shared<null_list_frame_control_frame>();
+	ui::search_control search(frame, value, completes);
+
+	auto visited = 0;
+	search.visit_controls([&](const ui::control_base_ptr& control)
+	{
+		++visited;
+		assert_equal(true, control != nullptr, "visitor receives a non-null control");
+	});
+	assert_equal(2, visited, "edit and list frame are visited");
+
+	list_test_measure_context mc;
+	ui::control_layouts positions;
+	search.measure(mc, 200);
+	search.layout(mc, recti(0, 0, 200, 200), positions);
+	assert_equal(2u, static_cast<unsigned>(positions.size()), "edit and list frame are laid out");
+	assert_equal(true, positions[1].control != nullptr, "layout receives the non-null list frame accessor");
+	assert_equal(true, positions[1].control == ui::no_frame(), "absent native list frame uses no_frame");
+}
+
+static void should_preserve_thumbnail_texture_slots_after_upload_failure()
+{
+	const std::vector<ui::const_surface_ptr> surfaces{
+		make_test_surface({80, 40}, ui::orientation::top_left),
+		make_test_surface({30, 90}, ui::orientation::top_left)
+	};
+	ui::title_control2 title(ui::no_control_frame(), icon_index::none, "Title", "Selection", surfaces);
+	list_test_measure_context mc;
+	ui::control_layouts positions;
+	title.measure(mc, 320);
+	title.layout(mc, recti(0, 0, 320, 100), positions);
+
+	slot_test_draw_context first_pass({true, false});
+	title.render(first_pass, {});
+	assert_equal(1u, static_cast<unsigned>(first_pass.draws.size()), "only the successful second texture is drawn");
+	assert_equal(1, first_pass.draws.front().source_index, "second texture keeps its source index");
+	assert_equal(30, first_pass.draws.front().source.width(), "second texture uses its own source width");
+	assert_equal(90, first_pass.draws.front().source.height(), "second texture uses its own source height");
+
+	slot_test_draw_context retry_pass({false});
+	title.render(retry_pass, {});
+	assert_equal(2u, static_cast<unsigned>(retry_pass.draws.size()), "retry fills the missing first slot");
+	assert_equal(0, retry_pass.draws[0].source_index, "recovered first texture draws in slot zero");
+	assert_equal(1, retry_pass.draws[1].source_index, "second texture remains in slot one");
+}
+
 static void should_layout_selection_thumbnail_collage()
 {
 	const auto check = [](const recti draw_bounds, const std::vector<sizei>& dimensions, const size_t expected_count)
@@ -1974,6 +3202,32 @@ static void should_edit_single_line_text()
 	edit.insert("one\r\ntwo\nthree");
 	assert_equal_strict("one two three", edit.text(), "paste is normalized to one line");
 
+	edit.text("keep selection");
+	edit.select(5, 14);
+	assert_equal(false, edit.paste_from_clipboard([]() -> std::optional<std::string> { return std::nullopt; }),
+	             "unavailable clipboard text is not pasted");
+	assert_equal_strict("keep selection", edit.text(), "unavailable paste preserves text");
+	assert_equal(true, edit.has_selection(), "unavailable paste preserves selection");
+	assert_equal(true, edit.paste_from_clipboard([] { return std::optional<std::string>{""}; }),
+	             "valid empty clipboard text is pasteable");
+	assert_equal_strict("keep ", edit.text(), "valid empty paste erases selection");
+	edit.undo();
+	assert_equal_strict("keep selection", edit.text(), "empty paste remains undoable");
+
+	edit.select(5, 14);
+	assert_equal(false, edit.cut_to_clipboard([](std::string_view) { return false; }),
+	             "failed cut publication is reported");
+	assert_equal_strict("keep selection", edit.text(), "failed cut preserves text");
+	assert_equal(true, edit.has_selection(), "failed cut preserves selection");
+	std::string cut_text;
+	assert_equal(true, edit.cut_to_clipboard([&cut_text](const std::string_view value)
+	{
+		cut_text = value;
+		return true;
+	}), "successful cut is reported");
+	assert_equal_strict("selection", cut_text, "cut publishes selection before erasing");
+	assert_equal_strict("keep ", edit.text(), "successful cut erases selection");
+
 	edit.text("one two three");
 	edit.move_word_left();
 	assert_equal(8_z, edit.caret(), "control-left moves to previous word");
@@ -2002,6 +3256,176 @@ static void should_edit_single_line_text()
 	filter.wildcard("cat");
 	assert_equal_strict("cat", filter.text(), "filter preserves user input");
 	assert_equal(true, filter.match_text(str::cache("bobcatfish")), "filter applies contains matching");
+}
+
+static void should_shape_edit_text_once_per_change()
+{
+	edit_test_measure_context mc;
+	ui::control_layouts positions;
+	edit_element edit;
+
+	auto text = std::string(2048, 'a');
+	edit.text(text);
+	edit.layout(mc, recti(0, 0, 120, 28), positions);
+	assert_equal(1, mc.layout_updates, "initial text is shaped once");
+	assert_equal(0, mc.prefix_measures, "prefix measuring is not used when shaping succeeds");
+	assert_equal(2048_z, edit.caret_from_x(20000), "hit testing reaches the end of long text");
+
+	edit.layout(mc, recti(0, 0, 120, 28), positions);
+	assert_equal(1, mc.layout_updates, "unchanged layout reuses caret metrics");
+
+	text.assign(4096, 'b');
+	edit.text(text);
+	edit.layout(mc, recti(0, 0, 160, 28), positions);
+	assert_equal(2, mc.layout_updates, "changed text is shaped once more");
+	assert_equal(4096_z, edit.caret_from_x(40000), "larger text keeps bounded shaping");
+
+	edit.text("A\u00e9B");
+	edit.layout(mc, recti(0, 0, 160, 28), positions);
+	assert_equal(3, mc.layout_updates, "utf-8 text is shaped as one layout");
+	assert_equal(1_z, edit.caret_from_x(16), "hit testing still returns a utf-8 boundary");
+	assert_equal(3_z, edit.caret_from_x(32), "multi-byte character boundary is preserved");
+}
+
+static void should_accumulate_rtl_text_widths_in_logical_order()
+{
+	const std::vector<uint32_t> positions{0, 1, 2, 3, 4};
+	const std::vector<ui::text_cluster_metric> rtl_visual_widths{
+		{1, 9.7f}, {1, 3.8f}, {1, 7.7f}, {1, 11.0f}
+	};
+	const auto xs = ui::logical_text_offset_xs(positions, rtl_visual_widths);
+	assert_equal(0, xs[0], "text starts at zero");
+	assert_equal(true, std::ranges::is_sorted(xs), "logical caret widths are ascending");
+	assert_equal(32, xs.back(), "end width is the accumulated cluster width");
+
+	const std::vector<uint32_t> mixed_positions{0, 1, 2, 3};
+	const std::vector<ui::text_cluster_metric> mixed_clusters{{2, 13.0f}, {1, 5.0f}};
+	const auto mixed_xs = ui::logical_text_offset_xs(mixed_positions, mixed_clusters);
+	assert_equal(13, mixed_xs[1], "a position inside a cluster advances to the cluster boundary");
+	assert_equal(13, mixed_xs[2], "the cluster boundary shares that same logical x");
+	assert_equal(18, mixed_xs[3], "following clusters continue from the accumulated width");
+}
+
+static void should_map_slider_input_to_the_drawn_track()
+{
+	list_test_measure_context mc;
+	mc.padding2 = 8;
+	mc.scale_factor = 1.0;
+	ui::control_layouts positions;
+	auto value = 100;
+	auto changes = 0;
+	slider_element slider([&value] { return value; }, [&](const int v)
+	{
+		value = v;
+		++changes;
+	}, 0, 100, tt.tooltip_thumbnail_size);
+	slider.layout(mc, recti(0, 0, 100, 20), positions);
+
+	interaction_context at_max{{94, 10}, {}, true};
+	slider.hover(at_max);
+	assert_equal(100, value, "pressing the maximum thumb stays at maximum");
+	assert_equal(0, changes, "unchanged maximum does not notify");
+
+	value = 0;
+	interaction_context at_min{{6, 10}, {}, true};
+	slider.hover(at_min);
+	assert_equal(0, value, "minimum track endpoint maps to minimum");
+
+	interaction_context at_mid{{50, 10}, {}, true};
+	slider.hover(at_mid);
+	assert_equal(50, value, "track midpoint maps to midpoint");
+
+	slider.layout(mc, recti(20, 0, 120, 20), positions);
+	value = 100;
+	changes = 0;
+	interaction_context at_offset_max{{114, 10}, {}, true};
+	slider.hover(at_offset_max);
+	assert_equal(100, value, "offset maximum endpoint maps to maximum before repaint");
+
+	mc.scale_factor = 2.0;
+	slider.layout(mc, recti(0, 0, 200, 40), positions);
+	value = 0;
+	interaction_context at_scaled_max{{188, 20}, {}, true};
+	slider.hover(at_scaled_max);
+	assert_equal(100, value, "scaled maximum endpoint maps to maximum");
+
+	mc.scale_factor = 1.0;
+	slider.layout(mc, recti(0, 0, 100, 20), positions);
+	const recti track_bounds{6, 8, 94, 12};
+	changes = 0;
+	for (auto expected = 0; expected <= 100; ++expected)
+	{
+		value = expected;
+		const auto thumb_x = slider_value_to_track_x(track_bounds, expected, 0, 100);
+		interaction_context at_thumb{{thumb_x, 10}, {}, true};
+		slider.hover(at_thumb);
+		assert_equal(expected, value, "pressing each painted thumb centre preserves its value");
+	}
+	assert_equal(0, changes, "painted thumb centre presses do not notify");
+
+	// Dense ranges put several values on one pixel; dragging to either end must still reach it.
+	for (const auto& [track_width, max_value] : {std::pair{40, 100}, std::pair{25, 100}, std::pair{100, 1000}})
+	{
+		const recti dense_track{10, 0, 10 + track_width, 4};
+		assert_equal(max_value, slider_track_x_to_value(dense_track, dense_track.right, 0, max_value, 0),
+		             "dragging from the minimum to the right end reaches the maximum");
+		assert_equal(0, slider_track_x_to_value(dense_track, dense_track.left, 0, max_value, max_value),
+		             "dragging from the maximum to the left end reaches the minimum");
+
+		const auto mid_x = dense_track.left + track_width / 2;
+		const auto proportional = df::round(static_cast<double>(track_width / 2) * max_value / track_width);
+		const auto mid_value = slider_track_x_to_value(dense_track, mid_x, 0, max_value, 0);
+		assert_equal(slider_value_to_track_x(dense_track, mid_value, 0, max_value), mid_x,
+		             "a mid-track drag lands on a value painted under the pointer");
+		assert_equal(proportional, mid_value, "a mid-track drag stays proportional");
+	}
+}
+
+static void should_merge_control_colours_as_straight_alpha()
+{
+	const auto near = [](const float expected, const float actual, const std::string_view message)
+	{
+		assert_equal(true, std::abs(expected - actual) < 0.0001f, message);
+	};
+
+	ui::color transparent_red(1.0f, 0.0f, 0.0f, 0.0f);
+	transparent_red.merge(ui::color(0.0f, 0.0f, 1.0f, 1.0f));
+	near(0.0f, transparent_red.r, "transparent source leaves destination red");
+	near(0.0f, transparent_red.g, "transparent source leaves destination green");
+	near(1.0f, transparent_red.b, "transparent source leaves destination blue");
+	near(1.0f, transparent_red.a, "transparent source leaves destination alpha");
+
+	ui::color opaque_red(1.0f, 0.0f, 0.0f, 1.0f);
+	opaque_red.merge(ui::color(0.0f, 0.0f, 1.0f, 0.0f));
+	near(1.0f, opaque_red.r, "opaque source keeps red");
+	near(0.0f, opaque_red.b, "opaque source hides transparent destination");
+	near(1.0f, opaque_red.a, "opaque source keeps alpha");
+
+	ui::color zero(0.4f, 0.2f, 0.1f, 0.0f);
+	zero.merge(ui::color(0.8f, 0.1f, 0.2f, 0.0f));
+	near(0.0f, zero.r, "zero over zero clears red");
+	near(0.0f, zero.g, "zero over zero clears green");
+	near(0.0f, zero.b, "zero over zero clears blue");
+	near(0.0f, zero.a, "zero over zero clears alpha");
+
+	ui::color half_red(1.0f, 0.0f, 0.0f, 0.5f);
+	half_red.merge(ui::color(0.0f, 0.0f, 1.0f, 0.5f));
+	near(2.0f / 3.0f, half_red.r, "half source normalizes red");
+	near(0.0f, half_red.g, "half source keeps green zero");
+	near(1.0f / 3.0f, half_red.b, "half source normalizes blue");
+	near(0.75f, half_red.a, "half source computes source-over alpha");
+}
+
+static void should_hit_test_comparison_divider_in_device_coordinates()
+{
+	const recti logical_bounds{100, 100, 120, 300};
+	const auto shifted = comparison_divider_device_bounds(logical_bounds, {0, -50});
+	assert_equal(true, shifted == recti(100, 50, 120, 250), "divider bounds shift to device coordinates");
+	assert_equal(true, shifted.contains({110, 75}), "visible shifted point hits divider");
+	assert_equal(false, shifted.contains({110, 25}), "point above painted divider misses");
+
+	const auto unshifted = comparison_divider_device_bounds(logical_bounds, {});
+	assert_equal(true, unshifted == logical_bounds, "zero offset preserves divider bounds");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2592,9 +4016,52 @@ static void should_track_the_active_row_across_a_reorder()
 
 void register_view_tests(view_state& state, test_registry& tests)
 {
+	// VIEW-012 - Movie clip sessions are retired before playback/focus no longer owns them.
+	tests.add("Should decide when Movie clip sessions are retired"s,
+	          should_decide_when_movie_clip_sessions_are_retired);
+	// VIEW-013 - stale Movie cache completions must not mutate current request state.
+	tests.add("Should reject stale Movie cache completions before state changes"s,
+	          should_reject_stale_movie_cache_completions_before_state_changes);
+	// VIEW-014 - a source that moves during probing gets bounded retries, then an explicit state.
+	tests.add("Should bound Movie probe retries for moving sources"s,
+	          should_bound_movie_probe_retries_for_moving_sources);
+	// VIEW-016 - source caches are retired only for successful project/source replacement.
+	tests.add("Should retire Movie source caches only after successful replacement"s,
+	          should_retire_movie_source_caches_only_after_successful_replacement);
+	// VIEW-005/006 - Edit load and preview replies are detached source state, not placeholder pixels.
+	tests.add("Should keep Edit view load failure separate from placeholder pixels"s,
+	          should_keep_edit_load_failure_separate_from_placeholder_pixels);
+	// VIEW-005/007 - async Edit replies retire when display, preview size, or edit generation changes.
+	tests.add("Should reject stale Edit load preview and analysis results"s,
+	          should_reject_stale_edit_load_preview_and_analysis_results);
+	// G14b follow-up - a drawn crop must survive until the async bitmap load can apply it.
+	tests.add("Should apply pending Edit crop after async load"s,
+	          should_apply_pending_edit_crop_after_async_load);
+	// G14b follow-up - resizing keeps the last visible preview until the replacement is ready.
+	tests.add("Should draw retained Edit preview while replacement is pending"s,
+	          should_draw_retained_edit_preview_while_replacement_is_pending);
+	// G14b follow-up - Edit load/preview workers coalesce superseded requests.
+	tests.add("Should coalesce Edit load and preview requests to the latest"s,
+	          should_coalesce_edit_load_and_preview_requests_to_the_latest);
+	// G14b follow-up - side-panel pixel controls obey the actual source-pixel state.
+	tests.add("Should withhold Edit pixel controls until source pixels are loaded"s,
+	          should_withhold_edit_pixel_controls_until_source_pixels_are_loaded);
+	// VIEW-011 - Items routes touch pan through the same magnified-media zoom operation as Fullscreen.
+	tests.add("Should pan Items touch zoom on magnified media like Fullscreen"s,
+	          should_pan_items_touch_on_magnified_media_like_fullscreen);
+
 	tests.add("Should track the active row across a reorder"s, should_track_the_active_row_across_a_reorder);
 	tests.add("Should resolve list rows by work index"s, should_resolve_list_rows_by_work_index);
 	tests.add("Should select settled zoom sampler"s, should_select_settled_zoom_sampler);
+	// MOD-016 - same-path source versions can move backward or change without increasing a maximum.
+	tests.add("Should reload displayed photo when source version moves backward"s,
+	          should_reload_displayed_photo_when_source_version_moves_backward);
+	// MOD-017 - displayed cache entries do not stop offscreen texture-budget eviction.
+	tests.add("Should skip displayed textures when evicting retained texture budget"s,
+	          should_skip_displayed_textures_when_evicting_retained_texture_budget);
+	// MOD-018 - comparison preview texture identities are handed back on worker exits.
+	tests.add("Should release comparison preview textures on UI after worker exit"s,
+	          should_release_comparison_preview_textures_on_ui_after_worker_exit);
 	tests.add("Should accumulate precision wheel deltas"s, should_accumulate_precision_wheel_deltas);
 	tests.add("Should validate zoom navigator mode"s, should_validate_zoom_navigator_mode);
 	tests.add("Should keep comparison zoom panes matched"s, should_keep_comparison_zoom_panes_matched);
@@ -2620,6 +4087,8 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should aim a projected panorama with a held pointer"s,
 	          should_aim_a_projected_panorama_with_a_held_pointer);
 	tests.add("Should place a partial panorama on the sphere"s, should_place_a_partial_panorama_on_the_sphere);
+	tests.add("Should refresh same path panorama declaration without resetting view"s,
+	          should_refresh_same_path_panorama_declaration_without_resetting_view);
 	tests.add("Should hold a drawn region in source space"s, should_hold_a_drawn_region_in_source_space);
 	tests.add("Should map a drawn region onto stored pixels"s, should_map_a_drawn_region_onto_stored_pixels);
 	tests.add("Should look around without choosing a scale"s, should_look_around_without_choosing_a_scale);
@@ -2629,6 +4098,25 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should map zoom navigator to source center"s, should_map_zoom_navigator_to_source_center);
 	tests.add("Should orient selector thumbnails"s, should_orient_selector_thumbnails);
 	tests.add("Should range select across selector"s, should_range_select_across_selector);
+	// VIEW-008 - selector rebuilds reuse entries through one lookup instead of repeated scans.
+	tests.add("Should reuse selector entries with one lookup"s, should_reuse_selector_entries_with_one_lookup);
+	// VIEW-009 - selector-owned resources are bounded to the visible/prefetch band.
+	tests.add("Should bound selector retained resources to visible band"s,
+	          should_bound_selector_retained_resources_to_visible_band);
+	tests.add("Should rearm selector decode after resource event"s,
+	          should_rearm_selector_decode_after_resource_event);
+	tests.add("Should refresh tooltip when staged thumbnail lands"s,
+	          should_refresh_tooltip_when_staged_thumbnail_lands);
+	tests.add("Should not refresh tooltip for fresh request when only cover art is cached"s,
+	          should_not_refresh_tooltip_for_fresh_request_when_only_cover_art_is_cached);
+	tests.add("Should stage one scroll tooltip thumbnail"s, should_stage_one_scroll_tooltip_thumbnail);
+	tests.add("Should retry scroll tooltip after failed stage"s, should_retry_scroll_tooltip_after_failed_stage);
+	tests.add("Should publish async selection thumbnail strip"s,
+	          should_publish_async_selection_thumbnail_strip);
+	tests.add("Should discard async selection strip after clear"s,
+	          should_discard_async_selection_strip_after_clear);
+	tests.add("Should preview rotation with inverse destination transform"s,
+	          should_preview_rotation_with_inverse_destination_transform);
 	tests.add("Should stage neighbour stand ins"s, should_stage_neighbour_stand_ins);
 	// Issue #78 - anamorphic video fills its box at the declared aspect
 	tests.add("Should shape video by its display dimensions"s, should_shape_video_by_its_display_dimensions);
@@ -2654,6 +4142,7 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should survive a host with no window"s, should_survive_a_host_with_no_window);
 	tests.add("Should not perform a cancelled gesture on release"s,
 	          should_not_perform_a_cancelled_gesture_on_release);
+	tests.add("Should offer escape to an idle controller"s, should_offer_escape_to_an_idle_controller);
 	tests.add("Should bound a reused hit test controller by what it passed over"s,
 	          should_bound_a_reused_controller_by_what_it_passed_over);
 	tests.add("Should not clip a hit test controller to what covers it"s,
@@ -2664,8 +4153,26 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should keep the processing row clear of the view chrome"s,
 	          should_keep_the_processing_row_clear_of_the_view_chrome);
 	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);
+	// G13 UI-001 - checkbox composites forward hit testing to the rendered child only while active.
+	tests.add("Should forward checkbox hits to visible checked child"s,
+	          should_forward_checkbox_hits_to_visible_checked_child);
+	// G13 UI-002 - failed decoded dialog thumbnails do not enter the surface collection or cap.
+	tests.add("Should reject failed dialog thumbnail decodes"s, should_reject_failed_dialog_thumbnail_decodes);
+	// G13 UI-003 - search controls expose the list frame through the non-null accessor.
+	tests.add("Should use non-null search list frame"s, should_use_non_null_search_list_frame);
+	// G13 UI-012 - failed texture uploads leave a hole rather than compacting later thumbnails.
+	tests.add("Should preserve thumbnail texture slots after upload failure"s,
+	          should_preserve_thumbnail_texture_slots_after_upload_failure);
 	tests.add("Should layout selection thumbnail collage"s, should_layout_selection_thumbnail_collage);
+	// PLAT-005 - clipboard access and publication failures preserve text edits.
 	tests.add("Should edit single-line text"s, should_edit_single_line_text);
+	tests.add("Should shape edit text once per change"s, should_shape_edit_text_once_per_change);
+	tests.add("Should accumulate RTL text widths in logical order"s,
+	          should_accumulate_rtl_text_widths_in_logical_order);
+	tests.add("Should map slider input to the drawn track"s, should_map_slider_input_to_the_drawn_track);
+	tests.add("Should merge control colours as straight alpha"s, should_merge_control_colours_as_straight_alpha);
+	tests.add("Should hit test comparison divider in device coordinates"s,
+	          should_hit_test_comparison_divider_in_device_coordinates);
 	tests.add("Should edit a segmented date"s, should_edit_a_segmented_date);
 	tests.add("Should clear detail row layout metrics"s, should_clear_detail_row_layout_metrics);
 	tests.add("Should classify aspect ratio groups"s, should_classify_aspect_ratio_groups);

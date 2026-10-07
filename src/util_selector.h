@@ -47,11 +47,7 @@ namespace df
 				const auto folder = path.folder().text().sv();
 				const auto root = _root.text().sv();
 
-				if (path_text_starts(folder, root))
-				{
-					const auto boundary = root.empty() ? 0_z : root.size() - (is_path_sep(root.back()) ? 1 : 0);
-					is_match = folder.size() == boundary || is_path_sep(folder[boundary]);
-				}
+				is_match = folder_contains(root, folder);
 			}
 			else
 			{
@@ -209,7 +205,6 @@ namespace df
 		{
 			if (is_path(sv))
 			{
-				// no colans after 
 				const item_selector sel(sv);
 				return sel.can_iterate();
 			}

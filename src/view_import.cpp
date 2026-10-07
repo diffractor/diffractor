@@ -78,14 +78,16 @@ view_controls_host_ptr import_view::controls(const ui::control_frame_ptr& owner)
 
 	const std::weak_ptr<import_view> weak_view = shared_from_this();
 	const std::weak_ptr<view_controls_host> weak_controls = result;
+	auto selected_source = calc_import_selected_source(_state);
 
-	_state.queue_async(async_queue::work, [&s = _state, weak_view, weak_controls, frame]
+	_state.queue_async(async_queue::work, [&s = _state, weak_view, weak_controls, frame,
+		                   selected_source = std::move(selected_source)]
 	{
 		std::vector<import_source> sources_temp;
 		std::string error;
 		try
 		{
-			sources_temp = calc_import_sources(s);
+			sources_temp = calc_import_sources(std::move(selected_source));
 		}
 		catch (const std::exception& e)
 		{
@@ -132,7 +134,7 @@ void import_view::populate_controls(const view_controls_host_ptr& result, const 
 		src.selected = is_first_source;
 		if (is_first_source)
 		{
-			selection_thumbnails->selection(src.items.thumbs(), src.items.size());
+			selection_thumbnails->selection_async(src.items.thumbs(), src.items.size(), _state._async);
 		}
 		auto check = std::make_shared<ui::check_control>(frame, src.text, src.selected, true, false,
 		                                                 [this, selection_thumbnails, source_index, weak_controls](
@@ -143,8 +145,9 @@ void import_view::populate_controls(const view_controls_host_ptr& result, const 
 			                                                 {
 				                                                 const auto& source_items = _sources[source_index].
 					                                                 items;
-				                                                 selection_thumbnails->selection(
-					                                                 source_items.thumbs(), source_items.size());
+				                                                 selection_thumbnails->selection_async(
+					                                                 source_items.thumbs(), source_items.size(),
+					                                                 _state._async);
 				                                                 if (const auto controls = weak_controls.lock())
 					                                                 controls->scroll_controls();
 			                                                 }

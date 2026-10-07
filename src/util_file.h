@@ -120,6 +120,12 @@ namespace df
 		            const int64_t replace = 0) const
 		{
 			const auto size = file_size();
+			if (!_h || start < 0 || replace < 0 || dataSize < 0 || start > static_cast<int64_t>(size) ||
+				replace > static_cast<int64_t>(size) - start || (dataSize > 0 && data == nullptr))
+			{
+				return false;
+			}
+
 			const auto delta = dataSize - replace;
 
 			constexpr uint64_t buffer_size = sixty_four_k;
@@ -127,27 +133,28 @@ namespace df
 
 			if (delta < 0)
 			{
-				// Move up
-				auto pos = start;
-				auto remaining = size - (start + replace);
+				auto read_pos = start + replace;
+				auto write_pos = start + dataSize;
+				auto remaining = size - read_pos;
 
 				while (remaining > 0)
 				{
 					const auto blockSize = std::min(remaining, buffer_size);
 
-					if (!seek_from_begin(pos) || !read(buffer.get(), blockSize) ||
-						!seek_from_begin(pos + delta) ||
+					if (!seek_from_begin(read_pos) || !read(buffer.get(), blockSize) ||
+						!seek_from_begin(write_pos) ||
 						!write(buffer.get(), blockSize))
 					{
 						assert_true(false);
 						return false;
 					}
 
-					pos += blockSize;
+					read_pos += blockSize;
+					write_pos += blockSize;
 					remaining -= blockSize;
 				}
 
-				_h->trunc(size + delta);
+				if (!_h->trunc(static_cast<uint64_t>(static_cast<int64_t>(size) + delta))) return false;
 			}
 			else if (delta > 0)
 			{

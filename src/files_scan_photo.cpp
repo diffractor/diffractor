@@ -631,6 +631,7 @@ file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, files* con
 		if (offset_ifd0 < limit)
 		{
 			const auto entry_count = get_uint16(s.peek16(offset_ifd0), order);
+			auto orientation_from_primary = false;
 
 			for (auto i = 0u; i < entry_count; ++i)
 			{
@@ -666,6 +667,7 @@ file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, files* con
 				{
 				case EXIF_TAG_ORIENTATION:
 					result.orientation = static_cast<ui::orientation>(get_uint16(dir_data + 8u, order));
+					orientation_from_primary = true;
 					break;
 				case EXIF_TAG_IMAGE_WIDTH:
 					result.width = read_dimension();
@@ -829,8 +831,11 @@ file_scan_result scan_tiff(read_stream& s, const bool want_thumbnail, files* con
 								break;
 
 							case EXIF_TAG_ORIENTATION:
-								result.orientation = static_cast<ui::orientation>(get_uint16(
-									s.peek16(pos + 8), order));
+								if (!orientation_from_primary)
+								{
+									result.orientation = static_cast<ui::orientation>(get_uint16(
+										s.peek16(pos + 8), order));
+								}
 								break;
 							default:
 								break;

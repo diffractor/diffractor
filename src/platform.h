@@ -132,6 +132,7 @@ namespace platform
 	{
 		str::cached name = {};
 		file_attributes_t attributes = {};
+		bool can_recurse = true;
 	};
 
 	struct folder_contents
@@ -187,6 +188,9 @@ namespace platform
 		virtual uint64_t size() const = 0;
 		virtual uint64_t read(uint8_t* buf, uint64_t buf_size) const = 0;
 		virtual uint64_t write(const uint8_t* data, uint64_t size) = 0;
+		// Makes earlier writes durable enough to report success. A false result means the caller
+		// cannot claim the requested file was fully persisted.
+		virtual bool flush() const = 0;
 		virtual uint64_t seek(uint64_t pos, whence w) const = 0;
 		virtual uint64_t pos() const = 0;
 		virtual bool trunc(uint64_t pos) const = 0;
@@ -411,6 +415,7 @@ namespace platform
 	                            df::folder_path target, bool is_move, bool replace_existing = false);
 
 	file_op_result delete_file(df::file_path path);
+	file_op_result make_file_writable(df::file_path path);
 	file_attributes_t file_attributes(df::file_path path);
 	file_attributes_t file_attributes(df::folder_path path);
 	file_op_result copy_file(df::file_path existing, df::file_path destination, bool fail_if_exists,
@@ -418,7 +423,8 @@ namespace platform
 	file_op_result move_file(df::file_path existing, df::file_path destination, bool fail_if_exists);
 	file_op_result move_file(df::folder_path existing, df::folder_path destination);
 	file_op_result replacement_flush_result(bool flushed, std::string error_message = {});
-	file_op_result replace_file(df::file_path destination, df::file_path existing, bool create_originals = false);
+	file_op_result replace_file(df::file_path destination, df::file_path existing, bool create_originals = false,
+	                            std::optional<file_attributes_t> expected_destination = {});
 	bool exists(df::file_path path);
 	bool exists(df::folder_path path);
 	file_op_result create_folder(df::folder_path path);
@@ -479,6 +485,43 @@ namespace platform
 	// unit tests can simulate OneDrive Files On-Demand online-only files without real cloud
 	// storage. Returning true marks the given path as offline during folder enumeration.
 	extern std::function<bool(const df::file_path&)> test_offline_predicate;
+
+#ifndef _WIN32
+	struct linux_copy_file_test_failures
+	{
+		size_t max_write_bytes = 0;
+		bool interrupt_first_write = false;
+		int fail_write_after_calls = -1;
+		bool fail_destination_close = false;
+	};
+
+	struct linux_move_file_test_failures
+	{
+		bool rename_no_replace_unsupported = false;
+		bool link_unsupported = false;
+	};
+
+	enum class linux_settings_test_failure
+	{
+		none,
+		after_open,
+		after_write,
+		before_replace,
+	};
+
+	void test_linux_copy_file_failures(linux_copy_file_test_failures failures);
+	void test_linux_clear_copy_file_failures();
+	void test_linux_move_file_failures(linux_move_file_test_failures failures);
+	void test_linux_clear_move_file_failures();
+	void test_linux_settings_failure(linux_settings_test_failure failure);
+	int test_linux_settings_save_count();
+	void test_linux_reset_settings_save_count();
+
+	extern std::function<void(df::file_path)> test_linux_before_claim_file_path;
+	extern std::function<void(df::folder_path)> test_linux_before_claim_folder_path;
+	extern std::function<void(df::file_path)> test_linux_before_copy_folder_file_path;
+	extern std::function<void()> test_linux_before_settings_replace;
+#endif
 
 	struct scan_result
 	{
@@ -647,6 +690,15 @@ namespace platform
 		link
 	};
 
+	class clipboard_bitmap
+	{
+	public:
+		virtual ~clipboard_bitmap() = default;
+		virtual file_op_result save(df::folder_path save_path, std::string_view name, bool as_png) = 0;
+	};
+
+	using clipboard_bitmap_ptr = std::shared_ptr<clipboard_bitmap>;
+
 	class clipboard_data
 	{
 	public:
@@ -667,6 +719,7 @@ namespace platform
 		virtual std::vector<df::file_path> drop_paths() const = 0;
 
 		virtual file_op_result drop_files(df::folder_path save_path, drop_effect effect) = 0;
+		virtual clipboard_bitmap_ptr capture_bitmap() = 0;
 		virtual file_op_result save_bitmap(df::folder_path save_path, std::string_view name, bool as_png) = 0;
 	};
 
@@ -709,10 +762,10 @@ namespace platform
 
 	clipboard_data_ptr clipboard();
 
-	void set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
+	bool set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
 	                   const file_load_result& loaded, bool is_move);
-	void set_clipboard(std::string_view text);
-	std::string clipboard_text();
+	bool set_clipboard(std::string_view text);
+	std::optional<std::string> clipboard_text();
 
 	class setting_file
 	{
@@ -739,6 +792,7 @@ namespace platform
 	// Low-level settings backends. Prefer settings() above; these are exposed only so tests can
 	// exercise each backend directly.
 	setting_file_ptr create_registry_settings();
+	setting_file_ptr create_registry_settings(std::string_view root_key);
 	setting_file_ptr create_ini_file_settings();
 	setting_file_ptr create_ini_file_settings(df::folder_path folder);
 

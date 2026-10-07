@@ -182,9 +182,10 @@ class av_visualizer
 	static constexpr double release_seconds = 0.150;
 
 	static fast_fft fft;
-	static int xscale[num_bars + 1];
 	friend void should_compact_consumed_audio_only_when_needed();
 	friend void should_time_visualizer_independently_of_refresh_rate();
+	friend void should_share_one_immutable_visualizer_frequency_table();
+	friend void should_keep_visualizer_frequency_bins_stable_across_sessions();
 
 	struct frame
 	{
@@ -315,14 +316,6 @@ class av_visualizer
 public:
 	av_visualizer()
 	{
-		memset(xscale, 0, sizeof(xscale));
-
-		for (auto i = 0; i <= num_bars; i++)
-		{
-			xscale[i] = df::round(0.5 + pow(FFT_BUFFER_SIZE / 2.0, static_cast<double>(i) / num_bars));
-			if (i > 0 && xscale[i] <= xscale[i - 1]) xscale[i] = xscale[i - 1] + 1;
-			xscale[i] = std::min(xscale[i], static_cast<int>(FFT_BUFFER_SIZE / 2 - 1));
-		}
 	}
 
 	void update(audio_buffer& buffer_in)
@@ -434,17 +427,44 @@ public:
 	}
 
 private:
+	static const std::array<int, num_bars + 1>& frequency_scale()
+	{
+		static const auto scale = []
+		{
+			++frequency_scale_init_count();
+			std::array<int, num_bars + 1> result{};
+
+			for (auto i = 0; i <= num_bars; i++)
+			{
+				result[i] = df::round(0.5 + pow(FFT_BUFFER_SIZE / 2.0, static_cast<double>(i) / num_bars));
+				if (i > 0 && result[i] <= result[i - 1]) result[i] = result[i - 1] + 1;
+				result[i] = std::min(result[i], static_cast<int>(FFT_BUFFER_SIZE / 2 - 1));
+			}
+
+			return result;
+		}();
+
+		return scale;
+	}
+
+	static std::atomic<int>& frequency_scale_init_count()
+	{
+		static std::atomic<int> result = 0;
+		return result;
+	}
+
 	static void calc_bars(const int16_t* src, int* bars)
 	{
 		float tmp_out[FFT_BUFFER_SIZE / 2 + 1];
 
 		fft.calc(src, tmp_out);
+		const auto& scale = frequency_scale();
 
 		for (auto i = 0; i < num_bars; i++)
 		{
 			auto y = 0;
 
-			for (auto c = xscale[i]; c < xscale[i + 1]; c++)
+			for (auto c = scale[i]; c < scale[i + 1]; c++)
 			{
 				const auto d = static_cast<int>(sqrtf(tmp_out[c + 1]));
 				if (d > y) y = d;

@@ -12,7 +12,10 @@ localized labels. The generator removes duplicate records while retaining useful
 
 `location_cache` loads the data once, indexes coordinates with a KD-tree, and indexes names for
 lookup and autocomplete. It can resolve a record by identity, find nearby or significant places in
-an area, and localize display names. Gazetteer access runs on the location worker.
+an area, and localize display names. Geographic lookup keeps seam and pole handling in the location
+layer: KD-tree candidates are only a planar acceleration structure, and final nearest/attribution
+decisions use geodesic distance with conservative wrapped bounds. Gazetteer access runs on the
+location worker.
 
 ## Item Locations
 
@@ -38,6 +41,10 @@ gazetteer identity and the item's stored or derived location; coordinate matchin
 distance. Search generations and location-result generations prevent an older lookup replacing a
 newer query.
 
+Autocomplete displays localized place and country names but compares canonical country identifiers
+when it limits very short place prefixes to the default country. Explicit country-code completion
+continues to use the code itself.
+
 Location grouping uses the same effective place identity as location search. A group-header or
 breakdown action must therefore reproduce the items it counted, including coordinate-only items.
 
@@ -54,9 +61,10 @@ A map area resolves to a named place and a radius covering its item bounds. If n
 available, its coordinate and radius are used. Invoking it opens a `loc:` search. It changes the
 query only and preserves grouping, sorting, focus, and selection.
 
-Map bubbles show the resolved name, count, and representative image when available. Resolution may
-arrive asynchronously; an unresolved bubble states only facts already known and remains actionable
-through its coordinate.
+Map bubbles show the resolved name, count, and representative image when available. Marker cells are
+aggregated at the current zoom off the UI thread and published as complete snapshots; paint and hit
+testing consume the same ready geometry. Resolution may arrive asynchronously; an unresolved bubble
+states only facts already known and remains actionable through its coordinate.
 
 The Locate task uses a different map contract: the fixed center crosshair is the coordinate to be
 written. Dragging pans, clicking a cluster centers it, and no file changes until the user runs Add
@@ -78,7 +86,12 @@ strip when the result set does not support a useful summary.
 The totals control reports item count and total size; grouping and sorting remain a separate user
 choice. For a location search or drill-down that is not already grouped by location, Items may show
 a breakdown row of the strongest effective places in the current results. Each entry includes a
-count and opens the same level-scoped search used to compute that count.
+count and opens the same level-scoped search used to compute that count. Partial place identities
+that would overlap the same items are merged into a deterministic non-overlapping predicate before
+the row is ranked, so the chip count and the query it runs remain the same promise. When no common
+predicate can cover an overlap component, the row keeps the largest exact predicates that do not
+overlap one another and leaves smaller overlapping partial identities out of the row rather than
+showing a chip whose click would return a different count.
 
 The row is hidden when location grouping already supplies equivalent group headers or when there are
 no located results. It is navigation only: it does not change grouping, sorting, focus, or selection.

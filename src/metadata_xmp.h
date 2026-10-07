@@ -53,4 +53,7 @@ namespace metadata_xmp
 	                         std::string_view src_xmp_name, df::file_path dst_xmp_path);
 	void update(std::string& buffer, const metadata_edits& edits);
 	metadata_kv_list to_info(df::cspan xmp);
+
+	void set_test_raw_source_xmp(df::file_path path, df::cspan xmp);
+	void set_test_update_failure_sequence(std::vector<int> actions);
 };

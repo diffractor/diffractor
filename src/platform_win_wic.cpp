@@ -247,13 +247,34 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 			result.error_message = "Unable to create unique filename after 100 attempts";
 			return result;
 		}
+
+		auto stage_path = platform::temp_file(ext, folder);
+		if (stage_path.is_empty())
+		{
+			result.error_message = tt.error_save_image;
+			return result;
+		}
+
+		{
+			const auto stage_w = platform::to_file_system_path(stage_path);
+			const auto stage_handle = CreateFileW(stage_w.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+			                                      FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (stage_handle == INVALID_HANDLE_VALUE)
+			{
+				result.error_message = platform::last_os_error();
+				return result;
+			}
+			CloseHandle(stage_handle);
+		}
+
+		auto encoded_stage = false;
 		{
 			ComPtr<IWICStream> piFileStream;
 			hr = wic->CreateStream(&piFileStream);
 
 			if (SUCCEEDED(hr))
 			{
-				const auto w = platform::to_file_system_path(path);
+				const auto w = platform::to_file_system_path(stage_path);
 				hr = piFileStream->InitializeFromFilename(w.c_str(), GENERIC_WRITE);
 			}
 
@@ -332,11 +353,21 @@ platform::file_op_result save_bitmap_info(const df::folder_path save_path, const
 				hr = piFileStream->Commit(STGC_DEFAULT);
 			}
 
-			if (SUCCEEDED(hr))
+			encoded_stage = SUCCEEDED(hr);
+		}
+
+		if (encoded_stage)
+		{
+			result = platform::move_file(stage_path, path, true);
+			if (result.success())
 			{
 				result.created_files.files.emplace_back(path);
-				result.code = platform::file_op_result_code::OK;
 			}
+		}
+
+		if (!result.success() && stage_path.exists())
+		{
+			platform::delete_file(stage_path);
 		}
 	}
 

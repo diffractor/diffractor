@@ -86,6 +86,8 @@ public:
 
 	view_element_ptr _media_element;
 	df::item_element_ptr _layout_center_item;
+	df::zoom_view_state _touch_pan_start_zoom;
+	bool _touch_pan_zoom_active = false;
 
 	view_scroller _items_scroller;
 	view_scroller _media_scroller;
@@ -279,14 +281,28 @@ public:
 
 	void pan_start(const pointi start_loc) override
 	{
+		_touch_pan_zoom_active = false;
+		if (!_display) return;
+
+		const auto region = region_at(start_loc);
+		if (region != view_region::media && region != view_region::media_scroll) return;
+		if (!_display->zoom()) return;
+
+		_display->active_zoom_pane_at(pointd(start_loc));
+		_touch_pan_start_zoom = _display->zoom_state();
+		_touch_pan_zoom_active = true;
 	}
 
 	void pan(const pointi start_loc, const pointi current_loc) override
 	{
+		if (_touch_pan_zoom_active && _display && _display->zoom())
+			_display->pan_zoom(pointd(current_loc - start_loc), _touch_pan_start_zoom);
 	}
 
 	void pan_end(const pointi start_loc, const pointi final_loc) override
 	{
+		pan(start_loc, final_loc);
+		_touch_pan_zoom_active = false;
 	}
 
 	recti calc_items_bounds() const

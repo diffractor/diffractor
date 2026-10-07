@@ -58,6 +58,7 @@ static void should_match_simd_software_blends()
 				auto actual = original;
 				for (size_t i = 0; i < count; ++i) scalar(expected.data() + i * 4, i);
 				const auto processed = simd(actual.data());
+				assert_equal(count & ~size_t{3}, processed, message);
 				for (size_t i = processed; i < count; ++i) scalar(actual.data() + i * 4, i);
 				assert_equal(true, expected == actual, message);
 			};
@@ -835,6 +836,15 @@ static void should_rotate()
 	}
 }
 
+static void should_not_cpu_transform_planar_surfaces()
+{
+	const auto planar = std::make_shared<ui::surface>();
+	assert_equal(true, planar->alloc(8, 8, ui::texture_format::NV12), "nv12 surface allocates");
+
+	const auto rotated = planar->transform(simple_transform::rot_90);
+	assert_equal(false, ui::is_valid(rotated), "planar surfaces are not transformed as packed pixels");
+}
+
 static void should_rotate133()
 {
 	const auto save_path = _temps.next_path();
@@ -1028,6 +1038,64 @@ static void should_match_the_preview_curve_to_the_applied_curve()
 	for (auto x = 1; x < ui::texture_transform::curve_len; ++x)
 	{
 		assert_equal(true, transform.curve[x] >= transform.curve[x - 1], "the tone curve never folds back");
+	}
+
+	// MEDIA-001 - raw BGRA primaries catch a saved-path red/blue swap that a grey ramp cannot.
+	{
+		ui::color_adjust desaturate;
+		desaturate.color_params(0, -1.0, 0, 0, 0, 0, 0);
+
+		const auto primaries = std::make_shared<ui::surface>();
+		assert_equal(true, primaries->alloc(3, 1, ui::texture_format::ARGB), "primary source allocated");
+		auto* const primary_row = primaries->pixels_line(0);
+		const std::array<std::array<uint8_t, 4>, 3> bgra_pixels{{
+			{0, 0, 255, 255}, // red in BGRA memory order
+			{0, 255, 0, 255},
+			{255, 0, 0, 255}
+		}};
+		for (auto x = 0; x < 3; ++x) std::memcpy(primary_row + x * 4, bgra_pixels[x].data(), 4);
+
+		const auto primary_out = std::make_shared<ui::surface>();
+		assert_equal(true, primary_out->alloc(3, 1, ui::texture_format::ARGB), "primary destination allocated");
+		assert_equal(true, desaturate.apply(primaries, primary_out->pixels(), primary_out->stride(), {}),
+		             "primary desaturation applied");
+
+		const auto* const desaturated = primary_out->pixels_line(0);
+		const std::array<int, 3> expected_luma{76, 150, 29};
+		for (auto x = 0; x < 3; ++x)
+		{
+			const auto b = static_cast<int>(desaturated[x * 4 + 0]);
+			const auto g = static_cast<int>(desaturated[x * 4 + 1]);
+			const auto r = static_cast<int>(desaturated[x * 4 + 2]);
+			assert_equal(true, std::abs(r - expected_luma[x]) <= 1, "primary red-channel luminance");
+			assert_equal(true, std::abs(g - expected_luma[x]) <= 1, "primary green-channel luminance");
+			assert_equal(true, std::abs(b - expected_luma[x]) <= 1, "primary blue-channel luminance");
+		}
+	}
+
+	// MEDIA-001 - temperature is channel-directed: warming a red pixel should not boost the stored
+	// blue byte, and cooling a blue pixel should not boost the stored red byte.
+	{
+		ui::color_adjust warm;
+		warm.color_params(0, 0, 0, 0, 0, 0, 0, 1.0, 0);
+
+		const auto src_warm = std::make_shared<ui::surface>();
+		assert_equal(true, src_warm->alloc(2, 1, ui::texture_format::ARGB), "temperature source allocated");
+		auto* const row_warm = src_warm->pixels_line(0);
+		const std::array<std::array<uint8_t, 4>, 2> bgra_pixels{{
+			{10, 20, 160, 255},
+			{160, 20, 10, 255}
+		}};
+		for (auto x = 0; x < 2; ++x) std::memcpy(row_warm + x * 4, bgra_pixels[x].data(), 4);
+
+		const auto dst_warm = std::make_shared<ui::surface>();
+		assert_equal(true, dst_warm->alloc(2, 1, ui::texture_format::ARGB), "temperature destination allocated");
+		assert_equal(true, warm.apply(src_warm, dst_warm->pixels(), dst_warm->stride(), {}),
+		             "temperature adjustment applied");
+
+		const auto* const out_warm = dst_warm->pixels_line(0);
+		assert_equal(true, out_warm[2] > row_warm[2], "warming raises red for a red-biased pixel");
+		assert_equal(true, out_warm[0] < row_warm[0], "warming lowers blue for a blue-biased pixel");
 	}
 }
 
@@ -1752,7 +1820,10 @@ static void should_keep_an_overlapped_month_selectable()
 
 void register_render_tests(view_state& state, test_registry& tests)
 {
+#if defined(COMPILE_SIMD_INTRINSIC)
+	// TEST-007 - registration follows the compiled assertion body.
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);
+#endif
 	tests.add("Should rasterise tiles identically to the whole surface"s,
 	          should_rasterise_tiles_identically_to_the_whole_surface);
 	tests.add("Should rasterise one scene to one answer on every platform"s,
@@ -1781,6 +1852,7 @@ void register_render_tests(view_state& state, test_registry& tests)
 	// Colour adjustment
 	//
 	tests.add("Should leave colour unchanged when neutral"s, should_leave_colour_unchanged_when_neutral);
+	// MEDIA-001 - saved colour adjustment must use the same BGRA channel order as preview paths.
 	tests.add("Should match the preview curve to the applied curve"s,
 	          should_match_the_preview_curve_to_the_applied_curve);
 	tests.add("Should desaturate to grey"s, should_desaturate_to_grey);
@@ -1790,6 +1862,7 @@ void register_render_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should resize"s, should_resize);
 	tests.add("Should rotate"s, should_rotate);
+	tests.add("Should not CPU transform planar surfaces"s, should_not_cpu_transform_planar_surfaces);
 	tests.add("Should rotate 133"s, should_rotate133);
 	tests.add("Should draw the logo"s, should_draw_the_logo);
 	tests.add("Should render the globe"s, should_render_the_globe);

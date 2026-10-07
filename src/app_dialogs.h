@@ -30,3 +30,6 @@ void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view
 bool can_process_selection_or_explain(const view_state& s, const view_host_base_ptr& view,
                                       const ui::control_frame_ptr& parent, std::string_view title,
                                       df::process_items_type type);
+
+bool should_refresh_advanced_search_hover_thumbnail(bool has_surface, bool has_thumbnail, bool is_staging,
+                                                    int& hover_retries);

@@ -7,8 +7,9 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: The Movie document. An ordered list of trimmed clips, the settings applied across them,
-// the derived output geometry, and the project file read and written for both. docs/movie.md owns
-// the behaviour; nothing here decodes, encodes, draws or touches the UI.
+// the derived output geometry, the project file read and written for both, and what entering Movie
+// does with the timeline it holds. docs/movie.md owns the behaviour; nothing here decodes, encodes,
+// draws or touches the UI.
 
 #pragma once
 
@@ -55,6 +56,10 @@ struct movie_clip
 	{
 		return !is_photo && (start > 0.0001 || (source_duration > 0 && end < source_duration - 0.0001));
 	}
+
+	// Compared so an edit that changes nothing can be told from one that does: a no-op must not
+	// cost an undo step or mark the timeline as holding unsaved work.
+	bool operator==(const movie_clip&) const = default;
 };
 
 struct movie_settings
@@ -64,6 +69,8 @@ struct movie_settings
 	bool fade_in = true;
 	bool fade_out = true;
 	double photo_seconds = 4.0;
+
+	bool operator==(const movie_settings&) const = default;
 };
 
 // Everything the render is told, all of it derived. docs/movie.md#7-rendering states the rules; this
@@ -231,37 +238,42 @@ public:
 
 	void append(const movie_clip& clip);
 	void insert(size_t at, const movie_clip& clip);
+	// Inserts several clips as one document edit, so one Add or one drop is one undo step. Focus
+	// and the selection land on the first clip inserted.
+	void insert_many(size_t at, const std::vector<movie_clip>& clips);
 	void remove(size_t at);
 	void move(size_t from, size_t to);
 	// Moves every selected clip to the drop point, keeping their order relative to each other and
 	// carrying focus with them. `to` counts positions in the list as it stands before the move.
 	void move_selection(size_t to);
 	void remove_selection();
+	// A replacement equal to the clip it replaces is not an edit.
 	void replace(size_t at, const movie_clip& clip);
-	// Replaces several clips as one document edit and therefore one undo step.
+	// Replaces several clips as one document edit and therefore one undo step, and none at all when
+	// every replacement equals what is already there.
 	void replace_many(const std::vector<std::pair<size_t, movie_clip>>& replacements);
 	// For a change the user did not make and cannot want to undo: the probe filling in a clip's
 	// duration and extent. An undo entry here would make Ctrl+Z appear to do nothing.
 	void replace_quietly(size_t at, const movie_clip& clip);
 
+	// Changing the default photo length retrims every photo still following it; a photo the user set
+	// explicitly keeps its own length, which is what makes the movie setting a default rather than an
+	// override. Settings equal to the current ones are not an edit.
 	void settings(const movie_settings& s);
-	// Retrims every photo still holding the default. A photo the user set explicitly keeps its own
-	// length, which is what makes the movie setting a default rather than an override.
-	void apply_photo_duration();
 
+	// Equal ranges are not an edit, so a handle pressed and released in place costs nothing.
 	void trim(size_t at, double start, double end);
 
 	void reset(std::vector<movie_clip> clips, const movie_settings& s, df::file_path path);
 	void mark_saved(df::file_path path, uint64_t revision);
 
-	// The selection a timeline was built from, and empty when it came from a project file or has
-	// been edited since. Re-entering Movie with a different selection replaces a timeline that is
-	// still exactly what that selection produced, and leaves an edited one alone: the first is a
-	// view of a selection, the second is a document.
-	const std::vector<df::file_path>& seeded_from() const { return _seed; }
-	void mark_seeded(std::vector<df::file_path> seed);
+	// A timeline just built from a selection has no state before itself, so there is nothing to
+	// undo back to and nothing yet for the user to have changed.
+	void mark_seeded();
 
 	bool can_undo() const { return !_undo.empty(); }
+	// Undoing back to the state last saved, seeded or opened leaves the timeline unmodified: there is
+	// nothing left to lose, so leaving Movie has nothing to ask.
 	void undo();
 
 	movie_timing timing() const { return calc_movie_timing(_clips, _settings); }
@@ -279,15 +291,32 @@ private:
 
 	void push_undo();
 	void select_only(size_t index);
+	void mark_clean();
+	void apply_photo_duration();
 
 	std::vector<movie_clip> _clips;
 	movie_settings _settings;
 	std::vector<undo_entry> _undo;
 	df::file_path _path;
-	std::vector<df::file_path> _seed;
 	std::vector<size_t> _selected;
 	size_t _current = 0;
 	size_t _anchor = 0;
 	bool _modified = false;
 	uint64_t _revision = 0;
+	// The undo depth at which the timeline is the one last saved, seeded or opened. Empty once that
+	// state can no longer be reached: its snapshot fell off the bounded stack, or an edit made after
+	// undoing past it replaced the history that led back to it.
+	std::optional<size_t> _clean_depth = 0;
 };
+
+// What entering Movie does with the timeline it already holds. A photo and video selection
+// different from the one the timeline was built from starts a new timeline from it; the same
+// selection, or none, returns to the timeline left behind. docs/movie.md owns the rule.
+enum class movie_entry
+{
+	resume,
+	seed,
+};
+
+movie_entry decide_movie_entry(const movie_project& project, const std::vector<df::file_path>& selection,
+                               const std::vector<df::file_path>& built_from);

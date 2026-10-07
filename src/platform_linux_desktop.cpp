@@ -22,6 +22,7 @@
 
 #include <unistd.h>
 #include <sys/stat.h>
+#include <limits.h>
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Shell verbs. Some map to XDG portals; several have no counterpart.
@@ -142,39 +143,147 @@ namespace
 	// collection that has moved between the two platforms looking like one collection.
 	constexpr int max_collision_attempts = 1000;
 
-	df::file_path next_free_file(const df::folder_path folder, const std::string_view name)
+	df::file_path collision_file_candidate(const df::folder_path folder, const std::string_view name,
+	                                       const int attempt)
 	{
-		if (const auto first = folder.combine_file(name); !platform::exists(first)) return first;
+		if (attempt == 0) return folder.combine_file(name);
 
 		const auto extension_at = df::find_ext(name);
 		const auto stem = name.substr(0, extension_at);
 		const auto extension = name.substr(extension_at);
-
-		for (auto attempt = 2; attempt < max_collision_attempts; ++attempt)
-		{
-			const auto candidate = folder.combine_file(std::format("{} ({}){}", stem, attempt, extension));
-			if (!platform::exists(candidate)) return candidate;
-		}
-
-		return {};
+		return folder.combine_file(std::format("{} ({}){}", stem, attempt + 1, extension));
 	}
 
-	df::folder_path next_free_folder(const df::folder_path parent, const std::string_view name)
+	df::folder_path collision_folder_candidate(const df::folder_path parent, const std::string_view name,
+	                                           const int attempt)
 	{
-		if (const auto first = parent.combine(name); !platform::exists(first)) return first;
-
-		for (auto attempt = 2; attempt < max_collision_attempts; ++attempt)
-		{
-			const auto candidate = parent.combine(std::format("{} ({})", name, attempt));
-			if (!platform::exists(candidate)) return candidate;
-		}
-
-		return {};
+		return attempt == 0 ? parent.combine(name) : parent.combine(std::format("{} ({})", name, attempt + 1));
 	}
 
-	platform::file_op_result copy_folder_contents(const df::folder_path source, const df::folder_path destination)
+	platform::file_op_result create_folder_exclusive(const df::folder_path path)
 	{
-		if (const auto created = platform::create_folder(destination); created.failed()) return created;
+		if (::mkdir(std::string(path.text()).c_str(), 0755) == 0) return {platform::file_op_result_code::OK};
+		if (errno == EEXIST) return {platform::file_op_result_code::ALREADY_EXISTS};
+		return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	struct directory_identity
+	{
+		dev_t dev = 0;
+		ino_t ino = 0;
+	};
+
+	bool directory_identity_of(const df::folder_path path, directory_identity& result)
+	{
+		struct stat st = {};
+		if (::stat(std::string(path.text()).c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return false;
+		result = {st.st_dev, st.st_ino};
+		return true;
+	}
+
+	bool directory_identity_of_text(const std::string& path, directory_identity& result)
+	{
+		struct stat st = {};
+		if (::stat(path.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) return false;
+		result = {st.st_dev, st.st_ino};
+		return true;
+	}
+
+	bool is_directory_symlink(const df::folder_path path)
+	{
+		struct stat st = {};
+		const std::string text(path.text());
+		return ::lstat(text.c_str(), &st) == 0 && S_ISLNK(st.st_mode);
+	}
+
+	bool same_directory(const directory_identity& left, const directory_identity& right)
+	{
+		return left.dev == right.dev && left.ino == right.ino;
+	}
+
+	bool destination_is_same_or_descendant(const df::folder_path source, const df::folder_path destination)
+	{
+		directory_identity source_id;
+		if (!directory_identity_of(source, source_id)) return false;
+
+		auto current = std::string(destination.text());
+
+		for (;;)
+		{
+			char resolved[PATH_MAX] = {};
+			if (::realpath(current.c_str(), resolved) != nullptr)
+			{
+				current = resolved;
+				break;
+			}
+
+			const auto parent = df::folder_path(current).parent();
+			const auto parent_text = std::string(parent.text());
+			if (parent_text == current) return false;
+			current = parent_text;
+		}
+
+		for (auto folder = df::folder_path(current); !folder.is_empty(); folder = folder.parent())
+		{
+			directory_identity current_id;
+			if (directory_identity_of_text(std::string(folder.text()), current_id) &&
+				same_directory(source_id, current_id))
+			{
+				return true;
+			}
+
+			const auto parent = folder.parent();
+			if (parent == folder) break;
+		}
+
+		return false;
+	}
+
+	platform::file_op_result copy_directory_symlink(const df::folder_path source, const df::folder_path destination,
+	                                                const bool replace_existing)
+	{
+		std::array<char, PATH_MAX> target{};
+		const auto target_len = ::readlink(std::string(source.text()).c_str(), target.data(), target.size() - 1);
+		if (target_len < 0) return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+
+		const std::string destination_text(destination.text());
+		if (!replace_existing && platform::exists(destination)) return {platform::file_op_result_code::ALREADY_EXISTS};
+		if (replace_existing && platform::exists(destination) && ::unlink(destination_text.c_str()) != 0)
+		{
+			return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
+		if (::symlink(std::string_view(target.data(), static_cast<size_t>(target_len)).data(),
+		              destination_text.c_str()) != 0)
+		{
+			return errno == EEXIST
+				       ? platform::file_op_result{platform::file_op_result_code::ALREADY_EXISTS}
+				       : platform::file_op_result{platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
+		return {platform::file_op_result_code::OK};
+	}
+
+	platform::file_op_result copy_folder_contents(const df::folder_path source, const df::folder_path destination,
+	                                              const bool replace_existing)
+	{
+		if (!replace_existing && platform::exists(destination)) return {platform::file_op_result_code::ALREADY_EXISTS};
+
+		if (destination_is_same_or_descendant(source, destination))
+		{
+			return {
+				platform::file_op_result_code::FAILED,
+				std::format("Cannot copy {} into itself", source.text())
+			};
+		}
+
+		if (const auto created = replace_existing
+			                         ? platform::create_folder(destination)
+			                         : create_folder_exclusive(destination);
+			created.failed())
+		{
+			return created;
+		}
 
 		// Hidden entries are part of the folder whatever the browser shows, so a copy that dropped
 		// them would be a quietly incomplete copy.
@@ -189,14 +298,31 @@ namespace
 
 		for (const auto& file : contents.files)
 		{
+			if (platform::test_linux_before_copy_folder_file_path)
+			{
+				platform::test_linux_before_copy_folder_file_path(destination.combine_file(file.name));
+			}
+
 			const auto result = platform::copy_file(source.combine_file(file.name),
-			                                        destination.combine_file(file.name), false, false);
+			                                        destination.combine_file(file.name), !replace_existing, false);
+			if (result.code == platform::file_op_result_code::ALREADY_EXISTS)
+			{
+				return {platform::file_op_result_code::FAILED, std::format("Destination exists: {}", file.name)};
+			}
 			if (result.failed()) return result;
 		}
 
 		for (const auto& folder : contents.folders)
 		{
-			const auto result = copy_folder_contents(source.combine(folder.name), destination.combine(folder.name));
+			const auto child_source = source.combine(folder.name);
+			const auto child_destination = destination.combine(folder.name);
+			const auto result = is_directory_symlink(child_source)
+				                    ? copy_directory_symlink(child_source, child_destination, replace_existing)
+				                    : copy_folder_contents(child_source, child_destination, replace_existing);
+			if (result.code == platform::file_op_result_code::ALREADY_EXISTS)
+			{
+				return {platform::file_op_result_code::FAILED, std::format("Destination exists: {}", folder.name)};
+			}
 			if (result.failed()) return result;
 		}
 
@@ -253,6 +379,10 @@ namespace
 	}
 }
 
+std::function<void(df::file_path)> platform::test_linux_before_claim_file_path;
+std::function<void(df::folder_path)> platform::test_linux_before_claim_folder_path;
+std::function<void(df::file_path)> platform::test_linux_before_copy_folder_file_path;
+
 platform::file_op_result platform::delete_items(const std::vector<df::file_path>& files,
                                                 const std::vector<df::folder_path>& folders, bool)
 {
@@ -276,6 +406,17 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
                                                 const df::folder_path target, const bool is_move,
                                                 const bool replace_existing)
 {
+	for (const auto& folder : folders)
+	{
+		if (destination_is_same_or_descendant(folder, target))
+		{
+			return {
+				file_op_result_code::FAILED,
+				std::format("Cannot copy {} into itself", folder.text())
+			};
+		}
+	}
+
 	if (const auto created = create_folder(target); created.failed()) return created;
 
 	file_op_result result{file_op_result_code::OK};
@@ -292,19 +433,30 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 
 	for (const auto& file : files)
 	{
-		const auto destination = replace_existing
-			                         ? target.combine_file(file.name())
-			                         : next_free_file(target, file.name());
+		df::file_path destination;
+		file_op_result copied{file_op_result_code::FAILED};
+		const auto attempts = replace_existing ? 1 : max_collision_attempts;
 
-		if (destination.is_empty())
+		for (auto attempt = 0; attempt < attempts; ++attempt)
 		{
-			return stopped_by({
-				file_op_result_code::FAILED, std::format("Could not find a free name for {}", file.str())
-			});
+			destination = replace_existing ? target.combine_file(file.name()) : collision_file_candidate(target, file.name(), attempt);
+			if (test_linux_before_claim_file_path) test_linux_before_claim_file_path(destination);
+
+			copied = copy_file(file, destination, !replace_existing, false);
+			if (!copied.failed() || copied.code != file_op_result_code::ALREADY_EXISTS || replace_existing) break;
 		}
 
-		const auto copied = copy_file(file, destination, false, false);
-		if (copied.failed()) return stopped_by(copied);
+		if (copied.failed())
+		{
+			if (!replace_existing && copied.code == file_op_result_code::ALREADY_EXISTS)
+			{
+				return stopped_by({
+					file_op_result_code::FAILED, std::format("Could not find a free name for {}", file.str())
+				});
+			}
+
+			return stopped_by(copied);
+		}
 
 		if (is_move)
 		{
@@ -321,22 +473,30 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 
 	for (const auto& folder : folders)
 	{
-		const auto destination = replace_existing
-			                         ? target.combine(folder.name())
-			                         : next_free_folder(target, folder.name());
+		df::folder_path destination;
+		file_op_result copied{file_op_result_code::FAILED};
+		const auto attempts = replace_existing ? 1 : max_collision_attempts;
 
-		if (destination.is_empty())
+		for (auto attempt = 0; attempt < attempts; ++attempt)
 		{
-			return stopped_by({
-				file_op_result_code::FAILED, std::format("Could not find a free name for {}", folder.text())
-			});
+			destination = replace_existing ? target.combine(folder.name()) : collision_folder_candidate(target, folder.name(), attempt);
+			if (test_linux_before_claim_folder_path) test_linux_before_claim_folder_path(destination);
+
+			copied = copy_folder_contents(folder, destination, replace_existing);
+			if (!copied.failed() || copied.code != file_op_result_code::ALREADY_EXISTS || replace_existing) break;
 		}
 
-		const auto copied = copy_folder_contents(folder, destination);
 		if (copied.failed())
 		{
+			if (!replace_existing && copied.code == file_op_result_code::ALREADY_EXISTS)
+			{
+				return stopped_by({
+					file_op_result_code::FAILED, std::format("Could not find a free name for {}", folder.text())
+				});
+			}
+
 			// The folder was created and partly filled before the failure, so it is named too.
-			result.created_files.folders.emplace_back(destination);
+			if (platform::exists(destination)) result.created_files.folders.emplace_back(destination);
 			return stopped_by(copied);
 		}
 
@@ -415,18 +575,20 @@ platform::clipboard_data_ptr platform::clipboard()
 	return {};
 }
 
-std::string platform::clipboard_text()
+std::optional<std::string> platform::clipboard_text()
 {
-	return {};
+	return std::nullopt;
 }
 
-void platform::set_clipboard(const std::vector<df::file_path>&, const std::vector<df::folder_path>&,
+bool platform::set_clipboard(const std::vector<df::file_path>&, const std::vector<df::folder_path>&,
                              const file_load_result&, bool)
 {
+	return false;
 }
 
-void platform::set_clipboard(std::string_view)
+bool platform::set_clipboard(std::string_view)
 {
+	return false;
 }
 
 platform::drop_effect platform::perform_drag(const std::any&, const std::vector<df::file_path>&,
@@ -547,7 +709,7 @@ std::wstring platform::utf8_to_utf16(const std::string_view text)
 // Audio output. Needs PipeWire or PulseAudio; see docs/linux.md.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-av_audio_device_ptr create_av_audio_device(std::string_view)
+av_audio_device_ptr create_av_audio_device(std::string_view, double)
 {
 	return {};
 }

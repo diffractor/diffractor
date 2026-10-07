@@ -44,6 +44,8 @@ String alternatives are normalized into one property snapshot. XMP generally has
 legacy fields because it is the representation Diffractor writes; format-specific readers retain
 legacy values when no higher-priority value exists. Ratings are normalized to zero through five.
 The QuickTime `rtng` atom is a content-advisory flag, not a star rating.
+For tags, an empty XMP `dc:subject` is an explicit higher-priority empty list; an absent
+`dc:subject` does not suppress legacy or container keywords.
 
 ## Dates
 
@@ -57,7 +59,9 @@ Diffractor exposes three date concepts:
 
 The scanner retains candidate values with source identity and precision, then resolves one answer per
 concept using the precedence in `model_dates.h`. A timezone-qualified instant outranks an otherwise
-equivalent floating local value. Invalid, placeholder, and out-of-range dates are ignored.
+equivalent floating local value, but the pack keeps incompatible representations distinct: a UTC
+instant and a floating wall-clock reading that display alike on the current machine remain separate
+candidate values. Invalid, placeholder, and out-of-range dates are ignored.
 
 The date pack is self-describing: readers consume fields they understand and skip later additions.
 Source-bit meanings are never reused. Compatibility fields permit older builds to recover useful
@@ -70,8 +74,10 @@ substituted for authored metadata during a metadata save.
 
 EXIF supplies camera, lens, exposure, dimensions, orientation, resolution, color space, GPS, and
 capture dates. IPTC supplies editorial title, caption, creator, copyright, location text, and
-keywords. XMP can override or extend both and carries Diffractor's editable rating, label, tags,
-description, and location values.
+keywords. JPEG stores IPTC in Photoshop image resources, so resource order, Pascal names, odd
+payload padding, and unrelated resources do not change the effective IPTC payload. XMP can override
+or extend both and carries Diffractor's editable rating, label, tags, description, and location
+values.
 
 Orientation affects presentation and is therefore not treated as display-neutral metadata. Embedded
 thumbnails and ICC profiles are parsed with the image and invalidated when their source metadata

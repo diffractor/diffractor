@@ -140,6 +140,24 @@ static void should_refuse_a_face_alignment_that_leaves_the_frame()
 	const auto at_edge = faces::align_transform(scaled_template(1.5, {-140.0, 300.0}));
 	assert_equal(true, faces::alignment_is_clipped(at_edge, {1200, 900}, t),
 	             "a face falling off the edge is refused"sv);
+
+	const auto rotated_source_crop = [](const pointd center, const double radians)
+	{
+		const auto c = std::cos(radians);
+		const auto s = std::sin(radians);
+		constexpr auto mid = 56.0;
+		const affined to_source{c, s, -s, c, center.X - c * mid + s * mid, center.Y - s * mid - c * mid};
+		return to_source.invert();
+	};
+
+	constexpr auto quarter_turn = 3.14159265358979323846 / 4.0;
+	const auto mostly_inside = rotated_source_crop({100.0, 50.0}, quarter_turn);
+	assert_equal(false, faces::alignment_is_clipped(mostly_inside, {200, 100}, t),
+	             "rotated clipping measures the actual crop polygon"sv);
+
+	const auto mostly_outside = rotated_source_crop({100.0, 0.0}, quarter_turn);
+	assert_equal(true, faces::alignment_is_clipped(mostly_outside, {200, 100}, t),
+	             "rotated crops over the padding threshold are refused"sv);
 }
 
 static void should_compare_face_vectors_by_cosine()
@@ -883,6 +901,13 @@ static void should_store_and_reload_faces()
 	assert_equal(14.0, decoded.faces[0].marks[4].X, "the landmarks survive"sv);
 	assert_near(f.vec[64], decoded.faces[0].vec[64], 1e-6, "the vector survives"sv);
 
+	auto edge = fs;
+	edge.faces[0].bounds = rectd{-40.0, 20.0, 130.0, 140.0};
+	const auto decoded_edge = df::decode_faces(df::encode_faces(edge));
+	assert_equal(faces::model_version, decoded_edge.model_version,
+	             "an edge face extending outside the frame remains current"sv);
+	assert_equal(-40.0, decoded_edge.faces[0].bounds.X, "edge geometry stays unclamped in storage"sv);
+
 	// A truncated blob is treated as unscanned rather than half-read, so the pass fills it again
 	// instead of publishing faces that are not all there.
 	const df::cspan truncated{encoded.data(), encoded.size() - 40};
@@ -896,9 +921,23 @@ static void should_store_and_reload_faces()
 	             "a short record stride is not current"sv);
 	auto non_finite = encoded.clone();
 	const auto nan = std::numeric_limits<float>::quiet_NaN();
-	memcpy(non_finite.data() + 28, &nan, sizeof(nan));
+	memcpy(non_finite.data() + 36, &nan, sizeof(nan));
 	assert_equal(0, static_cast<int>(df::decode_faces(non_finite).model_version),
 	             "a non-finite face record is not current"sv);
+	auto infinite = encoded.clone();
+	const auto inf = std::numeric_limits<float>::infinity();
+	memcpy(infinite.data() + 36, &inf, sizeof(inf));
+	assert_equal(0, static_cast<int>(df::decode_faces(infinite).model_version),
+	             "an infinite face coordinate is not current"sv);
+	auto extreme = encoded.clone();
+	const auto huge = 1e30f;
+	memcpy(extreme.data() + 36, &huge, sizeof(huge));
+	assert_equal(0, static_cast<int>(df::decode_faces(extreme).model_version),
+	             "a finite but out-of-bounds face coordinate is not current"sv);
+	auto empty = fs;
+	empty.faces[0].bounds.Width = 0.0;
+	assert_equal(0, static_cast<int>(df::decode_faces(df::encode_faces(empty)).model_version),
+	             "an empty face rectangle is not current"sv);
 	auto missing_extent = fs;
 	missing_extent.source_extent = {};
 	assert_equal(0, static_cast<int>(df::decode_faces(df::encode_faces(missing_extent)).model_version),
@@ -1028,6 +1067,7 @@ void register_faces_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should fit face landmarks to the reference template"s, should_fit_landmarks_to_the_reference_template);
 	tests.add("Should align faces without shearing them"s, should_align_faces_without_shearing_them);
+	// SRC-040 - rotated crop clipping measures the actual polygon, not its bounding box.
 	tests.add("Should refuse a face alignment that leaves the frame"s,
 	          should_refuse_a_face_alignment_that_leaves_the_frame);
 	tests.add("Should compare face vectors by cosine"s, should_compare_face_vectors_by_cosine);
@@ -1049,6 +1089,7 @@ void register_faces_tests(view_state& state, test_registry& tests)
 	tests.add("Should move a face to the face group it ended up nearest"s,
 	          should_move_a_face_to_the_group_it_ended_up_nearest);
 	tests.add("Should show twenty distinct sidebar faces"s, should_show_twenty_distinct_sidebar_faces);
+	// SRC-041 - malformed face records are rejected before integer crop conversion.
 	tests.add("Should store and reload faces"s, should_store_and_reload_faces);
 	tests.add("Should treat a face model change as unscanned"s, should_treat_a_model_change_as_unscanned);
 	tests.add("Should parse face tokens"s, should_parse_face_tokens);

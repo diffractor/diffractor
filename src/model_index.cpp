@@ -61,6 +61,8 @@ static_assert(std::atomic<df::date_t>::is_always_lock_free);
 static_assert(std::atomic<df::duplicate_info>::is_always_lock_free);
 static_assert(std::atomic<search_presence_mask>::is_always_lock_free);
 
+std::function<void(df::folder_path folder, int attempt)> test_after_validate_folder_snapshot;
+
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -109,22 +111,54 @@ static const df::search_t& resolve_related(const df::search_t& search, const ind
 	}
 
 	const auto path = search.related().path;
+	const auto load_index_facts = [](df::related_info& r, const df::index_file_item& found)
+	{
+		r.name = found.name;
+		r.size = found.size;
+		r.file_created = found.file_created;
+		r.ft = found.ft;
+		r.crc32c = found.crc32c.load();
+		const auto duplicates = found.duplicates.load();
+		r.group = duplicates.group;
+		r.exact_group = found.exact_duplicate_group.load();
+		r.duplicate_grade = duplicates.grade;
+		r.duplicate_crowded = duplicates.same_picture_crowded;
+
+		if (const auto hashes = found.phash.load())
+		{
+			r.phash = hashes->rotations;
+		}
+
+		const auto md = found.metadata.load();
+
+		if (md)
+		{
+			r.gps = md->coordinate;
+			r.metadata_created = md->created();
+			r.dimensions = md->dimensions();
+			r.album = md->album;
+			r.album_artist = md->album_artist;
+			r.show = md->show;
+			r.season = md->season;
+			r.episode = md->episode;
+			r.disk = md->disk;
+			r.track = md->track;
+		}
+	};
 
 	if (search.related().is_loaded)
 	{
 		// The snapshot was taken when the command ran, but duplicate grouping is recomputed behind it
-		// and is what the strongest relation is decided by. Only that one field is refreshed, and
-		// only from the index, which owns it.
+		// and perceptual groups are anchored, so the direct pair evidence is refreshed from the index.
 		const auto found = state.find_item(path);
-		const auto group = found.ft ? found.duplicates.load().group : 0;
 
-		if (group == 0 || group == search.related().group)
+		if (!found.ft)
 		{
 			return search;
 		}
 
 		df::related_info r = search.related();
-		r.group = group;
+		load_index_facts(r, found);
 
 		storage = search;
 		storage.related(r);
@@ -138,27 +172,7 @@ static const df::search_t& resolve_related(const df::search_t& search, const ind
 
 	if (found.ft)
 	{
-		r.name = found.name;
-		r.size = found.size;
-		r.file_created = found.file_created;
-		r.ft = found.ft;
-		r.crc32c = found.crc32c.load();
-		r.group = found.duplicates.load().group;
-
-		const auto md = found.metadata.load();
-
-		if (md)
-		{
-			r.gps = md->coordinate;
-			r.metadata_created = md->created();
-			r.album = md->album;
-			r.album_artist = md->album_artist;
-			r.show = md->show;
-			r.season = md->season;
-			r.episode = md->episode;
-			r.disk = md->disk;
-			r.track = md->track;
-		}
+		load_index_facts(r, found);
 	}
 	else
 	{
@@ -288,7 +302,7 @@ static void iterate_items(const df::search_t& search_in,
 							// The wildcard names the files being looked for, not the folders they are
 							// under. Gating the descent on it left "*.jpg" searching only folders called
 							// *.jpg, so every nested match was missed.
-							if (recursive)
+							if (recursive && folder_entry->can_recurse)
 							{
 								folders.emplace_back(folder_path);
 							}
@@ -762,9 +776,15 @@ bool index_state::is_in_collection(const df::folder_path folder) const
 
 	{
 		platform::shared_lock lock(_summary_rw);
+		const auto roots = _summary._roots;
 
-		if (_summary._roots.folders.contains(folder) ||
-			_summary._roots.folders.contains(parent))
+		if (df::is_excluded(roots, folder))
+		{
+			return false;
+		}
+
+		if (roots.folders.contains(folder) ||
+			roots.folders.contains(parent))
 		{
 			return true;
 		}
@@ -797,7 +817,10 @@ static df::index_folder_item_ptr find_or_create_folder(index_items& items, const
 	candidate->modified = fd.attributes.modified;
 	candidate->created = fd.attributes.created;
 	candidate->is_read_only = fd.attributes.is_readonly;
-	return items.find_or_create(path, std::move(candidate));
+	candidate->can_recurse = fd.can_recurse;
+	const auto result = items.find_or_create(path, std::move(candidate));
+	result->can_recurse = fd.can_recurse;
+	return result;
 }
 
 void populate_file_info(df::index_file_item& file_node, const platform::file_info& fd, const bool cache_items_loaded)
@@ -857,7 +880,8 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
                                                                  const bool refresh_from_file_system,
                                                                  const df::date_t timestamp)
 {
-	auto existing_folder = _items.find(folder_path);
+	auto existing_snapshot = _items.find_snapshot(folder_path);
+	auto existing_folder = existing_snapshot.folder;
 
 	if (refresh_from_file_system || !existing_folder)
 	{
@@ -868,6 +892,10 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 		std::vector<df::folder_path> removed_folders;
 		std::unordered_multimap<std::string_view, str::cached, df::ihash, df::ieq> sidecars;
 		df::hash_set<std::string_view, df::ihash, df::ieq> sidecar_extensions;
+		// Files whose stored checksum or picture hash no longer describes their bytes. Clearing the
+		// node's copy only lasts the session: the rows keep theirs, and the next launch loads them.
+		std::vector<df::file_path> stale_hashes;
+		df::dense_unique_strings loaded_from_database;
 
 		[[maybe_unused]] auto less_ptr_name = [](const auto& a, const auto& b) { return str::icmp(a->name, b->name) < 0; };
 		auto less_name = [](const auto& a, const auto& b) { return str::icmp(a.name, b.name) < 0; };
@@ -880,14 +908,27 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			// Enumeration failed (offline volume, denied access, network drop). Rebuilding from
 			// the empty listing would erase this branch of the index and expire its database rows.
 			add_distinct_other_folders({folder_path});
-			return {existing_folder, false};
+			return {existing_folder, false, true};
 		}
-
-		updated_folders.reserve(contents.folders.size());
-		updated_files.reserve(contents.files.size());
 
 		std::ranges::sort(contents.folders, less_name);
 		std::ranges::sort(contents.files, less_name);
+
+		for (auto publication_attempt = 0; publication_attempt < 3; ++publication_attempt)
+		{
+		existing_snapshot = _items.find_snapshot(folder_path);
+		existing_folder = existing_snapshot.folder;
+		if (test_after_validate_folder_snapshot) test_after_validate_folder_snapshot(folder_path, publication_attempt);
+		changes_detected = false;
+		updated_files.clear();
+		updated_folders.clear();
+		updated_folders.reserve(contents.folders.size());
+		updated_files.reserve(contents.files.size());
+		removed_folders.clear();
+		sidecars.clear();
+		sidecar_extensions.clear();
+		stale_hashes.clear();
+		loaded_from_database.clear();
 
 		auto folder_first = contents.folders.begin();
 		const auto folder_last = contents.folders.end();
@@ -965,10 +1006,6 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 		auto file_first = contents.files.begin();
 		const auto file_last = contents.files.end();
 
-		// Files whose stored checksum or picture hash no longer describes their bytes. Clearing the
-		// node's copy only lasts the session: the rows keep theirs, and the next launch loads them.
-		std::vector<df::file_path> stale_hashes;
-
 		const auto forget_hashes = [&stale_hashes, &folder_path](df::index_file_item& info)
 		{
 			// Asked of the copy, so a file cleared for two reasons is recorded once.
@@ -1014,6 +1051,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					// copy: in both
 					df::index_file_item info = *old_first;
+					const auto was_loaded_from_database = !old_first->file_modified.load().is_valid();
 					info.metadata.store(old_first->metadata);
 					info.metadata_scanned = old_first->metadata_scanned.load();
 					info.crc32c = old_first->crc32c.load();
@@ -1047,6 +1085,7 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 
 					const auto was_offline = old_first->flags && df::index_item_flags::is_offline;
 					populate_file_info(info, *file_first, _cache_items_loaded);
+					if (was_loaded_from_database) loaded_from_database.emplace(info.name);
 					const auto now_offline = info.flags && df::index_item_flags::is_offline;
 
 					if (was_offline != now_offline)
@@ -1135,63 +1174,63 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			}
 		}
 
-		if (!sidecars.empty())
+		for (const auto& file : updated_files)
 		{
-			for (const auto& file : updated_files)
+			const auto name = file.name;
+			const auto path = folder_path.combine_file(name);
+
+			if (!file.ft->sidecars.empty())
 			{
-				const auto name = file.name;
-				const auto path = folder_path.combine_file(name);
+				const auto without_extension = path.file_name_without_extension();
 
-				if (!file.ft->sidecars.empty())
+				std::set<std::string_view> updated_sidecars;
+				const auto found_with_extension = sidecars.equal_range(name);
+
+				for (auto it = found_with_extension.first; it != found_with_extension.second; ++it)
 				{
-					const auto without_extension = path.file_name_without_extension();
+					updated_sidecars.emplace(it->second);
+				}
 
-					std::set<std::string_view> updated_sidecars;
-					const auto found_with_extension = sidecars.equal_range(name);
+				const auto found_without_extension = sidecars.equal_range(without_extension);
 
-					for (auto it = found_with_extension.first; it != found_with_extension.second; ++it)
+				for (auto it = found_without_extension.first; it != found_without_extension.second; ++it)
+				{
+					updated_sidecars.emplace(it->second);
+				}
+
+				const auto ps = file.metadata.load();
+				const auto combined = str::combine(updated_sidecars);
+				str::cached xmp;
+
+				for (const auto& sc_name : updated_sidecars)
+				{
+					const auto ext = sc_name.substr(df::find_ext(sc_name));
+
+					if (str::icmp(ext, ".xmp") == 0)
 					{
-						updated_sidecars.emplace(it->second);
+						xmp = str::cache(sc_name);
 					}
 
-					const auto found_without_extension = sidecars.equal_range(without_extension);
+					const auto found = find_file(updated_files, sc_name);
 
-					for (auto it = found_without_extension.first; it != found_without_extension.second; ++it)
+					if (found != updated_files.end())
 					{
-						updated_sidecars.emplace(it->second);
+						found->flags |= df::index_item_flags::is_sidecar;
 					}
+				}
 
-					const auto ps = file.metadata.load();
-					const auto combined = str::combine(updated_sidecars);
-					str::cached xmp;
-
-					for (const auto& sc_name : updated_sidecars)
-					{
-						const auto ext = sc_name.substr(df::find_ext(sc_name));
-
-						if (str::icmp(ext, ".xmp") == 0)
-						{
-							xmp = str::cache(sc_name);
-						}
-
-						const auto found = find_file(updated_files, sc_name);
-
-						if (found != updated_files.end())
-						{
-							found->flags |= df::index_item_flags::is_sidecar;
-						}
-					}
-
-					if (!ps || icmp(ps->sidecars, combined) != 0 || icmp(ps->xmp, xmp) != 0)
-					{
-						auto updated = ps
-							               ? std::make_shared<prop::item_metadata>(*ps)
-							               : std::make_shared<prop::item_metadata>();
-						updated->sidecars = str::cache(combined);
-						updated->xmp = xmp;
-						file.metadata.store(std::move(updated));
-						changes_detected = true;
-					}
+				if ((ps && (icmp(ps->sidecars, combined) != 0 || icmp(ps->xmp, xmp) != 0)) ||
+					(!ps && (!combined.empty() || !is_empty(xmp))))
+				{
+					const auto was_loaded_from_database = loaded_from_database.contains(file.name);
+					auto updated = ps
+						               ? std::make_shared<prop::item_metadata>(*ps)
+						               : std::make_shared<prop::item_metadata>();
+					updated->sidecars = str::cache(combined);
+					updated->xmp = xmp;
+					file.metadata.store(std::move(updated));
+					if (!was_loaded_from_database) file.metadata_scanned = df::date_t{};
+					changes_detected = true;
 				}
 			}
 		}
@@ -1232,7 +1271,8 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			// the index, and it is in the node rather than in the file items - which were copied,
 			// atomics and all, when this pass started. Publishing over it would lose every scan
 			// result recorded in that window and send those files back through the scanner.
-			auto published = _items.replace_if(folder_path, existing_folder, folder_node);
+			auto published = _items.replace_if(folder_path, existing_folder, existing_snapshot.content_revision,
+			                                   folder_node);
 
 			// Except a node that holds nothing, which has nothing to lose. When this folder had no
 			// node at all, the usual one is the placeholder a validation of the parent creates for it
@@ -1247,15 +1287,24 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 				folder_node->volume = published->volume;
 				folder_node->created = published->created;
 				folder_node->modified = published->modified;
-				published = _items.replace_if(folder_path, published, folder_node);
+				const auto current_snapshot = _items.find_snapshot(folder_path);
+				published = current_snapshot.folder == published
+					            ? _items.replace_if(folder_path, published, current_snapshot.content_revision,
+					                                folder_node)
+					            : current_snapshot.folder;
 			}
 
 			if (published != folder_node)
 			{
+				if (published == existing_folder && existing_folder)
+				{
+					if (publication_attempt + 1 < 3) continue;
+					queue_deferred_validation(folder_path, false);
+				}
 				// Lost the race. Discarding this pass costs only work that will be redone; the
 				// removals it found were decided against the same stale view, so they go too.
 				add_distinct_other_folders({folder_path});
-				return {published, false};
+				return {published, false, false, published == existing_folder && existing_folder};
 			}
 
 			_items.erase(removed_folders);
@@ -1279,6 +1328,8 @@ index_state::validate_folder_result index_state::validate_folder(const df::folde
 			}
 
 			return {folder_node, changes_detected};
+		}
+		break;
 		}
 	}
 
@@ -1361,12 +1412,20 @@ void index_state::scan_uncached(const df::cancel_token& token)
 
 	stats.index_item_count = static_cast<int>(items_in_index);
 	stats.index_item_remaining = static_cast<int>(uncached.size());
+	const auto publish_progress = [this, total = stats.index_item_count](const int remaining,
+	                                                                    const bool invalidate)
+	{
+		_indexing_progress.store(std::make_shared<const index_progress_snapshot>(
+			index_progress_snapshot{total, remaining}));
+		if (invalidate) _async.invalidate_view(view_invalid::view_layout);
+	};
 
-	_async.invalidate_view(view_invalid::view_layout);
+	publish_progress(stats.index_item_remaining, true);
 
 	// A first index walks the whole collection here, so the database hand-off is grouped: one row at
 	// a time woke the database thread and opened a transaction per file.
 	db_write_batch writes(*this);
+	auto scanned_since_progress = 0;
 
 	for (const auto& id : uncached)
 	{
@@ -1381,13 +1440,19 @@ void index_state::scan_uncached(const df::cancel_token& token)
 		}
 
 		--stats.index_item_remaining;
+		if (++scanned_since_progress >= 64)
+		{
+			scanned_since_progress = 0;
+			publish_progress(stats.index_item_remaining, true);
+		}
 	}
 
 	writes.flush();
 	stats.index_item_remaining = 0;
+	publish_progress(0, false);
 
 	_async.invalidate_view(view_invalid::view_layout | view_invalid::group_layout);
-	_fully_loaded = !token.is_cancelled();
+	_fully_loaded = !token.is_cancelled() && _collection_discovery_complete;
 }
 
 std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roots, const bool recursive,
@@ -1400,6 +1465,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 	auto update_index_summary = false;
 	db_write_batch writes(*this);
+	df::unique_folders revisited;
 
 	while (!folders_to_scan.empty())
 	{
@@ -1411,6 +1477,15 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 		if (!is_excluded(roots, folder_path))
 		{
 			const auto node = validate_folder(folder_path, true, now);
+
+			// The node may predate the file system, so it is listed once the rest of the walk is done,
+			// by when the writers holding it up have usually moved on. A second deferral lists it as it
+			// stands rather than leave it out.
+			if (node.deferred && revisited.emplace(folder_path).second)
+			{
+				folders_to_scan.insert(folders_to_scan.begin(), folder_path);
+				continue;
+			}
 
 			// Null when enumeration failed for a folder that was never indexed - an offline volume,
 			// a dropped share, or a directory that grants write but not list.
@@ -1435,7 +1510,7 @@ std::vector<folder_scan_item> index_state::scan_items(const df::index_roots& roo
 
 				for (const auto& sub_folder : *folders_snapshot)
 				{
-					folders_to_scan.emplace_back(folder_path.combine(sub_folder->name));
+					if (sub_folder->can_recurse) folders_to_scan.emplace_back(folder_path.combine(sub_folder->name));
 				}
 			}
 
@@ -1474,7 +1549,8 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
                                     const bool publish_to_item,
                                     const df::index_file_item& file,
                                     const df::date_t now,
-                                    const bool invalidate_summary)
+                                    const bool invalidate_summary,
+                                    const uint64_t thumbnail_generation)
 {
 	// Cloud-only placeholder (OneDrive Files On-Demand, GVFS, etc.). Read cached metadata
 	// (and, when the shell has one, a cached thumbnail) via the Windows Shell property
@@ -1491,8 +1567,7 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 	item_db_write write;
 	write.path = file_path;
 	write.metadata_scanned = now;
-	write.modified = file.file_modified;
-
+	auto in_collection = false;
 	if (resp == platform::get_cached_file_properties_response::ok)
 	{
 		df::scope_locked_inc l(scanning_items);
@@ -1529,25 +1604,37 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 		else if (want_thumb)
 		{
 			// Metadata came back but no cached thumbnail is available offline.
-			publish_thumbnail_failure(item, file_path);
+			publish_thumbnail_failure(item, file_path, thumbnail_generation);
 		}
 
-		const auto existing_metadata = file.metadata.load();
-
-		if (existing_metadata)
+		const auto published = _items.update_file(file_path, [&](const df::index_folder_item_ptr& current_folder,
+		                                                         const df::index_file_item& current_file)
 		{
-			metadata->sidecars = existing_metadata->sidecars;
-			metadata->xmp = existing_metadata->xmp;
-			metadata->media_position = existing_metadata->media_position;
-		}
+			write.modified = current_file.file_modified;
+			const auto existing_metadata = current_file.metadata.load();
 
-		file.metadata_scanned = now;
-		file.metadata.store(metadata);
-		write.md = metadata;
+			if (existing_metadata)
+			{
+				metadata->sidecars = existing_metadata->sidecars;
+				metadata->xmp = existing_metadata->xmp;
+				metadata->media_position = existing_metadata->media_position;
+			}
+
+			current_file.metadata_scanned = now;
+			current_file.metadata.store(metadata);
+			write.md = metadata;
+			current_file.calc_search_presence();
+			current_folder->update_search_presence(current_file);
+			in_collection = current_folder->is_in_collection.load();
+			return true;
+		});
+
+		if (!published) return;
 
 		if (publish_to_item && is_valid(thumbnail_image))
 		{
-			publish_thumbnail(item, file_path, thumbnail_image, {}, file.file_modified, false, true);
+			publish_thumbnail(item, file_path, thumbnail_image, {}, write.modified.value_or(df::date_t{}),
+			                  thumbnail_generation, false, true);
 		}
 	}
 	else
@@ -1557,19 +1644,37 @@ void index_state::scan_offline_item(const df::index_folder_item_ptr& folder,
 		// write.md so perform_writes performs an insert-or-replace that creates the row -- a
 		// bare metadata_scanned update would affect zero rows when no row exists yet.
 		metadata->file_name = file_path.name();
-		file.metadata_scanned = now;
-		file.metadata.store(metadata);
-		write.md = metadata;
+		const auto published = _items.update_file(file_path, [&](const df::index_folder_item_ptr& current_folder,
+		                                                         const df::index_file_item& current_file)
+		{
+			write.modified = current_file.file_modified;
+			const auto existing_metadata = current_file.metadata.load();
+			if (existing_metadata)
+			{
+				metadata->sidecars = existing_metadata->sidecars;
+				metadata->xmp = existing_metadata->xmp;
+				metadata->media_position = existing_metadata->media_position;
+			}
+			current_file.metadata_scanned = now;
+			current_file.metadata.store(metadata);
+			write.md = metadata;
+			current_file.calc_search_presence();
+			current_folder->update_search_presence(current_file);
+			in_collection = current_folder->is_in_collection.load();
+			return true;
+		});
+
+		if (!published) return;
 
 		if (want_thumb)
 		{
-			publish_thumbnail_failure(item, file_path);
+			publish_thumbnail_failure(item, file_path, thumbnail_generation);
 		}
 	}
 
 	enqueue_db_write(std::move(write));
 
-	if (invalidate_summary && folder->is_in_collection)
+	if (invalidate_summary && in_collection)
 	{
 		_async.invalidate_view(view_invalid::index_summary);
 	}
@@ -1587,7 +1692,9 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
                                     const bool publish_to_item,
                                     const bool publish_item_update_immediately,
                                     const bool invalidate_summary,
-                                    db_write_batch* writes)
+                                    db_write_batch* writes,
+                                    const bool clear_existing_hashes,
+                                    const uint64_t thumbnail_generation)
 {
 	const auto queue_write = [this, writes](item_db_write w)
 	{
@@ -1633,6 +1740,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		write.path = file_path;
 		write.md = metadata;
 		write.metadata_scanned = now;
+		write.clear_hashes = clear_existing_hashes;
 
 		ui::const_image_ptr cover_art;
 		ui::const_image_ptr thumbnail_image;
@@ -1733,7 +1841,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 
 				if (publish_to_item)
 				{
-					publish_thumbnail_failure(item, file_path);
+					publish_thumbnail_failure(item, file_path, thumbnail_generation);
 				}
 			}
 		}
@@ -1741,7 +1849,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		{
 			if (publish_to_item)
 			{
-				publish_thumbnail_failure(item, file_path);
+				publish_thumbnail_failure(item, file_path, thumbnail_generation);
 			}
 		}
 
@@ -1755,33 +1863,49 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 			write.thumb_scanned = thumbnail_version;
 		}
 
-		const auto existing_metadata = found_file->metadata.load();
-
-		if (existing_metadata && metadata)
+		auto in_collection = false;
+		const auto published = _items.update_file(file_path, [&](const df::index_folder_item_ptr& current_folder,
+		                                                         const df::index_file_item& current_file)
 		{
-			metadata->sidecars = existing_metadata->sidecars;
-			metadata->xmp = existing_metadata->xmp;
-			// Playback position lives only in the index and database, so a rescan that
-			// did not read it must carry it or the resume point is lost.
-			metadata->media_position = existing_metadata->media_position;
-		}
+			if (clear_existing_hashes)
+			{
+				current_file.crc32c = 0;
+				current_file.phash = nullptr;
+			}
 
-		metadata->file_name = file_path.name();
-		found_file->metadata_scanned = now;
-		found_file->metadata.store(metadata);
+			const auto existing_metadata = current_file.metadata.load();
 
-		// Same guard as the database write above: scan_file only computes a CRC when it read the whole
-		// file, so an ordinary thumbnail scan of a video answers zero. Storing that would clear a value
-		// the database still holds and silently drop the item out of duplicate detection.
-		if (sr.crc32c)
-		{
-			found_file->crc32c = sr.crc32c;
-		}
+			if (existing_metadata && metadata)
+			{
+				metadata->sidecars = existing_metadata->sidecars;
+				metadata->xmp = existing_metadata->xmp;
+				// Playback position lives only in the index and database, so a rescan that
+				// did not read it must carry it or the resume point is lost.
+				metadata->media_position = existing_metadata->media_position;
+			}
 
-		// search_presence is a hard rejection filter, so it must be refreshed with every
-		// published metadata snapshot or a newly matching item stays invisible to search
-		found_file->calc_search_presence();
-		folder->update_search_presence(*found_file);
+			metadata->file_name = file_path.name();
+			current_file.metadata_scanned = now;
+			current_file.metadata.store(metadata);
+
+			// Same guard as the database write above: scan_file only computes a CRC when it read the whole
+			// file, so an ordinary thumbnail scan of a video answers zero. Storing that would clear a value
+			// the database still holds and silently drop the item out of duplicate detection.
+			if (sr.crc32c)
+			{
+				current_file.crc32c = sr.crc32c;
+			}
+
+			// search_presence is a hard rejection filter, so it must be refreshed with every
+			// published metadata snapshot or a newly matching item stays invisible to search
+			current_file.calc_search_presence();
+			current_folder->update_search_presence(current_file);
+			write.modified = current_file.file_modified;
+			in_collection = current_folder->is_in_collection.load();
+			return true;
+		});
+
+		if (!published) return;
 
 		// For the immediate post-edit scan, metadata_scanned is stamped with the file's own
 		// (handle-read) modified time. That makes needs_scan_impl (metadata_scanned <
@@ -1789,8 +1913,6 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		// and after the background validate_folder refreshes file_modified to the same post-edit
 		// mtime, so the queued background rescan is a no-op and never reopens the file BY NAME
 		// (which could read stale SMB-cached bytes).
-
-		write.modified = found_file->file_modified;
 
 		if (publish_to_item)
 		{
@@ -1806,6 +1928,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 				// screenful appear at once instead of filling in as each one decoded.
 				publish_thumbnail(item, file_path, thumbnail_image, cover_art,
 				                  thumbnail_was_loaded ? thumbnail_version : df::date_t::null,
+				                  thumbnail_generation,
 				                  thumbnail_was_loaded,
 				                  thumbnail_needed || publish_item_update_immediately);
 			}
@@ -1813,7 +1936,7 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 
 		queue_write(std::move(write));
 
-		if (invalidate_summary && folder->is_in_collection)
+		if (invalidate_summary && in_collection)
 		{
 			_async.invalidate_view(view_invalid::index_summary);
 		}
@@ -1827,13 +1950,19 @@ void index_state::apply_scan_result(const df::index_folder_item_ptr& folder,
 		// later touch of the file that lands before that moment would then read as already scanned.
 		// Against the file's own time the record says which version was attempted, and a file that
 		// changes at all re-opens the question.
-		write.metadata_scanned = found_file->file_modified.load();
-		write.modified = found_file->file_modified;
+		const auto published = _items.update_file(file_path, [&](const df::index_folder_item_ptr&,
+		                                                         const df::index_file_item& current_file)
+		{
+			write.metadata_scanned = current_file.file_modified.load();
+			write.modified = current_file.file_modified;
+			return true;
+		});
+		if (!published) return;
 		queue_write(std::move(write));
 
 		if (load_thumb && publish_to_item)
 		{
-			publish_thumbnail_failure(item, file_path);
+			publish_thumbnail_failure(item, file_path, thumbnail_generation);
 		}
 	}
 }
@@ -1850,7 +1979,8 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
                             const bool force,
                             const bool publish_item_update_immediately,
                             const bool invalidate_summary,
-                            db_write_batch* writes)
+                            db_write_batch* writes,
+                            const uint64_t thumbnail_generation)
 {
 	const auto now = platform::now();
 	const auto found_file = find_file(folder->files, file_path.name());
@@ -1873,7 +2003,7 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 					// Cloud-only placeholder: never hydrate during indexing. Read cached
 					// shell metadata/thumbnail instead. See scan_offline_item().
 					scan_offline_item(folder, file_path, thumbnail_needed, item, publish_to_item, *found_file, now,
-					                  invalidate_summary);
+					                  invalidate_summary, thumbnail_generation);
 				}
 				else
 				{
@@ -1883,14 +2013,14 @@ void index_state::scan_item(const df::index_folder_item_ptr& folder,
 
 					apply_scan_result(folder, file_path, sr, now, thumbnail_version, load_thumb, thumbnail_needed,
 					                  had_thumbnail, item, publish_to_item, publish_item_update_immediately,
-					                  invalidate_summary, writes);
+					                  invalidate_summary, writes, false, thumbnail_generation);
 				}
 			}
 			else if (load_thumb && publish_to_item)
 			{
 				// Skipping silently would leave the tile blank, which reads as still loading rather
 				// than as a file the app refuses to open. See docs/design.md system states.
-				publish_thumbnail_failure(item, file_path);
+				publish_thumbnail_failure(item, file_path, thumbnail_generation);
 			}
 		}
 
@@ -1942,18 +2072,30 @@ void index_state::apply_scan_now(const item_scan_request& request, const file_sc
 		return;
 	}
 
+	const auto revision_changed = coherent && found_file->file_modified.load() != known_modified;
+
 	// A coherent scan came through the post-swap handle, so stamping both times from the file's own
 	// modified time makes the later background rescan a no-op. The record's own modified time has to
 	// advance with them: leaving it at the pre-edit value makes thumbnail_timestamp != file_modified,
 	// which is what should_load_thumbnail() tests, so the "no-op" background rescan would re-read and
 	// re-decode the file we just wrote.
-	if (coherent) found_file->file_modified = known_modified;
+	if (coherent)
+	{
+		const auto updated = _items.update_file(request.path, [known_modified](const df::index_folder_item_ptr&,
+		                                                                       const df::index_file_item& file)
+		{
+			file.file_modified = known_modified;
+			return true;
+		});
+		if (!updated) return;
+	}
 
 	const auto now = coherent ? known_modified : platform::now();
 	const auto thumbnail_version = coherent ? known_modified : found_file->file_modified.load();
 
 	apply_scan_result(node.folder, request.path, sr, now, thumbnail_version, request.load_thumbnail,
-	                  request.thumbnail_needed, request.had_thumbnail, request.lifetime, true, true, true);
+	                  request.thumbnail_needed, request.had_thumbnail, request.lifetime, true, true, true, nullptr,
+	                  revision_changed, request.thumbnail_generation);
 
 	publish_item_update(request.lifetime, request.path);
 }
@@ -2030,19 +2172,20 @@ void index_state::save_crc(const df::file_path id, const index_file_revision rev
 {
 	_async.queue_async(async_queue::work, [this, id, revision, crc]
 	{
-		const auto f = _items.find(id.folder());
-		if (!f) return;
+		const auto published = _items.update_file(id, [&](const df::index_folder_item_ptr& folder,
+		                                                  const df::index_file_item& file)
+		{
+			// The checksum describes the bytes that were read. A file replaced while it was being read
+			// is a different file at the same name, so the checksum is dropped rather than attached to
+			// content it does not describe.
+			if (!(revision_of(file) == revision)) return false;
 
-		const auto found_file = find_file(f->files, id.name());
-
-		// The checksum describes the bytes that were read. A file replaced while it was being read
-		// is a different file at the same name, so the checksum is dropped rather than attached to
-		// content it does not describe.
-		if (found_file == f->files.end() || !(revision_of(*found_file) == revision)) return;
-
-		found_file->crc32c = crc;
-		found_file->calc_search_presence();
-		f->update_search_presence(*found_file);
+			file.crc32c = crc;
+			file.calc_search_presence();
+			folder->update_search_presence(file);
+			return true;
+		});
+		if (!published) return;
 
 		item_db_write write;
 		write.path = id;
@@ -2059,34 +2202,29 @@ void index_state::save_phash(const df::file_path id, const index_file_revision r
 	save_phashes(std::move(one));
 }
 
-void index_state::save_phashes(std::vector<phash_result> hashes)
+void index_state::save_phashes(std::vector<phash_result> hashes, const bool continue_predictions)
 {
-	if (hashes.empty()) return;
+	if (hashes.empty() && !continue_predictions) return;
 
 	// Verified and published on one hop, and the database row written only for what survived: a
 	// write enqueued ahead of the check would persist a hash the index had already refused.
-	_async.queue_async(async_queue::work, [this, hashes = std::move(hashes)]
+	_async.queue_async(async_queue::work, [this, hashes = std::move(hashes), continue_predictions]
 	{
 		std::vector<item_db_write> writes;
 		writes.reserve(hashes.size());
 
 		for (const auto& result : hashes)
 		{
-			const auto f = _items.find(result.path.folder());
-			auto found = false;
-
-			if (f)
+			const auto picture_hashes = df::make_picture_hashes(result.rotations);
+			const auto found = _items.update_file(result.path, [&](const df::index_folder_item_ptr&,
+			                                                       const df::index_file_item& file)
 			{
-				const auto found_file = find_file(f->files, result.path.name());
-
-				if (found_file != f->files.end() && revision_of(*found_file) == result.revision)
-				{
-					// Published as complete sets, so the walk never sees a picture with some
-					// orientations filled in.
-					found_file->phash = df::make_picture_hashes(result.rotations);
-					found = true;
-				}
-			}
+				if (!(revision_of(file) == result.revision)) return false;
+				// Published as complete sets, so the walk never sees a picture with some
+				// orientations filled in.
+				file.phash = picture_hashes;
+				return true;
+			});
 
 			if (found)
 			{
@@ -2104,6 +2242,11 @@ void index_state::save_phashes(std::vector<phash_result> hashes)
 		}
 
 		enqueue_db_writes(std::move(writes));
+
+		if (continue_predictions && !df::is_closing)
+		{
+			queue_update_predictions();
+		}
 	});
 }
 
@@ -2143,6 +2286,7 @@ void index_state::save_thumbnail(const df::file_path id, const ui::const_image_p
 void index_state::index_roots(df::index_roots roots)
 {
 	_fully_loaded = false;
+	_collection_discovery_complete = false;
 	{
 		platform::exclusive_lock lock(_summary_rw);
 		std::swap(_summary._roots, roots);
@@ -2168,6 +2312,12 @@ void index_state::index_folders(df::cancel_token token)
 	int picture_count = 0;
 	stats.index_folder_count = 0;
 	auto next_histogram_publish_ms = df::now_ms();
+	auto exhausted = unique_folder_paths.size() > max_folders_to_index;
+	std::vector<df::folder_path> failed_enumerations;
+	df::unique_folders revisited;
+	// Folders whose files the walk has recorded. A node republished since then has lost the walk's
+	// mark, and the fix-up below must not record its files a second time.
+	df::unique_folders counted;
 
 	for (const auto& f : _items.all_folders())
 	{
@@ -2188,6 +2338,18 @@ void index_state::index_folders(df::cancel_token token)
 		if (!is_excluded(roots, folder_path))
 		{
 			const auto node = validate_folder(folder_path, true, now);
+
+			// The node may predate the file system - a database-loaded one lists no subfolders yet - so
+			// the folder is walked again once the rest of the collection has been. A second deferral
+			// walks the node as it stands, and the subtree it may not list is kept like a failed
+			// enumeration's rather than swept.
+			if (node.deferred && revisited.emplace(folder_path).second)
+			{
+				folders.insert(folders.begin(), folder_path);
+				continue;
+			}
+
+			if (node.enumeration_failed || node.deferred) failed_enumerations.emplace_back(folder_path);
 			if (!node.folder) continue;
 			node.folder->is_in_collection = true;
 
@@ -2202,6 +2364,8 @@ void index_state::index_folders(df::cancel_token token)
 				if (file.ft->has_trait(file_traits::bitmap)) ++picture_count;
 			}
 
+			counted.emplace(folder_path);
+
 			// See the comment at the other folders_snapshot() call sites: the returned shared_ptr must
 			// outlive the loop, not just the range-for initializer.
 			const auto folders_snapshot = node.folder->folders_snapshot();
@@ -2212,12 +2376,18 @@ void index_state::index_folders(df::cancel_token token)
 				const auto is_excluded = df::is_excluded(roots, sub_folder_path);
 
 				if (!unique_folder_paths.contains(sub_folder_path) &&
-					folders.size() < max_folders_to_index &&
 					!is_excluded)
 				{
-					folders.emplace_back(sub_folder_path);
-					unique_folder_paths.emplace(sub_folder_path);
-					++stats.index_folder_count;
+					if (unique_folder_paths.size() < max_folders_to_index)
+					{
+						folders.emplace_back(sub_folder_path);
+						unique_folder_paths.emplace(sub_folder_path);
+						++stats.index_folder_count;
+					}
+					else
+					{
+						exhausted = true;
+					}
 				}
 
 				sub_folder->is_excluded = is_excluded;
@@ -2238,8 +2408,85 @@ void index_state::index_folders(df::cancel_token token)
 		}
 	}
 
-	if (!token.is_cancelled())
+	const auto containing_root = [&roots](const df::folder_path folder) -> std::optional<df::folder_path>
 	{
+		std::optional<df::folder_path> result;
+
+		for (const auto root : roots.folders)
+		{
+			if (!df::folder_contains(root.text().sv(), folder.text().sv())) continue;
+			if (!result || result->text().size() < root.text().size()) result = root;
+		}
+
+		return result;
+	};
+
+	const auto has_excluded_ancestor = [&roots](const df::folder_path root, df::folder_path folder)
+	{
+		for (;;)
+		{
+			if (df::is_excluded(roots, folder)) return true;
+			if (folder == root || folder.is_root()) return false;
+			folder = folder.parent();
+		}
+	};
+
+	for (const auto& cached : _items.all_folders())
+	{
+		if (cached.second->is_in_collection) continue;
+
+		const auto under_failed_enumeration = std::ranges::any_of(failed_enumerations, [&cached](
+			const df::folder_path failed)
+		{
+			return df::folder_contains(failed.text().sv(), cached.first.text().sv());
+		});
+
+		if (!under_failed_enumeration) continue;
+
+		const auto root = containing_root(cached.first);
+		if (!root || has_excluded_ancestor(*root, cached.first)) continue;
+
+		cached.second->is_in_collection = true;
+		unique_folder_paths.emplace(cached.first);
+		if (counted.contains(cached.first)) continue;
+
+		for (const auto& file : cached.second->files)
+		{
+			histograms.record(_locations, file, df::file_path(cached.first, file.name));
+
+			if (file.ft->is_media())
+			{
+				count += 1;
+			}
+			if (file.ft->has_trait(file_traits::bitmap)) ++picture_count;
+		}
+	}
+
+	const auto discovery_complete = !token.is_cancelled() && !exhausted;
+	_collection_discovery_complete = discovery_complete;
+
+	if (discovery_complete)
+	{
+		std::vector<df::folder_path> stale_cached_folders;
+
+		for (const auto& cached : _items.all_folders())
+		{
+			const auto root = containing_root(cached.first);
+			if (!root) continue;
+			if (unique_folder_paths.contains(cached.first)) continue;
+			if (has_excluded_ancestor(*root, cached.first)) continue;
+
+			const auto under_failed_enumeration = std::ranges::any_of(failed_enumerations, [&cached](
+				const df::folder_path failed)
+			{
+				return df::folder_contains(failed.text().sv(), cached.first.text().sv());
+			});
+
+			if (!under_failed_enumeration) stale_cached_folders.emplace_back(cached.first);
+		}
+
+		_items.erase(stale_cached_folders);
+
 		stats.index_item_count = stats.media_item_count = count;
 		stats.picture_item_count = picture_count;
 
@@ -2555,10 +2802,10 @@ index_state::item_scan_request index_state::make_scan_request(const df::item_ele
 	df::assert_true(ui::is_ui_thread());
 	const auto is_folder = item->is_folder();
 	const auto thumbnail_needed = load_thumbnail && !is_folder && item->should_load_thumbnail();
-	if (thumbnail_needed && claim_loading) item->is_loading_thumbnail(true);
+	const auto thumbnail_generation = thumbnail_needed && claim_loading ? item->begin_thumbnail_load() : 0;
 	return {
 		item, item->path(), item->folder(), item->file_type(), is_folder, load_thumbnail && !is_folder,
-		thumbnail_needed, item->has_thumb()
+		thumbnail_needed, item->has_thumb(), thumbnail_generation
 	};
 }
 
@@ -2633,7 +2880,7 @@ bool index_state::scan_items(const item_scan_requests& requests,
 
 					scan_item(node.folder, request.path, request.load_thumbnail, request.thumbnail_needed,
 					          request.had_thumbnail, scan_if_offline, request.lifetime, true, request.file_type, force,
-					          false, false, &writes);
+					          false, false, &writes, request.thumbnail_generation);
 
 					if (request.thumbnail_needed) ++thumbs_scanned;
 
@@ -2706,11 +2953,19 @@ bool index_state::scan_items(const item_scan_requests& requests,
 		}
 	}
 
-	std::vector<std::pair<std::weak_ptr<df::item_element>, df::file_path>> completed;
+	struct completed_thumbnail
+	{
+		std::weak_ptr<df::item_element> item;
+		df::file_path path;
+		uint64_t generation = 0;
+	};
+
+	std::vector<completed_thumbnail> completed;
 	completed.reserve(requests.size());
 	for (const auto& request : requests)
 	{
-		if (request.thumbnail_needed) completed.emplace_back(request.lifetime, request.path);
+		if (request.thumbnail_needed) completed.emplace_back(request.lifetime, request.path,
+		                                                     request.thumbnail_generation);
 	}
 
 	if (stats_out)
@@ -2723,10 +2978,11 @@ bool index_state::scan_items(const item_scan_requests& requests,
 	{
 		_async.queue_ui([this, completed = std::move(completed), updated_items = std::move(updated_items), token]
 		{
-			for (const auto& [item, path] : completed)
+			for (const auto& completion : completed)
 			{
-				const auto current_item = item.lock();
-				if (current_item && current_item->path() == path)
+				const auto current_item = completion.item.lock();
+				if (current_item && current_item->path() == completion.path &&
+					current_item->is_current_thumbnail_load(completion.generation))
 				{
 					current_item->is_loading_thumbnail(false);
 					// Staging must run even when the batch was cancelled: this path publishes with
@@ -2792,6 +3048,15 @@ bool index_state::scan_folder(const df::folder_path folder_path, const bool mark
 {
 	df::scope_locked_inc l(scanning_items);
 	const auto node = validate_folder(folder_path, true, timestamp);
+
+	if (node.deferred)
+	{
+		// The node may not list what is on disk - folders just copied in, for one - and the walk below
+		// would never reach them. The follow-up rescans the whole folder instead.
+		queue_deferred_validation(folder_path, true);
+		return false;
+	}
+
 	if (!node.folder) return false;
 	node.folder->is_in_collection = mark_is_indexed;
 	scan_folder(folder_path, node.folder);
@@ -2967,13 +3232,17 @@ void index_state::queue_stage_thumbnails(const df::item_elements& items)
 void index_state::publish_thumbnail(std::weak_ptr<df::item_element> item, df::file_path path,
                                     ui::const_image_ptr thumbnail, ui::const_image_ptr cover_art,
                                     const df::date_t timestamp,
-                                    const bool fade_in, const bool stage_surface) const
+                                    const uint64_t generation, const bool fade_in, const bool stage_surface) const
 {
 	_async.queue_ui([this, item = std::move(item), path = std::move(path), thumbnail = std::move(thumbnail),
-			cover_art = std::move(cover_art), timestamp, fade_in, stage_surface]() mutable
+			cover_art = std::move(cover_art), timestamp, generation, fade_in, stage_surface]() mutable
 		{
 			const auto current_item = item.lock();
 			if (!current_item || current_item->path() != path) return;
+			const auto owns_loading = generation != 0 && current_item->is_current_thumbnail_load(generation);
+			const auto owns_pixels = generation == 0 || current_item->is_current_thumbnail_request(generation);
+			if (owns_loading) current_item->is_loading_thumbnail(false);
+			if (!owns_pixels) return;
 
 			const auto previous_dims = current_item->layout_dims();
 			const auto previous_orientation = current_item->layout_orientation();
@@ -3005,6 +3274,7 @@ void index_state::publish_thumbnails(thumbnail_results results, const bool inval
 		{
 			const auto item = result.lifetime.lock();
 			if (!item || item->path() != result.path) continue;
+			if (result.generation != 0 && !item->is_current_thumbnail_request(result.generation)) continue;
 
 			const auto previous_dims = item->layout_dims();
 			const auto previous_orientation = item->layout_orientation();
@@ -3036,12 +3306,14 @@ void index_state::publish_item_update(std::weak_ptr<df::item_element> item, df::
 	});
 }
 
-void index_state::publish_thumbnail_failure(std::weak_ptr<df::item_element> item, df::file_path path) const
+void index_state::publish_thumbnail_failure(std::weak_ptr<df::item_element> item, df::file_path path,
+                                            const uint64_t generation) const
 {
-	_async.queue_ui([item = std::move(item), path = std::move(path)]
+	_async.queue_ui([item = std::move(item), path = std::move(path), generation]
 	{
 		const auto current_item = item.lock();
 		if (!current_item || current_item->path() != path) return;
+		if (generation != 0 && !current_item->is_current_thumbnail_request(generation)) return;
 
 		df::bump(df::thumbnail_perf.load_failures);
 		current_item->failed_loading_thumbnail(true);
@@ -3098,9 +3370,10 @@ void index_state::queue_load_visible_thumbnails(const df::item_elements& visible
 	df::item_elements resolved;
 	for (const auto& item : visible)
 	{
-		if (item->begin_db_thumbnail_query())
+		if (const auto generation = item->begin_db_thumbnail_query())
 		{
-			requests.emplace_back(item, item->path(), item->folder(), item->is_folder(), item->has_thumb());
+			requests.emplace_back(item, item->path(), item->folder(), generation, item->is_folder(),
+			                      item->has_thumb());
 		}
 		else
 		{
@@ -3413,6 +3686,48 @@ void index_state::queue_validate_changed_folders(df::unique_folders paths)
 	});
 }
 
+void index_state::queue_deferred_validation(const df::folder_path folder_path, const bool rescan)
+{
+	{
+		platform::exclusive_lock lock(_deferred_validations_rw);
+		const auto [found, inserted] = _deferred_validations.try_emplace(folder_path, rescan);
+
+		if (!inserted)
+		{
+			found->second = found->second || rescan;
+			return;
+		}
+	}
+
+	_async.queue_async(async_queue::scan_folder, [this, folder_path]
+	{
+		// Claimed before the pass rather than after, so a pass that gives up again queues the next.
+		auto rescan = false;
+		{
+			platform::exclusive_lock lock(_deferred_validations_rw);
+			const auto found = _deferred_validations.find(folder_path);
+
+			if (found != _deferred_validations.end())
+			{
+				rescan = found->second;
+				_deferred_validations.erase(found);
+			}
+		}
+
+		if (df::is_closing) return;
+
+		const auto now = platform::now();
+		const auto changed = rescan
+			                     ? scan_folder(folder_path, is_in_collection(folder_path), now)
+			                     : validate_folder(folder_path, true, now).was_updated;
+
+		if (changed)
+		{
+			_async.invalidate_view(view_invalid::refresh_items);
+		}
+	});
+}
+
 void index_state::queue_scan_folder(const df::folder_path path)
 {
 	_async.queue_async(async_queue::scan_folder, [this, path]
@@ -3447,56 +3762,74 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 {
 	const auto found_in_index = _items.find(folder_path);
 	df::index_folder_item_ptr folder_node;
+	struct cached_db_item
+	{
+		str::cached path;
+		prop::item_metadata_ptr metadata;
+		df::date_t metadata_scanned;
+		uint32_t crc32c = 0;
+		df::picture_hashes_ptr phash;
+	};
+
+	std::vector<cached_db_item> prepared_items;
+	prepared_items.reserve(items.size());
+	for (const auto& item : items)
+	{
+		prepared_items.emplace_back(item.path, item.metadata, item.metadata_scanned, item.crc32c,
+		                            picture_hashes_from_db(item.phash));
+	}
 
 	if (found_in_index && !found_in_index->files.empty())
 	{
-		folder_node = found_in_index;
-
-		df::assert_true(std::is_sorted(folder_node->files.begin(), folder_node->files.end()));
-
-		auto file_first = items.begin();
-		const auto file_last = items.end();
-		auto old_first = folder_node->files.begin();
-		const auto old_last = folder_node->files.end();
-
-		while (file_first != file_last && old_first != old_last)
+		_items.update_folder(folder_path, [&](const df::index_folder_item_ptr& current_folder)
 		{
-			const auto d = icmp(file_first->path, old_first->name);
+			df::assert_true(std::is_sorted(current_folder->files.begin(), current_folder->files.end()));
 
-			if (d < 0)
-			{
-				// skip: only in new					
-				++file_first;
-			}
-			else if (d > 0)
-			{
-				// skip: only in old
-				++old_first;
-			}
-			else
-			{
-				// merge: in both
-				old_first->metadata = file_first->metadata;
-				old_first->metadata_scanned = file_first->metadata_scanned;
-				old_first->crc32c = file_first->crc32c;
-				old_first->phash = picture_hashes_from_db(file_first->phash);
-				old_first->calc_search_presence();
-				++file_first;
-				++old_first;
-			}
-		}
+			auto file_first = prepared_items.begin();
+			const auto file_last = prepared_items.end();
+			auto old_first = current_folder->files.begin();
+			const auto old_last = current_folder->files.end();
 
-		// the merged metadata can both add and remove bits, so rebuild the summary rather than
-		// OR-ing into the stale one
-		folder_node->reset_search_presence();
+			while (file_first != file_last && old_first != old_last)
+			{
+				const auto d = icmp(file_first->path, old_first->name);
+
+				if (d < 0)
+				{
+					// skip: only in new
+					++file_first;
+				}
+				else if (d > 0)
+				{
+					// skip: only in old
+					++old_first;
+				}
+				else
+				{
+					// merge: in both
+					old_first->metadata = file_first->metadata;
+					old_first->metadata_scanned = file_first->metadata_scanned;
+					old_first->crc32c = file_first->crc32c;
+					old_first->phash = file_first->phash;
+					old_first->calc_search_presence();
+					++file_first;
+					++old_first;
+				}
+			}
+
+			// the merged metadata can both add and remove bits, so rebuild the summary rather than
+			// OR-ing into the stale one
+			current_folder->reset_search_presence();
+			return true;
+		});
 	}
 	else
 	{
 		df::index_item_infos files;
-		files.resize(std::distance(items.begin(), items.end()));
+		files.resize(std::distance(prepared_items.begin(), prepared_items.end()));
 		auto node = files.begin();
 
-		for (auto i = items.begin(); i != items.end(); ++i)
+		for (auto i = prepared_items.begin(); i != prepared_items.end(); ++i)
 		{
 			const auto metadata = i->metadata;
 			const auto id = i->path;
@@ -3507,7 +3840,7 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 			file_node.ft = mt;
 			file_node.metadata = metadata;
 			file_node.crc32c = i->crc32c;
-			file_node.phash = picture_hashes_from_db(i->phash);
+			file_node.phash = i->phash;
 			file_node.metadata_scanned = i->metadata_scanned;
 
 			file_node.calc_search_presence();
@@ -3535,4 +3868,3 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 		_items.replace(folder_path, folder_node);
 	}
 }
-

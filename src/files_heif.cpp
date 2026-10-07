@@ -134,6 +134,38 @@ static df::blob extract_exif(const heif_image_handle* handle)
 	return strip_exif_tiff_prefix(std::move(raw_metadata));
 }
 
+bool is_heif_xmp_metadata_type(const std::string_view metadata_type, const std::string_view content_type)
+{
+	return str::icmp(metadata_type, "XMP") == 0 ||
+		(str::icmp(metadata_type, "mime") == 0 && str::icmp(content_type, "application/rdf+xml") == 0);
+}
+
+static bool is_xmp_metadata_item(const heif_image_handle* handle, const heif_item_id id)
+{
+	const auto* const metadata_type = heif_image_handle_get_metadata_type(handle, id);
+
+	if (metadata_type == nullptr)
+	{
+		return false;
+	}
+
+	// Keep the older non-standard spelling deliberately accepted by previous builds.
+	if (is_heif_xmp_metadata_type(metadata_type, {}))
+	{
+		return true;
+	}
+
+	if (str::icmp(metadata_type, "mime") != 0)
+	{
+		return false;
+	}
+
+	// libheif returns borrowed strings whose lifetime ends at the next libheif call. Compare the
+	// type before asking for the content type, and do not retain either pointer.
+	const auto* const content_type = heif_image_handle_get_metadata_content_type(handle, id);
+	return content_type != nullptr && str::icmp(content_type, "application/rdf+xml") == 0;
+}
+
 static metadata_parts extract_metadata(const heif_image_handle* handle)
 {
 	metadata_parts result = {};
@@ -155,18 +187,7 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 				continue;
 			}
 
-			if (str::icmp(metadata_type, "XMP") == 0)
-			{
-				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
-				df::blob raw_metadata(metadataSize, 0);
-
-				const auto error = heif_image_handle_get_metadata(handle, id, raw_metadata.data());
-				if (error.code == heif_error_Ok)
-				{
-					result.xmp = std::move(raw_metadata);
-				}
-			}
-			else if (str::icmp(metadata_type, "iptc") == 0)
+			if (str::icmp(metadata_type, "iptc") == 0)
 			{
 				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
 				df::blob raw_metadata(metadataSize, 0);
@@ -175,6 +196,17 @@ static metadata_parts extract_metadata(const heif_image_handle* handle)
 				if (error.code == heif_error_Ok)
 				{
 					result.iptc = std::move(raw_metadata);
+				}
+			}
+			else if (is_xmp_metadata_item(handle, id))
+			{
+				const size_t metadataSize = heif_image_handle_get_metadata_size(handle, id);
+				df::blob raw_metadata(metadataSize, 0);
+
+				const auto error = heif_image_handle_get_metadata(handle, id, raw_metadata.data());
+				if (error.code == heif_error_Ok)
+				{
+					result.xmp = std::move(raw_metadata);
 				}
 			}
 		}

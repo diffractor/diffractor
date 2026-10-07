@@ -682,10 +682,16 @@ void batch_tool_view::run_convert()
 						                   continue;
 					                   }
 
+					                   file_update_publish publish;
+					                   publish.fail_if_exists = !request.replaces_existing;
+					                   publish.require_unchanged_destination = request.replaces_existing;
+					                   publish.destination_attributes = request.destination_fi;
+
 					                   const auto result = ff.update(request.source, request.destination, {},
 					                                                 max_side > 0
 						                                                 ? image_edits(max_side)
-						                                                 : image_edits(), params, false, request.xmp);
+						                                                 : image_edits(), params, false, request.xmp,
+					                                                 {}, {}, publish);
 
 					                   // One unreadable or unwritable source must not decide the fate of the rest.
 					                   // The row records the failure and the run carries on, so the result list
@@ -775,10 +781,8 @@ void batch_tool_view::run_metadata()
 				                   {
 					                   const auto result = ff.update(request.path, edits, {}, file_encode_params{},
 					                                                 false, request.xmp);
-					                   statuses[index] = result.success() ? item_status::success : item_status::fail;
-
-					                   if (result.success()) written.emplace(request.path.folder());
-					                   else if (first_error.empty()) first_error = result.format_error();
+					                   statuses[index] = apply_batch_update_result(written, request.path.folder(),
+					                                                                first_error, result);
 				                   }
 				                   catch (const std::exception& e)
 				                   {
@@ -864,19 +868,8 @@ void batch_tool_view::run_dates()
 				                   {
 					                   const auto result = ff.update(request.path, edits, {}, file_encode_params{},
 					                                                 false, request.xmp);
-
-					                   if (result.success())
-					                   {
-						                   // Shifting a camera clock says nothing about when the file was
-						                   // written, so the filesystem creation stamp is left alone.
-						                   statuses[index] = item_status::success;
-						                   written.emplace(request.path.folder());
-					                   }
-					                   else
-					                   {
-						                   statuses[index] = item_status::fail;
-						                   if (first_error.empty()) first_error = result.format_error();
-					                   }
+					                   statuses[index] = apply_batch_update_result(written, request.path.folder(),
+					                                                                first_error, result);
 				                   }
 				                   catch (const std::exception& e)
 				                   {
@@ -909,7 +902,7 @@ view_controls_host_ptr batch_tool_view::controls(const ui::control_frame_ptr& ow
 	std::vector<view_element_ptr> controls;
 	const auto& items = _state.selected_items();
 	auto selection_thumbnails = std::make_shared<ui::selection_thumbnails_control>(frame);
-	selection_thumbnails->selection(items.thumbs(), items.size());
+	selection_thumbnails->selection_async(items.thumbs(), items.size(), _state._async);
 
 	if (_mode == batch_tool_mode::convert)
 	{

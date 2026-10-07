@@ -13,6 +13,8 @@
 
 #include "model_db.h"
 
+#include <optional>
+
 struct folder_scan_item;
 
 static constexpr auto doc_template_url = "https://www.diffractor.com/docs/template";
@@ -23,6 +25,30 @@ inline file_encode_params make_file_encode_params()
 	file_encode_params result;
 	result.jpeg_save_quality = setting.jpeg_save_quality;
 	return result;
+}
+
+inline bool failed_write_needs_forced_rescan(const file_update_result& result)
+{
+	return result.failed() && result.live_file_maybe_changed;
+}
+
+inline bool update_result_revalidates_folder(const file_update_result& result)
+{
+	return result.success() || result.live_file_maybe_changed;
+}
+
+inline void preserve_failed_update_error(std::string& first_error, const file_update_result& result)
+{
+	if (!result.success() && first_error.empty()) first_error = result.format_error();
+}
+
+template <typename FolderSet>
+inline item_status apply_batch_update_result(FolderSet& written, const df::folder_path folder,
+                                             std::string& first_error, const file_update_result& result)
+{
+	if (update_result_revalidates_folder(result)) written.emplace(folder);
+	preserve_failed_update_error(first_error, result);
+	return result.success() ? item_status::success : item_status::fail;
 }
 
 class command_status;
@@ -207,7 +233,12 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 import_result import_copy(index_state& index, df::results_ptr results, const import_analysis_result& src_items,
                           const import_options& options, df::cancel_token token);
 
-std::vector<import_source> calc_import_sources(const view_state& s);
+extern std::function<void(df::file_path path)> test_before_import_rollback_cleanup;
+extern std::function<std::optional<platform::file_op_result>(df::file_path destination)>
+test_import_sidecar_write_override;
+
+std::optional<import_source> calc_import_selected_source(const view_state& s);
+std::vector<import_source> calc_import_sources(std::optional<import_source> selected_source);
 
 size_t count_imports(const std::vector<import_analysis_item>& items);
 size_t count_imports(const import_analysis_result& items);

@@ -25,6 +25,55 @@
 // Archive entry names are attacker-controlled: reduce to a bare leaf name so an entry such as
 // "..\..\startup\evil.exe" cannot escape the destination folder. Returns empty to reject.
 
+namespace
+{
+	bool is_leap_year(const int year) noexcept
+	{
+		return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+	}
+
+	int days_in_month(const int year, const int month) noexcept
+	{
+		constexpr std::array<int, 12> lengths = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+		if (month < 1 || month > 12) return 0;
+		if (month == 2 && is_leap_year(year)) return 29;
+		return lengths[static_cast<size_t>(month - 1)];
+	}
+
+	bool to_zip_date(zip_fileinfo& zi, const df::date_t modified)
+	{
+		auto ft = modified.system_to_local().date();
+
+		if (ft.month < 1 || ft.month > 12 ||
+			ft.day < 1 || ft.day > days_in_month(ft.year, ft.month) ||
+			ft.hour < 0 || ft.hour > 23 ||
+			ft.minute < 0 || ft.minute > 59 ||
+			ft.second < 0 || ft.second > 59)
+		{
+			return false;
+		}
+
+		if (ft.year < 1980)
+		{
+			ft = {1980, 1, 1, 0, 0, 0};
+		}
+		else if (ft.year > 2107)
+		{
+			ft = {2107, 12, 31, 23, 59, 58};
+		}
+
+		ft.second &= ~1;
+
+		zi.tmz_date.tm_year = ft.year;
+		zi.tmz_date.tm_mon = ft.month - 1;
+		zi.tmz_date.tm_mday = ft.day;
+		zi.tmz_date.tm_hour = ft.hour;
+		zi.tmz_date.tm_min = ft.minute;
+		zi.tmz_date.tm_sec = ft.second;
+		return true;
+	}
+}
+
 df::zip_file::~zip_file()
 {
 	if (_handle.has_value())
@@ -56,24 +105,30 @@ bool df::zip_file::close()
 	return true;
 }
 
-bool df::zip_file::add(const file_path path, const std::string_view name_in) const
+bool df::zip_file::add(const file_path path, const std::string_view name_in, const date_t modified) const
 {
 	file f;
 
 	if (f.open_read(path, true))
 	{
 		const auto attributes = platform::file_attributes(path);
-		const auto ft = date_t(attributes.modified).date();
 		const auto name = std::string(name_in);
+
+		if (name.size() > UINT16_MAX)
+		{
+			df::log(__FUNCTION__, std::format("zip entry name is too long: {} bytes", name.size()));
+			return false;
+		}
+
 		//const auto wpath = platform::to_file_system_path(path)
 
 		zip_fileinfo zi = {};
-		zi.tmz_date.tm_year = ft.year;
-		zi.tmz_date.tm_mon = ft.month;
-		zi.tmz_date.tm_mday = ft.day;
-		zi.tmz_date.tm_hour = ft.hour;
-		zi.tmz_date.tm_min = ft.minute;
-		zi.tmz_date.tm_sec = ft.second;
+
+		if (!to_zip_date(zi, modified))
+		{
+			df::log(__FUNCTION__, std::format("invalid zip entry date for {}", name));
+			return false;
+		}
 
 		auto err = zipOpenNewFileInZip(std::any_cast<zipFile>(_handle), str::utf8_cast2(name).c_str(), &zi, nullptr, 0,
 		                               nullptr, 0, nullptr, Z_DEFLATED, Z_BEST_COMPRESSION);
@@ -131,6 +186,11 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in) con
 	return false;
 }
 
+bool df::zip_file::add(const file_path path, const std::string_view name_in) const
+{
+	return add(path, name_in, date_t(platform::file_attributes(path).modified));
+}
+
 bool df::zip_file::add(const file_path path)
 {
 	return add(path, path.name());
@@ -140,8 +200,6 @@ std::vector<archive_item> df::zip_file::list(const file_path zip_file_path)
 {
 	std::vector<archive_item> results;
 
-	constexpr int max_path = 256;
-	char filename[max_path];
 	auto* const hz = unzOpen2_64(zip_file_path.str().c_str(), nullptr);
 
 	if (hz)
@@ -154,10 +212,33 @@ std::vector<archive_item> df::zip_file::list(const file_path zip_file_path)
 		{
 			do
 			{
-				if (UNZ_OK == unzGetCurrentFileInfo64(hz, &file, filename, max_path, nullptr, 0, nullptr, 0))
+				if (UNZ_OK == unzGetCurrentFileInfo64(hz, &file, nullptr, 0, nullptr, 0, nullptr, 0))
 				{
+					if (file.size_filename > UINT16_MAX)
+					{
+						df::log(__FUNCTION__, std::format("zip entry name is too long: {} bytes", file.size_filename));
+						results.clear();
+						break;
+					}
+
+					std::string filename;
+					filename.resize(static_cast<size_t>(file.size_filename));
+
+					const auto name_result = filename.empty()
+						                         ? UNZ_OK
+						                         : unzGetCurrentFileInfo64(hz, &file, filename.data(),
+						                                                   static_cast<uint16_t>(filename.size()),
+						                                                   nullptr, 0, nullptr, 0);
+
+					if (name_result != UNZ_OK)
+					{
+						df::log(__FUNCTION__, "could not read zip entry name");
+						results.clear();
+						break;
+					}
+
 					archive_item result_info;
-					result_info.filename = str::utf8_cast(filename);
+					result_info.filename = str::utf8_cast(std::string_view(filename.data(), filename.size()));
 					result_info.uncompressed_size = file.uncompressed_size;
 					result_info.compressed_size = file.compressed_size;
 					result_info.created = platform::dos_date_to_ts(static_cast<uint16_t>(file.dosDate >> 16),

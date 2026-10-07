@@ -1667,7 +1667,6 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
                                                                    const pointi element_offset,
                                                                    hit_test_context& ctx)
 {
-	const auto logical_loc = loc + element_offset;
 	const auto durable_zoom = _display->zoom() && !_display->is_temporary_zoom();
 	if (durable_zoom)
 	{
@@ -1721,9 +1720,10 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
 		return std::make_shared<comparison_pane_controller>(host, _display, pane, marker);
 	}
 
-	if (!_display->is_zoom_mode() && _display->_can_compare && _display->_compare_bounds.contains(logical_loc))
+	const auto compare_bounds = comparison_divider_device_bounds(_display->_compare_bounds, element_offset);
+	if (!_display->is_zoom_mode() && _display->_can_compare && compare_bounds.contains(loc))
 	{
-		return std::make_shared<compare_controller>(host, shared_from_this(), _display->_compare_bounds);
+		return std::make_shared<compare_controller>(host, shared_from_this(), compare_bounds);
 	}
 
 	if (!_display->_comparing && _display->can_zoom())
@@ -1746,7 +1746,7 @@ view_controller_ptr side_by_side_control::controller_from_location(const view_ho
 		}
 	}
 
-	ctx.passed_over(_display->_compare_bounds.offset(element_offset));
+	ctx.passed_over(compare_bounds);
 	return default_controller_from_location(*this, host, loc, element_offset, ctx);
 }
 

@@ -183,10 +183,12 @@ static void burn_command_invoke(view_state& s, const ui::control_frame_ptr& pare
 	if (can_process_selection_or_explain(s, view, parent, title, df::process_items_type::local_file_or_folder))
 	{
 		const auto items = s.selected_items();
+		auto title_control = std::make_shared<ui::title_control2>(
+			dlg->_frame, icon_index::disk, title, format_plural_text(tt.burn_info_fmt, items),
+			std::vector<ui::const_surface_ptr>{}, items.size());
+		title_control->selection_async(items.thumbs(), items.size(), s._async);
 		const std::vector<view_element_ptr> controls = {
-			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon_index::disk, title,
-			                                                format_plural_text(tt.burn_info_fmt, items), items.thumbs(),
-			                                                items.size())),
+			set_margin(title_control),
 			std::make_shared<divider_element>(),
 			set_margin(std::make_shared<text_element>(tt.burn_help)),
 			std::make_shared<divider_element>(),
@@ -211,6 +213,13 @@ static void print_invoke(const view_state& s, const ui::control_frame_ptr& paren
 	}
 }
 
+quadd rotate_command_crop_bounds(const sizei dimensions, const ui::orientation stored_orientation,
+                                 const simple_transform transform, const bool show_rotated)
+{
+	const auto current_orientation = show_rotated ? stored_orientation : ui::orientation::top_left;
+	return quadd(dimensions).transform(to_simple_transform_inv(current_orientation)).transform(transform);
+}
+
 static void rename_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
 {
 	const auto title = tt.command_rename;
@@ -232,11 +241,13 @@ static void rename_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 			const auto& file_system_items = items.items();
 			const auto i = file_system_items[0];
 			auto name = i->base_name();
+			auto title_control = std::make_shared<ui::title_control2>(
+				dlg->_frame, icon, title, format_plural_text(tt.rename_fmt, items),
+				std::vector<ui::const_surface_ptr>{}, items.size());
+			title_control->selection_async(items.thumbs(), items.size(), s._async);
 
 			const std::vector<view_element_ptr> controls{
-				set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title,
-				                                                format_plural_text(tt.rename_fmt, items),
-				                                                items.thumbs(), items.size())),
+				set_margin(title_control),
 				std::make_shared<divider_element>(),
 				set_margin(std::make_shared<text_element>(tt.rename_label)),
 				set_margin(std::make_shared<ui::edit_control>(dlg->_frame, name)),
@@ -291,10 +302,48 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 	}
 	else if (data->has_bitmap())
 	{
-		detach_file_handles detach(s);
-		result = data->save_bitmap(s.save_path(), tt.pasted_file_name, true);
-		if (result.success() && (!result.created_files.files.empty() || !result.created_files.folders.empty()))
-			detach.keep_display_closed();
+		auto bitmap = data->capture_bitmap();
+		if (!bitmap)
+		{
+			result.error_message = tt.error_save_image;
+		}
+		else
+		{
+			const auto save_path = s.save_path();
+			const auto file_name = std::string(tt.pasted_file_name);
+			const auto results = std::make_shared<command_status>(s._async, dlg, icon_index::edit_paste,
+			                                                       tt.command_edit_paste, 1);
+
+			s.queue_async(async_queue::work,
+			              [&s, view = ui_owned(s._async, view), results, bitmap = std::move(bitmap), save_path,
+				              file_name]
+			{
+				auto save_result = bitmap->save(save_path, file_name, true);
+
+				if (save_result.success())
+				{
+					s.queue_ui([&s, view, results, created_files = std::move(save_result.created_files)]
+					{
+						results->complete();
+						if (!created_files.files.empty() || !created_files.folders.empty())
+						{
+							detach_file_handles detach(s);
+							detach.keep_display_closed();
+							s.open(view.shared(), s.search(), make_unique_paths(created_files));
+						}
+					});
+				}
+				else
+				{
+					results->abort(str::is_empty(save_result.error_message)
+						               ? std::string(tt.error_unknown)
+						               : save_result.error_message);
+				}
+			});
+
+			results->wait_for_complete();
+			return;
+		}
 	}
 
 	if (result.failed())
@@ -324,13 +373,8 @@ static void show_flatten_invoke(view_state& s, const ui::control_frame_ptr& pare
 		}
 		else
 		{
-			df::search_t a;
-
-			for (const auto& sel : current_search.selectors())
-			{
-				a.add_selector(df::item_selector(sel.folder(), true));
-			}
-
+			auto a = current_search;
+			a.set_recursive(true);
 			s.open(view, a, {});
 		}
 	}
@@ -370,20 +414,20 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 		// overwrites several originals at once and is always reviewed.
 		if (!is_single || setting.confirm_rotations)
 		{
-			files ff;
-			const auto thumb = s.first_selected_thumb();
+			const auto surfaces = items.thumbnail_surfaces(1);
 			bool confirm_single = setting.confirm_rotations;
+			auto title_control = std::make_shared<ui::title_control2>(
+				dlg->_frame, icon, title, format_plural_text(tt.rotate_info_fmt, items),
+				std::vector<ui::const_surface_ptr>{}, items.size());
+			title_control->selection_async(items.thumbs(), items.size(), s._async);
 
 			std::vector<view_element_ptr> controls;
-			controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-				dlg->_frame, icon, title, format_plural_text(tt.rotate_info_fmt, items), items.thumbs(),
-				items.size())));
+			controls.emplace_back(set_margin(title_control));
 			controls.emplace_back(std::make_shared<divider_element>());
 
-			if (is_valid(thumb))
+			if (!surfaces.empty())
 			{
-				const auto surface = ff.image_to_surface(thumb);
-				controls.emplace_back(std::make_shared<ui::before_after_control>(surface, surface->transform(t)));
+				controls.emplace_back(std::make_shared<ui::before_after_control>(surfaces.front(), t));
 			}
 
 			if (is_single)
@@ -445,8 +489,7 @@ static void rotate_invoke(view_state& s, const ui::control_frame_ptr& parent, co
 				const auto current_orientation = setting.show_rotated
 					                                 ? stored_orientation
 					                                 : ui::orientation::top_left;
-				const auto crop = quadd(dimensions).transform(
-					to_simple_transform(current_orientation)).transform(t);
+				const auto crop = rotate_command_crop_bounds(dimensions, stored_orientation, t, setting.show_rotated);
 
 				if (current_orientation != ui::orientation::top_left)
 				{
@@ -768,10 +811,14 @@ class folder_auto_complete final : public std::enable_shared_from_this<folder_au
                                    public ui::complete_strategy_t
 {
 	view_state& _state;
-	df::folder_counts _folders;
+	std::shared_ptr<const df::folder_counts> _folders;
+	std::shared_ptr<std::atomic_uint64_t> _latest_request = std::make_shared<std::atomic_uint64_t>(0);
+	destination_folder_enumerator _enumerate_child_folders;
 	std::vector<df::folder_path> _recents;
 	ui::control_frame_ptr _parent;
 	ui::auto_complete_match_ptr _selected;
+	uint64_t _request_id = 0;
+	std::weak_ptr<void> _picker_lifetime;
 
 public:
 	std::string no_results_message() override
@@ -782,14 +829,36 @@ public:
 	std::weak_ptr<ui::search_control> _search_control;
 
 
-	folder_auto_complete(view_state& s, ui::control_frame_ptr parent) : _state(s), _parent(std::move(parent))
+	folder_auto_complete(view_state& s, ui::control_frame_ptr parent,
+	                     std::shared_ptr<void> picker_lifetime = {},
+	                     std::shared_ptr<const df::folder_counts> folders = {},
+	                     destination_folder_enumerator enumerate_child_folders = {}) :
+		_state(s),
+		_folders(folders ? std::move(folders) : std::make_shared<df::folder_counts>(_state.known_folders())),
+		_enumerate_child_folders(std::move(enumerate_child_folders)),
+		_parent(std::move(parent)),
+		_picker_lifetime(std::move(picker_lifetime))
 	{
 		resize_to_show_results = false;
 		auto_select_first = false;
 		folder_select_button = true;
 		max_predictions = 12u;
 
-		_folders = _state.known_folders();
+		if (!_enumerate_child_folders)
+		{
+			_enumerate_child_folders = [](const df::folder_path folder)
+			{
+				df::folder_paths result;
+				const df::item_selector selector(folder);
+
+				for (const auto& fi : platform::select_folders(selector, setting.show_hidden))
+				{
+					result.emplace_back(folder.combine(fi.name));
+				}
+
+				return result;
+			};
+		}
 
 		auto recents = _state.recent_folders.items();
 		std::ranges::reverse(recents);
@@ -805,6 +874,12 @@ public:
 		}
 	}
 
+	void bind_search_control(const std::shared_ptr<ui::search_control>& search_control)
+	{
+		_search_control = search_control;
+		_picker_lifetime = search_control;
+	}
+
 	void initialise(std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		search({}, std::move(complete));
@@ -816,28 +891,85 @@ public:
 		return diff == 0 ? str::icmp(l->edit_text(), r->edit_text()) < 0 : diff > 0;
 	}
 
-	using folder_match_ptr = std::shared_ptr<folder_match>;
-	using results_by_folder = df::hash_map<df::folder_path, folder_match_ptr, df::ihash, df::ieq>;
+	struct folder_completion_candidate
+	{
+		df::folder_path folder;
+		ui::match_highlights match;
+		int weight = 0;
+	};
 
-	void add_result(results_by_folder& results, const df::folder_path folder, const ui::match_highlights& m,
-	                const int weight)
+	static void add_candidate(df::hash_map<df::folder_path, folder_completion_candidate, df::ihash, df::ieq>& results,
+	                          const df::folder_path folder, ui::match_highlights m, const int weight)
 	{
 		const auto found = results.find(folder);
 
-		if (found == results.end())
+		if (found != results.end())
 		{
-			results.emplace(folder, std::make_shared<folder_match>(*this, folder, m, weight));
+			found->second.weight += weight;
+			return;
 		}
-		else
+
+		results.emplace(folder, folder_completion_candidate{folder, std::move(m), weight});
+	}
+
+	static std::vector<folder_completion_candidate> find_matches(const std::string& query,
+	                                                             const df::folder_counts& folders,
+	                                                             const destination_folder_enumerator& enumerate_child_folders,
+	                                                             const size_t max_results,
+	                                                             const std::function<bool()>& is_stale = {})
+	{
+		df::hash_map<df::folder_path, folder_completion_candidate, df::ihash, df::ieq> candidates;
+		const auto query_parts = str::split(query, true);
+
+		for (const auto& folder : folders)
 		{
-			found->second->weight += weight;
+			ui::match_highlights m;
+
+			if (find_auto_complete(query_parts, folder.first.text(), true, m))
+			{
+				add_candidate(candidates, folder.first, std::move(m), folder.second);
+			}
 		}
+
+		if (is_stale && is_stale()) return {};
+
+		if (df::is_path(query))
+		{
+			const df::folder_path folder(query);
+
+			for (const auto& path : enumerate_child_folders(folder))
+			{
+				ui::match_highlights m;
+
+				if (find_auto_complete(query_parts, path.text(), true, m))
+				{
+					const auto known = folders.find(path);
+					const auto known_weight = candidates.contains(path) || known == folders.end() ? 0 : known->second;
+					add_candidate(candidates, path, std::move(m), 10 + known_weight);
+				}
+			}
+		}
+
+		std::vector<folder_completion_candidate> results;
+		results.reserve(candidates.size());
+		for (auto&& candidate : candidates) results.emplace_back(std::move(candidate.second));
+
+		std::ranges::sort(results, [](const auto& l, const auto& r)
+		{
+			const auto diff = l.weight - r.weight;
+			return diff == 0 ? str::icmp(l.folder.text(), r.folder.text()) < 0 : diff > 0;
+		});
+
+		if (results.size() > max_results) results.resize(max_results);
+		return results;
 	}
 
 	void search(const std::string& query,
 	            const std::function<void(const ui::auto_complete_results&)> complete) override
 	{
 		df::assert_true(ui::is_ui_thread());
+		const auto request_id = ++_request_id;
+		_latest_request->store(request_id, std::memory_order_release);
 
 		if (query.empty())
 		{
@@ -845,48 +977,56 @@ public:
 
 			for (const auto& folder : _recents)
 			{
-				results.emplace_back(std::make_shared<folder_match>(*this, folder));
+				results.emplace_back(std::make_shared<folder_match>(*this, folder, ui::match_highlights{}, 1, true));
 			}
 
 			complete(results);
 		}
 		else
 		{
-			results_by_folder results;
-			const auto query_parts = str::split(query, true);
+			auto folders = _folders;
+			auto latest_request = _latest_request;
+			auto enumerate_child_folders = _enumerate_child_folders;
+			const auto max_results = max_predictions;
+			auto weak = weak_from_this();
+			auto complete_ui = ui_owned(
+				_state._async, std::make_shared<std::function<void(const ui::auto_complete_results&)>>(complete));
 
-			for (const auto& folder : _folders)
-			{
-				ui::match_highlights m;
+			_state.queue_async(async_queue::work,
+			                   [&s = _state, weak, query, folders = std::move(folders),
+				                   enumerate_child_folders = std::move(enumerate_child_folders), latest_request,
+				                   max_results, request_id, complete_ui]
+			                   {
+				                   const auto is_stale = [latest_request, request_id]
+				                   {
+					                   return latest_request->load(std::memory_order_acquire) != request_id;
+				                   };
 
-				if (find_auto_complete(query_parts, folder.first.text(), true, m))
-				{
-					add_result(results, folder.first, m, folder.second);
-				}
-			}
+				                   if (is_stale()) return;
 
-			if (df::is_path(query))
-			{
-				const df::folder_path folder(query);
-				const df::item_selector selector(folder);
+				                   auto found = find_matches(query, *folders, enumerate_child_folders, max_results,
+				                                             is_stale);
 
-				for (const auto& fi : platform::select_folders(selector, setting.show_hidden))
-				{
-					ui::match_highlights m;
-					auto path = folder.combine(fi.name); // Perf
+				                   s.queue_ui([weak, found = std::move(found), request_id, complete_ui]() mutable
+				                   {
+					                   const auto self = weak.lock();
+					                   if (!self || self->_request_id != request_id || self->_picker_lifetime.expired())
+					                   {
+						                   return;
+					                   }
 
-					if (find_auto_complete(query_parts, path.text(), true, m))
-					{
-						add_result(results, path, m, 10);
-					}
-				}
-			}
+					                   ui::auto_complete_results results;
+					                   results.reserve(found.size());
 
-			std::vector<folder_match_ptr> found;
-			for (auto&& r : results) found.emplace_back(std::move(r.second));
-			std::ranges::sort(found, compare_weight);
-			if (found.size() > max_predictions) found.resize(max_predictions);
-			complete(ui::auto_complete_results{found.begin(), found.end()});
+					                   for (auto& candidate : found)
+					                   {
+						                   results.emplace_back(std::make_shared<folder_match>(
+							                   *self, candidate.folder, std::move(candidate.match), candidate.weight, true));
+					                   }
+
+					                   (*complete_ui)(results);
+				                   });
+			                   });
 		}
 	}
 
@@ -908,6 +1048,20 @@ public:
 	}
 };
 
+std::shared_ptr<ui::complete_strategy_t> make_destination_folder_auto_complete_for_test(
+	view_state& state, std::shared_ptr<void> picker_lifetime, std::shared_ptr<const df::folder_counts> folders,
+	destination_folder_enumerator enumerate_child_folders)
+{
+	return std::make_shared<folder_auto_complete>(state, nullptr, std::move(picker_lifetime), std::move(folders),
+	                                             std::move(enumerate_child_folders));
+}
+
+df::file_path selected_external_tool_target(const df::item_set& selected_items)
+{
+	if (selected_items.size() != 1 || selected_items.has_folders()) return {};
+	return selected_items.items().front()->path();
+}
+
 static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
                              const std::shared_ptr<view_frame>& view,
                              const bool is_move)
@@ -926,14 +1080,16 @@ static void copy_move_invoke(view_state& s, const ui::control_frame_ptr& parent,
 
 		const auto auto_complete = std::make_shared<folder_auto_complete>(s, parent);
 		const auto search_control = std::make_shared<ui::search_control>(dlg->_frame, text, auto_complete);
-		auto_complete->_search_control = search_control;
+		auto_complete->bind_search_control(search_control);
 
 		const auto& items = s.selected_items();
 		const auto items_message = format_plural_text(is_move ? tt.move_fmt : tt.copy_fmt, items);
+		auto title_control = std::make_shared<ui::title_control2>(
+			dlg->_frame, icon, title, items_message, std::vector<ui::const_surface_ptr>{}, items.size());
+		title_control->selection_async(items.thumbs(), items.size(), s._async);
 
 		std::vector<view_element_ptr> controls = {
-			set_margin(std::make_shared<ui::title_control2>(dlg->_frame, icon, title, items_message, items.thumbs(),
-			                                                items.size())),
+			set_margin(title_control),
 			std::make_shared<divider_element>(),
 			search_control,
 			std::make_shared<ui::check_control>(dlg->_frame, tt.open_dest, setting.show_results),
@@ -2132,7 +2288,10 @@ void app_frame::initialise_commands()
 				result.emplace_back(command);
 			}
 
-			const auto file_tools = first_item->file_type()->all_tools();
+			const auto tool_target = selected_external_tool_target(*selected_items);
+			const auto file_tools = tool_target.is_empty()
+				                        ? std::vector<std::shared_ptr<file_tool>>{}
+				                        : first_item->file_type()->all_tools();
 
 			if (!file_tools.empty())
 			{
@@ -2144,9 +2303,9 @@ void app_frame::initialise_commands()
 					{
 						auto command = std::make_shared<ui::command>();
 						command->text = str_format(tt.open_with_fmt.sv(), t->text);
-						command->invoke = [t, first_item, f = _app_frame]
+						command->invoke = [t, tool_target, f = _app_frame]
 						{
-							const auto success = t->invoke(first_item->path());
+							const auto success = t->invoke(tool_target);
 
 							if (!success)
 							{

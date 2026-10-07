@@ -34,6 +34,21 @@
 #include "metadata_exif.h"
 #include "XMP.incl_cpp" // Needed otherwise undefined externs
 
+static df::file_path s_test_raw_source_xmp_path;
+static df::blob s_test_raw_source_xmp;
+static std::vector<int> s_test_update_failure_sequence;
+
+void metadata_xmp::set_test_raw_source_xmp(const df::file_path path, const df::cspan xmp)
+{
+	s_test_raw_source_xmp_path = path;
+	s_test_raw_source_xmp.assign(xmp.begin(), xmp.end());
+}
+
+void metadata_xmp::set_test_update_failure_sequence(std::vector<int> actions)
+{
+	s_test_update_failure_sequence = std::move(actions);
+}
+
 // A malformed sidecar or a bad batch of files repeats the same failure for every scanned item, so
 // each distinct message is written once and the total is capped; the session total lands in the
 // exit perf summary.
@@ -67,11 +82,19 @@ static int16_t xmp_date_offset(const std::string_view str)
 	return prop::parse_utc_offset(str);
 }
 
-static bool xmp_decode_gps_coordinate(const std::string_view str, double& result)
+static bool xmp_parse_coordinate_part(const std::string_view text, double& result)
 {
-	const auto len = str.size();
-	const auto* const sz = std::bit_cast<const char*>(str.data());
+	if (text.empty()) return false;
+	const auto* const begin = text.data();
+	const auto* const end = begin + text.size();
+	const auto parsed = std::from_chars(begin, end, result);
+	return parsed.ec == std::errc{} && parsed.ptr == end && result >= 0.0;
+}
 
+static bool xmp_decode_gps_coordinate(const std::string_view str, const bool is_latitude, double& result)
+{
+	const auto text = str::trim(str);
+	const auto len = text.size();
 	if (len < 4) return false;
 
 	// DDD,MM,SSk
@@ -82,36 +105,50 @@ static bool xmp_decode_gps_coordinate(const std::string_view str, double& result
 	// MM = number of minutes
 	// SS = number of seconds
 	// mm = fraction of minutes
-	// k = {N/S/E/W)
+	// k = {N/S/E/W}
 
-	int degrees = 0;
-	int mins = 0;
-	int seconds = 0;
+	const auto hemisphere = text[len - 1];
+	const auto north = hemisphere == 'N' || hemisphere == 'n';
+	const auto south = hemisphere == 'S' || hemisphere == 's';
+	const auto east = hemisphere == 'E' || hemisphere == 'e';
+	const auto west = hemisphere == 'W' || hemisphere == 'w';
 
-	const auto last = sz[len - 1];
-	const auto neg = last == 'S' || last == 'W' || last == 's' || last == 'w';
+	if (is_latitude ? !(north || south) : !(east || west)) return false;
 
-	// Use original length for parsing (don't modify len before using it)
-	const auto parse_len = len - 1;
+	const auto body = text.substr(0, len - 1);
+	const auto first_comma = body.find(',');
+	if (first_comma == std::string_view::npos) return false;
 
-	if (3 == _snscanf_s(sz, parse_len, "%d,%d,%d", &degrees, &mins, &seconds))
+	const auto second_comma = body.find(',', first_comma + 1);
+	if (second_comma != std::string_view::npos && body.find(',', second_comma + 1) != std::string_view::npos)
+		return false;
+
+	double degrees = 0.0;
+	double minutes = 0.0;
+	double seconds = 0.0;
+
+	if (!xmp_parse_coordinate_part(body.substr(0, first_comma), degrees)) return false;
+
+	if (second_comma == std::string_view::npos)
 	{
-		const auto coordinate = gps_coordinate::dms_to_decimal(degrees, mins, seconds);
-		result = neg ? -coordinate : coordinate;
-		return true;
+		if (!xmp_parse_coordinate_part(body.substr(first_comma + 1), minutes)) return false;
+	}
+	else
+	{
+		if (!xmp_parse_coordinate_part(body.substr(first_comma + 1, second_comma - first_comma - 1), minutes))
+			return false;
+		if (!xmp_parse_coordinate_part(body.substr(second_comma + 1), seconds)) return false;
 	}
 
-	float degrees2 = 0;
-	float mins2 = 0;
+	if (minutes >= 60.0 || seconds >= 60.0) return false;
 
-	if (2 == _snscanf_s(sz, parse_len, "%f,%f", &degrees2, &mins2))
-	{
-		const auto coordinate = gps_coordinate::dms_to_decimal(degrees2, mins2, 0.0);
-		result = neg ? -coordinate : coordinate;
-		return true;
-	}
+	const auto coordinate = gps_coordinate::dms_to_decimal(degrees, minutes, seconds);
+	const auto signed_coordinate = (south || west) ? -coordinate : coordinate;
+	const auto candidate = is_latitude ? gps_coordinate(signed_coordinate, 0.0) : gps_coordinate(0.0, signed_coordinate);
 
-	return false;
+	if (!candidate.is_valid()) return false;
+	result = signed_coordinate;
+	return true;
 }
 
 static bool xmp_decode_rational(const std::string_view text, metadata_exif::urational32_t& result)
@@ -282,14 +319,14 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 		double longitude = 0;
 
 		const auto has_latitude = xmp.GetProperty(kXMP_NS_EXIF, "GPSLatitude", &utf8, &flags) &&
-			xmp_decode_gps_coordinate(str::utf8_cast(utf8), latitude);
+			xmp_decode_gps_coordinate(str::utf8_cast(utf8), true, latitude);
 		const auto has_longitude = xmp.GetProperty(kXMP_NS_EXIF, "GPSLongitude", &utf8, &flags) &&
-			xmp_decode_gps_coordinate(str::utf8_cast(utf8), longitude);
+			xmp_decode_gps_coordinate(str::utf8_cast(utf8), false, longitude);
 
 		if (has_latitude && has_longitude)
 		{
-			md.coordinate.latitude(latitude);
-			md.coordinate.longitude(longitude);
+			const gps_coordinate candidate(latitude, longitude);
+			if (candidate.is_valid()) md.coordinate = candidate;
 		}
 	}
 
@@ -422,6 +459,11 @@ static void parse_xmp(const SXMPMeta& xmp, prop::item_metadata& md)
 	if (xmp.GetProperty(kXMP_NS_DM, "trackNumber", &utf8, &flags))
 	{
 		md.track = df::xy8::parse(str::utf8_cast(utf8));
+	}
+
+	if (xmp.GetProperty(kXMP_NS_DM, "discNumber", &utf8, &flags))
+	{
+		md.disk = df::xy8::parse(str::utf8_cast(utf8));
 	}
 
 	if (xmp.GetProperty(kXMP_NS_DM, "episode", &utf8, &flags))
@@ -610,7 +652,11 @@ void metadata_edits::apply(SXMPMeta& meta) const
 			// Names are separated by punctuation, never by the space inside "Jane Doe".
 			for (const auto& part : str::split(copyright_creator.value(), true, str::is_artist_separator))
 			{
-				meta.AppendArrayItem(kXMP_NS_DC, "creator", kXMP_PropArrayIsOrdered, str::utf8_cast2(part));
+				const auto name = str::trim(part);
+				if (!name.empty())
+				{
+					meta.AppendArrayItem(kXMP_NS_DC, "creator", kXMP_PropArrayIsOrdered, str::utf8_cast2(name));
+				}
 			}
 		}
 	}
@@ -1001,6 +1047,19 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 {
 	xmp_update_result result;
 
+	if (!s_test_update_failure_sequence.empty())
+	{
+		const auto action = s_test_update_failure_sequence.front();
+		s_test_update_failure_sequence.erase(s_test_update_failure_sequence.begin());
+		if (action == 2)
+		{
+			std::ofstream f(platform::to_stream_path(update_path), std::ios::binary | std::ios::app);
+			const char marker = 0;
+			f.write(&marker, 1);
+		}
+		throw app_exception("test metadata update failure");
+	}
+
 	// Which file a toolkit error refers to; the read source and the write target differ.
 	auto failing_path = src_path;
 
@@ -1062,6 +1121,28 @@ xmp_update_result metadata_xmp::update(const df::file_path update_path, const df
 				if (!f.empty())
 				{
 					xmp.ParseFromBuffer(std::bit_cast<const char*>(f.data()), static_cast<uint32_t>(f.size()));
+				}
+			}
+			else if (src_ft->has_trait(file_traits::raw))
+			{
+				if (s_test_raw_source_xmp_path == src_path && !s_test_raw_source_xmp.empty())
+				{
+					xmp.ParseFromBuffer(std::bit_cast<const char*>(s_test_raw_source_xmp.data()),
+					                    static_cast<uint32_t>(s_test_raw_source_xmp.size()));
+				}
+				else
+				{
+					files ff;
+					const auto scanned = ff.scan_file(src_path, false, src_ft);
+					if (!scanned.success && !open_file(src_path, platform::file_open_mode::read))
+					{
+						throw app_exception("the existing metadata could not be read");
+					}
+					if (!scanned.metadata.xmp.empty())
+					{
+						xmp.ParseFromBuffer(std::bit_cast<const char*>(scanned.metadata.xmp.data()),
+						                    static_cast<uint32_t>(scanned.metadata.xmp.size()));
+					}
 				}
 			}
 		}

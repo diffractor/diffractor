@@ -7,8 +7,9 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Implements the Movie document -- timeline edits and undo, transition and duration
-// arithmetic, the derived output geometry, the OpenTimelineIO project file, and the Windows Live
-// Movie Maker reader. Pure: no I/O, no decoding, no UI. docs/movie.md owns the behaviour.
+// arithmetic, the derived output geometry, the decision entering Movie makes about the timeline it
+// holds, the OpenTimelineIO project file, and the Windows Live Movie Maker reader. Pure: no I/O, no
+// decoding, no UI. docs/movie.md owns the behaviour.
 
 #include "pch.h"
 #include "model_movie.h"
@@ -797,7 +798,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		result.ignored_elements += foreign_transition_count;
 	}
 
-	result.status = result.clips.empty() ? movie_load_status::empty : movie_load_status::ok;
+	result.status = result.clips.empty() && !has_diffractor_settings ? movie_load_status::empty : movie_load_status::ok;
 	return result;
 }
 
@@ -1080,10 +1081,32 @@ movie_load_result read_wlmp(const std::string_view xml)
 
 void movie_project::push_undo()
 {
+	// An edit made after undoing past the clean state replaces the history that led back to it.
+	if (_clean_depth && _undo.size() < *_clean_depth) _clean_depth.reset();
+
 	_undo.emplace_back(undo_entry{_clips, _settings, _selected, _current, _anchor});
-	if (_undo.size() > max_undo) _undo.erase(_undo.begin());
+
+	if (_undo.size() > max_undo)
+	{
+		_undo.erase(_undo.begin());
+
+		// Every remaining snapshot moved one place down. The clean one, if it was the one dropped,
+		// is gone for good.
+		if (_clean_depth)
+		{
+			if (*_clean_depth == 0) _clean_depth.reset();
+			else --*_clean_depth;
+		}
+	}
+
 	_modified = true;
 	++_revision;
+}
+
+void movie_project::mark_clean()
+{
+	_clean_depth = _undo.size();
+	_modified = false;
 }
 
 void movie_project::select_only(const size_t index)
@@ -1190,6 +1213,16 @@ void movie_project::insert(const size_t at, const movie_clip& clip)
 	select_only(index);
 }
 
+void movie_project::insert_many(const size_t at, const std::vector<movie_clip>& clips)
+{
+	if (clips.empty()) return;
+
+	push_undo();
+	const auto index = std::min(at, _clips.size());
+	_clips.insert(_clips.begin() + static_cast<std::ptrdiff_t>(index), clips.begin(), clips.end());
+	select_only(index);
+}
+
 void movie_project::remove(const size_t at)
 {
 	if (at >= _clips.size()) return;
@@ -1274,7 +1307,7 @@ void movie_project::remove_selection()
 
 void movie_project::replace(const size_t at, const movie_clip& clip)
 {
-	if (at >= _clips.size()) return;
+	if (at >= _clips.size() || _clips[at] == clip) return;
 
 	push_undo();
 	_clips[at] = clip;
@@ -1285,7 +1318,7 @@ void movie_project::replace_many(const std::vector<std::pair<size_t, movie_clip>
 	if (replacements.empty()) return;
 	if (std::none_of(replacements.begin(), replacements.end(), [this](const auto& replacement)
 	{
-		return replacement.first < _clips.size();
+		return replacement.first < _clips.size() && _clips[replacement.first] != replacement.second;
 	})) return;
 
 	push_undo();
@@ -1306,6 +1339,10 @@ void movie_project::replace_quietly(const size_t at, const movie_clip& clip)
 
 void movie_project::settings(const movie_settings& s)
 {
+	// The panel reports every notification its native controls raise, including the echo of a value
+	// the view itself wrote. One that changes nothing is not an edit.
+	if (s == _settings) return;
+
 	push_undo();
 	_settings = s;
 	apply_photo_duration();
@@ -1325,8 +1362,7 @@ void movie_project::trim(const size_t at, const double start, const double end)
 {
 	if (at >= _clips.size()) return;
 
-	push_undo();
-	auto& c = _clips[at];
+	auto c = _clips[at];
 
 	if (c.is_photo)
 	{
@@ -1340,6 +1376,12 @@ void movie_project::trim(const size_t at, const double start, const double end)
 		c.start = std::clamp(start, 0.0, limit);
 		c.end = std::clamp(end, c.start, limit);
 	}
+
+	// A handle pressed and let go where it was is not a trim.
+	if (c == _clips[at]) return;
+
+	push_undo();
+	_clips[at] = c;
 }
 
 void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s, const df::file_path path)
@@ -1347,9 +1389,8 @@ void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s
 	_clips = std::move(clips);
 	_settings = s;
 	_path = path;
-	_seed.clear();
 	_undo.clear();
-	_modified = false;
+	mark_clean();
 	++_revision;
 	select_only(0);
 }
@@ -1357,21 +1398,17 @@ void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s
 void movie_project::mark_saved(const df::file_path path, const uint64_t revision)
 {
 	_path = path;
-	if (_revision == revision) _modified = false;
 
-	// Saving makes it a document. A timeline seeded from a selection and then written to a file is
-	// no longer a view of that selection, and leaving the seed behind meant re-entering Movie with
-	// a different selection read it as an untouched seed and replaced the file just saved.
-	_seed.clear();
+	// A save that was overtaken by an edit wrote a state the history no longer points at, so no undo
+	// depth stands for the file any more and only another save can settle the document.
+	if (_revision == revision) mark_clean();
+	else _clean_depth.reset();
 }
 
-void movie_project::mark_seeded(std::vector<df::file_path> seed)
+void movie_project::mark_seeded()
 {
-	_seed = std::move(seed);
-	// A seeded timeline has no state before itself, so there is nothing to undo back to and nothing
-	// yet for the user to have changed.
 	_undo.clear();
-	_modified = false;
+	mark_clean();
 }
 
 void movie_project::undo()
@@ -1386,11 +1423,24 @@ void movie_project::undo()
 	_selected = std::move(entry.selected);
 	_current = entry.current;
 	_anchor = entry.anchor;
-	_modified = true;
+	_modified = !_clean_depth || *_clean_depth != _undo.size();
 	++_revision;
 
 	// The stored selection came from a list that may have been longer than this one.
 	std::erase_if(_selected, [this](const size_t i) { return i >= _clips.size(); });
 	if (_selected.empty() && !_clips.empty()) select_only(std::min(_current, _clips.size() - 1));
 	if (_current >= _clips.size()) _current = _clips.empty() ? 0 : _clips.size() - 1;
+}
+
+movie_entry decide_movie_entry(const movie_project& project, const std::vector<df::file_path>& selection,
+                               const std::vector<df::file_path>& built_from)
+{
+	if (project.is_empty()) return project.is_modified() ? movie_entry::resume : movie_entry::seed;
+	if (selection.empty() || selection == built_from) return movie_entry::resume;
+
+	// Leaving Movie settles unsaved edits, so a timeline still holding them reached here some other
+	// way. Replacing it would lose work nobody was asked about, so it is kept for leaving to ask.
+	if (project.is_modified()) return movie_entry::resume;
+
+	return movie_entry::seed;
 }

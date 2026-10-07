@@ -53,6 +53,12 @@ Texture upload occurs lazily on the UI thread because the draw context owns devi
 and scaling remain on workers. Publication checks item identity and generation before installing a
 surface or texture.
 
+FFmpeg still-image fallback constrains stream creation during probing so every probe decoder it opens
+inherits the application pixel ceiling. General AV container probing still supports formats that
+create streams while reading packets; those streams are checked again before explicit decoder setup,
+but their probe decoder may use FFmpeg's default ceiling until the demuxer exposes the stream without
+a vendored FFmpeg patch.
+
 ## The Software Tile
 
 The CPU backend rasterizes the damaged region in bounded BGRA tiles and hands completed tiles to a

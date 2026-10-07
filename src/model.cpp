@@ -32,7 +32,6 @@ static constexpr sizei video_preview_size = {256, 256};
 // it promises the frame playback will jump to.
 static constexpr double hover_thumbnail_tolerance = 0.02;
 fast_fft av_visualizer::fft;
-int av_visualizer::xscale[num_bars + 1] = {0};
 
 static bool av_can_use_hw()
 {
@@ -314,8 +313,11 @@ void display_state_t::calc_pixel_difference()
 
 	if (st1 && st2)
 	{
+		const auto loaded1 = st1->_loaded;
+		const auto loaded2 = st2->_loaded;
 		_async.queue_media_preview(
-			[weak = weak_from_this(), st1, st2, loaded1 = st1->_loaded, loaded2 = st2->_loaded, &async = _async](
+			[weak = weak_from_this(), st1 = ui_owned(_async, st1), st2 = ui_owned(_async, st2),
+				loaded1, loaded2, &async = _async](
 			media_preview_state& decoder)
 			{
 				const auto result = loaded1.calc_pixel_difference(loaded2);
@@ -323,7 +325,9 @@ void display_state_t::calc_pixel_difference()
 				async.queue_ui([weak, st1, st2, result]
 				{
 					const auto t = weak.lock();
-					if (!t || t->_selected_texture1 != st1 || t->_selected_texture2 != st2) return;
+					if (!t || t->_selected_texture1.get() != st1.get() ||
+						t->_selected_texture2.get() != st2.get())
+						return;
 
 					t->_pixel_difference = result;
 					t->_async.invalidate_view(view_invalid::view_layout | view_invalid::media_elements);
@@ -722,9 +726,10 @@ void view_state::browse_forward(const view_host_base_ptr& view)
 {
 	history_state::history_entry e;
 
-	if (history.move_history_pos(1, _selected.ids(), e))
+	if (history.history_entry_at(1, e))
 	{
-		open(view, e.search, make_unique_paths(e.selected));
+		_pending_history_move = {e.search, 1, _selected.ids()};
+		if (!open(view, e.search, make_unique_paths(e.selected))) _pending_history_move.reset();
 	}
 }
 
@@ -732,9 +737,10 @@ void view_state::browse_back(const view_host_base_ptr& view)
 {
 	history_state::history_entry e;
 
-	if (history.move_history_pos(-1, _selected.ids(), e))
+	if (history.history_entry_at(-1, e))
 	{
-		open(view, e.search, make_unique_paths(e.selected));
+		_pending_history_move = {e.search, -1, _selected.ids()};
+		if (!open(view, e.search, make_unique_paths(e.selected))) _pending_history_move.reset();
 	}
 }
 
@@ -1929,7 +1935,8 @@ static void add_media_elements(view_state& s, const prop::item_metadata_const_pt
 	if (!prop::is_null(audio_sample_rate))
 		audio.emplace_back(make_link(
 			s, prop::format_audio_sample_rate(audio_sample_rate),
-			df::search_t().with(prop::audio_sample_rate, md->audio_sample_rate), prop::audio_sample_rate,
+			df::search_t().with(prop::audio_sample_rate, static_cast<int>(md->audio_sample_rate)),
+			prop::audio_sample_rate,
 			search_result));
 	if (audio_sample_type != prop::audio_sample_t::none)
 		audio.emplace_back(make_link(
@@ -1978,6 +1985,60 @@ class title_link_element final : public std::enable_shared_from_this<title_link_
 {
 	view_state& _state;
 	const df::item_element_ptr _item;
+	struct sidecar_attribute
+	{
+		std::string name;
+		df::date_t modified;
+		df::file_size size;
+	};
+
+	mutable std::string _sidecar_key;
+	mutable std::vector<sidecar_attribute> _sidecar_attributes;
+	mutable bool _sidecar_attribute_pending = false;
+	mutable uint64_t _sidecar_attribute_generation = 0;
+
+	void queue_sidecar_attributes(const std::vector<std::string>& sidecar_parts) const
+	{
+		const auto key = str::combine(sidecar_parts, "|");
+		if (_sidecar_key != key)
+		{
+			_sidecar_key = key;
+			_sidecar_attributes.clear();
+			_sidecar_attribute_pending = false;
+			++_sidecar_attribute_generation;
+		}
+
+		if (_sidecar_attribute_pending || _sidecar_attributes.size() == sidecar_parts.size()) return;
+
+		_sidecar_attribute_pending = true;
+		const auto generation = ++_sidecar_attribute_generation;
+		const auto folder = _item->folder();
+		const auto weak = weak_from_this();
+		auto parts = sidecar_parts;
+		auto& async = _state._async;
+
+		_state.queue_async(async_queue::work, [weak, generation, folder, parts = std::move(parts), &async]() mutable
+		{
+			std::vector<sidecar_attribute> attributes;
+			attributes.reserve(parts.size());
+
+			for (const auto& part : parts)
+			{
+				const auto attribs = platform::file_attributes(folder.combine_file(part));
+				attributes.push_back({part, df::date_t(attribs.modified), df::file_size(attribs.size)});
+			}
+
+			async.queue_ui([weak, generation, attributes = std::move(attributes)]() mutable
+			{
+				const auto self = weak.lock();
+				if (!self || self->_sidecar_attribute_generation != generation) return;
+
+				self->_sidecar_attribute_pending = false;
+				self->_sidecar_attributes = std::move(attributes);
+				self->_state.invalidate_view(view_invalid::tooltip);
+			});
+		});
+	}
 
 public:
 	title_link_element(view_state& s, df::item_element_ptr i, const std::string_view text,
@@ -2158,13 +2219,17 @@ public:
 
 				const auto sidecar_parts = split(sidecars, true);
 				const std::set<std::string, df::iless> unique(sidecar_parts.begin(), sidecar_parts.end());
+				std::vector<std::string> ordered_unique(unique.begin(), unique.end());
+				queue_sidecar_attributes(ordered_unique);
 
-				for (const auto& part : unique)
+				for (const auto& part : ordered_unique)
 				{
-					const auto attribs = platform::file_attributes(_item->folder().combine_file(part));
+					const auto found = std::ranges::find(_sidecar_attributes, part, &sidecar_attribute::name);
 					table->add(part, ui::average(ui::style::color::sidecar_background, ui::style::color::view_text),
-					           platform::format_date(df::date_t(attribs.modified).system_to_local()),
-					           prop::format_size(df::file_size(attribs.size)));
+					           found == _sidecar_attributes.end()
+						           ? std::string{}
+						           : platform::format_date(found->modified.system_to_local()),
+					           found == _sidecar_attributes.end() ? std::string{} : prop::format_size(found->size));
 				}
 
 				hover.elements->add(table);
@@ -2476,7 +2541,7 @@ view_elements_ptr view_state::create_selection_controls(const bool compact)
 						if (!prop::is_null(audio_sample_rate))
 							audio_elements.emplace_back(
 								make_link(s, prop::format_audio_sample_rate(audio_sample_rate),
-								          df::search_t().with(prop::audio_sample_rate, audio_sample_rate),
+								          df::search_t().with(prop::audio_sample_rate, static_cast<int>(audio_sample_rate)),
 								          prop::audio_sample_rate, search_result));
 						if (audio_sample_type != prop::audio_sample_t::none)
 							audio_elements.emplace_back(
@@ -3670,6 +3735,17 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 		return false;
 	}
 
+	if (_pending_history_move && _pending_history_move->search != new_search)
+	{
+		_pending_history_move.reset();
+	}
+
+	return open_validated(view, new_search, selection);
+}
+
+bool view_state::open_validated(const view_host_base_ptr& view, const df::search_t& new_search,
+                                const df::unique_paths& selection)
+{
 	static std::atomic_int version;
 	auto token = df::cancel_token(version);
 	const auto path_changed = new_search != _search;
@@ -3682,7 +3758,20 @@ bool view_state::open(const view_host_base_ptr& view, const df::search_t& new_se
 		refresh_sibling_folders();
 		++_group_title_generation;
 		update_search_is_favorite_or_collection_root();
-		history.history_add(new_search, _selected.ids());
+
+		if (_pending_history_move && _pending_history_move->search == new_search)
+		{
+			history.commit_history_pos(_pending_history_move->direction, std::move(_pending_history_move->selected));
+			_pending_history_move.reset();
+		}
+		else
+		{
+			history.history_add(new_search, _selected.ids());
+		}
+	}
+	else if (_pending_history_move && _pending_history_move->search == new_search)
+	{
+		_pending_history_move.reset();
 	}
 
 	// A pass superseded before it publishes is dropped, but what it was opened for is still owed. A
@@ -4109,11 +4198,11 @@ void view_state::tick(const view_host_base_ptr& view, const double time_now)
 }
 
 
-// The file version a texture's pixels came from. _photo_timestamp holds this, so it is only ever
-// comparable with file times - never with a client clock, which on a share can lead or lag them.
-static df::date_t item_version_stamp(const df::item_element_ptr& i)
+// The file version a texture's pixels came from. The source file is authoritative: thumbnails may
+// arrive later with a null-or-file stamp and must not force a second full decode of unchanged pixels.
+static texture_source_version item_source_version(const df::item_element_ptr& i)
 {
-	return i ? std::max(i->file_modified(), i->thumbnail_timestamp()) : df::date_t{};
+	return i ? texture_source_version{i->file_modified(), {}} : texture_source_version{};
 }
 
 void texture_state::load_image(const df::item_element_ptr& i)
@@ -4123,7 +4212,7 @@ void texture_state::load_image(const df::item_element_ptr& i)
 		if (_path != i->path()) _load_retry_count = 0;
 		_photo_loaded = true;
 		_load_retry_pending = false;
-		_photo_timestamp = item_version_stamp(i);
+		_photo_version = item_source_version(i);
 		_path = i->path();
 		const auto generation = ++_load_generation;
 
@@ -4242,7 +4331,7 @@ void texture_state::release_decoded_surfaces()
 	_staged_surface.reset();
 	_retained_surface.reset();
 	_zoom_staged_surface.reset();
-	_zoom_timestamp = {};
+	_zoom_version = {};
 
 	// The mip pyramid is the biggest thing here: it holds a third again as much as the source it was
 	// built from, and the source is already going.
@@ -4266,15 +4355,15 @@ void texture_state::refresh(const df::item_element_ptr& i)
 
 	if (_is_photo)
 	{
-		const auto item_stamp = item_version_stamp(i);
-		auto out_of_date = i && _photo_timestamp < item_stamp;
+		const auto item_version = item_source_version(i);
+		auto out_of_date = i && _photo_version != item_version;
 
 		if (out_of_date && _retain_visuals_on_modify)
 		{
 			// The write that armed this changed no pixels, so adopt its stamp rather than re-read the
 			// file.
 			_retain_visuals_on_modify = false;
-			_photo_timestamp = item_stamp;
+			_photo_version = item_version;
 			out_of_date = false;
 		}
 
@@ -4316,7 +4405,7 @@ void texture_state::publish_written_image(const df::file_path path, file_load_re
 	++_load_generation;
 	_photo_loaded = true;
 	_retain_visuals_on_modify = false;
-	_photo_timestamp = prop::is_null(modified) ? platform::now() : modified;
+	_photo_version = {prop::is_null(modified) ? platform::now() : modified, {}};
 	_display_geometry_known = false;
 	update(std::move(loaded));
 }
@@ -4923,7 +5012,7 @@ void texture_state::draw_panorama(ui::draw_context& rc, const pointi offset, con
 
 ui::texture_ptr texture_state::zoom_texture(ui::draw_context& rc, const sizei extent)
 {
-	if (!_zoom_texture || _zoom_timestamp != _photo_timestamp)
+	if (!_zoom_texture || _zoom_version != _photo_version)
 	{
 		const auto t = rc.create_texture();
 
@@ -4931,7 +5020,7 @@ ui::texture_ptr texture_state::zoom_texture(ui::draw_context& rc, const sizei ex
 			t->update(_zoom_staged_surface) != ui::texture_update_result::failed)
 		{
 			_zoom_texture = t;
-			_zoom_timestamp = _photo_timestamp;
+			_zoom_version = _photo_version;
 		}
 	}
 
@@ -4988,23 +5077,28 @@ void display_state_t::populate(const view_state& state)
 			const auto md = _item1->metadata();
 			const auto path = _item1->path();
 			const auto source = md->dimensions();
+			const auto modified = _item1->file_modified();
 
-			panorama_item(path, source);
+			panorama_item(path, source, modified);
 
-			if (!_common._panorama.resolved && !_panorama_read_queued)
+			if (!_common._panorama.resolved &&
+				(_panorama_read_path != path || _panorama_read_source != source ||
+					_panorama_read_modified != modified))
 			{
-				_panorama_read_queued = true;
+				_panorama_read_path = path;
+				_panorama_read_source = source;
+				_panorama_read_modified = modified;
 				const auto weak = weak_from_this();
 
-				_async.queue_async(async_queue::load, [weak, path, source, &async = _async]
+				_async.queue_async(async_queue::load, [weak, path, source, modified, &async = _async]
 				{
 					const auto declared = metadata_xmp::panorama(path);
 
-					async.queue_ui([weak, path, source, declared]
+					async.queue_ui([weak, path, source, modified, declared]
 					{
 						// The display may have moved on, and the session is keyed on the path for
 						// exactly that reason.
-						if (const auto display = weak.lock()) display->panorama_geometry(path, declared, source);
+						if (const auto display = weak.lock()) display->panorama_geometry(path, declared, source, modified);
 					});
 				});
 			}

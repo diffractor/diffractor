@@ -32,6 +32,16 @@ static constexpr auto releases_url = "https://www.diffractor.com/releases";
 static constexpr auto support_url = "https://github.com/diffractor/diffractor/issues";
 static constexpr auto donate_url = "https://www.paypal.com/donate/?hosted_button_id=HX5NRS9JGKLRL";
 
+bool should_refresh_advanced_search_hover_thumbnail(const bool has_surface, const bool has_thumbnail,
+                                                    const bool is_staging, int& hover_retries)
+{
+	if (has_surface || !has_thumbnail) return false;
+	if (is_staging) return true;
+	if (hover_retries <= 0) return false;
+	--hover_retries;
+	return true;
+}
+
 bool ui::browse_for_term(view_state& vs, const control_frame_ptr& parent, std::string& result)
 {
 	const auto dlg = make_dlg(parent);
@@ -369,8 +379,11 @@ void advanced_search_invoke(view_state& state, const ui::control_frame_ptr& pare
 				box.add(gps_coordinate(cell.max_latitude, cell.max_longitude));
 			}
 
+			auto marker_snapshot = map_engine::prepare_marker_snapshot(markers, zoom);
+
 			state._async.queue_ui(
-				[weak_ls, generation, box, markers = std::move(markers), paths = std::move(paths)]() mutable
+				[weak_ls, generation, box,
+					marker_snapshot = std::move(marker_snapshot), paths = std::move(paths)]() mutable
 				{
 					const auto s = weak_ls.lock();
 					if (!s || s->generation != generation) return;
@@ -385,7 +398,7 @@ void advanced_search_invoke(view_state& state, const ui::control_frame_ptr& pare
 					s->marker_place_names.assign(s->marker_paths.size(), {});
 					s->hover_path = {};
 					s->hover_item.reset();
-					m->set_markers(markers);
+					m->set_marker_snapshot(std::move(marker_snapshot));
 
 					if (!s->framed && box.valid)
 					{
@@ -496,13 +509,21 @@ void advanced_search_invoke(view_state& state, const ui::control_frame_ptr& pare
 		if (!item) return;
 
 		const auto elements = std::make_shared<view_elements>();
-		const auto thumb = item->thumbnail();
+		const auto surface = item->thumbnail_surface();
 
-		if (is_valid(thumb))
+		if (is_valid(surface))
 		{
-			files ff;
-			elements->add(std::make_shared<surface_element>(ff.image_to_surface(thumb), 160, flex_item::center,
+			elements->add(std::make_shared<surface_element>(surface, 160, flex_item::center,
 			                                                item->layout_orientation()));
+		}
+		else if (is_valid(item->thumbnail()))
+		{
+			needs_refresh = should_refresh_advanced_search_hover_thumbnail(
+				false, true, item->is_staging_thumbnail_surface(), ls->hover_retries);
+			if (needs_refresh && !item->is_staging_thumbnail_surface())
+			{
+				item->stage_thumbnail_surface(state._async, false, true);
+			}
 		}
 		else if (ls->hover_retries > 0)
 		{
@@ -1733,9 +1754,11 @@ void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view
 		for (;;)
 		{
 			std::vector<view_element_ptr> controls;
-			controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-				dlg->_frame, icon_index::mail, title, format_plural_text(tt.email_info_fmt, items), items.thumbs(),
-				items.size())));
+			auto title_control = std::make_shared<ui::title_control2>(
+				dlg->_frame, icon_index::mail, title, format_plural_text(tt.email_info_fmt, items),
+				std::vector<ui::const_surface_ptr>{}, items.size());
+			title_control->selection_async(items.thumbs(), items.size(), s._async);
+			controls.emplace_back(set_margin(title_control));
 			controls.emplace_back(std::make_shared<divider_element>());
 			controls.emplace_back(set_margin(std::make_shared<text_element>(tt.email_small_help)));
 			controls.emplace_back(std::make_shared<ui::check_control>(dlg->_frame, tt.email_zip, email_settings.zip));

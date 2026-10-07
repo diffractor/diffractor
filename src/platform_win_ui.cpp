@@ -1116,23 +1116,24 @@ public:
 	{
 		if (_alpha != _alpha_target)
 		{
-			_alpha = (_alpha * 5 + _alpha_target * 2) / 7;
-
-			if (std::abs(_alpha - _alpha_target) <= 1)
-			{
-				_alpha = _alpha_target;
-			}
+			_alpha = ui::gated_fade_alpha_step(_alpha, _alpha_target);
 
 			// Re-present the layered window with the updated fade alpha.
 			if (_draw_ctx && _alpha > 0)
 			{
 				handle_render();
 			}
+			else if (_alpha == 0 && m_hWnd)
+			{
+				ShowWindow(m_hWnd, SW_HIDE);
+			}
 		}
-		else if (_timer_id)
+
+		if (_alpha == _alpha_target && _timer_id)
 		{
 			KillTimer(m_hWnd, _timer_id);
 			_timer_id = 0;
+			if (_alpha == 0 && m_hWnd) ShowWindow(m_hWnd, SW_HIDE);
 		}
 	}
 
@@ -1254,7 +1255,25 @@ public:
 		{
 			_alpha_target = a;
 
-			if (_timer_id == 0u)
+			if (!ui::animations_enabled)
+			{
+				if (_timer_id)
+				{
+					KillTimer(m_hWnd, _timer_id);
+					_timer_id = 0;
+				}
+
+				_alpha = ui::gated_fade_alpha_step(_alpha, _alpha_target);
+				if (_draw_ctx && _alpha > 0)
+				{
+					handle_render();
+				}
+				else if (m_hWnd)
+				{
+					ShowWindow(m_hWnd, SW_HIDE);
+				}
+			}
+			else if (_timer_id == 0u)
 			{
 				// A non-zero nIDEvent: 0 is also the "no timer" sentinel, so passing it means the
 				// 30 Hz fade timer can never be matched by KillTimer and runs for the window's life.
@@ -2751,9 +2770,10 @@ public:
 		{
 			if (!c.control) continue;
 
-			const auto h = std::any_cast<HWND>(c.control->handle());
-			df::assert_true(IsWindow(h));
-			if (!IsWindow(h)) continue;
+			const auto handle = c.control->handle();
+			const auto* hwnd = std::any_cast<HWND>(&handle);
+			if (!hwnd || !IsWindow(*hwnd)) continue;
+			const auto h = *hwnd;
 
 			// The window's own style bit, not IsWindowVisible, because a hidden host must not make
 			// every child look hidden and force a redundant move.
@@ -4701,6 +4721,7 @@ ui::frame_ptr control_host_impl::create_frame(ui::frame_host_weak_ptr host, cons
 		return result;
 	}
 
+	df::log(__FUNCTION__, "failed to create child frame");
 	return nullptr;
 }
 

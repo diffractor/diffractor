@@ -15,6 +15,13 @@
 
 #include "webp/decode.h"
 #include "webp/mux.h"
+
+static std::string s_fail_next_webp_chunk;
+
+void files_test_hooks::fail_next_webp_chunk(const std::string_view fourcc)
+{
+	s_fail_next_webp_chunk = fourcc;
+}
 #include "webp/demux.h"
 #include "webp/encode.h"
 
@@ -579,13 +586,33 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 
 				if (img_err == WEBP_MUX_OK)
 				{
+					auto metadata_ok = true;
+					const auto set_chunk = [mux, &metadata_ok](const char fourcc[5], const WebPData& chunk_data)
+					{
+						if (s_fail_next_webp_chunk == fourcc)
+						{
+							s_fail_next_webp_chunk.clear();
+							df::log(__FUNCTION__, std::format("webp {} chunk insertion failed by test hook", fourcc));
+							metadata_ok = false;
+							return;
+						}
+
+						const auto err = WebPMuxSetChunk(mux, fourcc, &chunk_data, 0);
+						if (err != WEBP_MUX_OK)
+						{
+							const auto message = std::format("webp {} chunk insertion failed with error {}", fourcc,
+							                                 static_cast<int>(err));
+							df::log(__FUNCTION__, message);
+							metadata_ok = false;
+						}
+					};
+
 					if (!metadata.icc.empty())
 					{
 						WebPData chunk_data;
 						chunk_data.bytes = metadata.icc.data();
 						chunk_data.size = metadata.icc.size();
-						// Metadata chunk errors are not critical - the image is still valid without them.
-						WebPMuxSetChunk(mux, "ICCP", &chunk_data, 0);
+						set_chunk("ICCP", chunk_data);
 					}
 
 					if (!metadata.exif.empty())
@@ -594,7 +621,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						WebPData chunk_data;
 						chunk_data.bytes = metadata.exif.data() + exif_skip;
 						chunk_data.size = metadata.exif.size() - exif_skip;
-						WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
+						set_chunk("EXIF", chunk_data);
 					}
 					else if (surface_in->orientation() != ui::orientation::top_left)
 					{
@@ -603,7 +630,7 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						WebPData chunk_data;
 						chunk_data.bytes = rotate_exif.data() + exif_skip;
 						chunk_data.size = rotate_exif.size() - exif_skip;
-						WebPMuxSetChunk(mux, "EXIF", &chunk_data, 0);
+						set_chunk("EXIF", chunk_data);
 					}
 
 					if (!metadata.xmp.empty())
@@ -611,19 +638,23 @@ ui::image_ptr save_webp(const ui::const_surface_ptr& surface_in, const metadata_
 						WebPData chunk_data;
 						chunk_data.bytes = metadata.xmp.data();
 						chunk_data.size = metadata.xmp.size();
-						WebPMuxSetChunk(mux, "XMP ", &chunk_data, 0);
+						set_chunk("XMP ", chunk_data);
 					}
 
-					WebPData output_data;
-					WebPDataInit(&output_data);
-
-					WebPMuxError err = WebPMuxAssemble(mux, &output_data);
-
-					if (err == WEBP_MUX_OK)
+					if (metadata_ok)
 					{
-						result = std::make_shared<ui::image>(df::cspan(output_data.bytes, output_data.size), dimensions,
-						                                     ui::image_format::WEBP, surface_in->orientation());
-						WebPDataClear(&output_data);
+						WebPData output_data;
+						WebPDataInit(&output_data);
+
+						WebPMuxError err = WebPMuxAssemble(mux, &output_data);
+
+						if (err == WEBP_MUX_OK)
+						{
+							result = std::make_shared<ui::image>(df::cspan(output_data.bytes, output_data.size),
+							                                     dimensions, ui::image_format::WEBP,
+							                                     surface_in->orientation());
+							WebPDataClear(&output_data);
+						}
 					}
 				}
 			}

@@ -191,7 +191,10 @@ ui::color32 ui::color_adjust::adjust_color(double y, double u, double v, const d
 	const auto b = y + 2.03252 * u;
 
 	// Rounded, not truncated: truncation biases every edited pixel half a level darker.
-	return saturate_rgba(df::round(r * 255.0), df::round(g * 255.0), df::round(b * 255.0), df::round(a * 255.0));
+	return df::byte_clamp(df::round(b * 255.0)) |
+		df::byte_clamp(df::round(g * 255.0)) << 8 |
+		df::byte_clamp(df::round(r * 255.0)) << 16 |
+		df::byte_clamp(df::round(a * 255.0)) << 24;
 }
 
 bool ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const size_t dst_stride,
@@ -208,9 +211,9 @@ bool ui::color_adjust::apply(const const_surface_ptr& src, uint8_t* dst, const s
 		{
 			const auto c = *s++;
 
-			const auto r = std::clamp(get_r(c) / 255.0 * (1.0 + 0.2 * _temperature + 0.1 * _tint), 0.0, 1.0);
+			const auto r = std::clamp(get_b(c) / 255.0 * (1.0 + 0.2 * _temperature + 0.1 * _tint), 0.0, 1.0);
 			const auto g = std::clamp(get_g(c) / 255.0 * (1.0 - 0.2 * _tint), 0.0, 1.0);
-			const auto b = std::clamp(get_b(c) / 255.0 * (1.0 - 0.2 * _temperature + 0.1 * _tint), 0.0, 1.0);
+			const auto b = std::clamp(get_r(c) / 255.0 * (1.0 - 0.2 * _temperature + 0.1 * _tint), 0.0, 1.0);
 			const auto a = get_a(c) / 255.0;
 
 			const auto y = 0.299 * r + 0.587 * g + 0.114 * b;

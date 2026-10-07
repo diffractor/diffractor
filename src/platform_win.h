@@ -45,6 +45,7 @@
 #include <dxgi.h>
 #include <dxgi1_4.h> // IDXGIAdapter3, for the video-memory gauge in the session perf summary
 #include <windows.h>
+#include <Shellapi.h>
 #include <wrl.h>
 using namespace Microsoft::WRL;
 
@@ -86,6 +87,17 @@ namespace platform
 {
 	file_ptr make_file_from_handle(HANDLE h);
 
+	using shell_file_operation_w_fn = decltype(&SHFileOperationW);
+	using shell_file_operation_a_fn = decltype(&SHFileOperationA);
+
+	struct shell_operation_probe
+	{
+		file_op_result result;
+		std::wstring destination_w;
+		std::string destination_a;
+		FILEOP_FLAGS flags = {};
+	};
+
 	// What a shell drag source actually advertises. Windows-only by nature: the formats it names
 	// are clipboard format ids, and the paths come back in the shell's own UTF-16.
 	struct data_object_probe
@@ -99,10 +111,26 @@ namespace platform
 		int shell_id_list_count = -1; // CIDA cidl from CFSTR_SHELLIDLIST (-1 = no data returned)
 		std::vector<std::wstring> hdrop_paths;
 		std::vector<std::wstring> shell_id_list_paths;
+		std::vector<uint32_t> image_formats;
+		std::vector<uint32_t> image_tymed;
+		bool advertises_bitmap = false;
+		bool advertises_dib = false;
+		bool bitmap_retrieved = false;
+		bool dib_retrieved = false;
+		sizei bitmap_dimensions;
+		sizei dib_dimensions;
 	};
 
 	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
 	                                         const std::vector<df::folder_path>& folders);
+	data_object_probe probe_drag_data_object(const file_load_result& loaded);
+
+	shell_operation_probe probe_shell_file_operation_w(shell_file_operation_w_fn op);
+	shell_operation_probe probe_shell_file_operation_a(shell_file_operation_a_fn op);
+	shell_operation_probe probe_shell_delete_operation(shell_file_operation_w_fn op, bool allow_undo);
+	std::wstring probe_shell_destination_w(df::folder_path target);
+	std::string probe_shell_destination_a(df::folder_path target);
+	FILEOP_FLAGS probe_shell_delete_flags(bool allow_undo);
 
 	// Shell and common-dialog APIs reject the \\?\ prefix that to_file_system_path adds for long
 	// paths, so they take the plain form and accept the MAX_PATH limit those APIs already impose.
@@ -118,6 +146,37 @@ namespace platform
 	// larger than the work area it would land in, or so little of it overlaps that there is nothing
 	// left to grab. A window deliberately straddling two displays is none of those and is left alone.
 	bool window_needs_refit(recti saved, recti work_area, bool reaches_a_display);
+
+	struct edit_spelling_range
+	{
+		std::string word;
+		int pos_start = 0;
+		int pos_end = 0;
+	};
+
+	std::vector<edit_spelling_range> probe_edit_spelling_ranges(
+		const std::wstring& text, const std::function<bool(std::string_view)>& is_word_valid);
+	recti probe_edit_spelling_bounds(HWND hwnd, int pos_start, int pos_end);
+
+	enum class edit_context_menu_route
+	{
+		native_edit_procedure,
+		custom_spelling_menu,
+	};
+
+	edit_context_menu_route probe_edit_context_menu_route(bool spelling_error_under_pointer, bool custom_menu_created);
+
+	struct number_format_probe_snapshot
+	{
+		std::wstring decimal_sep;
+		std::wstring thousand_sep;
+		uint32_t leading_zero = 1;
+		uint32_t negative_order = 1;
+	};
+
+	void set_number_format_probe_snapshots(std::vector<number_format_probe_snapshot> snapshots,
+	                                       bool invalidate_during_refresh);
+	void clear_number_format_probe_snapshots();
 }
 
 std::string win32_to_string(const IID& iid);
@@ -172,6 +231,7 @@ public:
 	bool has_drop_files() const override;
 	bool has_bitmap() const override;
 	platform::file_op_result drop_files(df::folder_path target, platform::drop_effect effect) override;
+	platform::clipboard_bitmap_ptr capture_bitmap() override;
 	platform::file_op_result save_bitmap(df::folder_path save_path, std::string_view name, bool as_png) override;
 	DWORD preferred_drop_effect() const;
 	description files_description() const override;

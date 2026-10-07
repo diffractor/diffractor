@@ -12,6 +12,9 @@ read-back, and failure outcomes. [Metadata](metadata.md) owns property-to-tag ma
 - Metadata-only changes avoid pixel and thumbnail reloads when presentation is unchanged.
 - Staged writes leave the live destination untouched until replacement and preserve a requested
   original before replacement begins.
+- Callers that reviewed a free destination can require staged publication to fail if the destination
+  appears before the final move; callers that reviewed a replacement can require the destination to
+  still match that review immediately before the swap.
 - Approved in-place metadata writes trade full rollback for bounded cost; failure is reported and
   the result is rescanned. They do not carry the staged path's prior-byte guarantee.
 - A successful write publishes the bytes and modified time actually written, including on SMB.
@@ -37,6 +40,9 @@ Decode requests use display size where the codec supports scaled decode. Encoded
 thumbnails are budgeted; decoded surfaces are retained only while visible or when no cheaper form can
 recreate them. GPU textures are created lazily by the UI-owned draw context and may be discarded on
 device loss without reopening the source.
+Bitmap thumbnail scans obey the same encoded-byte ceiling as whole-file loads: a file over that
+ceiling may still contribute header and metadata, but it is not read into memory or published as a
+partial thumbnail.
 
 ### When An Image Cannot Be Shown
 
@@ -61,6 +67,10 @@ the source packet, preserving properties the edit did not mention. If a sidecar 
 rollback copy protects the media/sidecar pair across the two replacements. Temporary paths are
 cleaned on every bounded failure path.
 
+Pasted clipboard bitmaps follow the same publication rule: the encoder writes an owned temporary
+file off the UI thread, then publishes it to the chosen auto-numbered destination only after the
+stream and encoder commit successfully.
+
 A requested `.original` is created before replacement and never overwrites an existing backup.
 Metadata commands do not imply a backup: callers request one explicitly.
 
@@ -78,9 +88,12 @@ the admitted handler fails after changing the live file.
 ## Sidecars
 
 Formats without embedded-XMP support use `<name>.xmp`. A metadata-only RAW edit changes only the
-staged sidecar; the media bytes remain untouched. For a combined media and sidecar update, the media
-replacement completes first and is rolled back if the sidecar replacement fails where the platform
-supports that recovery.
+staged sidecar; the media bytes remain untouched. When creating the first RAW sidecar, the update
+starts from the effective source packet so embedded XMP is not shadowed by an otherwise default
+sidecar. An existing sidecar, including an explicitly empty one, remains the higher-priority source;
+an unreadable sidecar fails rather than being replaced. For a combined media and sidecar update, the
+media replacement completes first and is rolled back if the sidecar replacement fails where the
+platform supports that recovery.
 
 ## Coherent Read-Back
 
@@ -117,4 +130,6 @@ items separately. It does not claim to undo completed writes.
   `texture_state` and `display_state_t`.
 - [model_index.cpp](../src/model_index.cpp): change discovery, scanning, and thumbnail scheduling.
 - [platform_win_files.cpp](../src/platform_win_files.cpp): replacement and coherent file handles.
+- [platform_win_wic.cpp](../src/platform_win_wic.cpp): pasted clipboard bitmap encoding and staged
+  publication.
 - [metadata_xmp.cpp](../src/metadata_xmp.cpp): XMP packet and sidecar updates.

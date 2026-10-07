@@ -178,26 +178,56 @@ namespace faces
 
 		if (outside == 0) return false;
 
-		// A corner or two just past the edge is a crop that still holds the whole face; measuring the
-		// area rather than counting corners is what tells that apart from half a face.
-		auto min_x = corners[0].X, max_x = corners[0].X;
-		auto min_y = corners[0].Y, max_y = corners[0].Y;
-
-		for (const auto& c : corners)
+		const auto area = [](const std::vector<pointd>& poly)
 		{
-			min_x = std::min(min_x, c.X);
-			max_x = std::max(max_x, c.X);
-			min_y = std::min(min_y, c.Y);
-			max_y = std::max(max_y, c.Y);
-		}
+			auto sum = 0.0;
+			for (size_t i = 0; i < poly.size(); ++i)
+			{
+				const auto& a = poly[i];
+				const auto& b = poly[(i + 1) % poly.size()];
+				sum += a.X * b.Y - b.X * a.Y;
+			}
+			return std::abs(sum) * 0.5;
+		};
+		const auto clip = [](const std::vector<pointd>& input, const auto inside, const auto intersect)
+		{
+			std::vector<pointd> output;
+			if (input.empty()) return output;
+			auto prev = input.back();
+			auto prev_inside = inside(prev);
+			for (const auto& curr : input)
+			{
+				const auto curr_inside = inside(curr);
+				if (curr_inside != prev_inside) output.emplace_back(intersect(prev, curr));
+				if (curr_inside) output.emplace_back(curr);
+				prev = curr;
+				prev_inside = curr_inside;
+			}
+			return output;
+		};
 
-		const auto full = (max_x - min_x) * (max_y - min_y);
+		std::vector<pointd> poly(std::begin(corners), std::end(corners));
+		const auto full = area(poly);
 		if (full <= 0) return true;
 
-		const auto inner_w = std::max(0.0, std::min(max_x, static_cast<double>(source_extent.cx)) - std::max(min_x, 0.0));
-		const auto inner_h = std::max(0.0, std::min(max_y, static_cast<double>(source_extent.cy)) - std::max(min_y, 0.0));
+		poly = clip(poly, [](const pointd p) { return p.X >= 0; },
+		            [](const pointd a, const pointd b) { return pointd{0, a.Y + (b.Y - a.Y) * (-a.X / (b.X - a.X))}; });
+		poly = clip(poly, [source_extent](const pointd p) { return p.X <= source_extent.cx; },
+		            [source_extent](const pointd a, const pointd b)
+		            {
+			            const auto t = (source_extent.cx - a.X) / (b.X - a.X);
+			            return pointd{static_cast<double>(source_extent.cx), a.Y + (b.Y - a.Y) * t};
+		            });
+		poly = clip(poly, [](const pointd p) { return p.Y >= 0; },
+		            [](const pointd a, const pointd b) { return pointd{a.X + (b.X - a.X) * (-a.Y / (b.Y - a.Y)), 0}; });
+		poly = clip(poly, [source_extent](const pointd p) { return p.Y <= source_extent.cy; },
+		            [source_extent](const pointd a, const pointd b)
+		            {
+			            const auto t = (source_extent.cy - a.Y) / (b.Y - a.Y);
+			            return pointd{a.X + (b.X - a.X) * t, static_cast<double>(source_extent.cy)};
+		            });
 
-		return (1.0 - (inner_w * inner_h) / full) > t.max_outside_fraction;
+		return (1.0 - area(poly) / full) > t.max_outside_fraction;
 	}
 
 	void normalise(face_vector& v)
@@ -1003,10 +1033,13 @@ namespace faces
 		const auto scale_x = static_cast<double>(dims.cx) / crop_space.cx;
 		const auto scale_y = static_cast<double>(dims.cy) / crop_space.cy;
 
-		const auto left = std::clamp(static_cast<int>(crop.X * scale_x), 0, dims.cx - 1);
-		const auto top = std::clamp(static_cast<int>(crop.Y * scale_y), 0, dims.cy - 1);
-		const auto right = std::clamp(static_cast<int>((crop.X + crop.Width) * scale_x), left + 1, dims.cx);
-		const auto bottom = std::clamp(static_cast<int>((crop.Y + crop.Height) * scale_y), top + 1, dims.cy);
+		const auto to_int = [](const double v) { return static_cast<int>(std::round(v)); };
+		const auto left = to_int(std::clamp(crop.X * scale_x, 0.0, static_cast<double>(dims.cx - 1)));
+		const auto top = to_int(std::clamp(crop.Y * scale_y, 0.0, static_cast<double>(dims.cy - 1)));
+		const auto right = to_int(std::clamp((crop.X + crop.Width) * scale_x, static_cast<double>(left + 1),
+		                                     static_cast<double>(dims.cx)));
+		const auto bottom = to_int(std::clamp((crop.Y + crop.Height) * scale_y, static_cast<double>(top + 1),
+		                                      static_cast<double>(dims.cy)));
 
 		return {left, top, right, bottom};
 	}
@@ -1166,7 +1199,10 @@ namespace df
 
 			const auto finite_rect = std::isfinite(f.bounds.X) && std::isfinite(f.bounds.Y) &&
 				std::isfinite(f.bounds.Width) && std::isfinite(f.bounds.Height) &&
-				f.bounds.Width >= 0 && f.bounds.Height >= 0;
+				f.bounds.Width > 0 && f.bounds.Height > 0 &&
+				f.bounds.X >= -result.source_extent.cx && f.bounds.Y >= -result.source_extent.cy &&
+				f.bounds.X + f.bounds.Width <= result.source_extent.cx * 2.0 &&
+				f.bounds.Y + f.bounds.Height <= result.source_extent.cy * 2.0;
 			const auto finite_marks = std::ranges::all_of(f.marks, [](const pointd mark)
 			{
 				return std::isfinite(mark.X) && std::isfinite(mark.Y);

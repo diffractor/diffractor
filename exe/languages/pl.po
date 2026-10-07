@@ -3216,11 +3216,11 @@ msgstr[0] "Zaimportowano 1 element, ale nie można było ustawić jego daty utwo
 msgstr[1] "Zaimportowano {count} elementy, ale nie można było ustawić ich daty utworzenia."
 msgstr[2] "Zaimportowano {count} elementów, ale nie można było ustawić ich daty utworzenia."
 
-msgid "{first-name} will be moved to the recycle bin."
-msgid_plural "{count} items ({size}) will be moved to the recycle bin."
-msgstr[0] "Element {first-name} zostanie przeniesiony do Kosza."
-msgstr[1] "{count} elementy ({size}) zostaną przeniesione do Kosza."
-msgstr[2] "{count} elementów ({size}) zostanie przeniesionych do Kosza."
+msgid "{first-name} will be moved to the recycle bin when Windows can recycle it."
+msgid_plural "{count} items ({size}) will be moved to the recycle bin when Windows can recycle them."
+msgstr[0] "{first-name} zostanie przeniesiony do Kosza, jeśli system Windows może przenieść go do Kosza."
+msgstr[1] "{count} elementów ({size}) zostanie przeniesionych do Kosza, jeśli system Windows może przenieść je do Kosza."
+msgstr[2] "{count} elementów ({size}) zostanie przeniesionych do Kosza, jeśli system Windows może przenieść je do Kosza."
 
 msgid "{first-name} will be permanently deleted."
 msgid_plural "{count} items ({size}) will be permanently deleted."

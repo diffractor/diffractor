@@ -223,7 +223,8 @@ enum class tag_type
 {
 	exif,
 	gps,
-	canon
+	canon,
+	thumbnail
 };
 
 static bool is_junk(const uint8_t* p, const uint32_t s)
@@ -586,7 +587,7 @@ public:
 
 					if (ifd1_offset)
 					{
-						parse_dir(ifd1_offset, tag_type::exif);
+						parse_dir(ifd1_offset, tag_type::thumbnail);
 					}
 				}
 			}
@@ -689,6 +690,12 @@ private:
 
 	void process_tag(exif_dir_entry& entry)
 	{
+		if (entry._tag_type == tag_type::thumbnail)
+		{
+			if (entry._tag == EXIF_TAG_ORIENTATION) _handler(entry);
+			return;
+		}
+
 		switch (entry._tag)
 		{
 		case EXIF_TAG_EXIF_IFD_POINTER:
@@ -1113,6 +1120,7 @@ class exif_camera_settings_processor
 	bool _below_sea_level = false;
 	float _gps_speed = 0.0f;
 	float _speed_to_kmh = 1.0f;
+	bool _has_primary_orientation = false;
 
 	// A date, its zone and its fraction are three separate tags that may appear in any order, and
 	// OffsetTime lives in the Exif SubIFD while DateTime lives in IFD0. So the readings are held
@@ -1211,6 +1219,17 @@ public:
 		case tag_type::canon:
 			canon_tag(entry);
 			break;
+		case tag_type::thumbnail:
+			thumbnail_tag(entry);
+			break;
+		}
+	}
+
+	void thumbnail_tag(const exif_dir_entry& entry)
+	{
+		if (entry._tag == EXIF_TAG_ORIENTATION && !_has_primary_orientation)
+		{
+			_metadata.orientation = static_cast<ui::orientation>(entry.get_uint16());
 		}
 	}
 
@@ -1291,6 +1310,7 @@ public:
 		{
 		case EXIF_TAG_ORIENTATION:
 			_metadata.orientation = static_cast<ui::orientation>(entry.get_uint16());
+			_has_primary_orientation = true;
 			break;
 
 		case EXIF_TAG_APERTURE_VALUE:

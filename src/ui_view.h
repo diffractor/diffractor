@@ -478,15 +478,18 @@ public:
 
 	bool escape_controller()
 	{
-		if (!_tracking || !_active_controller) return false;
+		if (!_active_controller) return false;
 		if (!_active_controller->escape()) return false;
 
-		// The button is still down -- _tracking is what says so -- and the cancelled controller is
-		// the one that must receive its own release. Replacing it here handed that release to a
-		// fresh controller with no memory of the cancel, which then performed the very gesture
-		// Escape had just refused: a rubber-band selection cancelled mid-drag was replaced on
-		// release by the single item under the pointer. The re-test happens once the button is up.
-		_controller_invalid = true;
+		if (_tracking)
+		{
+			// The button is still down -- _tracking is what says so -- and the cancelled controller is
+			// the one that must receive its own release. Replacing it here handed that release to a
+			// fresh controller with no memory of the cancel, which then performed the very gesture
+			// Escape had just refused: a rubber-band selection cancelled mid-drag was replaced on
+			// release by the single item under the pointer. The re-test happens once the button is up.
+			_controller_invalid = true;
+		}
 		update_cursor();
 		return true;
 	}
@@ -1074,12 +1077,13 @@ public:
 
 	void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 	{
+		const auto moved = loc != _last_loc;
 		_last_loc = loc;
 
 		// Escape may already have ended the drag and restored the position; do not re-apply it.
 		if (_parent._tracking)
 		{
-			update_pos(loc.y);
+			if (moved) update_pos(loc.y);
 			_parent._tracking = false;
 		}
 

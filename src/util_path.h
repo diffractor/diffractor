@@ -86,10 +86,34 @@ namespace df
 		return folded != 0 ? folded : str::cmp(l, r);
 	}
 
+	inline size_t path_prefix_length(const std::string_view path, const std::string_view prefix)
+	{
+		if constexpr (case_insensitive_path_identity)
+		{
+			auto path_it = path.begin();
+			auto prefix_it = prefix.begin();
+			const auto path_end = path.end();
+			const auto prefix_end = prefix.end();
+
+			while (prefix_it < prefix_end)
+			{
+				if (path_it == path_end) return std::string_view::npos;
+				const auto path_char = str::to_lower(str::pop_utf8_char(path_it, path_end));
+				const auto prefix_char = str::to_lower(str::pop_utf8_char(prefix_it, prefix_end));
+				if (path_char != prefix_char) return std::string_view::npos;
+			}
+
+			return static_cast<size_t>(std::distance(path.begin(), path_it));
+		}
+		else
+		{
+			return path.starts_with(prefix) ? prefix.size() : std::string_view::npos;
+		}
+	}
+
 	inline bool path_text_starts(const std::string_view path, const std::string_view prefix)
 	{
-		if constexpr (case_insensitive_path_identity) return str::starts(path, prefix);
-		return path.starts_with(prefix);
+		return path_prefix_length(path, prefix) != std::string_view::npos;
 	}
 
 	constexpr bool is_path_sep(const char c)
@@ -102,13 +126,14 @@ namespace df
 	inline bool folder_contains(const std::string_view parent_text, const std::string_view child_text)
 	{
 		if (parent_text.size() >= child_text.size()) return compare_path_key(parent_text, child_text) == 0;
-		if (!path_text_starts(child_text, parent_text)) return false;
+		const auto consumed = path_prefix_length(child_text, parent_text);
+		if (consumed == std::string_view::npos) return false;
 
 		// A root keeps its separator - "C:\" and "/" normalise with one - so the boundary to test is
 		// the text without it. Testing the raw length instead makes every drive root contain nothing.
 		const auto boundary = parent_text.empty()
 			                      ? size_t{0}
-			                      : parent_text.size() - (is_path_sep(parent_text.back()) ? 1 : 0);
+			                      : consumed - (is_path_sep(parent_text.back()) ? 1 : 0);
 		return child_text.size() == boundary || is_path_sep(child_text[boundary]);
 	}
 
@@ -490,10 +515,14 @@ namespace df
 		{
 			const auto last_slash = find_last_slash(path);
 
-			if (last_slash != std::string_view::npos && path.size() > last_slash && last_slash > 0)
+			_folder.clear();
+			_name.clear();
+
+			if (last_slash != std::string_view::npos && last_slash + 1 < path.size() &&
+				(last_slash > 0 || !windows_path_semantics))
 			{
 				_name = str::cache(path.substr(last_slash + 1));
-				_folder = folder_path(path.substr(0, last_slash));
+				_folder = folder_path(path.substr(0, last_slash == 0 ? 1 : last_slash));
 			}
 			else
 			{
@@ -504,6 +533,7 @@ namespace df
 		std::string pack() const
 		{
 			auto result = std::string(_folder.text());
+			if (_name.is_empty()) return result;
 			if (!is_path_sep(last_char(_folder.text()))) result += preferred_path_sep;
 			result += _name;
 			return result;

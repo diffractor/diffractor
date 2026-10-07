@@ -370,6 +370,7 @@ struct metadata_parts
 	df::blob exif;
 	df::blob iptc;
 	df::blob icc;
+	df::blob photoshop_resources;
 
 	// Move-only: each member is a full metadata buffer, so an implicit copy is a silent deep copy.
 	metadata_parts() noexcept = default;
@@ -378,6 +379,15 @@ struct metadata_parts
 	metadata_parts(metadata_parts&&) noexcept = default;
 	metadata_parts& operator=(metadata_parts&&) noexcept = default;
 };
+
+bool parse_photoshop_resources(metadata_parts& metadata, df::cspan resources, bool has_photoshop_signature);
+df::blob make_photoshop_iptc_resource(df::cspan iptc, bool include_photoshop_signature);
+
+namespace files_test_hooks
+{
+	void fail_next_webp_chunk(std::string_view fourcc);
+	void set_jpeg_photoshop_resource_cap(size_t bytes);
+}
 
 class file_scan_result
 {
@@ -415,6 +425,8 @@ public:
 	uint64_t exif_file_offset = 0;
 
 	df::date_t created_utc;
+	df::date_t created_local;
+	prop::date_source created_local_source = prop::date_source::none;
 	int iso_speed = 0;
 	float exposure_time = 0;
 	float f_number = 0;
@@ -595,6 +607,9 @@ struct file_update_result : platform::file_op_result
 	bool scanned = false;
 	// True when the scan was taken through the post-swap handle, so modified is authoritative.
 	bool coherent = false;
+	// True when an in-place writer failed after it may have changed the live destination. The
+	// operation remains failed, but callers must force a rescan because cached state may be stale.
+	bool live_file_maybe_changed = false;
 	file_scan_result scan;
 	// The written bytes as a displayable image, for the item currently on screen. Free for
 	// JPEG/PNG/WEBP because the scan already materialises and wraps them.
@@ -610,9 +625,20 @@ struct file_update_result : platform::file_op_result
 	file_update_result& operator=(file_update_result&&) noexcept = default;
 };
 
+struct file_update_publish
+{
+	bool fail_if_exists = false;
+	bool require_unchanged_destination = false;
+	platform::file_attributes_t destination_attributes;
+};
+
+extern std::function<void(df::file_path destination)> test_before_file_update_publish;
+
 file_scan_result scan_png(read_stream& s);
 file_scan_result scan_jpg(read_stream& s, scan_intent intent = scan_intent::index, bool want_thumbnail = false);
 file_scan_result scan_psd(read_stream& s);
+bool is_heif_xmp_metadata_type(std::string_view metadata_type, std::string_view content_type);
+bool is_raw_gps_fix_present(bool gpsparsed, double latitude, double longitude);
 file_scan_result scan_heif(read_stream& s, scan_intent intent = scan_intent::index, bool want_thumbnail = false);
 file_scan_result scan_jxl(read_stream& s);
 file_scan_result scan_gif(read_stream& s);
@@ -1325,7 +1351,8 @@ class files final : df::no_copy
 	platform::file_op_result update_impl(df::file_path path_src, df::file_path path_dst,
 	                                     const metadata_edits& metadata_edits, const image_edits& photo_edits,
 	                                     const file_encode_params& params, bool create_original,
-	                                     std::string_view src_xmp_name, std::string_view dst_xmp_name);
+	                                     std::string_view src_xmp_name, std::string_view dst_xmp_name,
+	                                     const file_update_publish& publish, bool* live_file_maybe_changed);
 
 	av_scaler& scaler();
 	ui::surface_ptr decode_jpeg(df::cspan data, sizei target_extent, bool can_use_yuv,
@@ -1437,7 +1464,7 @@ public:
 	                          const metadata_edits& metadata_edits, const image_edits& photo_edits,
 	                          const file_encode_params& params, bool create_original,
 	                          std::string_view src_xmp_name, std::string_view dst_xmp_name = {},
-	                          const rescan_spec& rescan = {});
+	                          const rescan_spec& rescan = {}, const file_update_publish& publish = {});
 
 	file_update_result update(const df::file_path path, const metadata_edits& metadata_edits,
 	                          const image_edits& photo_edits, const file_encode_params& params,

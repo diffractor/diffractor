@@ -839,6 +839,7 @@ namespace str
 
 	std::string_view::size_type ifind(std::string_view text, std::string_view sub_string);
 	find_result ifind2(std::string_view text, std::string_view sub_string, size_t parts_offset);
+	uint32_t matched_text_byte_length(std::string_view text, size_t offset, std::string_view query);
 
 	inline bool contains(const std::string_view text, const std::string_view pattern)
 	{
@@ -982,10 +983,12 @@ namespace str
 			const auto c2 = (byte & 0x0F) >> 0;
 
 			if (!remove_leading_zeros || c1) result += hex_chars[c1];
+			if (c1) remove_leading_zeros = false;
 			if (!remove_leading_zeros || c2) result += hex_chars[c2];
-			if (c1 || c2) remove_leading_zeros = false;
+			if (c2) remove_leading_zeros = false;
 		}
 
+		if (result.empty() && remove_leading_zeros_in) return "0";
 		return result;
 	}
 

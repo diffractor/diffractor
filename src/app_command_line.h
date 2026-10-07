@@ -43,3 +43,21 @@ struct command_line_t
 };
 
 extern command_line_t command_line;
+
+struct duplicate_report_test_photo
+{
+	df::file_path path;
+	uint64_t created_key = 0;
+	std::array<uint64_t, 4> phash{};
+};
+
+struct duplicate_report_anchor_stats
+{
+	size_t sets = 0;
+	size_t grouped_photos = 0;
+	size_t declined_capture_times = 0;
+};
+
+int run_duplicate_report(std::string_view folder_text, std::string_view output_text);
+duplicate_report_anchor_stats calc_duplicate_report_anchor_stats_for_tests(
+	const std::vector<duplicate_report_test_photo>& photos);

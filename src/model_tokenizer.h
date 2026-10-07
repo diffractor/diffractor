@@ -53,7 +53,7 @@ class search_tokenizer
 
 	static bool is_delimiter(const char c)
 	{
-		return c == '#' || c == ':' || c == ',' || c == ';' || c == '|' || c == '(' || c == ')';
+		return is_delimiter_char(c);
 	}
 
 	// The input is UTF-8 bytes, so the wide-char classifiers would sign-extend any byte >= 0x80
@@ -147,6 +147,11 @@ class search_tokenizer
 	}
 
 public:
+	static bool is_delimiter_char(const char c)
+	{
+		return c == '#' || c == ':' || c == ',' || c == ';' || c == '|' || c == '(' || c == ')';
+	}
+
 	std::vector<search_part> parse(const std::string_view text)
 	{
 		clear();

@@ -575,6 +575,8 @@ ui::surface_ptr ui::surface::transform(const simple_transform t) const
 {
 	surface_ptr result;
 
+	if (!is_packed(_format)) return result;
+
 	const auto cy = _dimensions.cy;
 	const auto cx = _dimensions.cx;
 
@@ -911,6 +913,10 @@ ui::const_surface_ptr ui::surface::transform(const image_edits& photo_edits, con
 			// dropped rather than published: the caller asked for this result and no longer wants it.
 			if (!adjust.apply(surface_result, canvas->pixels(), canvas->stride(), token)) return {};
 			surface_result = std::move(canvas);
+		}
+		else
+		{
+			return {};
 		}
 	}
 

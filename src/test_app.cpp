@@ -17,6 +17,7 @@
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "util_crash_files_db.h"
+#include "app_command_line.h"
 #include "app_util.h"
 #include "app_settings.h"
 #include "app_text.h"
@@ -24,6 +25,8 @@
 #include "app_search.h"
 #include "ui_dialog.h"
 #include "app.h"
+#include "app_sidebar.h"
+#include "app_dialogs.h"
 #include "view_rename.h"
 #include "view_batch.h"
 #include "view_tags.h"
@@ -79,6 +82,24 @@ static void should_store_an_order_an_older_build_can_read()
 	             "a store with no extended key answers with what it has");
 }
 
+static void should_bound_advanced_search_hover_thumbnail_retries()
+{
+	auto retries = 2;
+	assert_equal(true, should_refresh_advanced_search_hover_thumbnail(false, true, false, retries),
+	             "first failed thumbnail hover is retried");
+	assert_equal(1, retries, "retry budget decrements");
+	assert_equal(true, should_refresh_advanced_search_hover_thumbnail(false, true, true, retries),
+	             "in-flight staging keeps the hover refreshing without spending the budget");
+	assert_equal(1, retries, "in-flight refresh does not spend retry budget");
+	assert_equal(true, should_refresh_advanced_search_hover_thumbnail(false, true, false, retries),
+	             "second failed thumbnail hover is retried");
+	assert_equal(0, retries, "retry budget reaches zero");
+	assert_equal(false, should_refresh_advanced_search_hover_thumbnail(false, true, false, retries),
+	             "exhausted thumbnail retries stop refreshing");
+	assert_equal(false, should_refresh_advanced_search_hover_thumbnail(true, true, false, retries),
+	             "an available surface needs no refresh");
+}
+
 static void should_persist_to_ini_file()
 {
 	const auto settings_folder = _temps.folder().combine("ini-settings");
@@ -128,6 +149,92 @@ static void should_persist_to_ini_file()
 		             "INI file settings");
 	}
 }
+
+#ifndef _WIN32
+static void should_commit_linux_ini_file_settings_after_durable_save()
+{
+	const auto settings_folder = _temps.folder().combine("linux-ini-settings");
+	platform::create_folder(settings_folder);
+	const auto settings_path = settings_folder.combine_file("diffractor.ini");
+
+	auto settings = platform::create_ini_file_settings(settings_folder);
+	assert_equal(true, settings->write("test_section", "string_value", "original"), "initial write");
+
+	for (const auto failure : {
+		     platform::linux_settings_test_failure::after_open,
+		     platform::linux_settings_test_failure::after_write,
+		     platform::linux_settings_test_failure::before_replace
+	     })
+	{
+		platform::test_linux_settings_failure(failure);
+		assert_equal(false, settings->write("test_section", "string_value", "updated"), "failed write reports false");
+		platform::test_linux_settings_failure(platform::linux_settings_test_failure::none);
+
+		std::string same_instance;
+		assert_equal(true, settings->read("test_section", "string_value", same_instance),
+		             "same instance still has committed value");
+		assert_equal("original", same_instance, "failed write does not publish uncommitted value");
+		assert_equal(false, platform::exists(settings_folder.combine_file(".diffractor.ini.tmp")),
+		             "failed write removes stage");
+
+		const auto reopened = platform::create_ini_file_settings(settings_folder);
+		std::string reopened_value;
+		assert_equal(true, reopened->read("test_section", "string_value", reopened_value),
+		             "reopened settings read committed value");
+		assert_equal("original", reopened_value, "failed write preserves on-disk value");
+		assert_equal(true, platform::exists(settings_path), "settings file remains present");
+	}
+
+	assert_equal(true, settings->write("test_section", "string_value", "updated"), "write succeeds after failures");
+	const auto reopened = platform::create_ini_file_settings(settings_folder);
+	std::string reopened_value;
+	assert_equal(true, reopened->read("test_section", "string_value", reopened_value), "reopened updated value");
+	assert_equal("updated", reopened_value, "successful write reaches disk");
+}
+
+static void should_skip_unchanged_linux_ini_file_settings()
+{
+	const auto settings_folder = _temps.folder().combine("linux-ini-unchanged");
+	platform::create_folder(settings_folder);
+	auto settings = platform::create_ini_file_settings(settings_folder);
+
+	platform::test_linux_reset_settings_save_count();
+	assert_equal(true, settings->write("test_section", "string_value", "same"), "initial write");
+	const auto saves_after_first = platform::test_linux_settings_save_count();
+	assert_equal(true, saves_after_first > 0, "initial write saves");
+
+	assert_equal(true, settings->write("test_section", "string_value", "same"), "unchanged write succeeds");
+	assert_equal(saves_after_first, platform::test_linux_settings_save_count(), "unchanged write does not save");
+}
+
+static void should_commit_linux_ini_file_settings_from_owned_stage()
+{
+	const auto settings_folder = _temps.folder().combine("linux-ini-owned-stage");
+	platform::create_folder(settings_folder);
+	auto first = platform::create_ini_file_settings(settings_folder);
+	auto second = platform::create_ini_file_settings(settings_folder);
+
+	assert_equal(true, first->write("test_section", "string_value", "original"), "initial write");
+
+	bool nested = false;
+	platform::test_linux_before_settings_replace = [&]
+	{
+		if (nested) return;
+		nested = true;
+		platform::test_linux_before_settings_replace = {};
+		assert_equal(true, second->write("test_section", "string_value", "second"), "nested write");
+	};
+
+	const auto first_write = first->write("test_section", "string_value", "first");
+	platform::test_linux_before_settings_replace = {};
+
+	assert_equal(true, first_write, "outer write succeeds with its own stage");
+	const auto reopened = platform::create_ini_file_settings(settings_folder);
+	std::string value;
+	assert_equal(true, reopened->read("test_section", "string_value", value), "reopened setting");
+	assert_equal("first", value, "outer complete write wins with complete bytes");
+}
+#endif
 
 static void should_rename_with_substitutions()
 {
@@ -396,9 +503,10 @@ static void should_not_plan_a_convert_output_over_a_source()
 
 static void should_adjust_item_dates_from_snapshot()
 {
-	constexpr df::date_t original_start(100);
-	constexpr df::date_t new_start(500);
-	assert_equal(df::date_t(510), adjusted_item_date(df::date_t(110), new_start, original_start),
+	const df::date_t original_start(2025, 8, 16, 18, 11, 56);
+	const df::date_t new_start(2025, 8, 17, 9, 30, 0);
+	constexpr auto offset = 10 * df::date_t::intervals_per_second;
+	assert_equal(new_start + offset, adjusted_item_date(original_start + offset, new_start, original_start),
 	             "dated item preserves offset");
 	assert_equal(new_start, adjusted_item_date({}, new_start, original_start),
 	             "undated item uses new start");
@@ -557,6 +665,70 @@ static void should_revalidate_sync_deletes()
 	assert_equal(true, status->status_of("touched.txt") == item_status::fail, "changed file is not deleted");
 	assert_equal(false, remote.combine_file("stale.txt").exists(), "unchanged file is gone");
 	assert_equal(true, remote.combine_file("touched.txt").exists(), "changed file survives");
+}
+
+// A full-path exclusion is expressed in local collection coordinates. Sync's remote tree has to
+// project each relative remote folder back into that same local scope before deciding whether it is
+// in or out; otherwise reverse sync can copy excluded files back and mirror delete can remove them.
+static void should_apply_sync_full_path_exclusions_to_remote_counterparts()
+{
+	const auto root = _temps.next_folder("sync-full-path-exclude");
+	const auto local = root.combine("local");
+	const auto remote = root.combine("remote");
+	const auto remote_private = remote.combine("Private");
+	const auto remote_nested = remote_private.combine("Nested");
+	const auto remote_cache = remote.combine("Cache.tmp");
+	platform::create_folder(local);
+	platform::create_folder(remote_nested);
+	platform::create_folder(remote_cache);
+
+	write_test_file(remote_private.combine_file("hidden.txt"), "hidden");
+	write_test_file(remote_nested.combine_file("nested.txt"), "nested");
+	write_test_file(remote_cache.combine_file("wildcard.txt"), "wildcard");
+	write_test_file(remote.combine_file("ordinary.txt"), "ordinary");
+
+	df::index_roots roots;
+	roots.folders.emplace(local);
+	roots.excludes.emplace(local.combine("Private"));
+	roots.exclude_wildcards.emplace(str::cache("*.tmp"));
+
+	const auto reverse_copy = sync_analysis(roots, remote, false, true, false, false, test_token);
+	assert_equal(true, reverse_copy.valid, "reverse sync remains valid");
+	assert_equal(1, static_cast<int>(count_sync_actions(reverse_copy, sync_action::copy_local)),
+	             "only the ordinary sibling is copied back");
+
+	const auto remote_delete = sync_analysis(roots, remote, false, false, false, true, test_token);
+	assert_equal(true, remote_delete.valid, "remote delete sync remains valid");
+	assert_equal(1, static_cast<int>(count_sync_actions(remote_delete, sync_action::delete_remote)),
+	             "only the ordinary sibling is proposed for remote deletion");
+}
+
+static void should_resolve_sync_exclusions_across_multiple_roots()
+{
+	const auto root = _temps.next_folder("sync-multi-root-exclude");
+	const auto local1 = root.combine("local1");
+	const auto local2 = root.combine("local2");
+	const auto remote = root.combine("remote");
+	platform::create_folder(local1.combine("Shots"));
+	platform::create_folder(local2.combine("Shots"));
+	platform::create_folder(remote.combine("Shots"));
+	write_test_file(local2.combine("Shots").combine_file("photo.txt"), "local2");
+	write_test_file(remote.combine("Shots").combine_file("photo.txt"), "remote");
+
+	df::index_roots roots;
+	roots.folders.emplace(local1);
+	roots.folders.emplace(local2);
+	roots.excludes.emplace(local1.combine("Shots"));
+
+	const auto disagreeing = sync_analysis(roots, remote, true, true, true, true, test_token);
+	assert_equal(false, disagreeing.valid, "excluded and included roots disagreeing is ambiguous");
+	assert_equal(true, disagreeing.reason == sync_invalid_reason::ambiguous_local_root,
+	             "the disagreement keeps the ambiguous-root refusal");
+
+	roots.excludes.emplace(local2.combine("Shots"));
+	const auto all_excluded = sync_analysis(roots, remote, true, true, true, true, test_token);
+	assert_equal(true, all_excluded.valid, "matching exclusions are not ambiguous");
+	assert_equal(0, static_cast<int>(count_sync_actions(all_excluded)), "the excluded remote folder is ignored");
 }
 
 static void should_detect_duplicate_import_destinations()
@@ -891,6 +1063,262 @@ static void should_revalidate_replaced_import_destinations(shared_test_context& 
 	             "changed destination was left alone");
 }
 
+#ifdef _WIN32
+static void should_restore_replaced_import_sidecars_when_primary_write_fails(shared_test_context& stc)
+{
+	for (const auto is_move : {false, true})
+	{
+		const auto root = _temps.next_folder(is_move ? "import-move-sidecar-rollback" : "import-copy-sidecar-rollback");
+		const auto src = root.combine("source");
+		const auto dest = root.combine("dest");
+		platform::create_folder(src);
+		platform::create_folder(dest);
+
+		const auto source = src.combine_file("photo.jpg");
+		const auto source_sidecar = src.combine_file("photo.xmp");
+		const auto destination = dest.combine_file("photo.jpg");
+		const auto destination_sidecar = dest.combine_file("photo.xmp");
+		write_test_file(source, "new media");
+		write_test_file(source_sidecar, "new xmp");
+		write_test_file(destination, "old media");
+		write_test_file(destination_sidecar, "old xmp");
+
+		const auto fi = platform::file_attributes(source);
+		folder_scan_item item;
+		item.folder = src;
+		item.item.name = source.name();
+		item.item.file_modified = df::date_t(fi.modified);
+		item.item.file_created = fi.created;
+		item.item.size = df::file_size(fi.size);
+		item.item.ft = files::file_type_from_name(source);
+
+		const auto metadata = std::make_shared<prop::item_metadata>();
+		metadata->sidecars = source_sidecar.name();
+		item.item.metadata.store(metadata);
+
+		import_options options;
+		options.dest_folder = dest;
+		options.collision = collision_policy::replace;
+		options.is_move = is_move;
+
+		const auto analysis = import_analysis(std::vector{item}, options, {}, test_token);
+		auto locked = platform::open_file(destination, platform::file_open_mode::read_write);
+		assert_equal(true, locked != nullptr, "the destination media is held open");
+
+		const auto status = std::make_shared<recording_status>();
+		import_copy(stc.empty_index, status, analysis, options, test_token);
+		locked.reset();
+
+		assert_equal(true, status->status_of("photo.jpg") == item_status::fail, "the row reports failure");
+		assert_equal("old media"s, read_test_file(destination), "the destination media keeps its old bytes");
+		assert_equal("old xmp"s, read_test_file(destination_sidecar), "the destination sidecar is restored");
+		assert_equal("new media"s, read_test_file(source), "the source media remains recoverable");
+		assert_equal("new xmp"s, read_test_file(source_sidecar), "the source sidecar remains with its media");
+	}
+}
+#endif
+
+static void should_delete_free_import_sidecar_copy_when_primary_write_fails(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-copy-free-sidecar-undo");
+	const auto src = root.combine("source");
+	const auto dest = root.combine("dest");
+	platform::create_folder(src);
+	platform::create_folder(dest);
+
+	const auto source = src.combine_file("photo.jpg");
+	const auto source_sidecar = src.combine_file("photo.xmp");
+	const auto destination = dest.combine_file("photo.jpg");
+	const auto destination_sidecar = dest.combine_file("photo.xmp");
+	write_test_file(source, "new media");
+	write_test_file(source_sidecar, "source xmp");
+	write_test_file(destination, "old media");
+
+	std::filesystem::permissions(platform::to_stream_path(source_sidecar), std::filesystem::perms::owner_write,
+	                             std::filesystem::perm_options::remove);
+	const df::scope_exit restore_readonly([source_sidecar] { platform::make_file_writable(source_sidecar); });
+	auto locked_source_sidecar = platform::open_file(source_sidecar, platform::file_open_mode::read);
+	assert_equal(true, locked_source_sidecar != nullptr, "the source sidecar is held open");
+
+	const auto fi = platform::file_attributes(source);
+	folder_scan_item item;
+	item.folder = src;
+	item.item.name = source.name();
+	item.item.file_modified = df::date_t(fi.modified);
+	item.item.file_created = fi.created;
+	item.item.size = df::file_size(fi.size);
+	item.item.ft = files::file_type_from_name(source);
+
+	const auto metadata = std::make_shared<prop::item_metadata>();
+	metadata->sidecars = source_sidecar.name();
+	item.item.metadata.store(metadata);
+
+	import_options options;
+	options.dest_folder = dest;
+	options.collision = collision_policy::replace;
+
+	const auto analysis = import_analysis(std::vector{item}, options, {}, test_token);
+#ifdef _WIN32
+	auto locked = platform::open_file(destination, platform::file_open_mode::read_write);
+	assert_equal(true, locked != nullptr, "the destination media is held open");
+#else
+	std::filesystem::permissions(platform::to_stream_path(destination), std::filesystem::perms::owner_write,
+	                             std::filesystem::perm_options::remove);
+	const df::scope_exit restore_destination_writable([destination] { platform::make_file_writable(destination); });
+#endif
+
+	const auto status = std::make_shared<recording_status>();
+	import_copy(stc.empty_index, status, analysis, options, test_token);
+#ifdef _WIN32
+	locked.reset();
+#endif
+	locked_source_sidecar.reset();
+
+	assert_equal(true, status->status_of("photo.jpg") == item_status::fail, "the row reports the primary failure");
+	assert_equal("source xmp"s, read_test_file(source_sidecar), "the source sidecar remains byte-identical");
+	assert_equal(false, destination_sidecar.exists(), "the copied destination sidecar is removed");
+}
+
+static void should_delete_readonly_import_sidecar_rollback_copy(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-rollback-cleanup-failure");
+	const auto src = root.combine("source");
+	const auto dest = root.combine("dest");
+	platform::create_folder(src);
+	platform::create_folder(dest);
+
+	const auto source = src.combine_file("photo.jpg");
+	const auto source_sidecar = src.combine_file("photo.xmp");
+	const auto destination = dest.combine_file("photo.jpg");
+	const auto destination_sidecar = dest.combine_file("photo.xmp");
+	write_test_file(source, "new media");
+	write_test_file(source_sidecar, "new xmp");
+	write_test_file(destination, "old media");
+	write_test_file(destination_sidecar, "old xmp");
+
+	const auto fi = platform::file_attributes(source);
+	folder_scan_item item;
+	item.folder = src;
+	item.item.name = source.name();
+	item.item.file_modified = df::date_t(fi.modified);
+	item.item.file_created = fi.created;
+	item.item.size = df::file_size(fi.size);
+	item.item.ft = files::file_type_from_name(source);
+
+	const auto metadata = std::make_shared<prop::item_metadata>();
+	metadata->sidecars = source_sidecar.name();
+	item.item.metadata.store(metadata);
+
+	import_options options;
+	options.dest_folder = dest;
+	options.collision = collision_policy::replace;
+
+	platform::file_ptr rollback_lock;
+	test_before_import_rollback_cleanup = [&rollback_lock](const df::file_path path)
+	{
+		rollback_lock = platform::open_file(path, platform::file_open_mode::read_write);
+	};
+	const df::scope_exit restore_cleanup_hook([&rollback_lock]
+	{
+		rollback_lock.reset();
+		test_before_import_rollback_cleanup = {};
+	});
+
+	const auto analysis = import_analysis(std::vector{item}, options, {}, test_token);
+	const auto status = std::make_shared<recording_status>();
+	import_copy(stc.empty_index, status, analysis, options, test_token);
+
+	assert_equal(true, status->status_of("photo.jpg") == item_status::success,
+	             "cleanup failure does not change the import result");
+	assert_equal("new media"s, read_test_file(destination), "the destination media was imported");
+	assert_equal("new xmp"s, read_test_file(destination_sidecar), "the destination sidecar was imported");
+}
+
+static void should_restore_destination_sidecar_after_partial_overwrite_failure(shared_test_context& stc)
+{
+	const auto root = _temps.next_folder("import-sidecar-partial-restore");
+	const auto src = root.combine("source");
+	const auto dest = root.combine("dest");
+	platform::create_folder(src);
+	platform::create_folder(dest);
+
+	const auto source = src.combine_file("photo.jpg");
+	const auto source_sidecar = src.combine_file("photo.xmp");
+	const auto destination = dest.combine_file("photo.jpg");
+	const auto destination_sidecar = dest.combine_file("photo.xmp");
+	write_test_file(source, "new media");
+	write_test_file(source_sidecar, "new xmp");
+	write_test_file(destination, "old media");
+	write_test_file(destination_sidecar, "old xmp");
+
+	const auto fi = platform::file_attributes(source);
+	folder_scan_item item;
+	item.folder = src;
+	item.item.name = source.name();
+	item.item.file_modified = df::date_t(fi.modified);
+	item.item.file_created = fi.created;
+	item.item.size = df::file_size(fi.size);
+	item.item.ft = files::file_type_from_name(source);
+
+	const auto metadata = std::make_shared<prop::item_metadata>();
+	metadata->sidecars = source_sidecar.name();
+	item.item.metadata.store(metadata);
+
+	import_options options;
+	options.dest_folder = dest;
+	options.collision = collision_policy::replace;
+
+	test_import_sidecar_write_override = [destination_sidecar](const df::file_path path)
+		-> std::optional<platform::file_op_result>
+	{
+		if (path != destination_sidecar) return {};
+		write_test_file(destination_sidecar, "partial xmp");
+		return platform::file_op_result{platform::file_op_result_code::FAILED, "simulated sidecar overwrite failure"};
+	};
+	const df::scope_exit restore_hook([] { test_import_sidecar_write_override = {}; });
+
+	const auto analysis = import_analysis(std::vector{item}, options, {}, test_token);
+	const auto status = std::make_shared<recording_status>();
+	import_copy(stc.empty_index, status, analysis, options, test_token);
+
+	assert_equal(true, status->status_of("photo.jpg") == item_status::fail, "the row reports failure");
+	assert_equal("old media"s, read_test_file(destination), "the destination media is unchanged");
+	assert_equal("old xmp"s, read_test_file(destination_sidecar), "the destination sidecar is restored");
+}
+
+static void should_prepare_import_from_the_selection_snapshot()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	view_host_base_ptr view;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state state(ss, as, index, make_test_player());
+	state.view_mode(view_type::items);
+	state.open(view, df::search_t().add_selector(test_files_folder), {});
+	state.update_item_groups();
+	state.update_selection();
+
+	const auto first = state.find_displayed_item_by_name("Test.jpg");
+	const auto second = state.find_displayed_item_by_name("Test90.jpg");
+	assert_equal(true, first != nullptr, "first source exists");
+	assert_equal(true, second != nullptr, "second source exists");
+
+	state.select(view, first, false, false, false);
+	state.update_selection();
+	auto selected_source = calc_import_selected_source(state);
+	assert_equal(true, selected_source.has_value(), "the selected source is captured");
+
+	state.select(view, second, false, false, false);
+	state.update_selection();
+	const auto sources = calc_import_sources(std::move(selected_source));
+
+	assert_equal(true, !sources.empty(), "import sources are prepared");
+	assert_equal(1_z, sources.front().items.size(), "the captured source has one item");
+	assert_equal(first->path().pack(), sources.front().items.items().front()->path().pack(),
+	             "the prepared source is the selection captured before discovery");
+}
+
 static void should_reject_missing_sync_folder()
 {
 	df::index_roots roots;
@@ -916,6 +1344,17 @@ static void should_reject_overlapping_sync_folders()
 	assert_equal(true, result.reason == sync_invalid_reason::overlapping_paths, "reports overlapping folders");
 	assert_equal(false, sync_invalid_message(result) == tt.error_cannot_continue.sv(),
 	             "overlapping folders are not reported as an internal fault");
+
+	const auto accented_local = _temps.folder().combine("sync-overlap-é");
+	const auto accented_remote = _temps.folder().combine("sync-overlap-è").combine("remote");
+	platform::create_folder(accented_local);
+	platform::create_folder(accented_remote.parent());
+	platform::create_folder(accented_remote);
+	df::index_roots accented_roots;
+	accented_roots.folders.emplace(accented_local);
+
+	const auto accented_result = sync_analysis(accented_roots, accented_remote, true, false, false, false, test_token);
+	assert_equal(true, accented_result.valid, "accented sibling sync roots do not overlap");
 }
 
 static void should_reject_ambiguous_sync_roots()
@@ -1034,6 +1473,32 @@ static void should_offer_every_matching_tool()
 
 	apply_tools({});
 	assert_equal(0_z, jpeg->all_tools().size(), "reapplying replaces rather than accumulates");
+}
+
+static void should_offer_configured_tools_only_for_one_selected_file()
+{
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	const auto path1 = _temps.next_path(".jpg");
+	const auto path2 = _temps.next_path(".jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), path1, false, false);
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), path2, false, false);
+
+	const auto first = load_item(index, path1, false);
+	const auto second = load_item(index, path2, false);
+
+	df::item_set single;
+	single.add(first);
+	assert_equal(path1.pack(), selected_external_tool_target(single).pack(),
+	             "a singular selected file is the configured-tool target");
+
+	df::item_set multiple;
+	multiple.add(first);
+	multiple.add(second);
+	assert_equal(true, selected_external_tool_target(multiple).is_empty(),
+	             "configured tools are absent for a multi-file selection");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1279,6 +1744,59 @@ static void should_round_trip_tag_actions()
 	const auto readded = parse_tag_actions("-beach Beach");
 	assert_equal(1_z, readded.size(), "a repeated tag is one action either way round");
 	assert_equal(true, readded[0].second, "the last modifier wins the other way round");
+
+	const auto assert_two_tags = [](const std::string_view text, const std::string_view first,
+	                                const std::string_view second)
+	{
+		const auto parsed = parse_tag_actions(text);
+		assert_equal(2_z, parsed.size(), text);
+		assert_equal_strict(first, parsed[0].first, text);
+		assert_equal_strict(second, parsed[1].first, text);
+	};
+
+	assert_two_tags("beach, sunset", "beach", "sunset");
+	assert_two_tags("beach,sunset", "beach", "sunset");
+	assert_two_tags("\"New York\", beach", "New York", "beach");
+	assert_two_tags("beach\r\nsunset", "beach", "sunset");
+
+	const auto hash_tag = parse_tag_actions("#beach");
+	assert_equal(1_z, hash_tag.size(), "hash tag count");
+	assert_equal_strict("beach", hash_tag[0].first, "leading hash is syntax");
+
+	const auto quoted_hash = parse_tag_actions("#\"New York\" -#\"old town\" #'New Town' \"#1\"");
+	assert_equal(4_z, quoted_hash.size(), "quoted hash action count");
+	assert_equal_strict("New York", quoted_hash[0].first, "quoted double hash tag");
+	assert_equal(true, quoted_hash[0].second, "quoted double hash add");
+	assert_equal_strict("old town", quoted_hash[1].first, "quoted hash removal tag");
+	assert_equal(false, quoted_hash[1].second, "quoted hash removal");
+	assert_equal_strict("New Town", quoted_hash[2].first, "quoted single hash tag");
+	assert_equal(true, quoted_hash[2].second, "quoted single hash add");
+	assert_equal_strict("#1", quoted_hash[3].first, "quoted literal hash is kept");
+	assert_equal(true, quoted_hash[3].second, "quoted literal hash add");
+
+	const std::vector<tag_action> literals = {
+		{"or", true},
+		{"and", true},
+		{"-literal", true},
+		{"name,with;delimiters|and(parens)", false},
+		{"line\r\nbreak", true},
+		{"tab\tname", true},
+		{"quoted \"tag\"", true}
+	};
+	const auto literal_text = serialize_tag_actions(literals);
+	const auto literal_reparsed = parse_tag_actions(literal_text);
+	assert_equal(literals.size(), literal_reparsed.size(), "literal action count");
+
+	for (auto i = 0_z; i < literals.size(); ++i)
+	{
+		assert_equal_strict(literals[i].first, literal_reparsed[i].first, "literal tag");
+		assert_equal(literals[i].second, literal_reparsed[i].second, "literal modifier");
+	}
+
+	assert_equal_strict("or", parse_tag_actions(serialize_tag_actions({{"or", true}})).front().first,
+	                    "reserved word survives a recommendation toggle");
+	assert_equal_strict("-literal", parse_tag_actions(serialize_tag_actions({{"-literal", true}})).front().first,
+	                    "leading marker survives a recommendation toggle");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1500,6 +2018,60 @@ static void should_restore_history_selection()
 	assert_equal(true, area_history._history.back().search == resolved_area,
 	             "deferred area resolution updates the current history entry");
 	assert_equal(1_z, area_history._history.size(), "deferred area resolution does not add a history entry");
+}
+
+class navigation_gate_strategy final : public null_state_strategy
+{
+public:
+	df::search_t vetoed_search;
+
+	bool can_open_search(const df::search_t& path) override
+	{
+		return vetoed_search.is_empty() || path != vetoed_search;
+	}
+};
+
+static void drain_query_work(deferred_async_strategy& as)
+{
+	while (as.run_next(async_queue::query)) as.drain_ui();
+}
+
+static void should_commit_history_navigation_only_after_open_is_accepted()
+{
+	navigation_gate_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state state(ss, as, index, make_test_player());
+	const view_host_base_ptr view;
+	state.view_mode(view_type::items);
+
+	const auto search_a = df::search_t::parse("history-a");
+	const auto search_b = df::search_t::parse("history-b");
+	const auto search_c = df::search_t::parse("history-c");
+
+	assert_equal(true, state.open(view, search_a, {}), "first search opens");
+	drain_query_work(as);
+	assert_equal(true, state.open(view, search_b, {}), "second search opens");
+	drain_query_work(as);
+	assert_equal(true, state.open(view, search_c, {}), "third search opens");
+	drain_query_work(as);
+	assert_equal(true, state.search() == search_c, "the fixture starts at C");
+
+	ss.vetoed_search = search_b;
+	state.browse_back(view);
+	assert_equal(true, state.search() == search_c, "a vetoed Back leaves C displayed");
+
+	history_state::history_entry next_back;
+	assert_equal(true, state.history.history_entry_at(-1, next_back), "Back is still available");
+	assert_equal(true, next_back.search == search_b, "and still targets the rejected entry");
+	assert_equal(false, state.history.can_browse_forward(), "Forward is not invented by a rejected Back");
+
+	ss.vetoed_search = {};
+	state.browse_back(view);
+	drain_query_work(as);
+	assert_equal(true, state.search() == search_b, "accepted Back reaches B");
+	assert_equal(true, state.history.can_browse_forward(), "Forward becomes available after accepted Back");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1829,7 +2401,7 @@ static void should_rename_file_case()
 	const auto destination = df::file_path(source.folder(), upper_name, source.extension());
 
 	assert_equal(true, item->rename(index, upper_name).success(), "case-only rename succeeds");
-	assert_equal(destination.name(), item->name(), "item keeps renamed case");
+	assert_equal_strict(destination.name(), item->name(), "item keeps renamed case");
 	assert_equal(true, destination.exists(), "case-only destination exists");
 }
 
@@ -1908,8 +2480,8 @@ static void should_record_crashes()
 
 			assert_equal(test_crash_files.is_known_crash_file(path), false, "is_known_crash_file");
 
-			test_crash_files.add_open(path, str::utf8_cast(__FUNCTION__));
-			test_crash_files.remove_open(path);
+			const auto id = test_crash_files.add_open(path, str::utf8_cast(__FUNCTION__));
+			test_crash_files.remove_open(id);
 			test_crash_files.flush_open_files();
 		}
 
@@ -1962,6 +2534,105 @@ static void should_record_crashes()
 	             "the tag carries no build number");
 	assert_equal(crash_files_db::release_tag("127.1") != crash_files_db::release_tag("128.0"), true,
 	             "the next release line retries");
+
+	// SRC-007 - overlapping registrations for the same path are independent; finishing one worker
+	// must not erase the other worker's still-live crash claim.
+	const auto overlap_path = test_files_folder.combine_file("Test.jpg");
+
+	for (const auto remove_first : {true, false})
+	{
+		const auto overlap_db_path = _temps.next_path();
+		{
+			crash_files_db test_crash_files(overlap_db_path, build);
+			const auto first = test_crash_files.add_open(overlap_path, "first");
+			const auto second = test_crash_files.add_open(overlap_path, "second");
+
+			test_crash_files.remove_open(remove_first ? first : second);
+			test_crash_files.flush_open_files();
+		}
+
+		{
+			crash_files_db test_crash_files(overlap_db_path, build);
+			assert_equal(true, test_crash_files.is_known_crash_file(overlap_path),
+			             remove_first ? "second overlapping registration survives" : "first overlapping registration survives");
+			assert_equal(1_z, test_crash_files.skipped_file_count(), "overlap is persisted once by path");
+		}
+	}
+}
+
+static duplicate_report_test_photo duplicate_report_photo(const std::string_view name, const uint64_t created_key,
+                                                          const uint64_t hash)
+{
+	duplicate_report_test_photo result;
+	result.path = df::file_path(df::folder_path("c:\\duplicate-report"), name);
+	result.created_key = created_key;
+	result.phash = {hash, 0, 0, 0};
+	return result;
+}
+
+static void should_anchor_duplicate_report_sets()
+{
+	{
+		const std::vector photos = {
+			duplicate_report_photo("z.jpg", 1, 0x100),
+			duplicate_report_photo("other.jpg", 2, 0x100),
+			duplicate_report_photo("a.jpg", 1, 0x100),
+		};
+
+		const auto stats = calc_duplicate_report_anchor_stats_for_tests(photos);
+		assert_equal(1_z, stats.sets, "global index equal to bucket size is a valid anchor");
+		assert_equal(2_z, stats.grouped_photos, "the anchored set includes both matching photos");
+	}
+
+	{
+		const std::vector photos = {
+			duplicate_report_photo("outside-0.jpg", 1, 0),
+			duplicate_report_photo("outside-1.jpg", 2, 0),
+			duplicate_report_photo("z.jpg", 3, 0x200),
+			duplicate_report_photo("a.jpg", 3, 0x200),
+		};
+
+		const auto stats = calc_duplicate_report_anchor_stats_for_tests(photos);
+		assert_equal(1_z, stats.sets, "a later smaller path can replace an anchor whose index equals the bucket size");
+	}
+
+	{
+		const std::vector photos = {
+			duplicate_report_photo("a.jpg", 1, 0),
+			duplicate_report_photo("b.jpg", 1, 0),
+		};
+
+		const auto stats = calc_duplicate_report_anchor_stats_for_tests(photos);
+		assert_equal(0_z, stats.sets, "a bucket with no usable hash has no eligible anchor");
+	}
+}
+
+static void should_fail_duplicate_report_command_output_errors()
+{
+	const auto input = _temps.folder().combine("dup-report-empty");
+	assert_equal(true, platform::create_folder(input).success(), "empty input folder is created");
+
+	const auto missing_parent_output = input.combine("missing").combine_file("report.txt");
+	assert_equal(1, run_duplicate_report(input.text(), missing_parent_output.str()),
+	             "a requested report under a missing parent fails");
+	assert_equal(false, missing_parent_output.exists(), "failed report output is not created");
+
+	const auto directory_output = input.combine("report-directory");
+	assert_equal(true, platform::create_folder(directory_output).success(), "directory output target is created");
+	assert_equal(1, run_duplicate_report(input.text(), directory_output.text()),
+	             "a requested report that names a directory fails");
+
+	const auto relative_name = std::string(_temps.next_path(".txt").name());
+	const auto relative_report = df::file_path(df::folder_path("."), relative_name);
+	if (relative_report.exists()) platform::delete_file(relative_report);
+	assert_equal(false, relative_report.exists(), "relative report starts absent");
+	assert_equal(0, run_duplicate_report(input.text(), relative_name),
+	             "a bare relative report name writes to the current folder");
+	assert_equal(true, relative_report.exists(), "relative report output is created");
+	platform::delete_file(relative_report);
+
+	assert_equal(0, run_duplicate_report(input.text(), {}),
+	             "stdout-only duplicate report remains successful");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2069,8 +2740,17 @@ struct browsing_fixture
 static void should_run_a_rename_onto_vacated_names()
 {
 	const auto root = _temps.next_folder("rename-run-chain");
+	std::map<std::string, std::string> before;
 	for (const auto& name : {"Item 001.jpg"s, "Item 002.jpg"s, "Item 003.jpg"s})
-		platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), root.combine_file(name), false, false);
+	{
+		const auto path = root.combine_file(name);
+		platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), path, false, false);
+		{
+			std::ofstream fs(platform::to_stream_path(path), std::ios::binary | std::ios::app);
+			fs << name;
+		}
+		before.emplace(name, read_test_file(path));
+	}
 
 	browsing_fixture f(root);
 	f.state.select_all(f.view);
@@ -2096,6 +2776,12 @@ static void should_run_a_rename_onto_vacated_names()
 	assert_equal(false, root.combine_file("Item 001.jpg").exists(), "the vacated name is gone");
 	for (const auto& name : {"Item 002.jpg"s, "Item 003.jpg"s, "Item 004.jpg"s})
 		assert_equal(true, root.combine_file(name).exists(), std::format("{} was written", name));
+	assert_equal(before["Item 001.jpg"], read_test_file(root.combine_file("Item 002.jpg")),
+	             "the first source moved to its reviewed destination");
+	assert_equal(before["Item 002.jpg"], read_test_file(root.combine_file("Item 003.jpg")),
+	             "the second source moved to its reviewed destination");
+	assert_equal(before["Item 003.jpg"], read_test_file(root.combine_file("Item 004.jpg")),
+	             "the third source moved to its reviewed destination");
 
 	// Every file the run leaves behind carries a name the review showed. The parked-file cleanup
 	// has a last-resort " (n)" variant for when a file can reach neither its own name nor its
@@ -2203,6 +2889,96 @@ static void should_not_convert_over_a_destination_changed_since_review()
 	assert_equal("edited since the review"s, read_test_file(destination), "the edited destination is left alone");
 }
 
+static void should_refuse_convert_destination_claimed_during_staged_publication()
+{
+	const auto root = _temps.next_folder("convert-publish-claimed");
+	const auto source = root.combine_file("photo.jpg");
+	const auto destination = root.combine_file("converted.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+
+	test_before_file_update_publish = [destination](const df::file_path path)
+	{
+		if (path == destination) write_test_file(destination, "claimed during publication");
+	};
+	const df::scope_exit restore_hook([] { test_before_file_update_publish = {}; });
+
+	files ff;
+	file_encode_params params;
+	params.jpeg_save_quality = 90;
+	file_update_publish publish;
+	publish.fail_if_exists = true;
+	const auto result = ff.update(source, destination, {}, image_edits(16), params, false, {}, {}, {}, publish);
+
+	assert_equal(true, result.code == platform::file_op_result_code::ALREADY_EXISTS,
+	             "the final publication refuses a claimed destination");
+	assert_equal("claimed during publication"s, read_test_file(destination), "the claimed file survives");
+	assert_equal(true, source.exists(), "the source survives the refused convert");
+}
+
+static void should_refuse_convert_replacement_changed_during_staged_publication()
+{
+	const auto root = _temps.next_folder("convert-publish-replace-changed");
+	const auto source = root.combine_file("photo.jpg");
+	const auto destination = root.combine_file("converted.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+	write_test_file(destination, "reviewed destination");
+	const auto reviewed = platform::file_attributes(destination);
+
+	test_before_file_update_publish = [destination](const df::file_path path)
+	{
+		if (path == destination) write_test_file(destination, "changed during publication");
+	};
+	const df::scope_exit restore_hook([] { test_before_file_update_publish = {}; });
+
+	files ff;
+	file_encode_params params;
+	params.jpeg_save_quality = 90;
+	file_update_publish publish;
+	publish.require_unchanged_destination = true;
+	publish.destination_attributes = reviewed;
+	const auto result = ff.update(source, destination, {}, image_edits(16), params, false, {}, {}, {}, publish);
+
+	assert_equal(true, result.code == platform::file_op_result_code::ALREADY_EXISTS,
+	             "the final publication refuses a changed reviewed replacement");
+	assert_equal("changed during publication"s, read_test_file(destination), "the changed destination survives");
+	assert_equal(true, source.exists(), "the source survives the refused replacement");
+}
+
+static void should_refuse_convert_replacement_locked_during_staged_publication()
+{
+	const auto root = _temps.next_folder("convert-publish-replace-locked");
+	const auto source = root.combine_file("photo.jpg");
+	const auto destination = root.combine_file("converted.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+	write_test_file(destination, "reviewed destination");
+	const auto reviewed = platform::file_attributes(destination);
+
+	platform::file_ptr locked;
+	test_before_file_update_publish = [destination, &locked](const df::file_path path)
+	{
+		if (path == destination) locked = platform::open_file(destination, platform::file_open_mode::read_write);
+	};
+	const df::scope_exit restore_hook([&locked]
+	{
+		locked.reset();
+		test_before_file_update_publish = {};
+	});
+
+	files ff;
+	file_encode_params params;
+	params.jpeg_save_quality = 90;
+	file_update_publish publish;
+	publish.require_unchanged_destination = true;
+	publish.destination_attributes = reviewed;
+	const auto result = ff.update(source, destination, {}, image_edits(16), params, false, {}, {}, {}, publish);
+
+	assert_equal(true, result.code == platform::file_op_result_code::ALREADY_EXISTS,
+	             "the platform replace refuses a locked reviewed replacement");
+	assert_equal(false, result.error_message.empty(), "the refusal is actionable");
+	locked.reset();
+	assert_equal("reviewed destination"s, read_test_file(destination), "the locked destination survives");
+}
+
 #ifdef _WIN32
 // A rename is a move, so once a sidecar has landed on a Replace destination that destination's
 // former content is gone whether or not the row completes. Leaving the sidecar there after the
@@ -2218,9 +2994,9 @@ static void should_restore_a_replaced_sidecar_when_the_rename_fails()
 	const auto destination_sidecar = root.combine_file("b.xmp");
 
 	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
-	platform::copy_file(df::file_path(test_files_folder, "IMG_0604.xmp"), source_sidecar, false, false);
+	write_test_file(source_sidecar, "source sidecar");
 	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), destination, false, false);
-	platform::copy_file(df::file_path(test_files_folder, "IMG_0604.xmp"), destination_sidecar, false, false);
+	write_test_file(destination_sidecar, "destination sidecar");
 
 	browsing_fixture f(root);
 	const auto item = f.find("a.jpg");
@@ -2249,8 +3025,193 @@ static void should_restore_a_replaced_sidecar_when_the_rename_fails()
 
 	assert_equal(true, source.exists(), "the primary is left at its source");
 	assert_equal(true, source_sidecar.exists(), "and so is the sidecar that had already moved");
+	assert_equal("source sidecar"s, read_test_file(source_sidecar),
+	             "the recovered source sidecar keeps its own bytes");
 }
 #endif
+
+static void should_report_batch_rename_sidecar_rollback_survivor()
+{
+	const auto root = _temps.next_folder("rename-sidecar-rollback-survivor");
+	const auto source = root.combine_file("a.jpg");
+	const auto source_sidecar = root.combine_file("a.xmp");
+	const auto destination = root.combine_file("b.jpg");
+	const auto destination_sidecar = root.combine_file("b.xmp");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+	write_test_file(source_sidecar, "source sidecar");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), destination, false, false);
+	write_test_file(destination_sidecar, "destination sidecar");
+
+	df::rename_after_move_for_test = [source_sidecar, destination_sidecar](const df::file_path moved_from,
+	                                                                       const df::file_path moved_to)
+	{
+		if (moved_from == source_sidecar && moved_to == destination_sidecar)
+		{
+			write_test_file(source_sidecar, "rollback blocker");
+		}
+	};
+	const df::scope_exit restore_hook([] { df::rename_after_move_for_test = {}; });
+
+	browsing_fixture f(root);
+	const auto item = f.find("a.jpg");
+	assert_equal(true, item != nullptr, "the source is listed");
+	f.state.select(f.view, item, false, false, false);
+	f.state.update_selection();
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "b";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::replace;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	auto locked = platform::open_file(destination, platform::file_open_mode::read_write);
+	assert_equal(true, locked != nullptr, "the destination is held open");
+	view->run();
+	locked.reset();
+
+	assert_equal(true, destination_sidecar.exists(), "the moved sidecar remains at its surviving path");
+	assert_equal(true, str::contains(view->status(), destination_sidecar.str()), "the status names the sidecar survivor");
+}
+
+static void should_report_batch_rename_case_only_recovery_failure()
+{
+	const auto root = _temps.next_folder("rename-case-recovery-fail");
+	const auto source = root.combine_file("photo.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+
+	df::file_path surviving;
+	df::rename_after_move_for_test = [source, &surviving](const df::file_path moved_from,
+	                                                      const df::file_path moved_to)
+	{
+		if (moved_from == source && moved_to != source)
+		{
+			surviving = moved_to;
+			write_test_file(source, "rollback blocker");
+		}
+	};
+	const df::scope_exit restore_hook([] { df::rename_after_move_for_test = {}; });
+
+	browsing_fixture f(root);
+	f.state.select_all(f.view);
+	f.state.update_selection();
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "PHOTO";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "a case-only rename can run");
+	view->run();
+
+	assert_equal(true, surviving.exists(), "the temporary surviving path is kept");
+	assert_equal("rollback blocker"s, read_test_file(source), "the blocker remains at the reviewed path");
+	assert_equal(true, str::contains(view->status(), surviving.str()), "the status names the surviving path");
+}
+
+static void should_report_singleton_rename_case_only_rollback_failure()
+{
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	const auto source = _temps.next_path(".jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+	const auto item = load_item(index, source, false);
+	auto upper_name = str::to_upper(std::string(source.file_name_without_extension()));
+	if (upper_name == source.file_name_without_extension()) upper_name = str::to_lower(upper_name);
+
+	df::file_path surviving;
+	df::rename_after_move_for_test = [source, &surviving](const df::file_path moved_from,
+	                                                      const df::file_path moved_to)
+	{
+		if (moved_from == source && moved_to != source)
+		{
+			surviving = moved_to;
+			write_test_file(source, "singleton rollback blocker");
+		}
+	};
+	const df::scope_exit restore_hook([] { df::rename_after_move_for_test = {}; });
+
+	const auto result = item->rename(index, upper_name);
+	assert_equal(true, result.failed(), "the blocked rollback reports failure");
+	assert_equal(true, surviving.exists(), "the temporary surviving path is kept");
+	assert_equal("singleton rollback blocker"s, read_test_file(source), "the blocker remains at the reviewed path");
+	assert_equal(true, str::contains(result.format_error(), surviving.str()), "the error names the surviving path");
+}
+
+static void should_continue_singleton_rename_sidecar_rollbacks_after_failure()
+{
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	const auto primary = _temps.next_path(".jpg");
+	const auto sidecar_xmp = primary.extension(".xmp");
+	const auto sidecar_dop = primary.extension(".dop");
+	const auto sidecar_on1 = primary.extension(".on1");
+	const auto target_base = std::string(primary.file_name_without_extension()) + "-renamed";
+	const auto target_primary = df::file_path(primary.folder(), target_base, ".jpg");
+	const auto target_xmp = df::file_path(primary.folder(), target_base, ".xmp");
+	const auto target_dop = df::file_path(primary.folder(), target_base, ".dop");
+	const auto target_on1 = df::file_path(primary.folder(), target_base, ".on1");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), primary, false, false);
+	write_test_file(sidecar_xmp, "xmp");
+	write_test_file(sidecar_dop, "dop");
+	write_test_file(sidecar_on1, "on1");
+	write_test_file(target_primary, "blocked primary");
+
+	std::vector<std::string> reports;
+	df::rename_after_move_for_test = [sidecar_dop, target_dop, sidecar_on1, target_on1](
+		const df::file_path moved_from, const df::file_path moved_to)
+	{
+		if (moved_from == sidecar_dop && moved_to == target_dop)
+		{
+			write_test_file(sidecar_dop, "dop rollback blocker");
+		}
+		if (moved_from == sidecar_on1 && moved_to == target_on1)
+		{
+			write_test_file(sidecar_on1, "on1 rollback blocker");
+		}
+	};
+	df::rename_recovery_report_for_test = [&reports](const std::string_view message)
+	{
+		reports.emplace_back(message);
+	};
+	const df::scope_exit restore_hook([]
+	{
+		df::rename_after_move_for_test = {};
+		df::rename_recovery_report_for_test = {};
+	});
+
+	df::index_file_item info;
+	info.name = primary.name();
+	info.ft = files::file_type_from_name(primary);
+	const auto metadata = std::make_shared<prop::item_metadata>();
+	metadata->sidecars = str::cache(std::format("{};{};{}", sidecar_xmp.name(), sidecar_dop.name(), sidecar_on1.name()));
+	info.metadata.store(metadata);
+	const auto item = std::make_shared<df::item_element>(primary, info);
+
+	const auto result = item->rename(index, target_base);
+	assert_equal(true, result.failed(), "the rename reports the rollback failure");
+	assert_equal(true, str::contains(result.format_error(), target_on1.str()), "the error names the first survivor");
+	assert_equal(true, target_dop.exists(), "the second failed rollback sidecar remains recoverable");
+	assert_equal(true, target_on1.exists(), "the first failed rollback sidecar remains recoverable");
+	assert_equal(true, std::ranges::any_of(reports, [&](const std::string& message)
+	{
+		return str::contains(message, target_dop.str());
+	}), "the second survivor is logged");
+	assert_equal(true, std::ranges::any_of(reports, [&](const std::string& message)
+	{
+		return str::contains(message, target_on1.str());
+	}), "the first survivor is logged");
+	assert_equal(false, target_xmp.exists(), "the successfully rolled-back sidecar leaves no destination copy");
+	assert_equal(true, target_dop.exists(), "the failed rollback sidecar remains recoverable");
+}
 
 // A case-only rename frees nothing, so the run must not park the file it is renaming within.
 static void should_run_a_case_only_rename()
@@ -2275,7 +3236,38 @@ static void should_run_a_case_only_rename()
 
 	const auto contents = platform::iterate_file_items(root, false);
 	assert_equal(1_z, contents.files.size(), "the folder still holds one file");
-	assert_equal("PHOTO.jpg", std::string(contents.files.front().name), "the file carries the new case");
+	assert_equal_strict("PHOTO.jpg", std::string(contents.files.front().name), "the file carries the new case");
+}
+
+static void should_run_a_singleton_folder_case_only_rename()
+{
+	const auto root = _temps.next_folder("rename-single-folder-case");
+	const auto original = root.combine("Photos");
+	const auto occupied = root.combine("Taken");
+	platform::create_folder(original);
+	platform::create_folder(occupied);
+	write_test_file(original.combine_file("child.txt"), "child");
+
+	browsing_fixture f(root);
+	const auto item = f.find("Photos");
+	assert_equal(true, item != nullptr, "the folder is listed");
+	assert_equal(true, item->is_folder(), "the listed item is a folder");
+
+	auto result = item->rename(f.index, "photos");
+	assert_equal(true, result.success(), "a case-only folder rename succeeds");
+	assert_equal(true, root.combine("photos").exists(), "the folder has the requested case");
+	assert_equal("child"s, read_test_file(root.combine("photos").combine_file("child.txt")),
+	             "children remain under the renamed folder");
+	assert_equal("photos", std::string(item->base_name()), "the item name is updated after success");
+
+	result = item->rename(f.index, "photos");
+	assert_equal(true, result.success(), "a byte-identical folder rename is still a no-op");
+
+	result = item->rename(f.index, "Taken");
+	assert_equal(true, result.failed(), "an occupied distinct destination is still refused");
+	assert_equal(true, root.combine("photos").exists(), "the source folder survives the refused rename");
+	assert_equal("child"s, read_test_file(root.combine("photos").combine_file("child.txt")),
+	             "child content survives the refused rename");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2340,11 +3332,7 @@ static void should_keep_what_a_superseded_open_asked_for()
 
 	const auto settle = [&as]
 	{
-		while (as.run_next(async_queue::query))
-		{
-		}
-
-		as.drain_ui();
+		drain_query_work(as);
 	};
 
 	const auto search = df::search_t().add_selector(root);
@@ -2815,10 +3803,11 @@ static void should_offer_the_items_menu_at_every_scroll_position()
 		const auto menu = items_scroll_menu(state, at_top, scroll);
 
 		assert_equal(true, menu.size() > 1, "the menu is offered whatever the scroll position");
-		assert_equal(true, menu.front() != nullptr, "and it opens with an entry of its own");
-		assert_equal(std::string(tt.tooltip_scroll_to_top.sv()), std::string(menu.front()->text),
-		             "scroll to top comes first, because the click no longer performs it");
-		assert_equal(!at_top, menu.front()->enable, "and it says whether it has anything to do");
+		assert_equal(true, menu.back() != nullptr, "and it closes with an entry of its own");
+		assert_equal(std::string(tt.tooltip_scroll_to_top.sv()), std::string(menu.back()->text),
+		             "scroll to top comes last, below the settings the menu exists for");
+		assert_equal(true, menu[menu.size() - 2] != nullptr, "directly below them, with no separator between");
+		assert_equal(!at_top, menu.back()->enable, "and it says whether it has anything to do");
 
 		const auto offers = [&menu](const ui::command_ptr& c)
 		{
@@ -2833,11 +3822,11 @@ static void should_offer_the_items_menu_at_every_scroll_position()
 		             "and Show items in subfolders, which was on no toolbar at all");
 	}
 
-	// Invoking the first entry is what scrolls. A menu entry performs its command whether or not it
+	// Invoking the last entry is what scrolls. A menu entry performs its command whether or not it
 	// is enabled - dimming is what the user is shown, not a second gate - so the scroll runs here
 	// even though this menu was built at the top.
 	const auto at_top_menu = items_scroll_menu(state, true, scroll);
-	at_top_menu.front()->invoke();
+	at_top_menu.back()->invoke();
 	assert_equal(1, scrolled, "the entry performs the scroll the click used to");
 
 	// A separator is only ever between two entries: a double rule, or a rule under the last entry,
@@ -3284,12 +4273,289 @@ static void should_discard_a_superseded_completion()
 	assert_equal(1, second_delivered, "the newest pass is the one that lands");
 }
 
+static void should_gate_application_alpha_effects()
+{
+	const auto restore_animations = ui::animations_enabled;
+	const auto restore_step = ui::animation_step_factor;
+	const df::scope_exit restore_scope([restore_animations, restore_step]
+	{
+		ui::animations_enabled = restore_animations;
+		ui::animation_step_factor = restore_step;
+	});
+
+	ui::animations_enabled = false;
+	assert_equal(0.65f, command_progress_alpha(true, 0, 0), "disabled indeterminate progress is stable");
+	assert_equal(0.65f, command_progress_alpha(true, 0, 600), "disabled progress ignores time");
+	assert_equal(false, command_progress_needs_animation(true, 0), "disabled progress requests no cadence");
+
+	auto logo = ui::color(0.2f, 0.3f, 0.4f, 0.8f);
+	const auto logo_target = ui::color(0.2f, 0.3f, 0.4f, 0.0f);
+	assert_equal(true, ui::step_color_alpha(logo, logo_target), "disabled logo step changes once");
+	assert_equal(0.0f, logo.a, "disabled logo step snaps to target alpha");
+
+	ui::animations_enabled = true;
+	ui::animation_step_factor = 0.5f;
+	assert_equal(true, command_progress_needs_animation(true, 0), "enabled progress requests cadence");
+	assert_equal(true, command_progress_alpha(true, 0, 0) != command_progress_alpha(true, 0, 300),
+	             "enabled progress still pulses");
+
+	logo = ui::color(0.2f, 0.3f, 0.4f, 0.8f);
+	assert_equal(true, ui::step_color_alpha(logo, logo_target), "enabled logo step changes");
+	assert_equal(0.4f, logo.a, "enabled logo step advances by the frame factor");
+}
+
+static void should_snap_app_logo_hover_when_animations_are_disabled()
+{
+	const auto restore_animations = ui::animations_enabled;
+	const df::scope_exit restore_scope([restore_animations] { ui::animations_enabled = restore_animations; });
+
+	browsing_fixture f;
+	app_logo_element logo(f.state);
+
+	ui::animations_enabled = false;
+	assert_equal(true, logo.hover(true), "hover enters");
+	assert_equal(true, logo.step_background_if_animations_disabled(), "disabled hover snaps background");
+	assert_equal(true, logo._bg_color.a > 0.0f, "hover highlight is visible immediately");
+
+	assert_equal(true, logo.hover(false), "hover exits");
+	assert_equal(true, logo.step_background_if_animations_disabled(), "disabled leave snaps background");
+	assert_equal(0.0f, logo._bg_color.a, "hover highlight is hidden immediately");
+}
+
+static void should_skip_stable_progress_repaints_when_animations_are_disabled()
+{
+	const auto restore_animations = ui::animations_enabled;
+	const df::scope_exit restore_scope([restore_animations] { ui::animations_enabled = restore_animations; });
+
+	ui::animations_enabled = false;
+	assert_equal(false, status_needs_animation(true, 0, false), "stable disabled progress does not animate status");
+	assert_equal(true, status_needs_animation(true, 0, true), "debug status keeps its live repaint");
+
+	ui::animations_enabled = true;
+	assert_equal(true, status_needs_animation(true, 0, false), "enabled indeterminate progress still animates");
+}
+
+static void run_destination_completion_worker(deferred_async_strategy& as)
+{
+	auto ran = false;
+	std::thread worker([&as, &ran] { ran = as.run_next(async_queue::work); });
+	worker.join();
+	assert_equal(true, ran, "a destination completion pass was queued");
+}
+
+static std::shared_ptr<ui::complete_strategy_t> make_test_destination_completer(
+	view_state& s, const std::shared_ptr<void>& lifetime, const std::shared_ptr<const df::folder_counts>& folders,
+	destination_folder_enumerator enumerate_child_folders = {})
+{
+	return make_destination_folder_auto_complete_for_test(s, lifetime, folders, std::move(enumerate_child_folders));
+}
+
+static void should_clear_destination_completions_by_emptying_the_query()
+{
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+	s.recent_folders.add("C:\\Recent");
+
+	auto lifetime = std::make_shared<int>(1);
+	auto folders = std::make_shared<df::folder_counts>();
+	(*folders)[df::folder_path("C:\\Beta")] = 100;
+	const auto completes = make_test_destination_completer(s, lifetime, folders);
+
+	auto stale_delivered = 0;
+	auto recents_delivered = 0;
+	completes->search("Beta", [&stale_delivered](const ui::auto_complete_results&) { ++stale_delivered; });
+	completes->search({}, [&recents_delivered](const ui::auto_complete_results& results)
+	{
+		++recents_delivered;
+		assert_equal(1_z, results.size(), "empty destination query returns recents immediately");
+	});
+
+	run_destination_completion_worker(as);
+	as.drain_ui();
+
+	assert_equal(0, stale_delivered, "clearing the box supersedes the in-flight completion");
+	assert_equal(1, recents_delivered, "the empty-query result remains current");
+}
+
+static void should_rank_destination_completions_after_combining_sources()
+{
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	auto lifetime = std::make_shared<int>(1);
+	auto folders = std::make_shared<df::folder_counts>();
+	const auto parent = df::folder_path(df::windows_path_semantics ? "D:\\Photos" : "/photos");
+	const auto holiday = parent.combine("Holidays 2019");
+	(*folders)[holiday] = 232;
+
+	for (char suffix = 'A'; suffix <= 'L'; ++suffix)
+	{
+		(*folders)[parent.combine("2019").combine(std::string_view(&suffix, 1))] = 240;
+	}
+
+	const auto completes = make_test_destination_completer(s, lifetime, folders, [holiday](const df::folder_path)
+	{
+		return df::folder_paths{holiday};
+	});
+
+	ui::auto_complete_results results;
+	completes->search(std::format("{} 2019", parent.text()),
+	                  [&results](const ui::auto_complete_results& r) { results = r; });
+	run_destination_completion_worker(as);
+	as.drain_ui();
+
+	assert_equal(true, results.size() <= completes->max_predictions, "destination completions remain capped");
+	const auto holiday_text = std::string(holiday.text()); // APP-003: destination completions are raw paths
+	assert_equal(true, std::ranges::any_of(results, [holiday_text](const ui::auto_complete_match_ptr& r)
+	{
+		return str::icmp(r->edit_text(), holiday_text) == 0;
+	}), "a disk child that is also known combines both weights before the cap");
+}
+
+static void should_skip_stale_destination_completion_work()
+{
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	auto lifetime = std::make_shared<int>(1);
+	auto folders = std::make_shared<df::folder_counts>();
+	auto enumerations = 0;
+	const auto completes = make_test_destination_completer(s, lifetime, folders,
+	                                                       [&enumerations](const df::folder_path)
+	                                                       {
+		                                                       ++enumerations;
+		                                                       return df::folder_paths{};
+	                                                       });
+
+	auto stale_delivered = 0;
+	auto empty_delivered = 0;
+	completes->search("D:\\Server", [&stale_delivered](const ui::auto_complete_results&) { ++stale_delivered; });
+	completes->search({}, [&empty_delivered](const ui::auto_complete_results&) { ++empty_delivered; });
+
+	run_destination_completion_worker(as);
+	as.drain_ui();
+
+	assert_equal(0, enumerations, "a stale path completion skips folder enumeration");
+	assert_equal(0, stale_delivered, "a stale path completion does not publish");
+	assert_equal(1, empty_delivered, "the current empty completion is retained");
+}
+
+static void should_release_stale_destination_completion_callbacks_on_the_ui_thread()
+{
+	struct release_probe
+	{
+		bool& released_on_ui;
+		~release_probe()
+		{
+			released_on_ui = ui::is_ui_thread();
+		}
+	};
+
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	auto lifetime = std::make_shared<int>(1);
+	auto folders = std::make_shared<df::folder_counts>();
+	const auto completes = make_test_destination_completer(s, lifetime, folders,
+	                                                       [](const df::folder_path)
+	                                                       {
+		                                                       return df::folder_paths{};
+	                                                       });
+
+	bool released_on_ui = false;
+	std::weak_ptr<release_probe> weak_probe;
+	{
+		auto probe = std::make_shared<release_probe>(released_on_ui);
+		weak_probe = probe;
+		completes->search("D:\\Server", [probe](const ui::auto_complete_results&) {});
+	}
+	completes->search({}, [](const ui::auto_complete_results&) {});
+
+	run_destination_completion_worker(as);
+	assert_equal(false, weak_probe.expired(), "the stale callback is handed back to the UI queue");
+	as.drain_ui();
+
+	assert_equal(true, weak_probe.expired(), "the stale callback is released");
+	assert_equal(true, released_on_ui, "the stale callback capture is released on the UI thread");
+}
+
+static void should_keep_sidebar_rebuild_packets_current()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	const auto restore = df::scope_exit([] { setting.search = {}; setting.sidebar = {}; setting.favorite_tags.clear(); });
+
+	search_item_factory::sidebar_config_snapshot config;
+	config.search.title[0] = "Snapshot search";
+	config.search.path[0] = "tag:snapshot";
+	config.sidebar.show_favorite_searches = true;
+	config.favorite_tags = "snapshot";
+
+	setting.search.title[0] = "Live search";
+	setting.search.path[0] = "tag:live";
+	setting.favorite_tags = "live";
+
+	constexpr search_item_factory factory;
+	const auto items = factory.create_search_items(s, {}, config);
+
+	assert_equal(true, std::ranges::any_of(items, [](const search_item_ptr& item)
+	{
+		return item->key == "s:tag:snapshot";
+	}), "sidebar workers use the captured search settings");
+	assert_equal(false, std::ranges::any_of(items, [](const search_item_ptr& item)
+	{
+		return item->key == "s:tag:live";
+	}), "sidebar workers do not read replaced live search settings");
+
+	assert_equal(false, should_publish_sidebar_structural_request(2, 1),
+	             "an obsolete sidebar structural packet cannot publish");
+	assert_equal(true, should_publish_sidebar_structural_request(2, 2),
+	             "the current sidebar structural packet can publish");
+}
+
+static void should_consume_cancelled_globe_release()
+{
+	assert_equal(true, should_invoke_globe_release(false, false, true), "a normal click invokes");
+	assert_equal(false, should_invoke_globe_release(true, false, true),
+	             "release after an Escape-cancelled drag is consumed");
+	assert_equal(false, should_invoke_globe_release(false, true, true), "an uncancelled drag is not a click");
+	assert_equal(false, should_invoke_globe_release(false, false, false), "release outside the globe does not invoke");
+}
+
 void register_app_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should bind every advertised command"s, should_bind_every_advertised_command);
 	tests.add("Should invoke link commands and selection shortcuts"s, should_invoke_link_commands_and_selection_shortcuts);
 	tests.add("INI file settings should persist values"s, should_persist_to_ini_file);
+#ifndef _WIN32
+	// PLAT-010 - Linux INI writes published values before the file was durably replaced.
+	tests.add("Should commit Linux INI file settings after durable save"s,
+	          should_commit_linux_ini_file_settings_after_durable_save);
+	// G21 review - unchanged settings values should not restage and fsync the whole file.
+	tests.add("Should skip unchanged Linux INI file settings"s, should_skip_unchanged_linux_ini_file_settings);
+	// G21 review - each settings save needs its own stage path.
+	tests.add("Should commit Linux INI file settings from owned stage"s,
+	          should_commit_linux_ini_file_settings_from_owned_stage);
+#endif
 	tests.add("Should store an order an older build can read"s, should_store_an_order_an_older_build_can_read);
+	tests.add("Should bound advanced search hover thumbnail retries"s,
+	          should_bound_advanced_search_hover_thumbnail_retries);
 	tests.add("Should Rename with substitutions"s, should_rename_with_substitutions);
 	tests.add("Should rename name token without extension"s, should_rename_name_token_without_extension);
 	tests.add("Should reject duplicate rename targets"s, should_reject_duplicate_rename_targets);
@@ -3305,11 +4571,28 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should conclude a run with what it did and why"s, should_conclude_a_run_with_what_it_did_and_why);
 	tests.add("Should not convert over a destination changed since review"s,
 	          should_not_convert_over_a_destination_changed_since_review);
+	tests.add("Should refuse Convert destination claimed during staged publication"s,
+	          should_refuse_convert_destination_claimed_during_staged_publication);
+	tests.add("Should refuse Convert replacement changed during staged publication"s,
+	          should_refuse_convert_replacement_changed_during_staged_publication);
+#ifdef _WIN32
+	tests.add("Should refuse Convert replacement locked during staged publication"s,
+	          should_refuse_convert_replacement_locked_during_staged_publication);
+#endif
 #ifdef _WIN32
 	tests.add("Should restore a replaced sidecar when the rename fails"s,
 	          should_restore_a_replaced_sidecar_when_the_rename_fails);
+	tests.add("Should report batch Rename sidecar rollback survivor"s,
+	          should_report_batch_rename_sidecar_rollback_survivor);
+	tests.add("Should report batch Rename case-only recovery failure"s,
+	          should_report_batch_rename_case_only_recovery_failure);
+	tests.add("Should report singleton Rename case-only rollback failure"s,
+	          should_report_singleton_rename_case_only_rollback_failure);
 #endif
+	tests.add("Should continue singleton Rename sidecar rollbacks after failure"s,
+	          should_continue_singleton_rename_sidecar_rollbacks_after_failure);
 	tests.add("Should run a case only rename"s, should_run_a_case_only_rename);
+	tests.add("Should run a singleton folder case only rename"s, should_run_a_singleton_folder_case_only_rename);
 	tests.add("Should format rename"s, should_format_rename);
 	tests.add("Should plan unique convert outputs"s, should_plan_unique_convert_outputs);
 	tests.add("Should not plan a convert output over a source"s, should_not_plan_a_convert_output_over_a_source);
@@ -3325,6 +4608,18 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should keep import bookkeeping when a folder fails"s,
 	          should_keep_import_bookkeeping_when_a_folder_fails);
 	tests.add("Should revalidate replaced import destinations"s, should_revalidate_replaced_import_destinations);
+#ifdef _WIN32
+	tests.add("Should restore replaced Import sidecars when primary write fails"s,
+	          should_restore_replaced_import_sidecars_when_primary_write_fails);
+#endif
+	tests.add("Should delete free Import sidecar copy when primary write fails"s,
+	          should_delete_free_import_sidecar_copy_when_primary_write_fails);
+	tests.add("Should keep Import success when rollback cleanup fails"s,
+	          should_delete_readonly_import_sidecar_rollback_copy);
+	tests.add("Should restore Import destination sidecar after partial overwrite failure"s,
+	          should_restore_destination_sidecar_after_partial_overwrite_failure);
+	tests.add("Should prepare Import from the selection snapshot"s,
+	          should_prepare_import_from_the_selection_snapshot);
 	tests.add("Should reject missing sync folder"s, should_reject_missing_sync_folder);
 	tests.add("Should reject overlapping sync folders"s, should_reject_overlapping_sync_folders);
 	tests.add("Should reject ambiguous sync roots"s, should_reject_ambiguous_sync_roots);
@@ -3332,7 +4627,14 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should select sync actions"s, should_select_sync_actions);
 	tests.add("Should revalidate sync rows"s, should_revalidate_sync_rows);
 	tests.add("Should revalidate sync deletes"s, should_revalidate_sync_deletes);
+	tests.add("Should apply Sync full-path exclusions to remote counterparts"s,
+	          should_apply_sync_full_path_exclusions_to_remote_counterparts);
+	tests.add("Should resolve Sync exclusions across multiple roots"s,
+	          should_resolve_sync_exclusions_across_multiple_roots);
 	tests.add("Should offer every matching external tool"s, should_offer_every_matching_tool);
+	// APP-006 - configured external tools declare a singular {item-path} target.
+	tests.add("Should offer configured tools only for one selected file"s,
+	          should_offer_configured_tools_only_for_one_selected_file);
 
 	// Issue #175 - sidebar history chart span
 	tests.add("Should record history beyond ten years"s, should_record_history_beyond_ten_years);
@@ -3359,6 +4661,8 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should start safe only after repeated failures"s, should_start_safe_only_after_repeated_failures);
 	tests.add("Should not count concurrent starts"s, should_not_count_concurrent_starts);
 	tests.add("Should restore history selection"s, should_restore_history_selection);
+	tests.add("Should commit history navigation only after open is accepted"s,
+	          should_commit_history_navigation_only_after_open_is_accepted);
 
 	//
 	// Selection and command enablement
@@ -3391,6 +4695,24 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should offer recent searches for an empty address"s,
 	          should_offer_recent_searches_for_an_empty_address);
 	tests.add("Should discard a superseded completion"s, should_discard_a_superseded_completion);
+	// APP-007 - application-local fades must honor the shared alpha-animation gate.
+	tests.add("Should gate application alpha effects"s, should_gate_application_alpha_effects);
+	tests.add("Should snap app logo hover when animations are disabled"s,
+	          should_snap_app_logo_hover_when_animations_are_disabled);
+	tests.add("Should skip stable progress repaints when animations are disabled"s,
+	          should_skip_stable_progress_repaints_when_animations_are_disabled);
+	// APP-005 - destination-folder completion work is asynchronous and latest-wins.
+	tests.add("Should clear destination completions by emptying the query"s,
+	          should_clear_destination_completions_by_emptying_the_query);
+	tests.add("Should rank destination completions after combining sources"s,
+	          should_rank_destination_completions_after_combining_sources);
+	tests.add("Should skip stale destination completion work"s, should_skip_stale_destination_completion_work);
+	tests.add("Should release stale destination completion callbacks on the UI thread"s,
+	          should_release_stale_destination_completion_callbacks_on_the_ui_thread);
+	// APP-008 - sidebar structural rebuild packets carry settings snapshots and request identity.
+	tests.add("Should keep sidebar rebuild packets current"s, should_keep_sidebar_rebuild_packets_current);
+	// APP-011 - cancelling a globe drag consumes its release.
+	tests.add("Should consume cancelled globe release"s, should_consume_cancelled_globe_release);
 
 	//
 	// Browsing sequence
@@ -3418,4 +4740,8 @@ void register_app_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should toggle collection entry"s, should_toggle_collection_entry);
 	tests.add("Should record crashes"s, should_record_crashes);
+	// APP-013 - bucket size is not an unset global photo index.
+	tests.add("Should anchor duplicate report sets"s, should_anchor_duplicate_report_sets);
+	// APP-014 - requested output errors are command failures, not stdout fallback.
+	tests.add("Should fail duplicate report command output errors"s, should_fail_duplicate_report_command_output_errors);
 }

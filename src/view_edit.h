@@ -45,6 +45,36 @@ struct document_correction
 document_detection_result detect_document(const ui::const_surface_ptr& surface, sizei source_extent);
 document_correction fit_document_correction(const std::array<pointd, 4>& corners, sizei extent,
                                             ui::orientation orientation);
+bool edit_load_has_source_pixels(const file_load_result& loaded);
+std::string_view edit_load_status_text(const file_load_result& loaded, bool source_loading);
+bool should_accept_edit_async_result(size_t current_display_generation, size_t result_display_generation);
+bool should_accept_edit_preview_result(size_t current_display_generation, size_t result_display_generation,
+                                       size_t current_preview_generation, size_t result_preview_generation,
+                                       sizei current_request_dimensions, sizei result_dimensions);
+bool should_accept_edit_analysis(size_t current_display_generation, size_t result_display_generation,
+                                 size_t current_edit_generation, size_t result_edit_generation);
+std::optional<quadd> edit_pending_crop_for_loaded_photo(std::optional<rectd> pending_crop,
+                                                        const file_load_result& loaded, bool show_rotated);
+bool edit_pixel_controls_visible(bool is_bitmap, bool can_edit_pixels);
+
+struct edit_preview_render_decision
+{
+	bool draw_texture = false;
+	bool show_loading = false;
+	bool crop_interactive = false;
+};
+
+edit_preview_render_decision decide_edit_preview_render(bool has_texture, bool has_current_preview,
+                                                        bool has_loading_status);
+
+struct edit_request_coalescing_decision
+{
+	bool start_now = false;
+	bool remember_latest = false;
+};
+
+edit_request_coalescing_decision decide_edit_request_coalescing(bool request_in_flight);
+bool should_start_edit_follow_up_request(bool has_latest_request);
 
 class edit_view_controls final : public view_controls_host
 {
@@ -93,6 +123,21 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 {
 	using this_type = edit_view;
 
+	struct source_load_request
+	{
+		df::file_path path;
+		size_t display_generation = 0;
+		std::optional<rectd> pending_crop;
+	};
+
+	struct preview_decode_request
+	{
+		file_load_result loaded;
+		sizei dimensions;
+		size_t display_generation = 0;
+		size_t preview_generation = 0;
+	};
+
 	view_state& _state;
 	view_host_ptr _host;
 
@@ -123,9 +168,16 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	view_element_ptr _play_element;
 	view_element_ptr _scrubber_element;
 	size_t _display_generation = 0;
+	size_t _preview_generation = 0;
+	sizei _preview_request_dimensions;
+	bool _source_load_in_flight = false;
+	std::optional<source_load_request> _pending_source_load_request;
+	bool _preview_decode_in_flight = false;
+	std::optional<preview_decode_request> _pending_preview_decode_request;
 	// Bumped by changed(), which every edit routes through. A background analysis snapshots it and
 	// retires if anything has been adjusted since, so its answer cannot land on newer work.
 	size_t _edit_generation = 0;
+	bool _source_loading = false;
 	bool _invalid = true;
 
 	friend class selection_move_controller<this_type>;
@@ -150,6 +202,15 @@ public:
 
 	void layout(ui::measure_context& mc, sizei extent) override;
 	bool is_photo() const;
+	bool can_edit_pixels() const;
+	void queue_source_load(source_load_request request);
+	void start_source_load(source_load_request request);
+	void complete_source_load(const source_load_request& request, file_load_result loaded);
+	void queue_preview_decode();
+	void start_preview_decode(preview_decode_request request);
+	void complete_preview_decode(const preview_decode_request& request, ui::const_surface_ptr source);
+	void clear_crop_interaction_bounds();
+	void draw_loading_status(ui::draw_context& dc, std::string_view status) const;
 	void changed();
 	void cancel() const;
 	void exit() override;
@@ -215,10 +276,11 @@ public:
 		return _edit_state._edits.effective_crop_bounds(_loaded.dimensions());
 	}
 
-	void selection(const quadd& s) const
+	void selection(const quadd& s)
 	{
 		_edit_state.selection(s);
 		_state.invalidate_view(view_invalid::view_redraw);
+		changed();
 	}
 
 	rectd device_selection() const

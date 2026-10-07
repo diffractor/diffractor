@@ -506,6 +506,27 @@ public:
 		return true;
 	}
 
+	bool history_entry_at(const int n, history_entry& result) const
+	{
+		const auto i = _pos + n;
+
+		if (i >= static_cast<int>(_history.size()) || i < 0)
+		{
+			return false;
+		}
+
+		result = _history[i];
+		return true;
+	}
+
+	void commit_history_pos(const int n, df::paths selected)
+	{
+		const auto i = _pos + n;
+		df::assert_true(i >= 0 && i < static_cast<int>(_history.size()));
+		_history[_pos].selected = std::move(selected);
+		_pos = i;
+	}
+
 	void replace_current_search(const df::search_t& expected, const df::search_t& replacement)
 	{
 		if (_pos >= 0 && _pos < static_cast<int>(_history.size()) && _history[_pos].search == expected)
@@ -546,6 +567,56 @@ public:
 // picture until the decode landed (#78).
 sizei calc_draw_shape(sizei oriented_texture_extent, sizei display_dimensions, bool is_video);
 
+struct texture_source_version
+{
+	df::date_t file;
+	df::date_t thumbnail;
+
+	friend bool operator==(const texture_source_version&, const texture_source_version&) = default;
+	friend bool operator!=(const texture_source_version&, const texture_source_version&) = default;
+};
+
+struct retained_texture_budget_entry
+{
+	bool displayed = false;
+	size_t decoded_bytes = 0;
+};
+
+inline std::vector<size_t> retained_texture_eviction_indexes(std::span<const retained_texture_budget_entry> entries,
+                                                             const size_t budget)
+{
+	size_t decoded = 0;
+
+	for (const auto& entry : entries)
+	{
+		if (!entry.displayed) decoded += entry.decoded_bytes;
+	}
+
+	std::vector<size_t> result;
+	result.reserve(entries.size());
+
+	while (decoded > budget)
+	{
+		auto found = false;
+
+		for (auto i = entries.size(); i > 0; --i)
+		{
+			const auto index = i - 1;
+			const auto& entry = entries[index];
+
+			if (entry.displayed || std::ranges::find(result, index) != result.end()) continue;
+
+			decoded = entry.decoded_bytes < decoded ? decoded - entry.decoded_bytes : 0;
+			result.emplace_back(index);
+			found = true;
+			break;
+		}
+
+		if (!found) break;
+	}
+
+	return result;
+}
 
 class texture_state final : public std::enable_shared_from_this<texture_state>
 {
@@ -571,7 +642,7 @@ private:
 	ui::const_surface_ptr _retained_surface;
 	std::shared_ptr<std::atomic_bool> _decode_cancel;
 
-	df::date_t _photo_timestamp;
+	texture_source_version _photo_version;
 	sizei _loading_scale_hint;
 	// Whether the decode in flight was asked for packed pixels, which only a projection needs. Part
 	// of the request, so a change to it re-decodes even at the same size.
@@ -595,7 +666,7 @@ private:
 
 	ui::texture_ptr _zoom_texture;
 	ui::const_surface_ptr _zoom_staged_surface;
-	df::date_t _zoom_timestamp;
+	texture_source_version _zoom_version;
 
 	// The projection this frame is drawing, set by the media control before each draw and read by
 	// the decode ladder as well as by the presentation: a projected view needs the source at the
@@ -779,10 +850,14 @@ using texture_state_ptr = std::shared_ptr<texture_state>;
 struct panorama_session
 {
 	df::file_path path;
+	sizei source;
+	df::date_t modified;
 	prop::panorama_geometry geometry;
 	panorama_view view;
-	// The declaration has been looked up for this path, whether or not it produced a crop.
+	// The declaration has been looked up for this path, source size and file revision, whether or not
+	// it produced a crop.
 	bool resolved = false;
+	bool reset_view_on_resolve = false;
 	// The user asked for the flat pixels of this file. Per item, because it is a judgement about
 	// one picture - reading its stitching seams - not a preference about panoramas.
 	bool flat = false;
@@ -812,26 +887,22 @@ struct common_display_state_t
 	// straight to a surface - and that irreproducible remainder is the only thing worth budgeting.
 	void release_undisplayed(const texture_state_ptr& displayed1, const texture_state_ptr& displayed2)
 	{
-		size_t decoded = 0;
+		std::vector<retained_texture_budget_entry> entries;
+		entries.reserve(_recent_textures.size());
 
 		for (const auto& [path, texture] : _recent_textures)
 		{
-			if (texture == displayed1 || texture == displayed2) continue;
-			texture->release_decoded_surfaces();
-			decoded += texture->retained_decoded_bytes();
+			const auto displayed = texture == displayed1 || texture == displayed2;
+			if (!displayed) texture->release_decoded_surfaces();
+			entries.push_back({displayed, displayed ? size_t{0} : texture->retained_decoded_bytes()});
 		}
 
 		// About what the displayed image itself is allowed, so the cache can carry one expensive decode
 		// forward rather than several.
 		const auto budget = static_cast<size_t>(df::max_texture_bytes);
 
-		while (decoded > budget && !_recent_textures.empty())
-		{
-			const auto& back = _recent_textures.back().second;
-			if (back == displayed1 || back == displayed2) break;
-			decoded -= back->retained_decoded_bytes();
-			_recent_textures.pop_back();
-		}
+		for (const auto index : retained_texture_eviction_indexes(entries, budget))
+			_recent_textures.erase(_recent_textures.begin() + index);
 	}
 
 	// Nothing here is on screen; the displayed textures are held by the display state itself.
@@ -1095,7 +1166,7 @@ private:
 	// and published back complete. The stamp is bumped on every refresh, so a result that arrives
 	// after the results changed is answering a question nobody is asking now.
 	df::visit_timeline _visits;
-	uint32_t _visits_generation = 1;
+	std::atomic_int _visits_generation = 1;
 
 	// Path of the cloud-only item we already queued a post-hydration rescan for, so the per-frame
 	// check triggers it only once.
@@ -1119,10 +1190,21 @@ private:
 
 	std::optional<unpublished_open_t> _unpublished_open;
 
+	struct pending_history_move_t
+	{
+		df::search_t search;
+		int direction = 0;
+		df::paths selected;
+	};
+
+	std::optional<pending_history_move_t> _pending_history_move;
+
 	view_state(const view_state& other) = delete;
 	const view_state& operator=(const view_state& other) = delete;
 
 	void refresh_sibling_folders();
+	bool open_validated(const view_host_base_ptr& view, const df::search_t& new_search,
+	                    const df::unique_paths& selection);
 
 public:
 	df::item_element_ptr _edit_item;
@@ -1749,6 +1831,11 @@ public:
 	// the explainer: a project that imported as a silently different movie is exactly the hidden
 	// state the product promise forbids.
 	int import_ignored = 0;
+
+	// The photos and videos the timeline was built from, in listing order. Entering with the same ones
+	// returns to it; entering with others starts a new one. A project opened in Movie keeps the
+	// selection of the timeline it replaced.
+	std::vector<df::file_path> built_from;
 
 	bool is_playing() const { return playing != playing_t::nothing; }
 

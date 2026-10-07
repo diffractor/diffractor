@@ -912,6 +912,8 @@ namespace
 	_Guarded_by_(file_op_mutex) df::hash_map<file_type_ref, file_op_row> file_op_stats;
 }
 
+std::function<void(df::file_path destination)> test_before_file_update_publish;
+
 void record_file_op(const file_type_ref ft, const file_op_stat stat)
 {
 	if (!ft) return;
@@ -1530,7 +1532,12 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// BT.601, which the shader applies via the rec601_full matrix.
 		// Whether planar is wanted is the caller's decision - it knows whether these pixels are
 		// bound for a texture, for a luma plane, or for a packed reader.
-		const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_nv12();
+		const auto scaled_dimensions = sizei{
+			(source_dimensions.cx + scale_hint - 1) / scale_hint,
+			(source_dimensions.cy + scale_hint - 1) / scale_hint
+		};
+		const auto use_yuv = can_use_yuv && _jpeg_decoder.can_render_nv12() &&
+			scaled_dimensions.cx >= 2 && scaled_dimensions.cy >= 2;
 
 		// libjpeg also accepts any numerator over eight, which would land closer to the target than the
 		// power-of-two ladder. Measured against it and rejected: the odd-denominator scaled IDCTs are
@@ -1943,6 +1950,11 @@ bool file_read_stream::open(const df::file_path path)
 
 bool file_read_stream::open(platform::file_ptr h)
 {
+	_loaded_start_pos = 0;
+	_loaded_end_pos = 0;
+	_file_size = 0;
+	_block_size = 0;
+
 	_h = std::move(h);
 
 	if (_h)
@@ -1958,11 +1970,16 @@ bool file_read_stream::open(platform::file_ptr h)
 void file_read_stream::close()
 {
 	_h.reset();
+	_loaded_start_pos = 0;
+	_loaded_end_pos = 0;
+	_file_size = 0;
+	_block_size = 0;
 
 	if (_buffer)
 	{
 		_aligned_free(_buffer);
 		_buffer = nullptr;
+		_buffer_size = 0;
 	}
 }
 
@@ -2081,7 +2098,9 @@ file_scan_result files::scan_file(platform::file_ptr f, const df::file_path path
 
 			df::blob data;
 
-			if ((is_small_file || load_from_mem) && fits_in_memory)
+			const auto can_load_whole_file = fits_in_memory && file_len <= df::max_blob_size;
+
+			if ((is_small_file || load_from_mem) && can_load_whole_file)
 			{
 				data.resize(static_cast<size_t>(file_len));
 				const auto read = f->read(data.data(), file_len);
@@ -2132,7 +2151,16 @@ file_scan_result files::scan_file(platform::file_ptr f, const df::file_path path
 
 					if (stream.open(f))
 					{
-						result = scan_photo(stream, intent, load_thumb, this);
+						if (load_from_mem && file_len > df::max_blob_size)
+						{
+							df::log(__FUNCTION__, std::format("{} is too large to thumbnail ({})", path.name(),
+							                                  df::file_size(file_len).str()));
+							result = scan_photo(stream, intent, false, this);
+						}
+						else
+						{
+							result = scan_photo(stream, intent, load_thumb, this);
+						}
 					}
 				}
 			}
@@ -2306,7 +2334,7 @@ file_load_result files::load(const df::file_path path, const bool can_load_previ
 							if (scanned_dimensions.is_empty() ||
 								!reject_over_budget_source(&diagnostic, scanned_dimensions, "image"))
 							{
-								result.s = av_decode_still(file, {}, path.extension());
+								result.s = av_decode_still(file, {}, path.extension(), &diagnostic);
 							}
 						}
 
@@ -2402,7 +2430,9 @@ ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surfa
 platform::file_op_result files::update_impl(const df::file_path path_src, const df::file_path path_dst,
                                             const metadata_edits& metadata_edits, const image_edits& photo_edits,
                                             const file_encode_params& params, const bool create_original,
-                                            const std::string_view src_xmp_name, const std::string_view dst_xmp_name)
+                                            const std::string_view src_xmp_name, const std::string_view dst_xmp_name,
+                                            const file_update_publish& publish,
+                                            bool* const live_file_maybe_changed)
 {
 	platform::file_op_result result = {platform::file_op_result_code::OK};
 
@@ -2505,15 +2535,18 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 				if (after_attempt.modified != before_attempt.modified ||
 					after_attempt.size != before_attempt.size)
 				{
+					if (live_file_maybe_changed) *live_file_maybe_changed = true;
 					throw;
 				}
 
 				if (!platform::wait_for_unlocked_write(path_dst)) throw;
+				if (live_file_maybe_changed) *live_file_maybe_changed = true;
 				in_place = metadata_xmp::update(path_dst, path_dst, metadata_edits, src_xmp_name, {});
 			}
 
 			if (!in_place.success)
 			{
+				if (live_file_maybe_changed) *live_file_maybe_changed = true;
 				result.code = platform::file_op_result_code::FAILED;
 			}
 
@@ -2682,7 +2715,19 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 			{
 				op_type = mt;
 				record_file_op(mt, file_op_stat::replace);
-				result = platform::replace_file(path_dst, path_temp, create_original);
+				if (test_before_file_update_publish) test_before_file_update_publish(path_dst);
+				if (publish.fail_if_exists)
+				{
+					result = platform::move_file(path_temp, path_dst, true);
+					temp_file_created = result.failed();
+				}
+				else
+				{
+					result = platform::replace_file(path_dst, path_temp, create_original,
+					                                publish.require_unchanged_destination
+						                                ? std::optional{publish.destination_attributes}
+						                                : std::optional<platform::file_attributes_t>{});
+				}
 			}
 
 			if (result.success() && !xmp_result.xmp_path.is_empty())
@@ -2694,7 +2739,9 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 				const auto media_modified = result.modified;
 
 				const auto path_temp_xmp = xmp_result.xmp_path;
-				const auto xmp_replace = platform::replace_file(path_dst_xmp, path_temp_xmp, create_original);
+				const auto xmp_replace = publish.fail_if_exists
+					                         ? platform::move_file(path_temp_xmp, path_dst_xmp, true)
+					                         : platform::replace_file(path_dst_xmp, path_temp_xmp, create_original);
 
 				if (xmp_replace.failed())
 				{
@@ -2759,11 +2806,14 @@ file_update_result files::update(const df::file_path path_src, const df::file_pa
                                  const metadata_edits& metadata_edits, const image_edits& photo_edits,
                                  const file_encode_params& params, const bool create_original,
                                  const std::string_view src_xmp_name, const std::string_view dst_xmp_name,
-                                 const rescan_spec& rescan)
+                                 const rescan_spec& rescan, const file_update_publish& publish)
 {
 	file_update_result result;
+	bool live_file_maybe_changed = false;
 	static_cast<platform::file_op_result&>(result) = update_impl(path_src, path_dst, metadata_edits, photo_edits,
-	                                                             params, create_original, src_xmp_name, dst_xmp_name);
+	                                                             params, create_original, src_xmp_name, dst_xmp_name,
+	                                                             publish, &live_file_maybe_changed);
+	result.live_file_maybe_changed = result.failed() && live_file_maybe_changed;
 
 	// Only replace_file hands back a handle, and only for the media file, so this distinguishes a
 	// staged-and-swapped write from an in-place patch or a sidecar-only write.
@@ -3137,14 +3187,15 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 		metadata_xmp::parse(*result, metadata.xmp);
 	}
 
-	// These fields are 16 bit in the metadata record. High ISO, 96/192 kHz audio and a stitched
-	// panorama past 65535 pixels all exceed that, so saturate - wrapping would report 96000 Hz as
-	// 30464 Hz, and a 70000 pixel stitch as 4464, which is a shape no panorama test can recognise.
+	// Most legacy fields are 16 bit in the metadata record. High ISO and a stitched panorama past
+	// 65535 pixels exceed that, so saturate - wrapping would report a 70000 pixel stitch as 4464,
+	// which is a shape no panorama test can recognise. Audio sample rate is stored wider below.
 	const auto to_u16 = [](const int64_t v)
 	{
 		return static_cast<uint16_t>(std::clamp<int64_t>(v, 0, UINT16_MAX));
 	};
 
+	if (created_local.is_valid()) result->dates.add(created_local_source, created_local);
 	if (created_utc.is_valid()) result->dates.add_utc(prop::date_source::embedded_created, created_utc);
 	if (prop::is_null(result->iso_speed)) result->iso_speed = to_u16(iso_speed);
 	if (prop::is_null(result->exposure_time)) result->exposure_time = exposure_time;
@@ -3161,7 +3212,8 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 	if (prop::is_null(result->audio_codec)) result->audio_codec = audio_codec;
 	if (prop::is_null(result->audio_channels)) result->audio_channels = audio_channels;
 	if (prop::is_null(result->audio_sample_type)) result->audio_sample_type = static_cast<uint16_t>(audio_sample_type);
-	if (prop::is_null(result->audio_sample_rate)) result->audio_sample_rate = to_u16(audio_sample_rate);
+	if (prop::is_null(result->audio_sample_rate))
+		result->audio_sample_rate = static_cast<uint32_t>(std::clamp<int64_t>(audio_sample_rate, 0, UINT32_MAX));
 
 	if (!result->coordinate.is_valid())
 	{
@@ -3169,22 +3221,18 @@ prop::item_metadata_ptr file_scan_result::to_props() const
 	}
 
 	const auto xmp_properties = metadata_xmp::properties(metadata.xmp);
-	if (!result->tags.is_empty() || (!keywords.empty() && metadata.xmp.empty()) ||
+	if (!result->tags.is_empty() || (!keywords.empty() && !xmp_properties.tags) ||
 		(!windows_categories.empty() && !xmp_properties.tags))
 	{
 		auto tags = split(result->tags, true);
 
 		// Native container keywords (the MP4 'KEYW' atom, or Windows Explorer /
-		// Media Player tags from the 'Xtra' atom / ASF 'WM/Category') are only
-		// merged when the file has no embedded XMP. When XMP is present, dc:subject
-		// is the authoritative tag list, so a tag removed via XMP is not resurrected
-		// by a stale native tag left behind by another app (#3).
-		if (metadata.xmp.empty())
-		{
-			tags.insert(tags.end(), keywords.begin(), keywords.end());
-		}
+		// Media Player tags from the 'Xtra' atom / ASF 'WM/Category') are only merged when
+		// XMP has no dc:subject. An unrelated XMP packet says nothing about tags, while an
+		// empty dc:subject is authoritative and must not resurrect stale native tags.
 		if (!xmp_properties.tags)
 		{
+			tags.insert(tags.end(), keywords.begin(), keywords.end());
 			tags.insert(tags.end(), windows_categories.begin(), windows_categories.end());
 		}
 

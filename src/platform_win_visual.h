@@ -147,6 +147,11 @@ private:
 
 using font_renderer_ptr = std::shared_ptr<font_renderer>;
 
+inline bool should_retry_font_renderer(const font_renderer_ptr& font)
+{
+	return font == nullptr;
+}
+
 // A glyph cache must be keyed by the face a glyph index belongs to. Font fallback means one text
 // renderer sees several faces, and an index is only meaningful inside its own face, so keying on
 // the index alone - or on a proxy such as the face's glyph count - lets one face's glyph resolve
@@ -206,6 +211,7 @@ public:
 
 	void update(std::string_view text, ui::style::text_style text_style) override;
 	sizei measure_text(int cx, int cy) override;
+	std::vector<int> offset_xs(const std::vector<size_t>& utf8_offsets, int cx, int cy) override;
 
 	font_renderer_ptr _renderer;
 	ComPtr<IDWriteTextLayout> _layout;
@@ -223,6 +229,8 @@ private:
 
 	measured_extent _measured[2];
 	size_t _measured_next = 0;
+	std::vector<size_t> _utf8_offsets;
+	std::vector<uint32_t> _utf16_positions;
 };
 
 struct factories

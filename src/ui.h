@@ -1169,11 +1169,21 @@ namespace ui
 
 		void merge(const color other)
 		{
-			const auto inv_other_a = (1.0f - a) * other.a;
-			r = r * a + other.r * inv_other_a;
-			g = g * a + other.g * inv_other_a;
-			b = b * a + other.b * inv_other_a;
-			a = other.a + inv_other_a;
+			const auto src_a = a;
+			const auto dst_a = other.a;
+			const auto dst_contribution = (1.0f - src_a) * dst_a;
+			const auto out_a = src_a + dst_contribution;
+
+			if (out_a <= 0.0f)
+			{
+				r = g = b = a = 0.0f;
+				return;
+			}
+
+			r = (r * src_a + other.r * dst_contribution) / out_a;
+			g = (g * src_a + other.g * dst_contribution) / out_a;
+			b = (b * src_a + other.b * dst_contribution) / out_a;
+			a = out_a;
 		}
 
 		static constexpr float sat_f(const float x)
@@ -1380,7 +1390,45 @@ namespace ui
 		virtual ~text_layout() = default;
 		virtual void update(std::string_view text, style::text_style style) = 0;
 		virtual sizei measure_text(int cx, int cy = 1000) = 0;
+		virtual std::vector<int> offset_xs(const std::vector<size_t>& utf8_offsets, int cx, int cy = 1000) = 0;
 	};
+
+	struct text_cluster_metric
+	{
+		uint32_t utf16_length = 0;
+		float width = 0.0f;
+	};
+
+	inline std::vector<int> logical_text_offset_xs(const std::vector<uint32_t>& utf16_positions,
+	                                               const std::vector<text_cluster_metric>& clusters)
+	{
+		std::vector<std::pair<uint32_t, float>> advances;
+		advances.reserve(clusters.size() + 1);
+		advances.emplace_back(0u, 0.0f);
+
+		auto utf16_pos = 0u;
+		auto advance = 0.0f;
+
+		for (const auto& cluster : clusters)
+		{
+			utf16_pos += cluster.utf16_length;
+			advance += cluster.width;
+			advances.emplace_back(utf16_pos, advance);
+		}
+
+		std::vector<int> result;
+		result.reserve(utf16_positions.size());
+
+		for (const auto position : utf16_positions)
+		{
+			const auto found = std::ranges::lower_bound(advances, position, {},
+			                                            [](const auto& entry) { return entry.first; });
+			const auto x = found == advances.end() ? advances.back().second : found->second;
+			result.emplace_back(df::round(x));
+		}
+
+		return result;
+	}
 
 	class vertices
 	{
@@ -1395,10 +1443,158 @@ namespace ui
 
 	struct text_highlight_t
 	{
+		// For draw_context::draw_text(std::string_view, highlights, ...) these are UTF-8 byte
+		// offsets in the supplied text. Backends translate them to UTF-16 before handing text to
+		// DirectWrite.
 		uint32_t offset = 0;
 		uint32_t length = 0;
 		color clr = {};
 	};
+
+	struct utf16_text_highlights
+	{
+		std::wstring text;
+		std::vector<text_highlight_t> highlights;
+	};
+
+	inline uint32_t utf16_code_units(const uint32_t cp)
+	{
+		return cp > 0xffff ? 2u : 1u;
+	}
+
+	inline void append_utf16(std::wstring& text, const uint32_t cp)
+	{
+		if (cp > 0xffff)
+		{
+			text += static_cast<wchar_t>((cp >> 10) + str::LEAD_OFFSET);
+			text += static_cast<wchar_t>((cp & 0x3ff) + str::TRAIL_SURROGATE_MIN);
+		}
+		else
+		{
+			text += static_cast<wchar_t>(cp);
+		}
+	}
+
+	inline uint32_t utf16_position_for_utf8_offset(const std::vector<std::pair<uint32_t, uint32_t>>& positions,
+	                                               const uint32_t utf8_offset)
+	{
+		const auto found = std::ranges::lower_bound(positions, utf8_offset, {},
+		                                            [](const auto& entry) { return entry.first; });
+		return found == positions.end() ? positions.back().second : found->second;
+	}
+
+	inline utf16_text_highlights utf8_to_utf16(const std::string_view text,
+	                                          const std::vector<text_highlight_t>& highlights)
+	{
+		utf16_text_highlights result;
+		result.text.reserve(text.size());
+
+		std::vector<std::pair<uint32_t, uint32_t>> positions;
+		positions.reserve(text.size() + 1);
+		positions.emplace_back(0u, 0u);
+
+		auto i = text.begin();
+		auto utf16_pos = 0u;
+
+		while (i < text.end())
+		{
+			const auto before = i;
+			const auto cp = str::pop_utf8_char(i, text.end());
+			if (i == before) break;
+			append_utf16(result.text, cp);
+			utf16_pos += utf16_code_units(cp);
+			positions.emplace_back(static_cast<uint32_t>(i - text.begin()), utf16_pos);
+		}
+
+		result.highlights.reserve(highlights.size());
+		for (const auto& highlight : highlights)
+		{
+			const auto begin = utf16_position_for_utf8_offset(positions, highlight.offset);
+			const auto end_offset = static_cast<uint32_t>(
+				std::min<uint64_t>(static_cast<uint64_t>(highlight.offset) + highlight.length, text.size()));
+			const auto end = utf16_position_for_utf8_offset(positions, end_offset);
+			if (end > begin) result.highlights.push_back({begin, end - begin, highlight.clr});
+		}
+
+		return result;
+	}
+
+	struct text_cluster_span
+	{
+		uint32_t offset = 0;
+		uint32_t length = 1;
+	};
+
+	inline std::vector<text_cluster_span> text_cluster_spans_for_glyph_run(const uint32_t glyph_count,
+	                                                                       const uint16_t* const cluster_map,
+	                                                                       const uint32_t text_length,
+	                                                                       const uint32_t text_position)
+	{
+		std::vector<text_cluster_span> result;
+		result.reserve(glyph_count);
+
+		for (auto glyph = 0u; glyph < glyph_count; ++glyph)
+		{
+			result.push_back({text_position + glyph, 1});
+		}
+
+		if (!cluster_map || text_length == 0) return result;
+
+		std::vector<bool> initialized(glyph_count);
+		for (auto text_index = 0u; text_index < text_length; ++text_index)
+		{
+			const auto glyph = static_cast<uint32_t>(cluster_map[text_index]);
+			if (glyph >= glyph_count) continue;
+
+			auto& span = result[glyph];
+			const auto position = text_position + text_index;
+			if (!initialized[glyph])
+			{
+				span = {position, 1};
+				initialized[glyph] = true;
+			}
+			else
+			{
+				span.length = std::max(span.length, position - span.offset + 1);
+			}
+		}
+
+		return result;
+	}
+
+	inline text_cluster_span text_cluster_span_for_glyph(const uint32_t glyph_index, const uint32_t glyph_count,
+	                                                     const uint16_t* const cluster_map,
+	                                                     const uint32_t text_length,
+	                                                     const uint32_t text_position)
+	{
+		const auto spans = text_cluster_spans_for_glyph_run(glyph_count, cluster_map, text_length, text_position);
+		return glyph_index < spans.size() ? spans[glyph_index] : text_cluster_span{text_position + glyph_index, 1};
+	}
+
+	inline color text_cluster_color(const color base, const text_cluster_span cluster,
+	                                const std::vector<text_highlight_t>& highlights)
+	{
+		for (const auto& highlight : highlights)
+		{
+			const auto begin = highlight.offset;
+			const auto end = begin + highlight.length;
+			if (cluster.offset >= begin && cluster.offset < end) return highlight.clr;
+			if (cluster.offset < end) break;
+		}
+
+		return base;
+	}
+
+	inline void clear_text_highlights(std::vector<text_highlight_t>& highlights)
+	{
+		highlights.clear();
+	}
+
+	inline float glyph_top_from_baseline(const float baseline_y, const int base_line_height,
+	                                     const float ascender_offset)
+	{
+		return baseline_y - static_cast<float>(base_line_height) - ascender_offset;
+	}
 
 	class measure_context : public df::no_copy
 	{
@@ -2233,6 +2429,26 @@ namespace ui
 	// Written by prepare_frame and read by every step() it drives, so it is UI-thread-owned like
 	// animations_enabled and the animations map beside it.
 	extern float animation_step_factor;
+
+	inline bool step_color_alpha(color& value, const color target)
+	{
+		const auto delta = target - value;
+		if (delta.abs_sum() <= color::color_epsilon) return false;
+		value += animations_enabled ? delta * animation_step_factor : delta;
+		return true;
+	}
+
+	inline int fade_alpha_step(const int current, const int target)
+	{
+		auto result = (current * 5 + target * 2) / 7;
+		if (std::abs(result - target) <= 1) result = target;
+		return result;
+	}
+
+	inline int gated_fade_alpha_step(const int current, const int target)
+	{
+		return animations_enabled ? fade_alpha_step(current, target) : target;
+	}
 
 	class animate_alpha
 	{

@@ -482,6 +482,14 @@ void jpeg_encoder::setup(const uint32_t cx, const uint32_t cy, const file_encode
 // The JPEG format limits a single marker segment to 65533 bytes of payload
 // (the 2-byte length field is counted within the 65535-byte segment).
 static constexpr size_t max_marker_payload = 65533;
+static constexpr std::string_view photoshop_signature = "Photoshop 3.0\0"sv;
+static constexpr size_t default_photoshop_resource_cap = 16u * 1024u * 1024u;
+static std::atomic<size_t> s_photoshop_resource_cap{default_photoshop_resource_cap};
+
+void files_test_hooks::set_jpeg_photoshop_resource_cap(const size_t bytes)
+{
+	s_photoshop_resource_cap.store(bytes == 0 ? default_photoshop_resource_cap : bytes, std::memory_order_relaxed);
+}
 
 // An ICC profile is split across APP2 segments, each carrying the "ICC_PROFILE\0" signature
 // followed by a 1-based sequence number and the total segment count.
@@ -508,6 +516,66 @@ static void write_marker_checked(const j_compress_ptr cinfo, const int marker_co
 {
 	check_marker_payload(len, "metadata"sv);
 	jpeg_write_marker(cinfo, marker_code, data, static_cast<unsigned int>(len));
+}
+
+static size_t photoshop_resource_record_size(const df::cspan resources, const size_t pos)
+{
+	if (pos + 11u > resources.size || memcmp(resources.data + pos, "8BIM", 4) != 0) return 0;
+	const auto name_len = resources.data[pos + 6u];
+	const auto name_bytes = static_cast<size_t>(name_len) + ((name_len & 1u) ? 0u : 1u);
+	const auto len_pos = pos + 7u + name_bytes;
+	if (len_pos + 4u > resources.size) return 0;
+	const auto len = static_cast<size_t>(resources.data[len_pos]) << 24 |
+		static_cast<size_t>(resources.data[len_pos + 1]) << 16 |
+		static_cast<size_t>(resources.data[len_pos + 2]) << 8 |
+		resources.data[len_pos + 3];
+	const auto total = 4u + 2u + 1u + name_bytes + 4u + len + (len & 1u);
+	return total <= resources.size - pos ? total : 0;
+}
+
+static void write_photoshop_markers(const j_compress_ptr cinfo, const df::cspan iptc,
+                                    const df::cspan resources)
+{
+	const auto iptc_resource = make_photoshop_iptc_resource(iptc, false);
+	std::vector<df::cspan> records;
+	if (!iptc_resource.empty()) records.emplace_back(iptc_resource);
+
+	for (auto pos = 0_z; pos < resources.size;)
+	{
+		const auto record_size = photoshop_resource_record_size(resources, pos);
+		if (record_size == 0) break;
+		records.emplace_back(resources.data + pos, record_size);
+		pos += record_size;
+	}
+
+	std::vector<uint8_t> marker;
+	auto begin_segment = [&]
+	{
+		marker.clear();
+		marker.insert(marker.end(), photoshop_signature.begin(), photoshop_signature.end());
+	};
+
+	begin_segment();
+
+	for (const auto record : records)
+	{
+		if (photoshop_signature.size() + record.size > max_marker_payload)
+		{
+			df::log(__FUNCTION__, std::format("dropping oversized Photoshop resource ({} bytes)", record.size));
+			continue;
+		}
+
+		if (marker.size() + record.size > max_marker_payload)
+		{
+			write_marker_checked(cinfo, IPTC_MARKER, marker.data(), marker.size());
+			begin_segment();
+		}
+
+		marker.insert(marker.end(), record.begin(), record.end());
+	}
+
+	if (marker.size() > photoshop_signature.size())
+		write_marker_checked(cinfo, IPTC_MARKER, marker.data(), marker.size());
 }
 
 // Write an ICC profile as one or more APP2 segments, following the ICC-in-JPEG convention.
@@ -541,7 +609,23 @@ static void check_metadata_fits(const metadata_parts& metadata)
 			                     : exif_signature.size() + metadata.exif.size(), "exif"sv);
 	}
 
-	if (!metadata.iptc.empty()) check_marker_payload(iptc_signature.size() + metadata.iptc.size(), "iptc"sv);
+	if (!metadata.iptc.empty() || !metadata.photoshop_resources.empty())
+	{
+		const auto iptc_resource = make_photoshop_iptc_resource(metadata.iptc, false);
+		auto pos = 0_z;
+		while (pos < metadata.photoshop_resources.size())
+		{
+			const auto record_size = photoshop_resource_record_size(metadata.photoshop_resources, pos);
+			if (record_size == 0) break;
+			if (photoshop_signature.size() + record_size > max_marker_payload)
+			{
+				df::log(__FUNCTION__, std::format("dropping oversized Photoshop resource ({} bytes)", record_size));
+			}
+			pos += record_size;
+		}
+
+		if (!iptc_resource.empty()) check_marker_payload(photoshop_signature.size() + iptc_resource.size(), "iptc"sv);
+	}
 	if (!metadata.xmp.empty()) check_marker_payload(xmp_signature.size() + metadata.xmp.size(), "xmp"sv);
 
 	if (!metadata.icc.empty())
@@ -593,13 +677,9 @@ void jpeg_encoder::start(const uint32_t cx, const uint32_t cy, const ui::orienta
 		write_marker_checked(&_impl->cinfo, XMP_EXIF_MARKER, exif.data(), exif.size());
 	}
 
-	if (!metadata.iptc.empty())
+	if (!metadata.iptc.empty() || !metadata.photoshop_resources.empty())
 	{
-		std::vector<uint8_t> marker;
-		marker.reserve(iptc_signature.size() + metadata.iptc.size());
-		marker.insert(marker.begin(), iptc_signature.begin(), iptc_signature.end());
-		marker.insert(marker.end(), metadata.iptc.data(), metadata.iptc.data() + metadata.iptc.size());
-		write_marker_checked(&_impl->cinfo, IPTC_MARKER, marker.data(), marker.size());
+		write_photoshop_markers(&_impl->cinfo, metadata.iptc, metadata.photoshop_resources);
 	}
 
 	if (!metadata.xmp.empty())
@@ -1647,6 +1727,9 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 	// ICC profiles may span multiple APP2 segments; collect them keyed by their
 	// 1-based sequence number so they can be concatenated in order afterwards.
 	std::map<int, std::vector<uint8_t>> icc_segments;
+	df::blob photoshop_resources;
+	const auto photoshop_resource_cap = s_photoshop_resource_cap.load(std::memory_order_relaxed);
+	bool photoshop_resources_capped = false;
 
 	while (file_len >= block_offset + 2u)
 	{
@@ -1979,12 +2062,24 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 			{
 				s.read(block_offset + 4u, block_data, block_data_len);
 				df::cspan block = {block_data, block_data_len};
-
-				if (is_iptc_signature(block))
+				if (block.size >= photoshop_signature.size() &&
+					memcmp(block.data, photoshop_signature.data(), photoshop_signature.size()) == 0)
 				{
-					const auto iptc = block.sub(iptc_signature_len);
-					result.metadata.iptc.assign(iptc.begin(), iptc.end());
-					has_iptc = true;
+					const auto body = block.sub(photoshop_signature.size());
+					if (!photoshop_resources_capped)
+					{
+						const auto remaining = photoshop_resources.size() < photoshop_resource_cap
+							                       ? photoshop_resource_cap - photoshop_resources.size()
+							                       : 0_z;
+						const auto to_copy = std::min(remaining, body.size);
+						photoshop_resources.insert(photoshop_resources.end(), body.begin(), body.begin() + to_copy);
+						if (to_copy < body.size)
+						{
+							photoshop_resources_capped = true;
+							df::log(__FUNCTION__, std::format("JPEG Photoshop resources capped at {} bytes",
+							                                  photoshop_resource_cap));
+						}
+					}
 				}
 			}
 			break;
@@ -2033,6 +2128,15 @@ file_scan_result scan_jpg(read_stream& s, const scan_intent intent, const bool w
 	for (const auto& [seq, segment] : icc_segments)
 	{
 		result.metadata.icc.insert(result.metadata.icc.end(), segment.begin(), segment.end());
+	}
+
+	if (!photoshop_resources.empty())
+	{
+		metadata_parts app13;
+		has_iptc = parse_photoshop_resources(app13, photoshop_resources, false) && !app13.iptc.empty();
+		if (!app13.iptc.empty()) result.metadata.iptc = std::move(app13.iptc);
+		if (!app13.photoshop_resources.empty())
+			result.metadata.photoshop_resources = std::move(app13.photoshop_resources);
 	}
 
 	switch (channels)

@@ -70,6 +70,7 @@ struct clipboard_formats
 	static uint32_t SHELLIDLIST;
 
 	static FORMATETC Bitmap;
+	static FORMATETC Dib;
 	static FORMATETC PDE;
 	static FORMATETC Drop;
 	static FORMATETC DropShellItems;
@@ -239,6 +240,7 @@ uint32_t clipboard_formats::PREFERREDDROPEFFECT = RegisterClipboardFormat(CFSTR_
 uint32_t clipboard_formats::SHELLIDLIST = RegisterClipboardFormat(CFSTR_SHELLIDLIST);
 
 FORMATETC clipboard_formats::Bitmap = {CF_BITMAP, nullptr, DVASPECT_CONTENT, -1, TYMED_GDI};
+FORMATETC clipboard_formats::Dib = {CF_DIB, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
 FORMATETC clipboard_formats::PDE = {
 	static_cast<CLIPFORMAT>(PREFERREDDROPEFFECT), nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL
 };
@@ -732,6 +734,51 @@ static std::wstring all_file_system_paths(const std::vector<df::file_path>& file
 	return result;
 }
 
+static HBITMAP dib_to_bitmap(const HGLOBAL dib)
+{
+	if (!dib) return nullptr;
+
+	auto* const info = static_cast<const BITMAPINFOHEADER*>(GlobalLock(dib));
+	if (!info) return nullptr;
+
+	HBITMAP result = nullptr;
+	const df::scope_exit unlock([dib] { GlobalUnlock(dib); });
+
+	if (info->biSize >= sizeof(BITMAPINFOHEADER) && info->biBitCount == 32 && info->biCompression == BI_RGB &&
+		info->biWidth > 0 && info->biHeight != 0)
+	{
+		const auto* const bits = std::bit_cast<const uint8_t*>(info) + info->biSize;
+		const auto hdc = GetDC(nullptr);
+		if (hdc)
+		{
+			result = CreateDIBitmap(hdc, info, CBM_INIT, bits, std::bit_cast<const BITMAPINFO*>(info),
+			                       DIB_RGB_COLORS);
+			ReleaseDC(nullptr, hdc);
+		}
+	}
+
+	return result;
+}
+
+static sizei bitmap_dimensions(const HBITMAP bitmap)
+{
+	BITMAP info{};
+	if (bitmap && GetObject(bitmap, sizeof(info), &info) == sizeof(info))
+	{
+		return {info.bmWidth, info.bmHeight};
+	}
+	return {};
+}
+
+static sizei dib_dimensions(const HGLOBAL dib)
+{
+	if (!dib) return {};
+	auto* const info = static_cast<const BITMAPINFOHEADER*>(GlobalLock(dib));
+	if (!info) return {};
+	const df::scope_exit unlock([dib] { GlobalUnlock(dib); });
+	return {info->biWidth, std::abs(info->biHeight)};
+}
+
 
 STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmedium)
 {
@@ -746,7 +793,7 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 	{
 		const auto has_paths = !_files.empty() || !_folders.empty();
 
-		if (pformatetcIn->cfFormat == CF_DIB)
+		if (pformatetcIn->cfFormat == CF_DIB || pformatetcIn->cfFormat == CF_BITMAP)
 		{
 			if (_has_image && !_loaded.success)
 			{
@@ -756,8 +803,22 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 
 			if (_loaded.success)
 			{
-				pmedium->tymed = TYMED_HGLOBAL;
-				pmedium->hGlobal = image_to_handle(_loaded);
+				const auto dib = image_to_handle(_loaded);
+
+				if (pformatetcIn->cfFormat == CF_BITMAP)
+				{
+					const auto bitmap = dib_to_bitmap(dib);
+					GlobalFree(dib);
+					if (!bitmap) return E_OUTOFMEMORY;
+					pmedium->tymed = TYMED_GDI;
+					pmedium->hBitmap = bitmap;
+				}
+				else
+				{
+					pmedium->tymed = TYMED_HGLOBAL;
+					pmedium->hGlobal = dib;
+				}
+
 				pmedium->pUnkForRelease = nullptr;
 				return S_OK;
 			}
@@ -867,7 +928,7 @@ STDMETHODIMP items_data_object::QueryGetData(FORMATETC* pformatetc)
 
 	const auto has_paths = !_files.empty() || !_folders.empty();
 
-	if (pformatetc->cfFormat == CF_DIB && _has_image)
+	if ((pformatetc->cfFormat == CF_DIB || pformatetc->cfFormat == CF_BITMAP) && (_has_image || _loaded.success))
 	{
 		return S_OK;
 	}
@@ -911,6 +972,7 @@ STDMETHODIMP items_data_object::EnumFormatEtc(const DWORD dwDirection, IEnumFORM
 	if (_has_image || _loaded.success)
 	{
 		vfmtetc.emplace_back(clipboard_formats::Bitmap);
+		vfmtetc.emplace_back(clipboard_formats::Dib);
 	}
 
 	if (_has_preferred_drop && _is_move)
@@ -980,6 +1042,30 @@ STDMETHODIMP items_data_object::EnumDAdvise(IEnumSTATDATA** ppenumAdvise)
 data_object_client::data_object_client(IDataObject* pData) : _pData(pData)
 {
 }
+
+class clipboard_bitmap_medium final : public platform::clipboard_bitmap
+{
+	STGMEDIUM _medium{};
+
+public:
+	explicit clipboard_bitmap_medium(STGMEDIUM medium) : _medium(medium)
+	{
+	}
+
+	~clipboard_bitmap_medium() override
+	{
+		ReleaseStgMedium(&_medium);
+	}
+
+	clipboard_bitmap_medium(const clipboard_bitmap_medium&) = delete;
+	clipboard_bitmap_medium& operator=(const clipboard_bitmap_medium&) = delete;
+
+	platform::file_op_result save(const df::folder_path save_path, const std::string_view name,
+	                              const bool as_png) override
+	{
+		return save_bitmap_info(save_path, name, as_png, _medium.hBitmap);
+	}
+};
 
 // CF_HDROP blocks come from another process, so pFiles and the double-NUL terminator are validated
 // against the actual allocation before anything walks the list.
@@ -1153,6 +1239,50 @@ platform::file_op_result to_file_op_result(const int res, const BOOL fAnyOperati
 	return result;
 }
 
+static std::wstring shell_destination_multi_string(const df::folder_path target)
+{
+	auto result = platform::to_shell_path(target);
+	result.push_back(L'\0');
+	result.push_back(L'\0');
+	return result;
+}
+
+static std::string shell_destination_multi_string_a(const df::folder_path target)
+{
+	auto result = utf8_cast2(target.text());
+	result.push_back('\0');
+	result.push_back('\0');
+	return result;
+}
+
+static platform::file_op_result perform_shell_file_operation(SHFILEOPSTRUCTW& shfo,
+                                                             const platform::shell_file_operation_w_fn op =
+	                                                             SHFileOperationW)
+{
+	const auto shell_result = op(&shfo);
+	return to_file_op_result(shell_result, shfo.fAnyOperationsAborted);
+}
+
+static platform::file_op_result perform_shell_file_operation(SHFILEOPSTRUCTA& shfo,
+                                                             const platform::shell_file_operation_a_fn op =
+	                                                             SHFileOperationA)
+{
+	const auto shell_result = op(&shfo);
+	return to_file_op_result(shell_result, shfo.fAnyOperationsAborted);
+}
+
+static FILEOP_FLAGS shell_delete_flags(const bool allow_undo)
+{
+	return allow_undo
+		       ? static_cast<FILEOP_FLAGS>(FOF_ALLOWUNDO | FOF_WANTNUKEWARNING | FOF_SILENT)
+		       : static_cast<FILEOP_FLAGS>(FOF_NOCONFIRMATION | FOF_SILENT);
+}
+
+FILEOP_FLAGS platform::probe_shell_delete_flags(const bool allow_undo)
+{
+	return shell_delete_flags(allow_undo);
+}
+
 using name_mapping_t = std::unordered_map<df::file_path, df::file_path, df::ihash, df::ieq>;
 
 static df::paths dest_file_list(const df::folder_path target, const wchar_t* const file_list,
@@ -1234,7 +1364,7 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 
 		if (drop.is_wide())
 		{
-			const auto targetW = platform::to_shell_path(target);
+			const auto targetW = shell_destination_multi_string(target);
 			const auto* const file_list = drop.wide_list();
 
 			SHFILEOPSTRUCTW shfo = {
@@ -1246,7 +1376,7 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 				0, nullptr, nullptr
 			};
 
-			result = to_file_op_result(SHFileOperationW(&shfo), shfo.fAnyOperationsAborted);
+			result = perform_shell_file_operation(shfo);
 
 			name_mapping_t name_mapping;
 			auto* const s = std::bit_cast<HANDLETOMAPPINGSW*>(shfo.hNameMappings);
@@ -1267,7 +1397,7 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 		}
 		else
 		{
-			const auto targetA = utf8_cast2(target.text());
+			const auto targetA = shell_destination_multi_string_a(target);
 			const auto* const file_list = drop.narrow_list();
 
 			SHFILEOPSTRUCTA shfo = {
@@ -1279,7 +1409,7 @@ static platform::file_op_result perform_hdrop2(HANDLE h, const df::folder_path t
 				0, nullptr, nullptr
 			};
 
-			result = to_file_op_result(SHFileOperationA(&shfo), shfo.fAnyOperationsAborted);
+			result = perform_shell_file_operation(shfo);
 
 			name_mapping_t name_mapping;
 			auto* const s = std::bit_cast<HANDLETOMAPPINGSA*>(shfo.hNameMappings);
@@ -1451,20 +1581,26 @@ data_object_client::description data_object_client::files_description() const
 platform::file_op_result data_object_client::save_bitmap(const df::folder_path save_path, const std::string_view name,
                                                          const bool as_png)
 {
-	platform::file_op_result result;
-	STGMEDIUM stgMedium;
+	const auto bitmap = capture_bitmap();
+	return bitmap ? bitmap->save(save_path, name, as_png) : platform::file_op_result{};
+}
 
+platform::clipboard_bitmap_ptr data_object_client::capture_bitmap()
+{
+	STGMEDIUM stgMedium{};
 	const HRESULT hr = _pData ? _pData->GetData(&clipboard_formats::Bitmap, &stgMedium) : E_POINTER;
+
+	if (SUCCEEDED(hr) && stgMedium.tymed == TYMED_GDI && stgMedium.hBitmap)
+	{
+		return std::make_shared<clipboard_bitmap_medium>(stgMedium);
+	}
 
 	if (SUCCEEDED(hr))
 	{
-		result = save_bitmap_info(save_path, name, as_png, stgMedium.hBitmap);
-
-		// Don't unlock bitmap handle - ReleaseStgMedium will handle cleanup
 		ReleaseStgMedium(&stgMedium);
 	}
 
-	return result;
+	return {};
 }
 
 
@@ -1868,6 +2004,24 @@ platform::file_op_result platform::delete_file(const df::file_path path)
 	return last_op_result(::DeleteFile(w.c_str()));
 }
 
+platform::file_op_result platform::make_file_writable(const df::file_path path)
+{
+	const auto w = to_file_system_path(path);
+	const auto attributes = GetFileAttributesW(w.c_str());
+
+	if (attributes == INVALID_FILE_ATTRIBUTES)
+	{
+		return last_op_result(FALSE);
+	}
+
+	if ((attributes & FILE_ATTRIBUTE_READONLY) == 0)
+	{
+		return {file_op_result_code::OK};
+	}
+
+	return last_op_result(SetFileAttributesW(w.c_str(), attributes & ~FILE_ATTRIBUTE_READONLY));
+}
+
 
 platform::file_op_result platform::copy_file(const df::file_path existing, const df::file_path destination,
                                              const bool fail_if_exists, const bool can_create_folder)
@@ -1959,7 +2113,8 @@ static std::wstring to_extended(const std::wstring& p)
 // the transient oplock/lease-break errors seen on a just-written SMB destination. Returns true on
 // success; on failure last_error holds the final GetLastError().
 static bool rename_by_handle(const HANDLE h, const std::wstring& targetW, const bool replace_if_exists,
-                             DWORD& last_error)
+                             DWORD& last_error, const std::function<platform::file_op_result()>& precondition,
+                             platform::file_op_result& precondition_result)
 {
 	const auto name_bytes = targetW.size() * sizeof(wchar_t);
 	std::vector<uint8_t> buffer(sizeof(FILE_RENAME_INFO) + name_bytes);
@@ -1973,6 +2128,12 @@ static bool rename_by_handle(const HANDLE h, const std::wstring& targetW, const 
 
 	for (auto attempt = 0; attempt < 5; ++attempt)
 	{
+		if (precondition)
+		{
+			precondition_result = precondition();
+			if (precondition_result.failed()) return false;
+		}
+
 		if (SetFileInformationByHandle(h, FileRenameInfo, info, static_cast<DWORD>(buffer.size())) != 0)
 		{
 			return true;
@@ -2005,7 +2166,8 @@ static bool rename_by_handle(const HANDLE h, const std::wstring& targetW, const 
 // the rename. If the handle path cannot run (e.g. a filesystem that rejects rename-by-handle, or a
 // read-only / reparse-point target) we fall back to MoveFileEx (which returns no coherent handle).
 platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
-                                                const bool create_originals)
+                                                const bool create_originals,
+                                                const std::optional<file_attributes_t> expected_destination)
 {
 	// Make sure the replacement's contents are actually on the volume before we swap it in
 	// (network write-behind cache); this is what makes updates stick on network drives (issue #207).
@@ -2058,6 +2220,35 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 
 	const auto existingW = to_extended(to_file_system_path(existing));
 	const auto destinationW = to_extended(to_file_system_path(destination));
+	const auto destination_changed = [&]
+	{
+		file_op_result result{file_op_result_code::OK};
+		if (!expected_destination) return result;
+
+		auto* const dh = CreateFileW(destinationW.c_str(), FILE_READ_ATTRIBUTES | DELETE,
+		                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+		                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+
+		if (dh == INVALID_HANDLE_VALUE)
+		{
+			result.code = file_op_result_code::ALREADY_EXISTS;
+			result.error_message = std::format("Destination changed since review: {}", destination.str());
+			return result;
+		}
+
+		FILETIME modified{};
+		LARGE_INTEGER size{};
+		const auto ok = GetFileTime(dh, nullptr, nullptr, &modified) && GetFileSizeEx(dh, &size);
+		CloseHandle(dh);
+
+		if (!ok || ft_to_ts(modified) != expected_destination->modified || size.QuadPart != expected_destination->size)
+		{
+			result.code = file_op_result_code::ALREADY_EXISTS;
+			result.error_message = std::format("Destination changed since review: {}", destination.str());
+		}
+
+		return result;
+	};
 
 	// Preserve the destination's creation time (ReplaceFileW semantics). Also decide whether the
 	// handle-rename path is applicable: skip it for read-only or reparse-point (symlink/junction)
@@ -2107,7 +2298,8 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 
 			DWORD rename_error = ERROR_SUCCESS;
 
-			if (rename_by_handle(h, destinationW, true, rename_error))
+			file_op_result precondition_result{file_op_result_code::OK};
+			if (rename_by_handle(h, destinationW, true, rename_error, destination_changed, precondition_result))
 			{
 				file_op_result result;
 				result.code = file_op_result_code::OK;
@@ -2137,6 +2329,12 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 				return result;
 			}
 
+			if (precondition_result.failed())
+			{
+				CloseHandle(h);
+				return precondition_result;
+			}
+
 			CloseHandle(h);
 			df::log(__FUNCTION__, std::format("rename-by-handle failed with error {}, falling back to move",
 			                                  static_cast<uint32_t>(rename_error)));
@@ -2145,6 +2343,11 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 
 	// Fallback: MoveFileEx (no coherent handle). Move the replacement into place with write-through
 	// so the new file is committed on network drives.
+	if (const auto precondition_result = destination_changed(); precondition_result.failed())
+	{
+		return precondition_result;
+	}
+
 	const auto move_result = last_op_result(MoveFileExW(existingW.c_str(), destinationW.c_str(),
 	                                                    MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH |
 	                                                    (destination_exists ? MOVEFILE_REPLACE_EXISTING : 0)));
@@ -3084,77 +3287,103 @@ platform::clipboard_data_ptr platform::clipboard()
 	return std::make_shared<data_object_client>(pdo.Get());
 }
 
-void platform::set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
+bool platform::set_clipboard(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,
                              const file_load_result& loaded, const bool is_move)
 {
 	const ComPtr<items_data_object> p = new items_data_object();
 	p->set_for_move(is_move);
 	p->cache(files, folders);
 	p->cache(loaded);
-	OleSetClipboard(p.Get());
-}
-
-void platform::set_clipboard(const std::string_view text)
-{
-	if (OpenClipboard(app_wnd()))
+	const auto hr = OleSetClipboard(p.Get());
+	if (FAILED(hr))
 	{
-		EmptyClipboard();
-
-		const auto w = str::utf8_to_utf16(text);
-		const auto text_size = w.size();
-
-		// Check for potential overflow
-		if (text_size > SIZE_MAX / sizeof(wchar_t) - 1)
-		{
-			df::log(__FUNCTION__, "Text too large for clipboard");
-			CloseClipboard();
-			return;
-		}
-
-		auto* const hglbCopy = GlobalAlloc(GMEM_MOVEABLE, (text_size + 1) * sizeof(wchar_t));
-
-		if (hglbCopy)
-		{
-			auto* const text_copy = static_cast<wchar_t*>(GlobalLock(hglbCopy));
-
-			if (text_copy)
-			{
-				memcpy(text_copy, w.data(), text_size * sizeof(wchar_t));
-
-				for (auto i = 0u; i < text_size; ++i)
-				{
-					const auto c = text_copy[i];
-
-					// poor man's escape
-					if (c < 32 && c != 10 && c != 13)
-					{
-						text_copy[i] = '.';
-					}
-				}
-
-				text_copy[text_size] = static_cast<wchar_t>(0); // null character 
-				GlobalUnlock(hglbCopy);
-
-				// The clipboard owns the memory only once it has accepted it; refused, it is still ours.
-				if (!SetClipboardData(CF_UNICODETEXT, hglbCopy))
-				{
-					GlobalFree(hglbCopy);
-				}
-			}
-			else
-			{
-				GlobalFree(hglbCopy);
-			}
-		}
-
-		CloseClipboard();
+		df::log(__FUNCTION__, std::format("OleSetClipboard failed: {:x}", static_cast<uint32_t>(hr)));
+		return false;
 	}
+	return true;
 }
 
-std::string platform::clipboard_text()
+bool platform::set_clipboard(const std::string_view text)
 {
-	std::string result;
-	if (!OpenClipboard(app_wnd())) return result;
+	const auto w = str::utf8_to_utf16(text);
+	const auto text_size = w.size();
+
+	if (text_size > SIZE_MAX / sizeof(wchar_t) - 1)
+	{
+		df::log(__FUNCTION__, "Text too large for clipboard");
+		return false;
+	}
+
+	auto* const hglbCopy = GlobalAlloc(GMEM_MOVEABLE, (text_size + 1) * sizeof(wchar_t));
+
+	if (!hglbCopy)
+	{
+		df::log(__FUNCTION__, "GlobalAlloc failed");
+		return false;
+	}
+
+	auto* const text_copy = static_cast<wchar_t*>(GlobalLock(hglbCopy));
+
+	if (!text_copy)
+	{
+		GlobalFree(hglbCopy);
+		df::log(__FUNCTION__, "GlobalLock failed");
+		return false;
+	}
+
+	memcpy(text_copy, w.data(), text_size * sizeof(wchar_t));
+
+	for (auto i = 0u; i < text_size; ++i)
+	{
+		const auto c = text_copy[i];
+
+		// poor man's escape
+		if (c < 32 && c != 10 && c != 13)
+		{
+			text_copy[i] = '.';
+		}
+	}
+
+	text_copy[text_size] = static_cast<wchar_t>(0); // null character 
+	GlobalUnlock(hglbCopy);
+
+	if (!OpenClipboard(app_wnd()))
+	{
+		GlobalFree(hglbCopy);
+		df::log(__FUNCTION__, "OpenClipboard failed");
+		return false;
+	}
+
+	if (!EmptyClipboard())
+	{
+		CloseClipboard();
+		GlobalFree(hglbCopy);
+		df::log(__FUNCTION__, "EmptyClipboard failed");
+		return false;
+	}
+
+	// The clipboard owns the memory only once it has accepted it; refused, it is still ours.
+	if (!SetClipboardData(CF_UNICODETEXT, hglbCopy))
+	{
+		CloseClipboard();
+		GlobalFree(hglbCopy);
+		df::log(__FUNCTION__, "SetClipboardData failed");
+		return false;
+	}
+
+	CloseClipboard();
+	return true;
+}
+
+std::optional<std::string> platform::clipboard_text()
+{
+	if (!OpenClipboard(app_wnd()))
+	{
+		df::log(__FUNCTION__, "OpenClipboard failed");
+		return std::nullopt;
+	}
+
+	std::optional<std::string> result;
 	if (const auto data = GetClipboardData(CF_UNICODETEXT))
 	{
 		if (const auto text = static_cast<const wchar_t*>(GlobalLock(data)))
@@ -3181,13 +3410,19 @@ platform::drop_effect platform::perform_drag(const std::any& frame_handle, const
 	return DRAGDROP_S_DROP == hr ? to_drop_effect(result_effect) : drop_effect::none;
 }
 
+static platform::data_object_probe probe_drag_data_object_impl(items_data_object* data);
+
 platform::data_object_probe platform::probe_drag_data_object(const std::vector<df::file_path>& files,
                                                              const std::vector<df::folder_path>& folders)
 {
-	data_object_probe result;
-
 	const ComPtr<items_data_object> data = new items_data_object();
 	data->cache(files, folders);
+	return probe_drag_data_object_impl(data.Get());
+}
+
+static platform::data_object_probe probe_drag_data_object_impl(items_data_object* const data)
+{
+	platform::data_object_probe result;
 
 	// 1. Enumerate advertised formats, preserving the source's order of preference.
 	ComPtr<IEnumFORMATETC> en;
@@ -3200,6 +3435,11 @@ platform::data_object_probe platform::probe_drag_data_object(const std::vector<d
 
 			if (fmt.cfFormat == CF_HDROP) result.hdrop_enum_index = index;
 			if (fmt.cfFormat == clipboard_formats::SHELLIDLIST) result.shell_id_list_enum_index = index;
+			if (fmt.cfFormat == CF_BITMAP || fmt.cfFormat == CF_DIB)
+			{
+				result.image_formats.emplace_back(fmt.cfFormat);
+				result.image_tymed.emplace_back(fmt.tymed);
+			}
 
 			result.enum_formats.emplace_back(fmt.cfFormat);
 		}
@@ -3210,6 +3450,31 @@ platform::data_object_probe platform::probe_drag_data_object(const std::vector<d
 	FORMATETC fmt_ids = clipboard_formats::DropShellItems;
 	result.advertises_hdrop = data->QueryGetData(&fmt_drop) == S_OK;
 	result.advertises_shell_id_list = data->QueryGetData(&fmt_ids) == S_OK;
+
+	FORMATETC fmt_bitmap = clipboard_formats::Bitmap;
+	FORMATETC fmt_dib = clipboard_formats::Dib;
+	result.advertises_bitmap = data->QueryGetData(&fmt_bitmap) == S_OK;
+	result.advertises_dib = data->QueryGetData(&fmt_dib) == S_OK;
+
+	{
+		STGMEDIUM medium{};
+		if (data->GetData(&fmt_bitmap, &medium) == S_OK && medium.tymed == TYMED_GDI && medium.hBitmap)
+		{
+			result.bitmap_retrieved = true;
+			result.bitmap_dimensions = bitmap_dimensions(medium.hBitmap);
+			ReleaseStgMedium(&medium);
+		}
+	}
+
+	{
+		STGMEDIUM medium{};
+		if (data->GetData(&fmt_dib, &medium) == S_OK && medium.tymed == TYMED_HGLOBAL && medium.hGlobal)
+		{
+			result.dib_retrieved = true;
+			result.dib_dimensions = dib_dimensions(medium.hGlobal);
+			ReleaseStgMedium(&medium);
+		}
+	}
 
 	// 3. CF_HDROP -> parse DROPFILES and count the files it resolves to.
 	{
@@ -3285,6 +3550,56 @@ platform::data_object_probe platform::probe_drag_data_object(const std::vector<d
 	return result;
 }
 
+platform::data_object_probe platform::probe_drag_data_object(const file_load_result& loaded)
+{
+	const ComPtr<items_data_object> data = new items_data_object();
+	data->cache(loaded);
+	return probe_drag_data_object_impl(data.Get());
+}
+
+std::wstring platform::probe_shell_destination_w(const df::folder_path target)
+{
+	return shell_destination_multi_string(target);
+}
+
+std::string platform::probe_shell_destination_a(const df::folder_path target)
+{
+	return shell_destination_multi_string_a(target);
+}
+
+platform::shell_operation_probe platform::probe_shell_file_operation_w(const shell_file_operation_w_fn op)
+{
+	SHFILEOPSTRUCTW shfo{};
+	shfo.pTo = L"target\0\0";
+	shell_operation_probe result;
+	result.result = perform_shell_file_operation(shfo, op);
+	return result;
+}
+
+platform::shell_operation_probe platform::probe_shell_file_operation_a(const shell_file_operation_a_fn op)
+{
+	SHFILEOPSTRUCTA shfo{};
+	shfo.pTo = "target\0\0";
+	shell_operation_probe result;
+	result.result = perform_shell_file_operation(shfo, op);
+	return result;
+}
+
+platform::shell_operation_probe platform::probe_shell_delete_operation(const shell_file_operation_w_fn op,
+                                                                       const bool allow_undo)
+{
+	SHFILEOPSTRUCTW shfo{};
+	const std::wstring from = L"source\0\0";
+	shfo.pFrom = from.c_str();
+	shfo.wFunc = FO_DELETE;
+	shfo.fFlags = shell_delete_flags(allow_undo);
+
+	shell_operation_probe result;
+	result.flags = shfo.fFlags;
+	result.result = perform_shell_file_operation(shfo, op);
+	return result;
+}
+
 std::string platform::file_op_result::format_error(const std::string_view text,
                                                    const std::string_view more_text) const
 {
@@ -3320,9 +3635,9 @@ platform::file_op_result platform::delete_items(const std::vector<df::file_path>
 	shfo.hwnd = app_wnd();
 	shfo.pFrom = paths.c_str();
 	shfo.wFunc = FO_DELETE;
-	shfo.fFlags = FOF_NOCONFIRMATION | FOF_SILENT | (allow_undo ? FOF_ALLOWUNDO : 0);
+	shfo.fFlags = shell_delete_flags(allow_undo);
 
-	return to_file_op_result(SHFileOperation(&shfo), shfo.fAnyOperationsAborted);
+	return perform_shell_file_operation(shfo);
 }
 
 // Files deleted from network locations bypass the Recycle Bin, including when
@@ -3368,7 +3683,7 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
                                                 const bool replace_existing)
 {
 	const auto paths = all_file_system_paths(files, folders);
-	const auto to = to_shell_path(target);
+	const auto to = shell_destination_multi_string(target);
 
 	// Auto-rename is the default because it cannot destroy anything. Replace is only reached when the
 	// caller has already named the colliding files and had the overwrite confirmed, so the shell must
@@ -3386,7 +3701,7 @@ platform::file_op_result platform::move_or_copy(const std::vector<df::file_path>
 		0, nullptr, nullptr
 	};
 
-	auto result = to_file_op_result(SHFileOperation(&shfo), shfo.fAnyOperationsAborted);
+	auto result = perform_shell_file_operation(shfo);
 	std::vector<std::pair<std::wstring, std::wstring>> name_mappings;
 	const auto* mappings = std::bit_cast<HANDLETOMAPPINGSW*>(shfo.hNameMappings);
 

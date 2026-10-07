@@ -321,7 +321,11 @@ public:
 
 using av_audio_device_ptr = std::shared_ptr<av_audio_device>;
 
-av_audio_device_ptr create_av_audio_device(std::string_view device_id);
+// A ring of zero seconds is the endpoint's minimum: a device period or two, which only a thread
+// waiting on wait_for_buffer can keep full. A caller that refills on its own schedule instead -- the
+// Movie preview, from the UI tick -- asks for a ring long enough to cover the gap between refills,
+// and has no buffer event to wait on.
+av_audio_device_ptr create_av_audio_device(std::string_view device_id, double ring_seconds = 0.0);
 
 struct sound_device
 {

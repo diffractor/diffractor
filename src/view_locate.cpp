@@ -306,7 +306,7 @@ void locate_view::rebuild_markers()
 	df::assert_true(ui::is_ui_thread());
 
 	std::vector<map_engine::marker> markers;
-	_marker_items.clear();
+	std::vector<marker_item> marker_items;
 	_thumbnail_requests.clear();
 	auto excluded = std::make_shared<df::unique_paths>();
 
@@ -323,23 +323,20 @@ void locate_view::rebuild_markers()
 
 			if (metadata && metadata->coordinate.is_valid() && excluded->emplace(item->path()).second)
 			{
-				_marker_items.push_back({item->path(), item});
+				marker_items.push_back({item->path(), item});
 				markers.push_back({metadata->coordinate, 1});
 			}
 		}
 	});
 
-	// The current list is already in hand, so it draws immediately; the rest of the collection
-	// comes from the index, which is never read on the UI thread.
-	_engine.set_markers(markers);
-
 	const auto generation = ++_marker_generation;
-	const auto listed_count = markers.size();
 	const auto zoom = _engine.zoom_level();
 	const std::weak_ptr<locate_view> weak_self = shared_from_this();
+	_pending_marker_generation = generation;
+	_pending_marker_items = std::move(marker_items);
 
 	_state.queue_async(async_queue::query,
-	                   [&state = _state, weak_self, generation, listed_count, zoom, excluded,
+	                   [&state = _state, weak_self, generation, zoom, excluded,
 		                   markers = std::move(markers)]() mutable
 	                   {
 		                   location_matrix_params params;
@@ -355,25 +352,27 @@ void locate_view::rebuild_markers()
 			                   markers.push_back({cell.centroid, cell.count});
 		                   }
 
-		                   state._async.queue_ui([weak_self, generation, listed_count,
-				                   markers = std::move(markers), paths = std::move(paths)]() mutable
+		                   auto marker_snapshot = map_engine::prepare_marker_snapshot(markers, zoom);
+
+		                   state._async.queue_ui([weak_self, generation,
+				                   marker_snapshot = std::move(marker_snapshot), paths = std::move(paths)]() mutable
 			                   {
 				                   const auto self = weak_self.lock();
 
-				                   // A newer rebuild has already replaced the list entries these
-				                   // collection cells were meant to sit behind.
 				                   if (!self || self->_marker_generation != generation ||
-					                   self->_marker_items.size() != listed_count)
+					                   self->_pending_marker_generation != generation)
 				                   {
 					                   return;
 				                   }
 
 				                   for (auto& path : paths)
 				                   {
-					                   self->_marker_items.push_back({std::move(path), {}});
+					                   self->_pending_marker_items.push_back({std::move(path), {}});
 				                   }
 
-				                   self->_engine.set_markers(markers);
+				                   self->_marker_items = std::move(self->_pending_marker_items);
+				                   self->_pending_marker_generation = 0;
+				                   self->_engine.set_marker_snapshot(std::move(marker_snapshot));
 				                   self->_state.invalidate_view(view_invalid::view_redraw);
 			                   });
 	                   });
@@ -392,6 +391,8 @@ void locate_view::deactivate()
 	// Release the marker set and its item references.
 	_engine.set_markers({});
 	_marker_items.clear();
+	_pending_marker_items.clear();
+	_pending_marker_generation = 0;
 	// Any collection scan still running belongs to a map that is no longer on screen.
 	++_marker_generation;
 	_thumbnail_requests.clear();
@@ -504,14 +505,16 @@ void locate_view::on_marker_hover(view_hover_element& hover, const int marker_in
 	// Thumbnail of the representative photo (mirrors the items-view scrollbar preview).
 	// It may be absent if the item's thumbnail has not been decoded into memory, so a
 	// caption is always added below to guarantee the bubble has content.
-	const auto thumb = item->thumbnail();
+	const auto surface = item->thumbnail_surface();
 
-	if (is_valid(thumb))
+	if (is_valid(surface))
 	{
-		files ff;
-		elements->add(std::make_shared<surface_element>(ff.image_to_surface(thumb), 160,
-		                                                flex_item::center,
+		elements->add(std::make_shared<surface_element>(surface, 160, flex_item::center,
 		                                                item->layout_orientation()));
+	}
+	else if (is_valid(item->thumbnail()))
+	{
+		item->stage_thumbnail_surface(_state._async, false, true);
 	}
 	else if (_thumbnail_requests.emplace(item->path()).second)
 	{
@@ -719,7 +722,7 @@ view_controls_host_ptr locate_view::controls(const ui::control_frame_ptr& owner)
 			if (item->has_gps()) gps_items.emplace_back(item);
 		}
 
-		selection_thumbnails->selection(items.thumbs(), items.size());
+		selection_thumbnails->selection_async(items.thumbs(), items.size(), _state._async);
 		target_summary->text(format_plural_text(tt.be_updated_fmt, items));
 		overwrite_summary->text(gps_items.empty()
 			                        ? std::string{}

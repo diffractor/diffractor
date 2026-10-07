@@ -15,15 +15,25 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <linux/fs.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
 
 namespace
 {
 	// df::date_t counts 100ns intervals since 1601; the file system counts seconds since 1970.
 	constexpr uint64_t ft_ticks_per_second = 10'000'000ull;
 	constexpr uint64_t ft_epoch_to_unix_seconds = 11'644'473'600ull;
+
+	platform::linux_copy_file_test_failures copy_file_failures;
+	int copy_write_call_count = 0;
+	bool copy_interrupted = false;
 
 	uint64_t to_ticks(const timespec& ts)
 	{
@@ -57,6 +67,113 @@ namespace
 		result.is_hidden = name.size() > 1 && name.front() == '.';
 
 		return result;
+	}
+
+	bool same_file_identity(const struct stat& left, const struct stat& right)
+	{
+		return left.st_dev == right.st_dev && left.st_ino == right.st_ino;
+	}
+
+	bool is_directory_symlink(const df::folder_path path)
+	{
+		struct stat st = {};
+		const std::string text(path.text());
+		return ::lstat(text.c_str(), &st) == 0 && S_ISLNK(st.st_mode);
+	}
+
+	int close_copy_fd(const int fd, const bool destination)
+	{
+		if (destination && copy_file_failures.fail_destination_close)
+		{
+			::close(fd);
+			errno = EIO;
+			return -1;
+		}
+
+		return ::close(fd);
+	}
+
+	ssize_t write_copy_fd(const int fd, const uint8_t* data, const size_t size)
+	{
+		if (copy_file_failures.interrupt_first_write && !copy_interrupted)
+		{
+			copy_interrupted = true;
+			errno = EINTR;
+			return -1;
+		}
+
+		if (copy_file_failures.fail_write_after_calls >= 0 &&
+			copy_write_call_count >= copy_file_failures.fail_write_after_calls)
+		{
+			errno = EIO;
+			return -1;
+		}
+
+		++copy_write_call_count;
+		const auto limited = copy_file_failures.max_write_bytes == 0
+			                     ? size
+			                     : std::min(size, copy_file_failures.max_write_bytes);
+		return ::write(fd, data, limited);
+	}
+
+	platform::file_op_result copy_file_bytes(const int src, const int dst)
+	{
+		uint8_t buffer[64 * 1024];
+
+		for (;;)
+		{
+			const auto n = ::read(src, buffer, sizeof(buffer));
+
+			if (n < 0)
+			{
+				if (errno == EINTR) continue;
+				return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+			}
+
+			if (n == 0) break;
+
+			size_t written = 0;
+			while (written < static_cast<size_t>(n))
+			{
+				const auto out = write_copy_fd(dst, buffer + written, static_cast<size_t>(n) - written);
+
+				if (out < 0)
+				{
+					if (errno == EINTR) continue;
+					return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+				}
+
+				if (out == 0)
+				{
+					return {platform::file_op_result_code::FAILED, "write made no progress"};
+				}
+
+				written += static_cast<size_t>(out);
+			}
+		}
+
+		if (::fsync(dst) != 0)
+		{
+			return {platform::file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
+		return {platform::file_op_result_code::OK};
+	}
+
+	std::optional<std::pair<df::file_path, int>> open_copy_stage(const df::folder_path folder)
+	{
+		for (auto attempt = 0; attempt < 64; ++attempt)
+		{
+			uint32_t r = 0;
+			platform::generate_random_bytes(std::bit_cast<uint8_t*>(&r), sizeof(r));
+
+			const auto stage = folder.combine_file(std::format(".diffractor-copy-{:08x}.tmp", r));
+			const auto fd = ::open(stage.str().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
+			if (fd >= 0) return std::pair{stage, fd};
+			if (errno != EEXIST) return {};
+		}
+
+		return {};
 	}
 
 	class posix_file final : public platform::file
@@ -113,6 +230,11 @@ namespace
 			}
 
 			return total;
+		}
+
+		bool flush() const override
+		{
+			return ::fsync(_fd) == 0;
 		}
 
 		uint64_t seek(const uint64_t pos, const whence w) const override
@@ -378,6 +500,27 @@ platform::file_op_result platform::delete_file(const df::file_path path)
 	return {file_op_result_code::OK};
 }
 
+platform::file_op_result platform::make_file_writable(const df::file_path path)
+{
+	struct stat st = {};
+	if (::stat(path.str().c_str(), &st) != 0)
+	{
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	if ((st.st_mode & S_IWUSR) != 0)
+	{
+		return {file_op_result_code::OK};
+	}
+
+	if (::chmod(path.str().c_str(), st.st_mode | S_IWUSR) != 0)
+	{
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+	}
+
+	return {file_op_result_code::OK};
+}
+
 platform::file_op_result platform::create_folder(const df::folder_path path)
 {
 	const std::string text(path.text());
@@ -415,16 +558,86 @@ platform::file_op_result platform::copy_file(const df::file_path existing, const
 	const auto src = ::open(existing.str().c_str(), O_RDONLY);
 	if (src < 0) return {file_op_result_code::FAILED, std::string(::strerror(errno))};
 
+	struct stat src_st = {};
+	if (::fstat(src, &src_st) != 0)
+	{
+		const auto stat_error = errno;
+		::close(src);
+		return {file_op_result_code::FAILED, std::string(::strerror(stat_error))};
+	}
+
+	struct stat dst_st = {};
+	const auto destination_exists = ::stat(destination.str().c_str(), &dst_st) == 0;
+	if (!fail_if_exists && destination_exists && same_file_identity(src_st, dst_st))
+	{
+		::close(src);
+		return {file_op_result_code::FAILED, "source and destination are the same file"};
+	}
+
+	copy_write_call_count = 0;
+	copy_interrupted = false;
+
+	if (!fail_if_exists)
+	{
+		if (destination_exists && ::access(destination.str().c_str(), W_OK) != 0)
+		{
+			const auto access_error = errno;
+			::close(src);
+			return {file_op_result_code::FAILED, std::string(::strerror(access_error))};
+		}
+
+		const auto stage = open_copy_stage(destination.folder());
+		if (!stage.has_value())
+		{
+			const auto stage_error = errno;
+			::close(src);
+			return {file_op_result_code::FAILED, std::string(::strerror(stage_error))};
+		}
+
+		const auto [stage_path, dst] = *stage;
+		if (destination_exists && ::fchmod(dst, dst_st.st_mode & 07777) != 0)
+		{
+			const auto chmod_error = errno;
+			::close(src);
+			::close(dst);
+			::unlink(stage_path.str().c_str());
+			return {file_op_result_code::FAILED, std::string(::strerror(chmod_error))};
+		}
+
+		auto result = copy_file_bytes(src, dst);
+		const auto close_src = ::close(src);
+		const auto close_src_error = errno;
+		const auto close_dst = close_copy_fd(dst, true);
+		const auto close_dst_error = errno;
+
+		if (result.success() && close_src != 0)
+		{
+			result = {file_op_result_code::FAILED, std::string(::strerror(close_src_error))};
+		}
+
+		if (result.success() && close_dst != 0)
+		{
+			result = {file_op_result_code::FAILED, std::string(::strerror(close_dst_error))};
+		}
+
+		if (result.success() && ::rename(stage_path.str().c_str(), destination.str().c_str()) != 0)
+		{
+			result = {file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
+		if (result.failed()) ::unlink(stage_path.str().c_str());
+		return result;
+	}
+
 	// O_EXCL is the refusal, not a preceding exists() check: a destination created between the two
 	// would be opened with O_TRUNC and overwritten, which is the file the caller asked to protect.
-	const auto create_flags = fail_if_exists ? O_EXCL : O_TRUNC;
-	const auto dst = ::open(destination.str().c_str(), O_WRONLY | O_CREAT | create_flags, 0644);
+	const auto dst = ::open(destination.str().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
 	if (dst < 0)
 	{
 		const auto open_error = errno;
 		::close(src);
 
-		if (fail_if_exists && open_error == EEXIST)
+		if (open_error == EEXIST)
 		{
 			return {file_op_result_code::ALREADY_EXISTS};
 		}
@@ -432,38 +645,41 @@ platform::file_op_result platform::copy_file(const df::file_path existing, const
 		return {file_op_result_code::FAILED, std::string(::strerror(open_error))};
 	}
 
-	uint8_t buffer[64 * 1024];
-	file_op_result result{file_op_result_code::OK};
+	auto result = copy_file_bytes(src, dst);
+	const auto close_src = ::close(src);
+	const auto close_src_error = errno;
+	const auto close_dst = close_copy_fd(dst, true);
+	const auto close_dst_error = errno;
 
-	for (;;)
+	if (result.success() && close_src != 0)
 	{
-		const auto n = ::read(src, buffer, sizeof(buffer));
-
-		if (n < 0)
-		{
-			if (errno == EINTR) continue;
-			result = {file_op_result_code::FAILED, std::string(::strerror(errno))};
-			break;
-		}
-
-		if (n == 0) break;
-
-		if (::write(dst, buffer, static_cast<size_t>(n)) != n)
-		{
-			result = {file_op_result_code::FAILED, std::string(::strerror(errno))};
-			break;
-		}
+		result = {file_op_result_code::FAILED, std::string(::strerror(close_src_error))};
 	}
 
-	::close(src);
-	::close(dst);
+	if (result.success() && close_dst != 0)
+	{
+		result = {file_op_result_code::FAILED, std::string(::strerror(close_dst_error))};
+	}
 
 	if (result.failed()) ::unlink(destination.str().c_str());
 	return result;
 }
 
+void platform::test_linux_copy_file_failures(linux_copy_file_test_failures failures)
+{
+	copy_file_failures = failures;
+	copy_write_call_count = 0;
+	copy_interrupted = false;
+}
+
+void platform::test_linux_clear_copy_file_failures()
+{
+	test_linux_copy_file_failures({});
+}
+
 platform::file_op_result platform::replace_file(const df::file_path destination, const df::file_path existing,
-                                                const bool create_originals)
+                                                const bool create_originals,
+                                                const std::optional<file_attributes_t> expected_destination)
 {
 	// The replacement's bytes have to be on the volume before it is swapped in, or a crash between
 	// the two leaves the destination naming an empty file.
@@ -505,6 +721,19 @@ platform::file_op_result platform::replace_file(const df::file_path destination,
 		if (const auto backup_result = copy_file(destination, backup, true, false); backup_result.failed())
 		{
 			return backup_result;
+		}
+	}
+
+	if (expected_destination)
+	{
+		const auto current = file_attributes(destination);
+		if (!current.exists() || current.modified != expected_destination->modified ||
+			current.size != expected_destination->size)
+		{
+			return {
+				file_op_result_code::ALREADY_EXISTS,
+				std::format("Destination changed since review: {}", destination.str())
+			};
 		}
 	}
 
@@ -591,7 +820,21 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 
 	const std::string path(folder.text());
 	auto* const dir = ::opendir(path.c_str());
-	if (dir == nullptr) return result;
+	if (dir == nullptr)
+	{
+		const auto open_error = errno;
+		if (open_error == ENOENT || open_error == ENOTDIR)
+		{
+			struct stat parent = {};
+			const auto parent_path = std::string(folder.parent().text());
+			if (::stat(parent_path.c_str(), &parent) == 0 && S_ISDIR(parent.st_mode))
+			{
+				result.success = true;
+			}
+		}
+
+		return result;
+	}
 
 	for (;;)
 	{
@@ -609,12 +852,15 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 		const auto full = std::format("{}/{}", path, name);
 		auto attributes = attributes_from_stat(full);
 
+		struct stat link_st = {};
+		if (::lstat(full.c_str(), &link_st) != 0) continue;
+
 		struct stat st = {};
 		if (::stat(full.c_str(), &st) != 0) continue;
 
 		if (S_ISDIR(st.st_mode))
 		{
-			result.folders.emplace_back(folder_info{str::cache(name), attributes});
+			result.folders.emplace_back(folder_info{str::cache(name), attributes, !S_ISLNK(link_st.st_mode)});
 		}
 		else if (S_ISREG(st.st_mode))
 		{
@@ -703,7 +949,11 @@ std::vector<platform::file_info> platform::select_files(const df::item_selector&
 
 		if (recursive)
 		{
-			for (const auto& child : contents.folders) pending.emplace_back(folder.combine(child.name));
+			for (const auto& child : contents.folders)
+			{
+				const auto child_path = folder.combine(child.name);
+				if (!is_directory_symlink(child_path)) pending.emplace_back(child_path);
+			}
 		}
 	}
 
@@ -771,7 +1021,8 @@ df::count_and_size platform::calc_folder_summary(const df::folder_path folder, c
 	for (const auto& sub : contents.folders)
 	{
 		if (token.is_cancelled()) return result;
-		result += calc_folder_summary(folder.combine(sub.name), show_hidden, token);
+		const auto child_path = folder.combine(sub.name);
+		if (!is_directory_symlink(child_path)) result += calc_folder_summary(child_path, show_hidden, token);
 	}
 
 	return result;
@@ -786,12 +1037,29 @@ platform::drives platform::scan_drives()
 
 platform::file_op_result platform::move_file(const df::folder_path existing, const df::folder_path destination)
 {
-	if (::rename(std::string(existing.text()).c_str(), std::string(destination.text()).c_str()) != 0)
+	const auto from = std::string(existing.text());
+	const auto to = std::string(destination.text());
+
+	if (static_cast<int>(::syscall(SYS_renameat2, AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(),
+	                               RENAME_NOREPLACE)) == 0)
 	{
+		return {file_op_result_code::OK};
+	}
+
+	const auto rename_error = errno;
+	if (rename_error == EEXIST) return {file_op_result_code::ALREADY_EXISTS};
+
+	if (rename_error == ENOSYS || rename_error == EINVAL)
+	{
+		struct stat st = {};
+		if (::stat(to.c_str(), &st) == 0) return {file_op_result_code::ALREADY_EXISTS};
+		if (errno != ENOENT && errno != ENOTDIR) return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+
+		if (::rename(from.c_str(), to.c_str()) == 0) return {file_op_result_code::OK};
 		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
 	}
 
-	return {file_op_result_code::OK};
+	return {file_op_result_code::FAILED, std::string(::strerror(rename_error))};
 }
 
 // True for a UNC or network location on Windows. A Linux mount point carries no such marker in the

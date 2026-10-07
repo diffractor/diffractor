@@ -26,6 +26,7 @@ static void add_words(df::dense_string_counts& distinct_words, strings_by_prop& 
 	distinct_text[key].emplace(text);
 }
 
+constexpr size_t max_tag_companion_tags_per_item = 128;
 
 bool location_matrix_params::contains(const gps_coordinate coordinate) const
 {
@@ -152,6 +153,7 @@ void index_state::update_summary(const uint64_t generation)
 	df::dense_string_counts distinct_words;
 	strings_by_prop distinct_text;
 	df::unique_folders distinct_other_folders;
+	size_t tag_companion_work = 0;
 
 	index_histograms histograms;
 
@@ -187,25 +189,49 @@ void index_state::update_summary(const uint64_t generation)
 
 				if (md)
 				{
-					std::vector<std::string> item_tags;
+					std::vector<std::string> companion_tags;
 					split2(md->tags, true,
-					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &item_tags, &file, &path](
+					       [&distinct_words, &distinct_tags, &distinct_tag_texts, &companion_tags, &file, &path](
 					       const std::string_view part)
 					       {
 						       const auto cached_tag = str::cache(part);
-						       item_tags.emplace_back(part);
+						       if (companion_tags.size() < max_tag_companion_tags_per_item &&
+							       std::ranges::none_of(companion_tags, [part](const auto& existing)
+							       {
+								       return str::icmp(existing, part) == 0;
+							       }))
+						       {
+							       companion_tags.emplace_back(part);
+						       }
 						       distinct_tag_texts.emplace(cached_tag);
 						       distinct_words[str::cache(std::format("#{}", part))] += 1;
 						       distinct_tags[cached_tag].record(file, path);
 					       });
 
-					for (const auto& tag : item_tags)
+					for (const auto& tag : companion_tags)
 					{
-						for (const auto& companion : item_tags)
+						if (df::is_closing) return;
+						for (const auto& companion : companion_tags)
 						{
+							if ((++tag_companion_work & 255u) == 0)
+							{
+								if (df::is_closing) return;
+								if (generation != 0)
+								{
+									platform::shared_lock lock(_summary_rw);
+									if (generation != _summary_generation) return;
+								}
+							}
 							if (str::icmp(tag, companion) != 0)
 							{
-								++tag_companions[tag][str::cache(companion)];
+								auto& companions = tag_companions[tag];
+								const auto cached_companion = str::cache(companion);
+								auto found = companions.find(cached_companion);
+								if (found == companions.end())
+								{
+									found = companions.emplace(cached_companion, df::int_counter{}).first;
+								}
+								++found->second;
 							}
 						}
 					}
@@ -303,7 +329,7 @@ void index_state::update_summary(const uint64_t generation)
 
 					auto r = md->rating;
 
-					if (r != 0 && r < 6)
+					if (r >= -1 && r < 6 && r != 0)
 					{
 						if (r == -1) r = 0;
 						distinct_ratings[r].record(file, path);
@@ -339,17 +365,36 @@ void index_state::update_summary(const uint64_t generation)
 
 	index_metadata_summary_const_ptr published_summary = std::move(summary);
 	index_histograms_const_ptr histogram_snapshot = std::make_shared<index_histograms>(std::move(histograms));
+	const auto scanned_other_folders = std::make_shared<const df::unique_folders>(std::move(distinct_other_folders));
 
+	for (;;)
 	{
-		platform::exclusive_lock lock(_summary_rw);
-		if (generation != 0 && generation != _summary_generation) return;
-		distinct_other_folders.insert(_summary._distinct_other_folders->begin(),
-		                              _summary._distinct_other_folders->end());
-		std::shared_ptr<const df::unique_folders> other_folders_snapshot =
-			std::make_shared<df::unique_folders>(std::move(distinct_other_folders));
-		_summary._metadata.swap(published_summary);
-		_summary._histograms.swap(histogram_snapshot);
-		_summary._distinct_other_folders.swap(other_folders_snapshot);
+		std::shared_ptr<const df::unique_folders> current_other_folders;
+		{
+			platform::shared_lock lock(_summary_rw);
+			if (generation != 0 && generation != _summary_generation) return;
+			current_other_folders = _summary._distinct_other_folders;
+		}
+
+		auto merged_other_folders = std::make_shared<df::unique_folders>(*scanned_other_folders);
+		merged_other_folders->insert(current_other_folders->begin(), current_other_folders->end());
+		std::shared_ptr<const df::unique_folders> other_folders_snapshot = std::move(merged_other_folders);
+
+		{
+			index_metadata_summary_const_ptr old_summary;
+			index_histograms_const_ptr old_histograms;
+			std::shared_ptr<const df::unique_folders> old_other_folders;
+			platform::exclusive_lock lock(_summary_rw);
+			if (generation != 0 && generation != _summary_generation) return;
+			if (_summary._distinct_other_folders != current_other_folders) continue;
+			_summary._metadata.swap(published_summary);
+			_summary._histograms.swap(histogram_snapshot);
+			_summary._distinct_other_folders.swap(other_folders_snapshot);
+			old_summary = std::move(published_summary);
+			old_histograms = std::move(histogram_snapshot);
+			old_other_folders = std::move(other_folders_snapshot);
+			break;
+		}
 	}
 
 	_async.invalidate_view(view_invalid::sidebar | view_invalid::tooltip);
@@ -684,7 +729,7 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_words(
 	for (auto it = prefix_first; it != prefix_last && result.size() < max_results; ++it)
 	{
 		const auto count = summary->_distinct_words.find(*it);
-		result.emplace_back(std::string(*it), std::vector<str::part_t>{{0, query.size()}},
+		result.emplace_back(std::string(*it), std::vector<str::part_t>{{0, str::matched_text_byte_length(*it, 0, query)}},
 		                    count == summary->_distinct_words.end() ? 0 : count->second.i);
 	}
 
@@ -785,6 +830,22 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_tag_comp
 	return result;
 }
 
+size_t index_state::tag_companion_entry_count() const
+{
+	index_metadata_summary_const_ptr summary;
+	{
+		platform::shared_lock lock(_summary_rw);
+		summary = _summary._metadata;
+	}
+
+	size_t result = 0;
+	for (const auto& [tag, companions] : summary->_tag_companions)
+	{
+		result += companions.size();
+	}
+	return result;
+}
+
 // locations.md 3.4: a completion the collection has no photos anywhere near is noise. The heat
 // map is coordinate-based, so unlike the location groups it also counts GPS-only items that
 // carry no place text -- which is the majority of a camera roll. One cell plus its neighbours is
@@ -858,7 +919,7 @@ std::vector<index_state::auto_complete_word> index_state::auto_complete_location
 
 		if (const auto found = str::ifind(text, query); found != std::string_view::npos)
 		{
-			highlights.emplace_back(found, query.size());
+			highlights.emplace_back(found, str::matched_text_byte_length(text, found, query));
 		}
 
 		result.emplace_back(std::move(text), std::move(highlights),
@@ -923,12 +984,13 @@ std::vector<index_state::auto_complete_folder> index_state::auto_complete_folder
 
 				if (name_pos != std::string_view::npos && str::starts(folder.text().substr(name_pos), query))
 				{
-					result.emplace_back(folder, std::vector<str::part_t>{{name_pos, query.size()}});
+					result.emplace_back(
+						folder, std::vector<str::part_t>{{name_pos, str::matched_text_byte_length(folder.text(), name_pos, query)}});
 					if (result.size() > max_results) break;
 				}
 				else if (starts(folder.text(), query))
 				{
-					result.emplace_back(folder, std::vector<str::part_t>{{0, query.size()}});
+					result.emplace_back(folder, std::vector<str::part_t>{{0, str::matched_text_byte_length(folder.text(), 0, query)}});
 					if (result.size() > max_results) break;
 				}
 			}

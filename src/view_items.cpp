@@ -90,10 +90,10 @@ static void render_toolbar_button(ui::draw_context& dc, const ui::command_ptr& c
 	}
 }
 
-// Discussion #251: the menu the always-visible scroll control opens. Scroll to top is the control's
-// own action and comes first, because the click no longer performs it. Everything after that is the
+// Discussion #251: the menu the always-visible scroll control opens. Every entry but the last is the
 // toolbar's own command object, so a second copy of the toolbar cannot disagree with the first about
-// what is offered, enabled or ticked.
+// what is offered, enabled or ticked. Scroll to top is the control's own action, offered because the
+// click no longer performs it, and it comes last, directly below the settings the menu exists for.
 std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bool at_top,
                                                std::function<void()> scroll_to_top)
 {
@@ -113,15 +113,6 @@ std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bo
 		if (auto c = state.find_command(id)) result.emplace_back(std::move(c));
 	};
 
-	auto top = std::make_shared<ui::command>();
-	top->icon = icon_index::up;
-	top->text = tt.tooltip_scroll_to_top;
-	top->enable = !at_top;
-	top->invoke = std::move(scroll_to_top);
-	result.emplace_back(std::move(top));
-
-	add_separator();
-
 	if (const auto group = state.find_command(commands::menu_group_toolbar); group && group->menu)
 	{
 		for (auto& c : group->menu()) result.emplace_back(std::move(c));
@@ -136,7 +127,13 @@ std::vector<ui::command_ptr> items_scroll_menu(const view_state& state, const bo
 
 	add_separator();
 	add_command(commands::browse_recursive);
-	if (!result.empty() && result.back() == nullptr) result.pop_back();
+
+	auto top = std::make_shared<ui::command>();
+	top->icon = icon_index::up;
+	top->text = tt.tooltip_scroll_to_top;
+	top->enable = !at_top;
+	top->invoke = std::move(scroll_to_top);
+	result.emplace_back(std::move(top));
 
 	return result;
 }
@@ -1892,10 +1889,9 @@ void items_view::update_visible_items_list()
 				center_element = i.i;
 			}
 
-			if (i.i->begin_db_thumbnail_query())
+			if (const auto generation = i.i->begin_db_thumbnail_query())
 			{
-				db_thumbnail_requests.emplace_back(i.i, i.i->path(), i.i->folder(), i.i->is_folder(),
-				                                   i.i->has_thumb());
+				db_thumbnail_requests.emplace_back(database::make_thumbnail_request(i.i, generation));
 			}
 			else
 			{
@@ -3921,7 +3917,7 @@ void items_view::items_scroll_popup(view_hover_element& hover, const pointi loc)
 	if (found.group && found.item)
 	{
 		const auto elements = std::make_shared<view_elements>();
-		found.group->scroll_tooltip(found.item->thumbnail(), elements);
+		found.group->scroll_tooltip(found.item, elements, _state._async);
 
 		if (!elements->is_empty())
 		{

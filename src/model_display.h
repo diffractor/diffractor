@@ -105,10 +105,12 @@ public:
 	};
 
 	std::array<zoom_layout_state, 2> _zoom_layouts;
-	// Whether this display has already asked the file for its panorama declaration. Held here rather
-	// than on the session because the session outlives every display: a read released with its
-	// display publishes nothing, and the next display is the thing that should ask again.
-	bool _panorama_read_queued = false;
+	// The declaration request this display has already queued. Held here rather than on the session
+	// because the session outlives every display: a read released with its display publishes nothing,
+	// and the next display is the thing that should ask again.
+	df::file_path _panorama_read_path;
+	sizei _panorama_read_source;
+	df::date_t _panorama_read_modified;
 
 	std::vector<ui::const_image_ptr> _images;
 	std::vector<ui::const_surface_ptr> _surfaces;
@@ -594,32 +596,40 @@ public:
 		return {true, _common._panorama.geometry, _common._panorama.view};
 	}
 
-	// Keyed on the path so a second panorama opens at its own centre. The path alone gates it: a
-	// repopulate - a sidecar arriving, index progress - must not throw away where the user is looking
-	// or the flat/projected choice they made. Whether the declaration still needs reading is a
-	// separate question, and `resolved` answers that one.
-	void panorama_item(const df::file_path path, const sizei source)
+	// Keyed on the path so a second panorama opens at its own centre. Declaration currency also
+	// includes source dimensions: replacing a file at the same path must reread its crop geometry,
+	// while ordinary repopulation must not throw away where the user is looking or the flat/projected
+	// choice they made.
+	void panorama_item(const df::file_path path, const sizei source, const df::date_t modified)
 	{
 		auto& session = _common._panorama;
 
-		if (session.path == path) return;
+		if (session.path == path && session.source == source && session.modified == modified) return;
+
+		const auto same_path = session.path == path;
 
 		session.path = path;
+		session.source = source;
+		session.modified = modified;
 		session.geometry = prop::panorama_geometry::assumed(source);
 		session.resolved = false;
-		session.flat = false;
-		session.view.reset(session.geometry);
+		session.reset_view_on_resolve = !same_path;
+		if (!same_path)
+		{
+			session.flat = false;
+			session.view.reset(session.geometry);
+		}
 	}
 
-	// The declared coverage, once the file has answered. Applied only while the item it was read for
-	// is still the one on screen, and the camera is re-centred because the patch it centred on has
-	// just changed shape. A declaration that resolves to nothing is not recorded as an answer, so a
-	// later attempt is still free to ask.
-	void panorama_geometry(const df::file_path path, const prop::panorama_geometry& declared, const sizei source)
+	// The declared coverage, once the file has answered. Applied only while the item and source size
+	// it was read for are still on screen. Declaration currency is separate from the user's camera
+	// and flat/projected choice, so a same-path declaration refresh does not reset either.
+	void panorama_geometry(const df::file_path path, const prop::panorama_geometry& declared, const sizei source,
+	                       const df::date_t modified)
 	{
 		auto& session = _common._panorama;
 
-		if (session.path != path || session.resolved) return;
+		if (session.path != path || session.source != source || session.modified != modified || session.resolved) return;
 
 		const auto resolved = prop::panorama_geometry::resolve(declared, source);
 
@@ -627,7 +637,11 @@ public:
 
 		session.geometry = resolved;
 		session.resolved = true;
-		session.view.reset(session.geometry);
+		if (session.reset_view_on_resolve)
+		{
+			session.view.reset(session.geometry);
+			session.reset_view_on_resolve = false;
+		}
 		_async.invalidate_view(view_invalid::view_redraw);
 	}
 

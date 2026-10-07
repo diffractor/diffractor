@@ -362,10 +362,9 @@ class setting_file_impl : public platform::setting_file
 	bool _root_created = false;
 
 public:
-	setting_file_impl()
+	explicit setting_file_impl(const std::string_view root_key)
 	{
-		constexpr auto s_reg_key = "Software\\Diffractor";
-		_root_key = create_key(HKEY_CURRENT_USER, s_reg_key, _root_created);
+		_root_key = create_key(HKEY_CURRENT_USER, root_key, _root_created);
 	}
 
 	~setting_file_impl()
@@ -528,5 +527,11 @@ public:
 
 platform::setting_file_ptr platform::create_registry_settings()
 {
-	return std::make_shared<setting_file_impl>();
+	constexpr auto s_reg_key = "Software\\Diffractor";
+	return create_registry_settings(s_reg_key);
+}
+
+platform::setting_file_ptr platform::create_registry_settings(const std::string_view root_key)
+{
+	return std::make_shared<setting_file_impl>(root_key);
 }

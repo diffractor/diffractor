@@ -1356,6 +1356,14 @@ namespace df
 			job_version = version->fetch_add(1, std::memory_order_relaxed) + 1;
 		}
 
+		static cancel_token current(std::atomic_int& v)
+		{
+			cancel_token result;
+			result.version = &v;
+			result.job_version = v.load(std::memory_order_relaxed);
+			return result;
+		}
+
 		cancel_token(std::atomic_bool& f) : flag(&f)
 		{
 		}

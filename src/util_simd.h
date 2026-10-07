@@ -31,7 +31,11 @@
 #endif
 
 #if defined(COMPILE_ARM_INTRINSIC)
+#if defined(_MSC_VER)
+#include <intrin.h>     // For ARM64 CRC intrinsics on MSVC
+#else
 #include <arm_acle.h>   // For ARM CRC intrinsics
+#endif
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -162,26 +166,26 @@ inline uint32_t calc_crc32c_arm(uint32_t crc, const void* data, const size_t len
 	// Align to an 8-byte boundary so the wide loop below reads aligned words.
 	while (p < end && (std::bit_cast<uintptr_t>(p) & 0x07))
 	{
-		crc = __crc32b(crc, *p++);
+		crc = __crc32cb(crc, *p++);
 	}
 
-	// __crc32d consumes 8 bytes per instruction, roughly doubling throughput
+	// __crc32cd consumes 8 bytes per instruction, roughly doubling throughput
 	// versus the 32-bit path on large buffers.
 	while (static_cast<size_t>(end - p) >= sizeof(uint64_t))
 	{
-		crc = __crc32d(crc, *std::bit_cast<const uint64_t*>(p));
+		crc = __crc32cd(crc, *std::bit_cast<const uint64_t*>(p));
 		p += sizeof(uint64_t);
 	}
 
 	while (static_cast<size_t>(end - p) >= sizeof(uint32_t))
 	{
-		crc = __crc32w(crc, *std::bit_cast<const uint32_t*>(p));
+		crc = __crc32cw(crc, *std::bit_cast<const uint32_t*>(p));
 		p += sizeof(uint32_t);
 	}
 
 	while (p < end)
 	{
-		crc = __crc32b(crc, *p++);
+		crc = __crc32cb(crc, *p++);
 	}
 
 	return crc;

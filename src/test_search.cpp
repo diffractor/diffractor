@@ -313,6 +313,37 @@ static void should_match_parsed_property_values()
 	           .is_match("track:3/12")
 	           .is_not_match("track:4")
 	           .is_not_match("track:3/11");
+	prop_test().track(4, 12)
+	           .is_match(">track:3")
+	           .is_match(">=track:3")
+	           .is_not_match("<track:3");
+	prop_test().track(2, 12)
+	           .is_match("<track:3")
+	           .is_match("<=track:3")
+	           .is_not_match(">track:3");
+	prop_test().track(3, 13)
+	           .is_match("track:3")
+	           .is_match(">track:3/12")
+	           .is_not_match("=track:3/12");
+	prop_test().disk(4, 12)
+	           .is_match(">disk:3")
+	           .is_not_match("<disk:3");
+	prop_test().disk(3, 13)
+	           .is_match("disk:3")
+	           .is_match(">disk:3/12");
+	prop_test().episode(4, 12)
+	           .is_match(">episode:3")
+	           .is_not_match("<episode:3");
+	prop_test().episode(3, 13)
+	           .is_match("episode:3")
+	           .is_match(">episode:3/12");
+	prop_test().dimensions(4000, 3000)
+	           .is_match(">dimensions:3000x2000")
+	           .is_not_match("<dimensions:3000x2000")
+	           .is_match("dimensions:4000");
+	prop_test().dimensions(3000, 2200)
+	           .is_match(">dimensions:3000x2000")
+	           .is_not_match("=dimensions:3000x2000");
 
 	// a date property other than created/modified reached a poisoned comparison
 	prop_test().digitized(2000, 1, 1)
@@ -542,6 +573,9 @@ static void should_format_search_predictions()
 	assert_equal("#holiday \"" + my_photos + "\"",
 	             folder_match(strategy, df::folder_path(my_photos), "#holiday"s).edit_text(),
 	             "completed path after a lead term is quoted");
+	assert_equal(my_photos,
+	             folder_match(strategy, df::folder_path(my_photos), ui::match_highlights{}, 1, true).edit_text(),
+	             "folder picker completions keep raw paths");
 
 	assert_equal(true, search_icon("holiday") == icon_index::search, "plain text uses search icon");
 	assert_equal(true, search_icon(as_platform_path("C:\\Photos")) == icon_index::folder, "path uses folder icon");
@@ -645,6 +679,46 @@ static void should_read_a_query_back_as_it_was_asked()
 		const auto track = df::search_t::parse("track:3/12");
 		assert_equal(3, static_cast<int>(track.terms().front().xy_val.x), "a track still reads its number");
 		assert_equal(12, static_cast<int>(track.terms().front().xy_val.y), "and its total");
+	}
+
+	// Every delimiter the tokenizer would otherwise split is quoted when it is data, not grammar.
+	for (const auto value : {"Part(1)"sv, "a,b"sv, "a;b"sv, "a|b"sv, "a#b"sv, "<3"sv, ">x"sv, "=x"sv,
+		     "&ME"sv})
+	{
+		auto query = df::search_t().with(prop::title, value);
+		const auto text = query.format_terms();
+		const auto reparsed = df::search_t::parse(text);
+		assert_equal(1_z, reparsed.terms().size(), std::format("{} stays one term", value));
+		assert_equal(value, reparsed.terms().front().text, std::format("{} operand survives", value));
+		assert_equal(text, reparsed.format_terms(), std::format("{} canonical form is stable", value));
+	}
+
+	// Numeric query operands keep the exact predicate value rather than the rounded display label.
+	{
+		const auto query = df::search_t().with(prop::focal_length, 8.8);
+		const auto text = query.format_terms();
+		assert_equal("focal.length: 8.8mm", text, "focal length query text");
+		const auto reparsed = df::search_t::parse(text);
+		assert_equal(8.8, reparsed.terms().front().float_val, "focal length operand survives");
+
+		prop_test().focal_length(8.8).is_match(text);
+		prop_test().focal_length(9.0).is_not_match(text);
+
+		const auto sub_mm = df::search_t().with(prop::focal_length, 0.8).format_terms();
+		assert_equal("focal.length: 0.8mm", sub_mm, "sub-millimetre focal length text");
+		prop_test().focal_length(0.8).is_match(sub_mm);
+
+		for (const auto exposure : {0.3, 1.6, 1.0 / 250.0})
+		{
+			const auto exposure_text = df::search_t().with(prop::exposure_time, exposure).format_terms();
+			prop_test().exposure_time(exposure).is_match(exposure_text);
+		}
+
+		for (const auto sample_rate : {uint16_t{22050}, uint16_t{44100}})
+		{
+			const auto sample_rate_text = df::search_t().with(prop::audio_sample_rate, sample_rate).format_terms();
+			prop_test().audio_sample_rate(sample_rate).is_match(sample_rate_text);
+		}
 	}
 
 	// A quoted word is the word. Rewriting it into an operator changed the query's own logic
@@ -897,6 +971,29 @@ static void should_select_files()
 	assert_equal(false, contains(platform::select_files(recursive_cr2, true), "Test.jpg"),
 	             "files from sub folders");
 	assert_equal(false, contains(platform::select_folders(recursive_cr2, true), "raw"), "include folders");
+}
+
+static void should_preserve_query_when_toggling_recursive_selectors()
+{
+	auto search = df::search_t::parse("#family @photo created:2020");
+	search.add_selector(df::item_selector(test_files_folder, false));
+	search.add_selector(df::item_selector(test_files_folder, false, "*.jpg"));
+
+	auto recursive = search;
+	recursive.set_recursive(true);
+	assert_equal(true, recursive.has_recursive_selector(), "selectors become recursive");
+	assert_equal(search.terms().size(), recursive.terms().size(), "terms are preserved");
+	assert_equal(search.selectors().size(), recursive.selectors().size(), "selector count is preserved");
+	assert_equal("*.jpg", recursive.selectors().back().wildcard(), "selector wildcard is preserved");
+	assert_equal(true, recursive.has_media_type(), "media type is preserved");
+	assert_equal(2020, recursive.find_date_parts().year, "date is preserved");
+
+	recursive.remove_recursive();
+	assert_equal(search.format_terms(), recursive.format_terms(), "recursive toggle round-trips");
+
+	auto simple = df::search_t().add_selector(test_files_folder);
+	simple.set_recursive(true);
+	assert_equal(true, simple.has_recursive_selector(), "simple folder can still become recursive");
 }
 
 // A recursive selector names a folder, not a string. Normalisation drops the trailing separator, so
@@ -1201,8 +1298,8 @@ static void should_match_related(shared_test_context& stc)
 	df::related_info r;
 	r.load(i);
 
-	// The item the search started at, then the rotated variants that share its capture time.
-	assert_equal("duplicate:Test.jpg time:Small.jpg time:Test180.jpg time:Test270.jpg time:Test90.jpg",
+	// The item the search started at, then the perceptual copies that duplicate search can also see.
+	assert_equal("duplicate:Small.jpg duplicate:Test.jpg duplicate:Test180.jpg duplicate:Test270.jpg duplicate:Test90.jpg",
 	             related_result_summary(stc.test_index, df::search_t().related(r)), "Related");
 
 	r.group = 0;
@@ -1216,6 +1313,165 @@ static void should_match_related(shared_test_context& stc)
 	// the duplicate rules. It is still the same photo, so capture time catches it.
 	assert_equal("time", matched_axis(matcher.match_item({}, different_size)),
 	             "Related CRC requires equal size");
+}
+
+static uint64_t phash_bits(const std::initializer_list<int> bits)
+{
+	uint64_t result = 0;
+
+	for (const auto bit : bits)
+	{
+		result |= 1ull << bit;
+	}
+
+	return result;
+}
+
+static void should_not_treat_anchored_perceptual_group_as_pairwise_duplicate()
+{
+	const auto base = phash_bits({
+		1, 2, 3, 4, 5, 6, 7, 8,
+		9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24,
+		25, 26, 27, 28, 29, 30, 31
+	});
+	const auto left = (base & ~(1ull << 1) & ~(1ull << 2) & ~(1ull << 3)) |
+		(1ull << 32) | (1ull << 33) | (1ull << 34);
+	const auto right = (base & ~(1ull << 4) & ~(1ull << 5) & ~(1ull << 6)) |
+		(1ull << 35) | (1ull << 36) | (1ull << 37);
+
+	df::related_info related;
+	related.path = df::file_path("c:\\photos\\left.jpg");
+	related.name = "left.jpg"_c;
+	related.ft = files::file_type_from_name("left.jpg");
+	related.group = 7;
+	related.duplicate_grade = df::copy_grade::same_picture;
+	related.metadata_created = df::date_t(2026, 1, 1, 12, 0, 0);
+	related.phash = {left, 0, 0, 0};
+	related.dimensions = {100, 100};
+	related.is_loaded = true;
+
+	df::index_file_item candidate;
+	candidate.name = "right.jpg"_c;
+	candidate.ft = files::file_type_from_name(candidate.name);
+	auto candidate_metadata = std::make_shared<prop::item_metadata>();
+	candidate_metadata->dates.add(prop::date_source::exif_original, related.metadata_created);
+	candidate_metadata->width = 100;
+	candidate_metadata->height = 100;
+	candidate.metadata = candidate_metadata;
+	candidate.phash = df::make_picture_hashes({right, 0, 0, 0});
+	candidate.duplicates = df::duplicate_info{.group = 7, .count = 3, .grade = df::copy_grade::same_picture};
+
+	assert_equal(12, crypto::phash_distance(left, right), "non-anchor pair distance");
+	assert_equal(false, dup_match(related, candidate).matched(),
+	             "sharing an anchored perceptual group is not pairwise duplicate evidence");
+
+	candidate.phash = df::make_picture_hashes({base, 0, 0, 0});
+	assert_equal(static_cast<int>(df::copy_grade::same_picture),
+	             static_cast<int>(dup_match(related, candidate).grade),
+	             "direct perceptual evidence against the queried item still matches");
+
+	related.duplicate_crowded = true;
+	assert_equal(false, dup_match(related, candidate).matched(),
+	             "a crowd-declined burst frame is not a related duplicate");
+	related.duplicate_crowded = false;
+	candidate.duplicates = df::duplicate_info{
+		.group = 7, .count = 3, .same_picture_crowded = 1, .grade = df::copy_grade::same_picture
+	};
+	assert_equal(false, dup_match(related, candidate).matched(),
+	             "a candidate from a crowd-declined burst is not a related duplicate");
+}
+
+static void should_use_only_exact_groups_for_related_duplicate_shortcut()
+{
+	const auto base = phash_bits({
+		1, 2, 3, 4, 5, 6, 7, 8,
+		9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24,
+		25, 26, 27, 28, 29, 30, 31
+	});
+	const auto turned = (base & ~(1ull << 1) & ~(1ull << 2) & ~(1ull << 3)) |
+		(1ull << 32) | (1ull << 33) | (1ull << 34);
+
+	df::related_info related;
+	related.path = df::file_path("c:\\photos\\original.jpg");
+	related.name = "original.jpg"_c;
+	related.ft = files::file_type_from_name("original.jpg");
+	related.group = 11;
+	related.exact_group = 1;
+	related.duplicate_grade = df::copy_grade::identical;
+	related.metadata_created = df::date_t(2026, 1, 1, 12, 0, 0);
+	related.phash = {base, 0, 0, 0};
+	related.dimensions = {100, 100};
+	related.is_loaded = true;
+
+	auto candidate_metadata = std::make_shared<prop::item_metadata>();
+	candidate_metadata->dates.add(prop::date_source::exif_original, related.metadata_created);
+	candidate_metadata->width = 100;
+	candidate_metadata->height = 100;
+
+	df::index_file_item candidate;
+	candidate.name = "turned.jpg"_c;
+	candidate.ft = files::file_type_from_name(candidate.name);
+	candidate.metadata = candidate_metadata;
+	candidate.phash = df::make_picture_hashes({turned, 0, 0, 0});
+	candidate.duplicates = df::duplicate_info{.group = 11, .count = 4, .grade = df::copy_grade::identical};
+	candidate.exact_duplicate_group = 2;
+
+	assert_equal(static_cast<int>(df::copy_grade::same_picture),
+	             static_cast<int>(dup_match(related, candidate).grade),
+	             "a mixed group does not reuse another exact pair's grade");
+
+	candidate.exact_duplicate_group = related.exact_group;
+	assert_equal(static_cast<int>(df::copy_grade::identical),
+	             static_cast<int>(dup_match(related, candidate).grade),
+	             "the exact shortcut still applies within the same exact subgroup");
+}
+
+static void should_clear_exact_duplicate_shortcut_outside_collection()
+{
+	const auto first_root = _temps.next_folder("outside-exact-first");
+	const auto second_root = _temps.next_folder("outside-exact-second");
+	const auto first_a = first_root.combine_file("first-a.jpg");
+	const auto first_b = first_root.combine_file("first-b.jpg");
+	const auto second_a = second_root.combine_file("second-a.jpg");
+	const auto second_b = second_root.combine_file("second-b.jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), first_a, false, false);
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), first_b, false, false);
+	platform::copy_file(test_files_folder.combine_file("Small.jpg"), second_a, false, false);
+	platform::copy_file(test_files_folder.combine_file("Small.jpg"), second_b, false, false);
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+
+	df::index_roots first_roots;
+	first_roots.folders.emplace(first_root);
+	index.index_roots(first_roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+	index.update_predictions();
+	assert_equal(true, index.find_item(first_a).exact_duplicate_group.load() != 0,
+	             "first collection earned an exact group");
+
+	df::index_roots second_roots;
+	second_roots.folders.emplace(second_root);
+	index.index_roots(second_roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+	index.update_predictions();
+
+	df::related_info related;
+	related.path = first_a;
+	related.ft = files::file_type_from_name(first_a);
+	related.size = index.find_item(first_a).size;
+	related.crc32c = index.find_item(first_a).crc32c.load();
+	related.exact_group = index.find_item(first_a).exact_duplicate_group.load();
+	related.is_loaded = true;
+
+	assert_equal(0u, related.exact_group, "outside collection rows do not keep stale exact group ids");
+	assert_equal(false, dup_match(related, index.find_item(second_a)).matched(),
+	             "a stale outside exact id cannot match an unrelated current exact group");
 }
 
 // A related search written as text - a favorite, a saved search, or typed into the address
@@ -1637,6 +1893,35 @@ static void should_negate_rating_search()
 	           .is_match("-rate:5");
 }
 
+static void should_evaluate_folder_wildcards_inside_boolean_search()
+{
+	const auto matches = [](const std::string_view query, const std::string_view folder, const std::string_view tag)
+	{
+		df::index_file_item file;
+		file.name = "photo.jpg"_c;
+		file.ft = files::file_type_from_name("photo.jpg");
+		file.safe_ps()->tags = str::cache(tag);
+		file.calc_search_presence();
+
+		const auto search = df::search_t::parse(query);
+		const df::search_matcher matcher(search);
+		return matcher.match_item(df::file_path(df::folder_path(folder), "photo.jpg"), file).is_match();
+	};
+
+	assert_equal(false, matches("-**Private**", "c:\\photos\\Private", {}),
+	             "a negated folder wildcard excludes its folder");
+	assert_equal(true, matches("-**Private**", "c:\\photos\\Public", {}),
+	             "and leaves unrelated folders alone");
+	assert_equal(false, matches("**Private** -#hidden", "c:\\photos\\Private", "hidden"),
+	             "a positive folder wildcard does not bypass a later exclusion");
+	assert_equal(true, matches("**Private** -#hidden", "c:\\photos\\Private", "shown"),
+	             "but still matches when the exclusion does not");
+	assert_equal(false, matches("(**Private** or **Public**) -#hidden", "c:\\photos\\Public", "hidden"),
+	             "grouped or folder matches still respect exclusions");
+	assert_equal(true, matches("(**Private** or **Public**) #shown", "c:\\photos\\Public", "shown"),
+	             "grouped folder matches remain positive terms");
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Issue #174 - Folders starting with '.' can't be excluded with '-'
 // Wildcard patterns like ".*" should match folder names starting with a dot.
@@ -2003,6 +2288,43 @@ static void should_complete_on_every_word()
 	             "a single word still matches");
 }
 
+static void should_highlight_the_actual_auto_complete_match_text()
+{
+	ui::match_highlights m;
+
+	const std::vector<std::string_view> accented = {"cafe"};
+	assert_equal(true, find_auto_complete(accented, "caf\xc3\xa9" "X", false, m),
+	             "normalized query matches accented text");
+	assert_equal(1_z, m.size(), "one accented highlight");
+	assert_equal(0u, m[0].offset, "accented match starts at the first byte");
+	assert_equal(5u, m[0].length, "accented highlight consumes the matched UTF-8 text, not the query bytes");
+
+	const std::vector<std::string_view> decomposed = {"cafe"};
+	assert_equal(true, find_auto_complete(decomposed, "cafe\xcc\x81" "X", false, m),
+	             "normalized query matches decomposed text");
+	assert_equal(4u, m[0].length, "the complete matched base text is highlighted without the suffix");
+
+	const std::vector<std::string_view> emoji = {"\xf0\x9f\x98\x80"};
+	assert_equal(true, find_auto_complete(emoji, "A\xf0\x9f\x98\x80" "B", false, m),
+	             "supplementary characters match");
+	assert_equal(1u, m[0].offset, "emoji match begins after the ASCII prefix");
+	assert_equal(4u, m[0].length, "emoji highlight remains a UTF-8 byte span for the renderer to translate");
+}
+
+static void should_measure_search_highlights_as_text_bytes()
+{
+	const auto cyrillic = str::ifind2("привет", "ве", 0);
+	assert_equal(true, cyrillic.found, "cyrillic substring matches");
+	assert_equal(1_z, cyrillic.parts.size(), "one cyrillic highlight");
+	assert_equal(6u, cyrillic.parts[0].offset, "cyrillic byte offset");
+	assert_equal(4u, cyrillic.parts[0].length, "cyrillic highlight covers both two-byte letters");
+
+	assert_equal(8u, str::matched_text_byte_length("M\xc3\xbcnchen", 0, "m\xc3\xbcnchen"),
+	             "folded umlaut prefix covers the whole UTF-8 folder name");
+	assert_equal(7u, str::matched_text_byte_length("Z\xc3\xbcrich", 0, "zurich"),
+	             "folded ASCII query covers the whole UTF-8 location text");
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Prediction and completion
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2147,6 +2469,9 @@ void register_search_tests(view_state& state, test_registry& tests)
 	tests.add("Should parse selector"s, should_parse_selector);
 	tests.add("Should detect folder browse"s, should_detect_folder_browse);
 	tests.add("Should select files"s, should_select_files);
+	// APP-004 - recursive toggles preserve the copied query
+	tests.add("Should preserve query when toggling recursive selectors"s,
+	          should_preserve_query_when_toggling_recursive_selectors);
 	tests.add("Should parent"s, should_parent);
 	tests.add("Should broaden one narrowing at a time"s, should_broaden_one_narrowing_at_a_time);
 	tests.add("Should escape"s, should_escape);
@@ -2161,6 +2486,12 @@ void register_search_tests(view_state& state, test_registry& tests)
 	tests.add("Should match parsed property values"s, should_match_parsed_property_values);
 	tests.add("Should search Boolean presence terms"s, should_search_boolean_presence_terms);
 	tests.add("Should match related"s, should_match_related);
+	tests.add("Should not treat anchored perceptual group as pairwise duplicate"s,
+	          should_not_treat_anchored_perceptual_group_as_pairwise_duplicate);
+	tests.add("Should use only exact groups for related duplicate shortcut"s,
+	          should_use_only_exact_groups_for_related_duplicate_shortcut);
+	tests.add("Should clear exact duplicate shortcut outside collection"s,
+	          should_clear_exact_duplicate_shortcut_outside_collection);
 	tests.add("Should list an item once"s, should_list_an_item_once);
 	tests.add("Should match related from text"s, should_match_related_from_text);
 	tests.add("Should bound related results by closeness"s, should_bound_related_results_by_closeness);
@@ -2195,6 +2526,9 @@ void register_search_tests(view_state& state, test_registry& tests)
 	tests.add("Should negate text search"s, should_negate_text_search);
 	tests.add("Should combine positive and negative terms"s, should_combine_positive_and_negative_terms);
 	tests.add("Should negate rating search"s, should_negate_rating_search);
+	// MOD-012 - folder wildcard terms must stay inside the Boolean evaluator
+	tests.add("Should evaluate folder wildcards inside Boolean search"s,
+	          should_evaluate_folder_wildcards_inside_boolean_search);
 
 	// Issue #174 - exclude dot folders
 	tests.add("Should exclude dot folders with wildcard"s, should_exclude_dot_folders_with_wildcard);
@@ -2216,6 +2550,11 @@ void register_search_tests(view_state& state, test_registry& tests)
 	tests.add("Should answer every offered with scope"s, should_answer_every_offered_with_scope);
 	tests.add("Should read back a media type term"s, should_read_back_a_media_type_term);
 	tests.add("Should complete on every word"s, should_complete_on_every_word);
+	// UI-006 - auto-complete highlights must describe the matched text, not the query byte count.
+	tests.add("Should highlight the actual auto complete match text"s,
+	          should_highlight_the_actual_auto_complete_match_text);
+	// UI-006 - every completion producer reports highlight lengths in UTF-8 bytes.
+	tests.add("Should measure search highlights as text bytes"s, should_measure_search_highlights_as_text_bytes);
 
 	// One row per query/date pair. The name carries both so a failure names the case and
 	// /test: can select a single row.

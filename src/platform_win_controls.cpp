@@ -366,12 +366,7 @@ class edit_impl final :
 		// ReleaseDC round trip, and the caller repeats this per misspelled word on every paint.
 		recti calc_bounds(const edit_impl& edit, const int line_height) const
 		{
-			const POINT loc_start = edit.pos_from_char(pos_start);
-			const POINT loc_end = edit.pos_from_char(pos_end);
-			if (loc_end.x == -1 || loc_start.x == -1) return {};
-
-			const auto iY = loc_start.y + line_height;
-			return {loc_start.x, loc_start.y, loc_end.x, iY};
+			return platform::probe_edit_spelling_bounds(edit.m_hWnd, pos_start, pos_end);
 		}
 	};
 
@@ -515,7 +510,7 @@ public:
 
 		if (_styles.spelling)
 		{
-			spell().lazy_load();
+			spell().queue_load();
 		}
 
 		if (!_styles.cue.empty())
@@ -779,6 +774,29 @@ static bool is_word_break(const wchar_t c)
 	return result;
 }
 
+static POINT pos_from_char(const HWND hwnd, const uint32_t nChar)
+{
+	df::assert_true(IsWindow(hwnd));
+	const DWORD dwRet = static_cast<DWORD>(::SendMessage(hwnd, EM_POSFROMCHAR, nChar, 0));
+	return {GET_X_LPARAM(dwRet), GET_Y_LPARAM(dwRet)};
+}
+
+static int char_width(const HWND hwnd, const int char_pos)
+{
+	const auto text = window_text_w(hwnd);
+	if (char_pos < 0 || char_pos >= static_cast<int>(text.size())) return 0;
+
+	const auto dc = GetDC(hwnd);
+	if (!dc) return 0;
+
+	const auto old_font = SelectObject(dc, GetFont(hwnd));
+	SIZE extent = {};
+	GetTextExtentPoint32W(dc, text.data() + char_pos, 1, &extent);
+	SelectObject(dc, old_font);
+	ReleaseDC(hwnd, dc);
+	return extent.cx;
+}
+
 static std::wstring trim(const std::wstring& s)
 {
 	const auto wsfront = std::ranges::find_if_not(s, [](const int c) { return std::iswspace(c); });
@@ -798,9 +816,10 @@ void edit_impl::add_unknown_word(const std::string_view word, const int word_sta
 	}
 }
 
-void edit_impl::update_spelling(const std::wstring& text)
+static std::vector<platform::edit_spelling_range> calc_unknown_words(
+	const std::wstring& text, const std::function<bool(std::string_view)>& is_word_valid)
 {
-	_unknown_words.clear();
+	std::vector<platform::edit_spelling_range> result;
 
 	const auto len = static_cast<int>(text.size());
 
@@ -821,9 +840,9 @@ void edit_impl::update_spelling(const std::wstring& text)
 			{
 				auto word_a = str::utf16_to_utf8(word);
 
-				if (!spell().is_word_valid(word_a))
+				if (!is_word_valid(word_a))
 				{
-					add_unknown_word(word_a, word_start, word_start + static_cast<int>(word.size()));
+					result.emplace_back(word_a, word_start, word_start + static_cast<int>(word.size()));
 				}
 			}
 
@@ -849,10 +868,52 @@ void edit_impl::update_spelling(const std::wstring& text)
 	{
 		const auto word_a = str::utf16_to_utf8(word);
 
-		if (!spell().is_word_valid(word_a))
+		if (!is_word_valid(word_a))
 		{
-			add_unknown_word(word_a, word_start, std::min(word_start + static_cast<int>(word.size()), len - 1));
+			result.emplace_back(word_a, word_start, word_start + static_cast<int>(word.size()));
 		}
+	}
+
+	return result;
+}
+
+std::vector<platform::edit_spelling_range> platform::probe_edit_spelling_ranges(
+	const std::wstring& text, const std::function<bool(std::string_view)>& is_word_valid)
+{
+	return calc_unknown_words(text, is_word_valid);
+}
+
+recti platform::probe_edit_spelling_bounds(const HWND hwnd, const int pos_start, const int pos_end)
+{
+	const auto loc_start = pos_from_char(hwnd, pos_start);
+	auto loc_end = pos_from_char(hwnd, pos_end);
+
+	if (loc_end.x == -1 && pos_end > pos_start)
+	{
+		const auto loc_last = pos_from_char(hwnd, pos_end - 1);
+		if (loc_last.x != -1)
+		{
+			loc_end = loc_last;
+			loc_end.x += char_width(hwnd, pos_end - 1);
+		}
+	}
+
+	if (loc_end.x == -1 || loc_start.x == -1) return {};
+
+	const auto line_height = gdi_text_line_height(hwnd, GetFont(hwnd));
+	return {loc_start.x, loc_start.y, loc_end.x, loc_start.y + line_height};
+}
+
+void edit_impl::update_spelling(const std::wstring& text)
+{
+	_unknown_words.clear();
+
+	for (const auto& word : calc_unknown_words(text, [](const std::string_view word)
+	     {
+		     return spell().is_word_valid(word);
+	     }))
+	{
+		add_unknown_word(word.word, word.pos_start, word.pos_end);
 	}
 }
 
@@ -1725,8 +1786,10 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 	if (found_error)
 	{
 		win32_menu popup;
+		const auto custom_menu_created = popup.CreatePopupMenu();
 
-		if (popup.CreatePopupMenu())
+		if (platform::probe_edit_context_menu_route(found_error, custom_menu_created) ==
+			platform::edit_context_menu_route::custom_spelling_menu)
 		{
 			// Append the suggestions, if there are any
 			auto suggestions = spell().suggest(selected_word.word);
@@ -1780,8 +1843,17 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 				break;
 
 			case ID_SPELLCHECK_ADD:
-				spell().add_word(selected_word.word);
-				InvalidateRect(m_hWnd, nullptr, TRUE);
+				spell().add_word(selected_word.word, [weak = weak_from_this(), hwnd = m_hWnd](
+					                  const custom_dictionary_add_result result)
+				{
+					if (result.status == custom_dictionary_add_status::failed)
+					{
+						df::log(__FUNCTION__, result.message);
+					}
+
+					const auto edit = weak.lock();
+					if (edit && edit->m_hWnd == hwnd && IsWindow(hwnd)) InvalidateRect(hwnd, nullptr, TRUE);
+				});
 				break;
 
 			default:
@@ -1792,10 +1864,20 @@ LRESULT edit_impl::on_window_context_menu(const uint32_t uMsg, const WPARAM wPar
 				}
 				break;
 			}
+
+			return 0;
 		}
 	}
 
-	return 0;
+	return DefSubclassProc(m_hWnd, uMsg, wParam, lParam);
+}
+
+platform::edit_context_menu_route platform::probe_edit_context_menu_route(const bool spelling_error_under_pointer,
+                                                                          const bool custom_menu_created)
+{
+	return spelling_error_under_pointer && custom_menu_created
+		       ? edit_context_menu_route::custom_spelling_menu
+		       : edit_context_menu_route::native_edit_procedure;
 }
 
 class toolbar_impl final :

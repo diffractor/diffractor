@@ -156,6 +156,9 @@ class wasapi_sound final : public av_audio_device
 	_Guarded_by_(_rw) WAVEFORMATEX* _pwfx = nullptr;
 	_Guarded_by_(_rw) uint32_t _buffer_frame_count = 0;
 	platform::thread_event _data_event{false, false};
+	// Zero asks for the engine's minimum ring, refilled by a thread waiting on _data_event. Fixed at
+	// construction: it decides how the stream is initialised, not how it is used.
+	const double _ring_seconds = 0.0;
 	// Read without a lock by is_device_lost()/is_stopped() and written from the device
 	// operations below, so these are atomic rather than plain bools.
 	std::atomic<bool> _device_lost = false;
@@ -163,7 +166,9 @@ class wasapi_sound final : public av_audio_device
 	double _vol = -1;
 
 public:
-	wasapi_sound() = default;
+	explicit wasapi_sound(const double ring_seconds) : _ring_seconds(ring_seconds)
+	{
+	}
 
 	virtual ~wasapi_sound()
 	{
@@ -229,10 +234,22 @@ public:
 
 			if (SUCCEEDED(hr) && pwfx_temp)
 			{
+				// The engine's minimum ring is a device period or two, which only a thread waiting on
+				// the buffer event can keep full. A caller refilling on its own schedule asks for a
+				// ring long enough to cover the gap between its refills, polls GetCurrentPadding
+				// through write(), and so has no event: an event-driven shared stream takes its
+				// buffer from the engine whatever duration is asked for.
+				const auto event_driven = _ring_seconds <= 0.0;
+				const DWORD flags = AUDCLNT_STREAMFLAGS_NOPERSIST |
+					(event_driven ? AUDCLNT_STREAMFLAGS_EVENTCALLBACK : 0);
+				const auto duration = event_driven
+					                      ? REFERENCE_TIME{0}
+					                      : static_cast<REFERENCE_TIME>(_ring_seconds * REFTIMES_PER_SEC);
+
 				hr = audio->Initialize(
 					AUDCLNT_SHAREMODE_SHARED,
-					AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST,
-					0,
+					flags,
+					duration,
 					0,
 					pwfx_temp,
 					nullptr);
@@ -241,7 +258,7 @@ public:
 				// WAVE_FORMAT_PCM
 				// WAVE_FORMAT_EXTENSIBLE
 
-				if (SUCCEEDED(hr))
+				if (SUCCEEDED(hr) && event_driven)
 				{
 					hr = audio->SetEventHandle(_data_event._h);
 				}
@@ -619,9 +636,9 @@ public:
 	}
 };
 
-av_audio_device_ptr create_av_audio_device(const std::string_view device_id)
+av_audio_device_ptr create_av_audio_device(const std::string_view device_id, const double ring_seconds)
 {
-	auto result = std::make_shared<wasapi_sound>();
+	auto result = std::make_shared<wasapi_sound>(ring_seconds);
 
 	if (result->init(device_id))
 	{

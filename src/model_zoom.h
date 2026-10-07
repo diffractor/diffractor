@@ -307,8 +307,10 @@ namespace df
 		{
 			const auto scale = effective_scale(fit);
 			if (source.Width <= 0.0 || source.Height <= 0.0 || scale <= 0.0) return;
-			_center = {std::clamp(_center.X + delta.X / source.Width, 0.0, 1.0),
-			           std::clamp(_center.Y + delta.Y / source.Height, 0.0, 1.0)};
+			const auto center = clamp_center(_center, source, viewport, scale);
+			_center = clamp_center({center.X + delta.X / source.Width, center.Y + delta.Y / source.Height},
+			                       source, viewport, scale);
+			if (_mode == zoom_scale_mode::explicit_scale) _last_explicit_center = _center;
 		}
 
 		void zoom_region(const rectd region, const sized source, const sized viewport, const double fit) noexcept

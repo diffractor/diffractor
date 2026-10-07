@@ -43,6 +43,9 @@ complete batch target; a displayed or pinned item does not silently enlarge it.
 A command is offered when its effect is visible on the current surface and its target qualifies.
 Ineligible target commands retain a concrete disabled reason. A submenu reflects the eligibility of
 its entries. A platform capability that does not exist is absent rather than permanently disabled.
+Configured external tools in the Open menu declare a singular `{item-path}` invocation, so they are
+offered only when exactly one file is selected. Multi-file selections omit those entries; association
+handlers that accept the whole selected set remain available when the selection qualifies.
 
 Commands affecting list contents or presentation belong to Items. Commands affecting rendered media
 belong to Items and Fullscreen. Task commands belong to their task view. Keyboard, toolbar, menu,
@@ -96,14 +99,19 @@ Wheel and pinch routing are owned by [zoom.md](zoom.md#input).
 
 The address box accepts folders and indexed search terms for text, metadata, dates, locations, media
 types, ratings, labels, tags, duplicates, comparisons, negation, and Boolean expressions.
+When Diffractor writes a query back to text, literal operands are quoted whenever the tokenizer
+would otherwise read their characters as syntax, and numeric operands preserve the predicate value
+rather than a rounded display label unless the property is explicitly bucketed.
 
 Address editing keeps a committed value, a typed draft, and an optional completion preview. Up/Down
 preview completions without replacing the draft. Tab accepts into the draft; Enter commits; Escape
 first restores the draft from a preview, then restores the address captured when editing began.
 
-History entries retain query and selection. Back and Forward restore rather than rewrite them;
-navigating after Back removes the forward branch. Parent broadens one narrowing at a time. Sibling
-folder commands remain at the same level and are unavailable at their ends.
+History entries retain query and selection. Back and Forward restore rather than rewrite them, and
+move the history position only after the target navigation is accepted; a refused or unavailable
+target leaves the current entry and the next Back/Forward target unchanged. Navigating after Back
+removes the forward branch. Parent broadens one narrowing at a time. Sibling folder commands remain
+at the same level and are unavailable at their ends.
 
 Navigation from a map, chart, breakdown, summary, or group header changes the query only. Grouping,
 sorting, and filters remain user-owned. Filtering removes hidden items from selection; removing the
@@ -157,6 +165,8 @@ tag support, and [File I/O](file-io.md) owns write safety and read-back.
 
 Edit holds photo adjustments as a draft. Save updates the file; Save As creates and opens a new file;
 leaving a changed draft offers Save, Don’t Save, and Cancel. Reset changes only the draft.
+If source pixels are still loading, unreadable, or refused as too large, Edit shows that bounded
+state and withholds pixel operations rather than editing a placeholder.
 
 Metadata and Tags operate on the complete visibly selected set. Optional metadata fields change only
 when selected for the run. Date adjustment applies one shift while preserving relative offsets;
@@ -165,7 +175,10 @@ always reviewed for multiple items. Convert/Resize creates output and retains so
 
 Collisions use Replace, Skip, Auto-rename, or Block Run. Two plan rows claiming one destination are
 a collision. Delete distinguishes recoverable Recycle from confirmed Permanent delete. A location
-without a usable recycle facility never presents permanent deletion as Recycle.
+without a usable recycle facility never presents permanent deletion as Recycle; when a requested
+Recycle would instead destroy an item, Windows owns the mandatory permanent-delete confirmation
+before that item is removed. If the user has enabled Windows' Recycle Bin delete confirmation,
+Windows may also confirm ordinary recycles.
 
 ## Guided Operations
 
@@ -184,7 +197,10 @@ leaves the review's status.
 
 Changing scope, target, options, destination, or relevant files invalidates the analysis. Cancellation
 stops future work and reports partial completion without claiming rollback. Import history is not
-duplicate proof; Sync names both endpoints and direction.
+duplicate proof; Sync names both endpoints and direction. Convert carries the reviewed collision
+decision through final publication: a destination that appears or changes after review is refused
+rather than overwritten. Sync applies full-path collection exclusions to corresponding relative
+folders on both compared trees.
 
 ## System States And Consistency
 

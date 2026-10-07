@@ -16,6 +16,12 @@
 #include "ui_dialog.h"
 #include "model.h"
 #include "model_index.h"
+
+namespace df
+{
+	std::function<void(file_path source, file_path destination)> rename_after_move_for_test;
+	std::function<void(std::string_view message)> rename_recovery_report_for_test;
+}
 #include "ui_controllers.h"
 #include "ui_controls.h"
 
@@ -1606,9 +1612,10 @@ void view_state::refresh_visits()
 {
 	df::assert_true(ui::is_ui_thread());
 
-	const auto generation = ++_visits_generation;
+	df::cancel_token token(_visits_generation);
+	const auto generation = _visits_generation.load(std::memory_order_relaxed);
 
-	df::visit_request request;
+	df::visit_request request(std::move(token));
 	request.samples.reserve(_display_items.size());
 
 	for (const auto& i : _display_items._items)
@@ -1644,7 +1651,7 @@ void view_state::refresh_visits()
 
 		queue_ui([this, generation, timeline = std::move(timeline)]() mutable
 		{
-			if (generation != _visits_generation) return;
+			if (generation != _visits_generation.load(std::memory_order_relaxed)) return;
 
 			_visits = std::move(timeline);
 
@@ -2079,24 +2086,44 @@ void df::item_group::render(ui::draw_context& dc, const pointi element_offset) c
 {
 }
 
-void df::item_group::scroll_tooltip(const ui::const_image_ptr& thumbnail, const view_elements_ptr& elements) const
+void df::item_group::scroll_tooltip(const item_element_ptr& item, const view_elements_ptr& elements,
+                                    async_strategy& async) const
 {
 	constexpr auto max_thumb_dim = 80;
-	files ff;
 
-	if (is_valid(thumbnail))
+	if (item && is_valid(item->thumbnail_surface()))
 	{
-		elements->add(std::make_shared<surface_element>(ff.image_to_surface(thumbnail), max_thumb_dim,
-		                                                flex_item::center));
+		_scroll_tooltip_staging_item.reset();
+		elements->add(std::make_shared<surface_element>(item->thumbnail_surface(), max_thumb_dim, flex_item::center));
+	}
+	else if (item && is_valid(item->thumbnail()))
+	{
+		if (!_scroll_tooltip_staging_item || _scroll_tooltip_staging_item == item ||
+			!_scroll_tooltip_staging_item->is_staging_thumbnail_surface())
+		{
+			_scroll_tooltip_staging_item = item;
+			item->stage_thumbnail_surface(async, false, true);
+		}
 	}
 	else
 	{
 		for (const auto& i : _items)
 		{
+			if (is_valid(i->thumbnail_surface()))
+			{
+				_scroll_tooltip_staging_item.reset();
+				elements->add(std::make_shared<surface_element>(i->thumbnail_surface(), max_thumb_dim,
+				                                                flex_item::center));
+				break;
+			}
 			if (i->has_thumb())
 			{
-				elements->add(std::make_shared<surface_element>(ff.image_to_surface(i->thumbnail()), max_thumb_dim,
-				                                                flex_item::center));
+				if (!_scroll_tooltip_staging_item || _scroll_tooltip_staging_item == i ||
+				!_scroll_tooltip_staging_item->is_staging_thumbnail_surface())
+				{
+				_scroll_tooltip_staging_item = i;
+				i->stage_thumbnail_surface(async, false, true);
+				}
 				break;
 			}
 		}
@@ -2209,7 +2236,8 @@ void df::index_file_item::update_duplicates(const index_folder_item_ptr& f, cons
 {
 	const auto existing = duplicates.load();
 
-	if (existing.count != dup_info.count || existing.group != dup_info.group)
+	if (existing.count != dup_info.count || existing.group != dup_info.group ||
+		existing.grade != dup_info.grade || existing.same_picture_crowded != dup_info.same_picture_crowded)
 	{
 		duplicates = dup_info;
 		fold_duplicates_bit(search_presence, duplicates);
@@ -2918,7 +2946,8 @@ void df::item_element::render(ui::draw_context& dc, const item_group& group, con
 	}
 }
 
-void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool invalidate_on_complete) const
+void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool invalidate_on_complete,
+                                               const bool tooltip_on_complete) const
 {
 	df::assert_true(ui::is_ui_thread());
 	bump(thumbnail_perf.stage_requests);
@@ -2928,11 +2957,19 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 	{
 		bump(thumbnail_perf.stage_skipped);
 
+		auto invalid = view_invalid::none;
 		if (invalidate_on_complete || (_thumbnail_state && thumbnail_state::invalidate_on_stage))
 		{
 			set_thumbnail_state(thumbnail_state::invalidate_on_stage, false);
-			async.invalidate_view(view_invalid::view_redraw);
+			invalid |= view_invalid::view_redraw;
 		}
+		if ((_thumbnail_state && thumbnail_state::surface_cached) &&
+			(_thumbnail_state && thumbnail_state::tooltip_on_stage))
+		{
+			set_thumbnail_state(thumbnail_state::tooltip_on_stage, false);
+			invalid |= view_invalid::tooltip | view_invalid::view_redraw;
+		}
+		if (invalid != view_invalid::none) async.invalidate_view(invalid);
 
 		return;
 	}
@@ -2940,6 +2977,7 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 	// Latched, not captured: a request arriving while a stage is in flight would otherwise be
 	// discarded along with its callback, and that branch runs about as often as a stage completes.
 	if (invalidate_on_complete) set_thumbnail_state(thumbnail_state::invalidate_on_stage, true);
+	if (tooltip_on_complete) set_thumbnail_state(thumbnail_state::tooltip_on_stage, true);
 
 	if (_thumbnail_state && thumbnail_state::staging_surface)
 	{
@@ -2977,7 +3015,8 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 
 				                  df::assert_true(ui::is_ui_thread());
 				                  item->set_thumbnail_state(thumbnail_state::staging_surface, false);
-				                  if (generation == item->_thumbnail_surface_generation)
+				                  const auto was_current = generation == item->_thumbnail_surface_generation;
+				                  if (was_current)
 				                  {
 					                  item->_texture.reset();
 					                  item->_thumbnail_surface = std::move(thumbnail_surface);
@@ -3005,10 +3044,22 @@ void df::item_element::stage_thumbnail_surface(async_strategy& async, const bool
 					                  item->set_thumbnail_state(thumbnail_state::staging_requested, false);
 					                  item->stage_thumbnail_surface(async, false);
 				                  }
-				                  else if (item->_thumbnail_state && thumbnail_state::invalidate_on_stage)
+				                  else if (item->_thumbnail_state &&
+					                  (thumbnail_state::invalidate_on_stage | thumbnail_state::tooltip_on_stage))
 				                  {
+					                  const auto has_surface = was_current && item->has_cached_surface();
+					                  auto invalid = view_invalid::none;
+					                  if (item->_thumbnail_state && thumbnail_state::invalidate_on_stage)
+					                  {
+						                  invalid |= view_invalid::view_redraw;
+					                  }
+					                  if (has_surface && (item->_thumbnail_state && thumbnail_state::tooltip_on_stage))
+					                  {
+						                  invalid |= view_invalid::tooltip | view_invalid::view_redraw;
+					                  }
 					                  item->set_thumbnail_state(thumbnail_state::invalidate_on_stage, false);
-					                  async.invalidate_view(view_invalid::view_redraw);
+					                  item->set_thumbnail_state(thumbnail_state::tooltip_on_stage, false);
+					                  if (invalid != view_invalid::none) async.invalidate_view(invalid);
 				                  }
 			                  });
 	                  });
@@ -3139,6 +3190,45 @@ std::vector<ui::const_image_ptr> df::item_set::thumbs(const size_t max, const it
 	}
 
 	return results;
+}
+
+std::vector<ui::const_surface_ptr> df::item_set::thumbnail_surfaces(const size_t max,
+                                                                    const item_element_ptr& skip_this) const
+{
+	std::vector<ui::const_surface_ptr> results;
+
+	for (const auto& i : _items)
+	{
+		if (results.size() >= max) break;
+		if (i == skip_this) continue;
+
+		if (const auto& surface = i->thumbnail_surface(); is_valid(surface))
+		{
+			results.emplace_back(surface);
+		}
+		else if (const auto cover = i->cover_art_surface(); is_valid(cover))
+		{
+			results.emplace_back(cover);
+		}
+	}
+
+	return results;
+}
+
+void df::item_set::stage_thumbnail_surfaces(async_strategy& async, const size_t max,
+                                            const item_element_ptr& skip_this) const
+{
+	auto requested = 0_z;
+
+	for (const auto& i : _items)
+	{
+		if (requested >= max) break;
+		if (i == skip_this) continue;
+		if (!i->has_thumb()) continue;
+
+		i->stage_thumbnail_surface(async, true);
+		++requested;
+	}
 }
 
 df::process_result df::item_set::can_process(const process_items_type file_types, const bool mark_errors,
@@ -3425,19 +3515,48 @@ bool df::item_element::update(const file_path path, const index_file_item& info)
 	return changed;
 }
 
+static void notify_rename_after_move(const df::file_path source, const df::file_path destination)
+{
+	if (df::rename_after_move_for_test) df::rename_after_move_for_test(source, destination);
+}
+
+static platform::file_op_result rename_recovery_failed(const df::file_path expected_path,
+                                                       const df::file_path surviving_path,
+                                                       platform::file_op_result result)
+{
+	result.code = platform::file_op_result_code::FAILED;
+	result.error_message = std::format("Could not restore {}; surviving path is {}. {}",
+	                                   expected_path.str(), surviving_path.str(), result.format_error());
+	if (df::rename_recovery_report_for_test) df::rename_recovery_report_for_test(result.error_message);
+	df::log(__FUNCTION__, result.error_message);
+	return result;
+}
+
 static platform::file_op_result rename_file(const df::file_path source, const df::file_path destination)
 {
 	if (source.icmp(destination) != 0 || source.pack() == destination.pack())
 	{
-		return platform::move_file(source, destination, true);
+		auto result = platform::move_file(source, destination, true);
+		if (result.success()) notify_rename_after_move(source, destination);
+		return result;
 	}
 
 	const auto temporary = platform::temp_file(source.extension(), source.folder());
 	auto result = platform::move_file(source, temporary, true);
 	if (result.success())
 	{
+		notify_rename_after_move(source, temporary);
 		result = platform::move_file(temporary, destination, true);
-		if (result.failed()) platform::move_file(temporary, source, true);
+		if (result.success())
+		{
+			notify_rename_after_move(temporary, destination);
+		}
+		else
+		{
+			const auto rollback = platform::move_file(temporary, source, true);
+			if (rollback.success()) notify_rename_after_move(temporary, source);
+			else return rename_recovery_failed(source, temporary, rollback);
+		}
 	}
 	return result;
 }
@@ -3449,7 +3568,7 @@ platform::file_op_result df::item_element::rename(index_state& index, const std:
 		const auto path_src = folder();
 		const auto path_dst = path_src.parent().combine(new_name);
 
-		if (path_src == path_dst)
+		if (path_src.text() == path_dst.text())
 		{
 			// no-op
 			platform::file_op_result result;
@@ -3468,6 +3587,8 @@ platform::file_op_result df::item_element::rename(index_state& index, const std:
 
 		if (result.success())
 		{
+			notify_rename_after_move(df::file_path(path_src.parent(), path_src.name()),
+			                         df::file_path(path_dst.parent(), path_dst.name()));
 			_path.folder(path_dst);
 			_name = path_dst.name();
 		}
@@ -3504,8 +3625,21 @@ platform::file_op_result df::item_element::rename(index_state& index, const std:
 
 		if (result.failed())
 		{
+			platform::file_op_result first_rollback_failure{platform::file_op_result_code::OK};
 			for (auto i = moved_sidecars.rbegin(); i != moved_sidecars.rend(); ++i)
-				rename_file(i->second, i->first);
+			{
+				const auto rollback = rename_file(i->second, i->first);
+				if (rollback.failed())
+				{
+					const auto reported = rename_recovery_failed(i->first, i->second, rollback);
+					if (first_rollback_failure.success()) first_rollback_failure = reported;
+				}
+			}
+			if (first_rollback_failure.failed())
+			{
+				index.queue_scan_folders(df::unique_folders{path_src.folder(), path_dst.folder()});
+				return first_rollback_failure;
+			}
 			return result;
 		}
 		moved_sidecars.emplace_back(sidecar_path_src, sidecar_path_dst);
@@ -3518,8 +3652,21 @@ platform::file_op_result df::item_element::rename(index_state& index, const std:
 	}
 	else
 	{
+		platform::file_op_result first_rollback_failure{platform::file_op_result_code::OK};
 		for (auto i = moved_sidecars.rbegin(); i != moved_sidecars.rend(); ++i)
-			rename_file(i->second, i->first);
+		{
+			const auto rollback = rename_file(i->second, i->first);
+			if (rollback.failed())
+			{
+				const auto reported = rename_recovery_failed(i->first, i->second, rollback);
+				if (first_rollback_failure.success()) first_rollback_failure = reported;
+			}
+		}
+		if (first_rollback_failure.failed())
+		{
+			index.queue_scan_folders(df::unique_folders{path_src.folder(), path_dst.folder()});
+			return first_rollback_failure;
+		}
 	}
 
 	return result;

@@ -13,9 +13,47 @@
 
 #include "util_base64.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 namespace
 {
 	constexpr std::string_view settings_file_name = "diffractor.ini";
+	platform::linux_settings_test_failure settings_test_failure = platform::linux_settings_test_failure::none;
+	int settings_save_count = 0;
+
+	std::optional<std::pair<df::file_path, int>> open_settings_stage(const df::folder_path folder)
+	{
+		for (auto attempt = 0; attempt < 64; ++attempt)
+		{
+			uint32_t r = 0;
+			platform::generate_random_bytes(std::bit_cast<uint8_t*>(&r), sizeof(r));
+
+			const auto stage = folder.combine_file(std::format(".diffractor-ini-{:08x}.tmp", r));
+			const auto fd = ::open(stage.str().c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
+			if (fd >= 0) return std::pair{stage, fd};
+			if (errno != EEXIST) return {};
+		}
+
+		return {};
+	}
+
+	bool write_all(const int fd, const std::string_view text)
+	{
+		size_t written = 0;
+		while (written < text.size())
+		{
+			const auto n = ::write(fd, text.data() + written, text.size() - written);
+			if (n < 0)
+			{
+				if (errno == EINTR) continue;
+				return false;
+			}
+			if (n == 0) return false;
+			written += static_cast<size_t>(n);
+		}
+		return true;
+	}
 
 	// Values are held in memory and the whole file is rewritten on change: it is a few kilobytes,
 	// and a full rewrite cannot leave a half-updated section behind.
@@ -47,8 +85,17 @@ namespace
 
 		bool write(const std::string_view section, const std::string_view name, const std::string_view v) override
 		{
-			_values[key_of(section, name)] = std::string(v);
-			return save();
+			const auto key = key_of(section, name);
+			const auto value = std::string(v);
+			if (const auto found = _values.find(key); found != _values.end() && found->second == value) return true;
+
+			auto candidate = _values;
+			candidate[key] = value;
+
+			if (!save(candidate)) return false;
+
+			_values = std::move(candidate);
+			return true;
 		}
 
 		bool write(const std::string_view section, const std::string_view name, const df::cspan cs) override
@@ -126,32 +173,67 @@ namespace
 			}
 		}
 
-		bool save()
+		bool save(const std::map<std::string, std::string>& values)
 		{
+			++settings_save_count;
 			const auto folder = _path.folder();
 			if (!platform::exists(folder)) platform::create_folder(folder);
 
 			// Grouped by section so the file stays readable and diffable by hand.
 			std::map<std::string, std::vector<std::pair<std::string, std::string>>> sections;
 
-			for (const auto& [key, value] : _values)
+			for (const auto& [key, value] : values)
 			{
 				const auto slash = key.find('/');
 				if (slash == std::string::npos) continue;
 				sections[key.substr(0, slash)].emplace_back(key.substr(slash + 1), value);
 			}
 
-			std::ofstream file(platform::to_stream_path(_path), std::ios::out | std::ios::trunc);
-			if (!file.is_open()) return false;
-
+			std::string text;
 			for (const auto& [section, entries] : sections)
 			{
-				file << '[' << section << "]\n";
-				for (const auto& [name, value] : entries) file << name << '=' << value << '\n';
-				file << '\n';
+				text += std::format("[{}]\n", section);
+				for (const auto& [name, value] : entries) text += std::format("{}={}\n", name, value);
+				text += '\n';
 			}
 
-			return file.good();
+			const auto stage_file = open_settings_stage(folder);
+			if (!stage_file.has_value()) return false;
+			const auto [stage, fd] = *stage_file;
+
+			if (settings_test_failure == platform::linux_settings_test_failure::after_open)
+			{
+				::close(fd);
+				platform::delete_file(stage);
+				return false;
+			}
+
+			const auto wrote = write_all(fd, text);
+
+			if (!wrote || settings_test_failure == platform::linux_settings_test_failure::after_write)
+			{
+				::close(fd);
+				platform::delete_file(stage);
+				return false;
+			}
+
+			if (::close(fd) != 0)
+			{
+				platform::delete_file(stage);
+				return false;
+			}
+
+			if (settings_test_failure == platform::linux_settings_test_failure::before_replace)
+			{
+				platform::delete_file(stage);
+				return false;
+			}
+
+			if (platform::test_linux_before_settings_replace) platform::test_linux_before_settings_replace();
+
+			const auto replaced = platform::replace_file(_path, stage);
+			if (replaced.failed()) platform::delete_file(stage);
+			return replaced.success();
 		}
 
 		df::file_path _path;
@@ -169,3 +251,20 @@ platform::setting_file_ptr platform::create_ini_file_settings(const df::folder_p
 {
 	return std::make_shared<ini_settings>(folder);
 }
+
+void platform::test_linux_settings_failure(const linux_settings_test_failure failure)
+{
+	settings_test_failure = failure;
+}
+
+int platform::test_linux_settings_save_count()
+{
+	return settings_save_count;
+}
+
+void platform::test_linux_reset_settings_save_count()
+{
+	settings_save_count = 0;
+}
+
+std::function<void()> platform::test_linux_before_settings_replace;

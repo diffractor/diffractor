@@ -30,6 +30,16 @@
 
 static std::atomic_int index_version;
 
+df::cancel_token make_scan_uncached_token_for_index_workers()
+{
+	return df::cancel_token::current(index_version);
+}
+
+df::cancel_token make_index_update_token_for_worker_tests()
+{
+	return df::cancel_token(index_version);
+}
+
 // Declared ahead of the queueing entry points below, which start these workers on first use.
 void start_worker(platform::task_queue& q, std::string_view name);
 void start_map_worker(platform::task_queue& q);

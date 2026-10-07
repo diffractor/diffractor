@@ -95,8 +95,21 @@ namespace
 	std::string place_identity_key(const str::cached place, const str::cached state, const str::cached country)
 	{
 		auto key = std::format("{}\x1f{}\x1f{}", place.sv(), state.sv(), country.sv());
-		str::to_lower(key);
-		return key;
+		return str::to_lower(key);
+	}
+
+	std::string place_subset_key(const df::visit_place_tally& t, const uint32_t mask)
+	{
+		return place_identity_key((mask & 1u) != 0 ? t.place : str::cached{},
+		                          (mask & 2u) != 0 ? t.state : str::cached{},
+		                          (mask & 4u) != 0 ? t.country : str::cached{});
+	}
+
+	uint32_t place_mask(const df::visit_place_tally& t)
+	{
+		return (is_empty(t.place) ? 0u : 1u) |
+			(is_empty(t.state) ? 0u : 2u) |
+			(is_empty(t.country) ? 0u : 4u);
 	}
 
 	resolved_name_t resolve_stored_name(const df::visit_sample& s, const location_cache& locations,
@@ -116,8 +129,7 @@ namespace
 
 		// find_by_name matches case-insensitively, so the memo has to as well or the same place
 		// spelt differently misses and re-reads the gazetteer.
-		const auto memo_key = query;
-		str::to_lower(memo_key);
+		const auto memo_key = str::to_lower(query);
 
 		const auto found = memo.find(memo_key);
 		if (found != memo.end()) return found->second;
@@ -140,67 +152,228 @@ namespace
 		return result;
 	}
 
-	uint32_t place_specificity(const df::visit_place_tally& t)
+	class place_components
 	{
-		return (is_empty(t.place) ? 0u : 1u) + (is_empty(t.state) ? 0u : 1u) + (is_empty(t.country) ? 0u : 1u);
-	}
+		std::vector<size_t> _parent;
 
-	// Whether `general`'s chip query already returns everything `specific` counted. A field the
-	// entry left empty emits no term, so it constrains nothing.
-	bool place_subsumes(const df::visit_place_tally& general, const df::visit_place_tally& specific)
-	{
-		const auto covers = [](const str::cached g, const str::cached s)
+	public:
+		explicit place_components(const size_t n) : _parent(n)
 		{
-			return is_empty(g) || (!is_empty(s) && icmp(g, s) == 0);
-		};
+			for (auto i = 0u; i < _parent.size(); ++i) _parent[i] = i;
+		}
 
-		return place_specificity(general) < place_specificity(specific) &&
-			covers(general.place, specific.place) &&
-			covers(general.state, specific.state) &&
-			covers(general.country, specific.country);
-	}
+		size_t find(const size_t i)
+		{
+			if (_parent[i] != i) _parent[i] = find(_parent[i]);
+			return _parent[i];
+		}
+
+		bool unite(const size_t l, const size_t r)
+		{
+			const auto lr = find(l);
+			const auto rr = find(r);
+			if (lr == rr) return false;
+			_parent[rr] = lr;
+			return true;
+		}
+	};
 
 	// locations.md 7.2: the strip is a partition, and a chip's count and its click are one promise.
-	// Two entries where one only omits what the other names cannot both keep it -- the vaguer query
-	// returns the sharper entry's items too -- so the vaguer one absorbs the sharper.
-	void collapse_subsumed_places(std::vector<df::visit_place_tally>& tallies)
+	// Exact identities are collapsed through the finite place/state/country predicate subsets. If
+	// a partial chip would return sharper identities, the whole connected set merges to the common
+	// predicate its search can honestly advertise.
+	bool collapse_subsumed_places(std::vector<df::visit_place_tally>& tallies, const df::cancel_token& token,
+	                              df::visit_work_counters* counters)
 	{
-		std::vector<size_t> order(tallies.size());
-		for (auto i = 0u; i < order.size(); ++i) order[i] = i;
+		if (tallies.size() < 2) return true;
 
-		std::ranges::stable_sort(order, [&tallies](const size_t l, const size_t r)
-		{
-			return place_specificity(tallies[l]) > place_specificity(tallies[r]);
-		});
+		place_components components(tallies.size());
+		std::map<std::string, size_t> exact_keys;
+		std::map<std::string, std::vector<size_t>> subset_keys;
 
-		std::vector<bool> absorbed(tallies.size(), false);
-
-		// Sharpest first, so a count absorbed into a middle entry travels on to a vaguer one.
-		for (const auto i : order)
-		{
-			size_t into = tallies.size();
-
-			for (auto j = 0u; j < tallies.size(); ++j)
-			{
-				if (j == i || absorbed[j] || !place_subsumes(tallies[j], tallies[i])) continue;
-				if (into == tallies.size() || place_specificity(tallies[j]) < place_specificity(tallies[into]))
-				{
-					into = j;
-				}
-			}
-
-			if (into == tallies.size()) continue;
-
-			tallies[into].count += tallies[i].count;
-			absorbed[i] = true;
-		}
-
-		auto write = 0u;
 		for (auto i = 0u; i < tallies.size(); ++i)
 		{
-			if (!absorbed[i]) tallies[write++] = std::move(tallies[i]);
+			if ((i & 0xffu) == 0 && token.is_cancelled()) return false;
+			const auto mask = place_mask(tallies[i]);
+			exact_keys[place_subset_key(tallies[i], mask)] = i;
+
+			for (auto subset = 1u; subset < 8u; ++subset)
+			{
+				if ((subset & mask) == subset) subset_keys[place_subset_key(tallies[i], subset)].emplace_back(i);
+			}
 		}
-		tallies.resize(write);
+
+		auto unite_predicate_matches = [&](const std::string& key, const size_t with)
+		{
+			auto changed = false;
+			const auto found = subset_keys.find(key);
+			if (found == subset_keys.end()) return false;
+
+			for (const auto i : found->second)
+			{
+				if (counters) ++counters->place_predicate_unions;
+				changed |= components.unite(with, i);
+			}
+
+			return changed;
+		};
+
+		for (auto i = 0u; i < tallies.size(); ++i)
+		{
+			if ((i & 0xffu) == 0 && token.is_cancelled()) return false;
+			const auto mask = place_mask(tallies[i]);
+			unite_predicate_matches(place_subset_key(tallies[i], mask), i);
+		}
+
+		auto changed = true;
+		while (changed)
+		{
+			changed = false;
+
+			std::map<size_t, std::vector<size_t>> groups;
+			for (auto i = 0u; i < tallies.size(); ++i) groups[components.find(i)].emplace_back(i);
+			std::set<std::string> processed_predicates;
+
+			for (const auto& [root, group] : groups)
+			{
+				if (token.is_cancelled()) return false;
+				df::visit_place_tally predicate;
+				auto mask = 7u;
+
+				const auto resolve_field = [&](const auto ptr, const uint32_t bit)
+				{
+					auto value = tallies[group.front()].*ptr;
+
+					for (const auto i : group)
+					{
+						const auto current = tallies[i].*ptr;
+						if (is_empty(value) || is_empty(current) || icmp(value, current) != 0)
+						{
+							value = {};
+							mask &= ~bit;
+							break;
+						}
+					}
+
+					return value;
+				};
+
+				predicate.place = resolve_field(&df::visit_place_tally::place, 1u);
+				predicate.state = resolve_field(&df::visit_place_tally::state, 2u);
+				predicate.country = resolve_field(&df::visit_place_tally::country, 4u);
+
+				if (mask != 0)
+				{
+					const auto key = place_subset_key(predicate, mask);
+					if (processed_predicates.emplace(key).second)
+					{
+						changed |= unite_predicate_matches(key, root);
+					}
+				}
+			}
+		}
+
+		std::map<size_t, std::vector<size_t>> groups;
+		for (auto i = 0u; i < tallies.size(); ++i) groups[components.find(i)].emplace_back(i);
+
+		std::vector<df::visit_place_tally> collapsed;
+		collapsed.reserve(groups.size());
+
+		for (const auto& [root, group] : groups)
+		{
+			df::visit_place_tally merged;
+			for (const auto i : group) merged.count += tallies[i].count;
+			auto mask = 7u;
+
+			const auto merge_field = [&](const auto ptr, const uint32_t bit)
+			{
+				auto value = tallies[group.front()].*ptr;
+
+				for (const auto i : group)
+				{
+					const auto current = tallies[i].*ptr;
+					if (is_empty(value) || is_empty(current) || icmp(value, current) != 0)
+					{
+						value = {};
+						mask &= ~bit;
+						break;
+					}
+				}
+
+				return value;
+			};
+
+			merged.place = merge_field(&df::visit_place_tally::place, 1u);
+			merged.state = merge_field(&df::visit_place_tally::state, 2u);
+			merged.country = merge_field(&df::visit_place_tally::country, 4u);
+
+			if (mask == 0)
+			{
+				struct candidate
+				{
+					size_t index = 0;
+					std::string key;
+					std::vector<size_t> covered;
+					uint32_t count = 0;
+				};
+
+				std::vector<candidate> candidates;
+
+				for (const auto i : group)
+				{
+					const auto exact_key = place_subset_key(tallies[i], place_mask(tallies[i]));
+					const auto found = subset_keys.find(exact_key);
+
+					if (found != subset_keys.end())
+					{
+						candidate c;
+						c.index = i;
+						c.key = exact_key;
+						c.covered = found->second;
+
+						for (const auto covered : c.covered)
+						{
+							c.count += tallies[covered].count;
+						}
+
+						candidates.emplace_back(std::move(c));
+					}
+				}
+
+				std::ranges::sort(candidates, [](const candidate& l, const candidate& r)
+				{
+					return l.count == r.count ? l.key < r.key : l.count > r.count;
+				});
+
+				std::vector<bool> covered(tallies.size(), false);
+
+				for (const auto& candidate : candidates)
+				{
+					auto overlaps = false;
+
+					for (const auto i : candidate.covered)
+					{
+						overlaps = covered[i];
+						if (overlaps) break;
+					}
+
+					if (overlaps) continue;
+
+					for (const auto i : candidate.covered) covered[i] = true;
+
+					auto tally = tallies[candidate.index];
+					tally.count = candidate.count;
+					collapsed.emplace_back(std::move(tally));
+				}
+
+				continue;
+			}
+
+			collapsed.emplace_back(std::move(merged));
+		}
+
+		tallies = std::move(collapsed);
+		return true;
 	}
 
 	std::string place_label(const df::visit_place_tally& t, const location_qualification level)
@@ -313,6 +486,7 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 
 	for (size_t i = 0; i < samples.size(); ++i)
 	{
+		if ((i & 0xffu) == 0 && request.token.is_cancelled()) return result;
 		const auto& s = samples[i];
 
 		// A state or province is a location. Leaving it out of this test counted a photograph
@@ -349,6 +523,7 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 
 		for (const auto i : usable)
 		{
+			if ((i & 0xffu) == 0 && request.token.is_cancelled()) return result;
 			const auto& s = samples[i];
 			auto place = s.place;
 			auto state = s.state;
@@ -395,7 +570,7 @@ df::visit_timeline df::compute_visits(visit_request request, const location_cach
 			tallies.emplace_back(std::move(tally));
 		}
 
-		collapse_subsumed_places(tallies);
+		if (!collapse_subsumed_places(tallies, request.token, request.counters)) return result;
 
 		std::ranges::stable_sort(tallies, [](const visit_place_tally& l, const visit_place_tally& r)
 		{

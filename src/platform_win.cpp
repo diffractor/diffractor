@@ -532,53 +532,94 @@ platform::drives platform::scan_drives()
 
 
 static constexpr LCID default_locale = LOCALE_USER_DEFAULT;
-static wchar_t decimal_sep[8];
-static wchar_t thousand_sep[8];
-static NUMBERFMTW fmt;
 std::atomic_bool number_format_invalid = true;
 static std::mutex number_format_mutex;
 
-void validate_number_format()
+struct number_format_snapshot
 {
+	std::wstring decimal_sep = L".";
+	std::wstring thousand_sep = L",";
+	uint32_t leading_zero = 1;
+	uint32_t negative_order = 1;
+
+	NUMBERFMTW fmt() const
+	{
+		NUMBERFMTW result = {};
+		result.NumDigits = 0;
+		result.LeadingZero = leading_zero;
+		result.Grouping = 3;
+		result.lpDecimalSep = const_cast<wchar_t*>(decimal_sep.c_str());
+		result.lpThousandSep = const_cast<wchar_t*>(thousand_sep.c_str());
+		result.NegativeOrder = negative_order;
+		return result;
+	}
+};
+
+static number_format_snapshot number_format;
+static std::vector<platform::number_format_probe_snapshot> number_format_probe_snapshots;
+static bool number_format_probe_invalidate_during_refresh = false;
+
+static number_format_snapshot read_number_format()
+{
+	if (!number_format_probe_snapshots.empty())
+	{
+		const auto probe = number_format_probe_snapshots.front();
+		number_format_probe_snapshots.erase(number_format_probe_snapshots.begin());
+
+		if (number_format_probe_invalidate_during_refresh)
+		{
+			number_format_invalid = true;
+			number_format_probe_invalidate_during_refresh = false;
+		}
+
+		return {probe.decimal_sep, probe.thousand_sep, probe.leading_zero, probe.negative_order};
+	}
+
+	number_format_snapshot result;
+	wchar_t decimal_sep[8];
+	wchar_t thousand_sep[8];
+
+	// The ANSI variants return code-page bytes that the callers treat as UTF-8; separators
+	// such as the French no-break space only survive the round trip through UTF-16.
+	if (GetLocaleInfoW(default_locale, LOCALE_SDECIMAL, decimal_sep, std::size(decimal_sep)) == 0)
+	{
+		wcscpy_s(decimal_sep, L".");
+	}
+
+	if (GetLocaleInfoW(default_locale, LOCALE_STHOUSAND, thousand_sep, std::size(thousand_sep)) == 0)
+	{
+		wcscpy_s(thousand_sep, L",");
+	}
+
+	result.decimal_sep = decimal_sep;
+	result.thousand_sep = thousand_sep;
+
+	// LOCALE_RETURN_NUMBER writes a DWORD, and cchData counts wchar_t.
+	GetLocaleInfoW(default_locale, LOCALE_RETURN_NUMBER | LOCALE_ILZERO,
+	               std::bit_cast<LPWSTR>(&result.leading_zero), sizeof(uint32_t) / sizeof(wchar_t));
+	GetLocaleInfoW(default_locale, LOCALE_RETURN_NUMBER | LOCALE_INEGNUMBER,
+	               std::bit_cast<LPWSTR>(&result.negative_order), sizeof(uint32_t) / sizeof(wchar_t));
+
+	return result;
+}
+
+static number_format_snapshot get_number_format()
+{
+	std::lock_guard lock(number_format_mutex);
+
 	if (number_format_invalid)
 	{
-		std::lock_guard lock(number_format_mutex);
-
-		if (number_format_invalid)
-		{
-			// The ANSI variants return code-page bytes that the callers treat as UTF-8; separators
-			// such as the French no-break space only survive the round trip through UTF-16.
-			if (GetLocaleInfoW(default_locale, LOCALE_SDECIMAL, decimal_sep,
-			                   std::size(decimal_sep)) == 0)
-			{
-				wcscpy_s(decimal_sep, L".");
-			}
-
-			if (GetLocaleInfoW(default_locale, LOCALE_STHOUSAND, thousand_sep,
-			                   std::size(thousand_sep)) == 0)
-			{
-				wcscpy_s(thousand_sep, L",");
-			}
-
-			// LOCALE_RETURN_NUMBER writes a DWORD, and cchData counts wchar_t.
-			GetLocaleInfoW(default_locale, LOCALE_RETURN_NUMBER | LOCALE_ILZERO,
-			               std::bit_cast<LPWSTR>(&fmt.LeadingZero), sizeof(uint32_t) / sizeof(wchar_t));
-			GetLocaleInfoW(default_locale, LOCALE_RETURN_NUMBER | LOCALE_INEGNUMBER,
-			               std::bit_cast<LPWSTR>(&fmt.NegativeOrder), sizeof(uint32_t) / sizeof(wchar_t));
-
-			fmt.NumDigits = 0;
-			fmt.Grouping = 3;
-			fmt.lpDecimalSep = decimal_sep;
-			fmt.lpThousandSep = thousand_sep;
-
-			number_format_invalid = false;
-		}
+		number_format_invalid = false;
+		number_format = read_number_format();
 	}
+
+	return number_format;
 }
 
 std::string platform::format_number(const std::string& num_text)
 {
-	validate_number_format();
+	const auto snapshot = get_number_format();
+	auto fmt = snapshot.fmt();
 
 	wchar_t result[64];
 	const auto w = str::utf8_to_utf16(num_text);
@@ -593,8 +634,25 @@ std::string platform::format_number(const std::string& num_text)
 
 std::string platform::number_dec_sep()
 {
-	validate_number_format();
-	return str::utf16_to_utf8(decimal_sep);
+	const auto snapshot = get_number_format();
+	return str::utf16_to_utf8(snapshot.decimal_sep);
+}
+
+void platform::set_number_format_probe_snapshots(std::vector<number_format_probe_snapshot> snapshots,
+                                                 const bool invalidate_during_refresh)
+{
+	std::lock_guard lock(number_format_mutex);
+	number_format_probe_snapshots = std::move(snapshots);
+	number_format_probe_invalidate_during_refresh = invalidate_during_refresh;
+	number_format_invalid = true;
+}
+
+void platform::clear_number_format_probe_snapshots()
+{
+	std::lock_guard lock(number_format_mutex);
+	number_format_probe_snapshots.clear();
+	number_format_probe_invalidate_during_refresh = false;
+	number_format_invalid = true;
 }
 
 class file_impl final : public platform::file
@@ -666,6 +724,11 @@ public:
 			if (chunk_written == 0) break;
 		}
 		return total_written;
+	}
+
+	bool flush() const override
+	{
+		return FlushFileBuffers(_h) != 0;
 	}
 
 	uint64_t seek(const uint64_t pos, const whence w) const override

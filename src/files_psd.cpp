@@ -24,6 +24,130 @@ enum psd_image_type
 	LabMode = 9
 };
 
+static constexpr size_t max_psd_metadata_bytes = 16u * 1024u * 1024u;
+static constexpr std::string_view photoshop_signature = "Photoshop 3.0\0"sv;
+
+static uint16_t read_be16(const uint8_t* p)
+{
+	return static_cast<uint16_t>((static_cast<uint16_t>(p[0]) << 8) | p[1]);
+}
+
+static uint32_t read_be32(const uint8_t* p)
+{
+	return static_cast<uint32_t>(p[0]) << 24 | static_cast<uint32_t>(p[1]) << 16 |
+		static_cast<uint32_t>(p[2]) << 8 | p[3];
+}
+
+static void assign_bounded_resource(df::blob& dst, const df::cspan payload)
+{
+	if (payload.size > max_psd_metadata_bytes)
+	{
+		df::log(__FUNCTION__, std::format("PSD metadata resource is too large to read ({})",
+		                                  df::file_size(payload.size).str()));
+		return;
+	}
+
+	dst.assign(payload.begin(), payload.end());
+}
+
+bool parse_photoshop_resources(metadata_parts& metadata, df::cspan resources, const bool has_photoshop_signature)
+{
+	if (has_photoshop_signature)
+	{
+		if (resources.size < photoshop_signature.size() ||
+			memcmp(resources.data, photoshop_signature.data(), photoshop_signature.size()) != 0)
+		{
+			return false;
+		}
+
+		resources.data += photoshop_signature.size();
+		resources.size -= photoshop_signature.size();
+	}
+
+	size_t pos = 0;
+	size_t accepted_bytes = 0;
+
+	while (pos + 12u <= resources.size)
+	{
+		if (memcmp(resources.data + pos, "8BIM", 4) != 0)
+			return false;
+
+		pos += 4;
+		const auto type = read_be16(resources.data + pos);
+		pos += 2;
+
+		const auto name_len = resources.data[pos++];
+		const auto name_bytes = static_cast<size_t>(name_len) + ((name_len & 1u) ? 0u : 1u);
+		if (name_bytes > resources.size - pos)
+			return false;
+		pos += name_bytes;
+
+		if (resources.size - pos < 4u)
+			return false;
+		const auto len = static_cast<size_t>(read_be32(resources.data + pos));
+		pos += 4;
+
+		const auto padded_len = len + (len & 1u);
+		if (padded_len > resources.size - pos)
+			return false;
+
+		const df::cspan payload{resources.data + pos, len};
+		const auto resource_start = pos - 11u - name_bytes;
+		if (type == 0x0404 || type == 0x0424 || type == 0x0422 || type == 0x040f)
+		{
+			if (len > max_psd_metadata_bytes || accepted_bytes > max_psd_metadata_bytes - len)
+			{
+				df::log(__FUNCTION__, std::format("PSD metadata resources are too large to read ({})",
+				                                  df::file_size(accepted_bytes + len).str()));
+			}
+			else
+			{
+				accepted_bytes += len;
+
+				if (type == 0x0404) assign_bounded_resource(metadata.iptc, payload);
+				else if (type == 0x0424) assign_bounded_resource(metadata.xmp, payload);
+				else if (type == 0x0422) assign_bounded_resource(metadata.exif, payload);
+				else if (type == 0x040f) assign_bounded_resource(metadata.icc, payload);
+			}
+		}
+		else if (type != 0x0425)
+		{
+			metadata.photoshop_resources.insert(metadata.photoshop_resources.end(),
+			                                    resources.data + resource_start,
+			                                    resources.data + pos + padded_len);
+		}
+
+		pos += padded_len;
+	}
+
+	return true;
+}
+
+df::blob make_photoshop_iptc_resource(const df::cspan iptc, const bool include_photoshop_signature)
+{
+	df::blob result;
+	if (iptc.size > (std::numeric_limits<uint32_t>::max)()) throw app_exception("IPTC block is too large");
+
+	const auto header = include_photoshop_signature ? photoshop_signature.size() : 0_z;
+	result.reserve(header + 4u + 2u + 2u + 4u + iptc.size + (iptc.size & 1u));
+	if (include_photoshop_signature)
+		result.insert(result.end(), photoshop_signature.begin(), photoshop_signature.end());
+
+	if (!iptc.empty())
+	{
+		constexpr std::array<uint8_t, 8> resource_header = {'8', 'B', 'I', 'M', 0x04, 0x04, 0, 0};
+		result.insert(result.end(), resource_header.begin(), resource_header.end());
+		const auto len = static_cast<uint32_t>(iptc.size);
+		result.push_back(static_cast<uint8_t>(len >> 24));
+		result.push_back(static_cast<uint8_t>(len >> 16));
+		result.push_back(static_cast<uint8_t>(len >> 8));
+		result.push_back(static_cast<uint8_t>(len));
+		result.insert(result.end(), iptc.begin(), iptc.end());
+		if (iptc.size & 1u) result.push_back(0);
+	}
+	return result;
+}
+
 int channel_to_channel_shift(const int channel)
 {
 	// case -1  transparency mask
@@ -184,45 +308,91 @@ static void scatter_plane(uint8_t* const dst_line, const uint8_t* const src, con
 }
 
 
-static void lab_to_rgb(const int L, const int a, const int b, int& R, int& G, int& B)
+static const std::array<int, 4097>& linear_to_srgb_table()
+{
+	static const auto table = []
+	{
+		std::array<int, 4097> result{};
+		for (auto i = 0_z; i < result.size(); ++i)
+		{
+			const auto v = static_cast<double>(i) / 4096.0;
+			const auto srgb = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1.0 / 2.4) - 0.055;
+			result[i] = df::byte_clamp(df::round(srgb * 255.0));
+		}
+		return result;
+	}();
+	return table;
+}
+
+static int linear_to_srgb_byte(double v)
+{
+	const auto clamped = std::clamp(v, 0.0, 1.0);
+	const auto index = df::round(clamped * 4096.0);
+	return linear_to_srgb_table()[index];
+}
+
+struct lab_l_lookup
+{
+	double y = 0.0;
+	double fy = 0.0;
+};
+
+static const std::array<lab_l_lookup, 256>& lab_l_table()
+{
+	static const auto table = []
+	{
+		std::array<lab_l_lookup, 256> result{};
+		for (auto i = 0_z; i < result.size(); ++i)
+		{
+			const auto L = static_cast<double>(i) * 100.0 / 255.0;
+			const auto fy = (L + 16.0) / 116.0;
+			auto y = fy * fy * fy;
+			if (y < 0.008856) y = L / 903.3;
+			result[i].y = y;
+			result[i].fy = y > 0.008856 ? fy : 7.787 * y + 16.0 / 116.0;
+		}
+		return result;
+	}();
+	return table;
+}
+
+static double lab_cube(const double v)
+{
+	return v * v * v;
+}
+
+static void lab_to_rgb(const int stored_l, const int a, const int b, int& R, int& G, int& B)
 {
 	// Convert between RGB and CIE-Lab color spaces
 	// Uses ITU-R recommendation BT.709 with D65 as reference white.
 	// algorithm contributed by "Mark A. Ruzon" <ruzon@CS.Stanford.EDU>
 	double X, Z;
-	double fY = pow((L + 16.0) / 116.0, 3.0);
-	if (fY < 0.008856)
-		fY = L / 903.3;
-	double Y = fY;
-
-	if (fY > 0.008856)
-		fY = pow(fY, 1.0 / 3.0);
-	else
-		fY = 7.787 * fY + 16.0 / 116.0;
+	const auto& lookup = lab_l_table()[stored_l];
+	const auto Y = lookup.y;
+	const auto fY = lookup.fy;
 
 	const double fX = a / 500.0 + fY;
 	if (fX > 0.206893)
-		X = pow(fX, 3.0);
+		X = lab_cube(fX);
 	else
 		X = (fX - 16.0 / 116.0) / 7.787;
 
 	const double fZ = fY - b / 200.0;
 	if (fZ > 0.206893)
-		Z = pow(fZ, 3.0);
+		Z = lab_cube(fZ);
 	else
 		Z = (fZ - 16.0 / 116.0) / 7.787;
 
-	X *= 0.950456 * 255;
-	Y *= 255;
-	Z *= 1.088754 * 255;
+	X *= 0.950456;
+	Z *= 1.088754;
 
-	const int RR = static_cast<int>(3.240479 * X - 1.537150 * Y - 0.498535 * Z + 0.5);
-	const int GG = static_cast<int>(-0.969256 * X + 1.875992 * Y + 0.041556 * Z + 0.5);
-	const int BB = static_cast<int>(0.055648 * X - 0.204043 * Y + 1.057311 * Z + 0.5);
+	const auto RR = 3.240479 * X - 1.537150 * Y - 0.498535 * Z;
+	const auto GG = -0.969256 * X + 1.875992 * Y + 0.041556 * Z;
+	const auto BB = 0.055648 * X - 0.204043 * Y + 1.057311 * Z;
 
-	R = RR < 0 ? 0 : RR > 255 ? 255 : RR;
-	G = GG < 0 ? 0 : GG > 255 ? 255 : GG;
-	B = BB < 0 ? 0 : BB > 255 ? 255 : BB;
+	R = linear_to_srgb_byte(RR);
+	G = linear_to_srgb_byte(GG);
+	B = linear_to_srgb_byte(BB);
 }
 
 static bool lab_to_rgb(const ui::surface_ptr& imageIn)
@@ -243,8 +413,8 @@ static bool lab_to_rgb(const ui::surface_ptr& imageIn)
 		{
 			const auto c = line[x];
 
-			const int b = ui::get_r(c);
-			const int a = ui::get_g(c);
+			const int b = ui::get_r(c) - 128;
+			const int a = ui::get_g(c) - 128;
 			const int l = ui::get_b(c);
 
 			lab_to_rgb(l, a, b, rr, gg, bb);
@@ -384,42 +554,37 @@ file_scan_result scan_psd(read_stream& s)
 
 	const auto after_resource_pos = stream.pos() + resources_len;
 
-	if (resources_len > 6)
+	if (resources_len > 0)
 	{
-		auto marker = stream.read_u32();
+		size_t accepted_bytes = 0;
 
-		while (marker == 0x3842494D) // 8BIM
+		while (stream.pos() + 12u <= after_resource_pos)
 		{
+			if (stream.read_u32() != 0x3842494D) break;
 			const auto type = stream.read_u16();
-
-			// The resource name is a Pascal string padded so the length byte plus the name
-			// occupy an even number of bytes. Photoshop leaves it empty for the standard
-			// resources, but a named one desynchronises a fixed two-byte skip and the rest
-			// of the section - including IPTC and XMP - is then read as garbage.
 			const auto name_len = stream.read_u8();
-			stream.skip((name_len & 1) ? name_len : name_len + 1u);
-
+			stream.skip((name_len & 1u) ? name_len : name_len + 1u);
 			const uint64_t len = stream.read_u32();
-			const auto padded_len = len + (len & 1); // resource data is padded to even
+			const auto padded_len = len + (len & 1u);
+			if (stream.pos() + padded_len > after_resource_pos) break;
 
-			if (stream.pos() + padded_len > after_resource_pos)
-				break;
-
-			if (type == 0x0404) // IPTC
+			if (type == 0x0404 || type == 0x0424 || type == 0x0422 || type == 0x040f)
 			{
-				result.metadata.iptc = stream.read_blob(len);
-			}
-			else if (type == 0x0424) // XMP
-			{
-				result.metadata.xmp = stream.read_blob(len);
-			}
-			else if (type == 0x0422) // EXIF
-			{
-				result.metadata.exif = stream.read_blob(len);
-			}
-			else if (type == 0x040f) // icc
-			{
-				result.metadata.icc = stream.read_blob(len);
+				if (len > max_psd_metadata_bytes || accepted_bytes > max_psd_metadata_bytes - len)
+				{
+					df::log(__FUNCTION__, std::format("PSD metadata resources are too large to read ({})",
+					                                  df::file_size(accepted_bytes + len).str()));
+					stream.skip(len);
+				}
+				else
+				{
+					accepted_bytes += static_cast<size_t>(len);
+					auto payload = stream.read_blob(len);
+					if (type == 0x0404) result.metadata.iptc = std::move(payload);
+					else if (type == 0x0424) result.metadata.xmp = std::move(payload);
+					else if (type == 0x0422) result.metadata.exif = std::move(payload);
+					else if (type == 0x040f) result.metadata.icc = std::move(payload);
+				}
 			}
 			else
 			{
@@ -427,12 +592,9 @@ file_scan_result scan_psd(read_stream& s)
 			}
 
 			stream.skip(padded_len - len);
-
-			if (stream.pos() + 4u > after_resource_pos)
-				break;
-
-			marker = stream.read_u32();
 		}
+
+		stream.pos(after_resource_pos);
 	}
 
 	result.success = true;
@@ -499,20 +661,16 @@ ui::surface_ptr load_psd(read_stream& s, load_diagnostic* const diagnostic)
 
 	if (colormap_len != 0)
 	{
-		const auto buffer = stream.read_blob(colormap_len);
-
 		if (mode == DuotoneMode)
 		{
 			// Duotone image data; the format of this data is undocumented.			
+			stream.skip(colormap_len);
 		}
 		else if (mode == IndexedMode && colormap_len == 768)
 		{
 			// Read PSD raster colormap.
 			num_colors = colormap_len / 3;
-		}
-
-		if (num_colors)
-		{
+			const auto buffer = stream.read_blob(colormap_len);
 			const auto* const data = buffer.data();
 
 			for (unsigned i = 0; i < static_cast<unsigned>(std::min(num_colors, 256u)); i++)
@@ -522,6 +680,10 @@ ui::surface_ptr load_psd(read_stream& s, load_diagnostic* const diagnostic)
 					data[i + num_colors],
 					data[i]);
 			}
+		}
+		else
+		{
+			stream.skip(colormap_len);
 		}
 	}
 	if (mode == IndexedMode && num_colors != 256) return {};

@@ -19,6 +19,54 @@
 
 class display_state_t;
 
+inline recti comparison_divider_device_bounds(const recti logical_bounds, const pointi element_offset)
+{
+	return logical_bounds.offset(element_offset);
+}
+
+inline int slider_value_to_track_x(const recti track_bounds, const int value, const int min_value, const int max_value)
+{
+	const auto range = std::max(1, max_value - min_value);
+	const auto clamped = std::clamp(value, min_value, max_value);
+	return track_bounds.left + df::round(static_cast<double>(clamped - min_value) * track_bounds.width() / range);
+}
+
+inline int slider_track_x_to_value(const recti track_bounds, const int x, const int min_value, const int max_value,
+                                   const int current_value)
+{
+	const auto range = std::max(1, max_value - min_value);
+	const auto target = std::clamp(x, track_bounds.left, track_bounds.right);
+	const auto width = std::max(1, track_bounds.width());
+	const auto raw = static_cast<double>(target - track_bounds.left) * range / width;
+	const auto distance_to = [&](const int value)
+	{
+		return std::abs(slider_value_to_track_x(track_bounds, value, min_value, max_value) - target);
+	};
+
+	// Start from the proportional value so both ends stay reachable when several values share a pixel,
+	// and let a neighbour win only when its painted thumb is strictly closer.
+	const auto nearest = std::clamp(min_value + df::round(raw), min_value, max_value);
+	auto best = nearest;
+	auto best_distance = distance_to(nearest);
+
+	for (const auto offset : {-1, 1, -2, 2})
+	{
+		const auto value = nearest + offset;
+		if (value < min_value || value > max_value) continue;
+		const auto distance = distance_to(value);
+		if (distance < best_distance)
+		{
+			best = value;
+			best_distance = distance;
+		}
+	}
+
+	// Pressing the thumb where it is drawn keeps its value.
+	const auto current = std::clamp(current_value, min_value, max_value);
+	if (distance_to(current) <= best_distance) best = current;
+	return best;
+}
+
 class slider_element final : public std::enable_shared_from_this<slider_element>, public view_element
 {
 	std::function<int()> _value;
@@ -31,6 +79,17 @@ class slider_element final : public std::enable_shared_from_this<slider_element>
 	const text_t& _tooltip;
 	mutable recti _slider_bounds;
 	mutable recti _track_bounds;
+	mutable int _handle_size = 12;
+	mutable int _track_height = 4;
+
+	static recti calc_track_bounds(const recti slider_bounds, const int handle_size, const int track_height)
+	{
+		const auto center_y = slider_bounds.center().y;
+		return {
+			slider_bounds.left + handle_size / 2, center_y - track_height / 2,
+			slider_bounds.right - handle_size / 2, center_y + (track_height + 1) / 2
+		};
+	}
 
 public:
 	slider_element(std::function<int()> value, std::function<void(int)> changed, const int min, const int max,
@@ -42,26 +101,33 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int width_limit) const override
 	{
+		_handle_size = std::max(mc.padding2, df::round(12 * mc.scale_factor));
+		_track_height = std::max(2, df::round(4 * mc.scale_factor));
 		return {width_limit, std::max(mc.scroll_width, mc.text_line_height(ui::style::font_face::dialog))};
+	}
+
+	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
+	{
+		view_element::layout(mc, bounds_in, positions);
+		_handle_size = std::max(mc.padding2, df::round(12 * mc.scale_factor));
+		_track_height = std::max(2, df::round(4 * mc.scale_factor));
+		_slider_bounds = bounds;
+		_track_bounds = calc_track_bounds(_slider_bounds, _handle_size, _track_height);
 	}
 
 	void render(ui::draw_context& dc, const pointi element_offset) const override
 	{
 		const auto logical_bounds = _slider_bounds = bounds.offset(element_offset);
-		const auto handle_size = std::max(dc.padding2, df::round(12 * dc.scale_factor));
-		const auto track_height = std::max(2, df::round(4 * dc.scale_factor));
+		_handle_size = std::max(dc.padding2, df::round(12 * dc.scale_factor));
+		_track_height = std::max(2, df::round(4 * dc.scale_factor));
 		const auto center_y = logical_bounds.center().y;
-		_track_bounds = {
-			logical_bounds.left + handle_size / 2, center_y - track_height / 2,
-			logical_bounds.right - handle_size / 2, center_y + (track_height + 1) / 2
-		};
+		_track_bounds = calc_track_bounds(logical_bounds, _handle_size, _track_height);
 
-		const auto range = std::max(1, _max - _min);
 		const auto value = std::clamp(_value(), _min, _max);
-		const auto handle_x = _track_bounds.left +
-			df::round(static_cast<double>(value - _min) * _track_bounds.width() / range);
-		const auto handle_bounds = recti(handle_x - handle_size / 2, center_y - handle_size / 2,
-		                                 handle_x + (handle_size + 1) / 2, center_y + (handle_size + 1) / 2);
+		const auto handle_x = slider_value_to_track_x(_track_bounds, value, _min, _max);
+		const auto handle_bounds = recti(handle_x - _handle_size / 2, center_y - _handle_size / 2,
+		                                 handle_x + (_handle_size + 1) / 2,
+		                                 center_y + (_handle_size + 1) / 2);
 		const auto is_hover = is_style_bit_set(view_element_style::hover);
 		const auto is_tracking = is_style_bit_set(view_element_style::tracking);
 
@@ -84,9 +150,9 @@ public:
 
 		if ((was_tracking || ic.tracking) && !pointer_left && !_slider_bounds.is_empty())
 		{
-			const auto pos = std::clamp(ic.loc.x, _slider_bounds.left, _slider_bounds.right) - _slider_bounds.left;
-			const auto value = _min + df::round(static_cast<double>(pos) * (_max - _min) /
-				std::max(1, _slider_bounds.width()));
+			const auto slider_bounds = bounds.offset(ic.element_offset);
+			const auto track_bounds = calc_track_bounds(slider_bounds, _handle_size, _track_height);
+			const auto value = slider_track_x_to_value(track_bounds, ic.loc.x, _min, _max, _value());
 			if (value != _value()) _changed(value);
 		}
 
@@ -443,18 +509,17 @@ public:
 		else if (keys.control && key == 'X')
 		{
 			const auto selected = model.selected_text();
-
 			if (!selected.empty())
 			{
-				platform::set_clipboard(selected);
-				model.erase_selection();
-				text_changed = true;
+				text_changed = model.cut_to_clipboard([](const std::string_view text)
+				{
+					return platform::set_clipboard(text);
+				});
 			}
 		}
 		else if (keys.control && key == 'V')
 		{
-			model.insert(platform::clipboard_text());
-			text_changed = true;
+			text_changed = model.paste_from_clipboard([] { return platform::clipboard_text(); });
 		}
 		else if (keys.control && key == 'Z')
 		{
@@ -663,14 +728,21 @@ private:
 		_widths.clear();
 		_widths.reserve(_offsets.size());
 
-		for (const auto offset : _offsets)
+		auto layout = mc.create_text_layout(ui::style::font_face::dialog);
+		if (layout)
 		{
+			layout->update(value, ui::style::text_style::single_line);
+			_widths = layout->offset_xs(_offsets, 10000);
+			if (_widths.size() == _offsets.size()) return;
+		}
+
+		_widths.clear();
+		for (const auto offset : _offsets)
 			_widths.emplace_back(offset == 0
 				                     ? 0
 				                     : mc.measure_text(std::string_view(value).substr(0, offset),
 				                                       ui::style::font_face::dialog,
 				                                       ui::style::text_style::single_line, 10000).cx);
-		}
 	}
 
 	int offset_x(const size_t offset) const
@@ -3187,7 +3259,7 @@ public:
 			else if (!_display->is_zoom_mode())
 			{
 				// Only the two-pane arrangement has a divider to grab.
-				auto rr = _display->_compare_bounds.offset(element_offset);
+				auto rr = comparison_divider_device_bounds(_display->_compare_bounds, element_offset);
 				rr.left = (rr.left + rr.right) / 2;
 				rr.right = rr.left + 1;
 				dc.draw_rect(rr, ui::color(ui::average(dc.colors.background, 0), dc.colors.alpha));

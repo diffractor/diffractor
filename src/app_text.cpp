@@ -225,9 +225,58 @@ std::string_view tt_prep(std::string_view result)
 	return result;
 }
 
-std::vector<po_entry> load_po(const df::file_path lang_file)
+static std::optional<int> parse_msgstr_plural_index(const std::string& line, std::vector<po_parse_error>& errors,
+                                                    const size_t line_number)
 {
-	std::vector<po_entry> result;
+	const auto open = line.find('[');
+	const auto close = line.find(']', open == std::string::npos ? 0 : open + 1);
+
+	if (open == std::string::npos || close == std::string::npos || close == open + 1)
+	{
+		errors.emplace_back(line_number, "Malformed msgstr plural index");
+		return {};
+	}
+
+	const auto index_text = std::string_view(line).substr(open + 1, close - open - 1);
+
+	if (!std::ranges::all_of(index_text, [](const char ch) { return ch >= '0' && ch <= '9'; }))
+	{
+		errors.emplace_back(line_number, "Malformed msgstr plural index");
+		return {};
+	}
+
+	int form = -1;
+	const auto* const first = index_text.data();
+	const auto* const last = first + index_text.size();
+	const auto parsed = std::from_chars(first, last, form);
+
+	if (parsed.ec != std::errc{} || parsed.ptr != last)
+	{
+		errors.emplace_back(line_number, "Malformed msgstr plural index");
+		return {};
+	}
+
+	if (static_cast<size_t>(form) > max_supported_plural_index)
+	{
+		errors.emplace_back(line_number, std::format("Unsupported msgstr plural index {}; Diffractor supports 0..{}",
+		                                             form, max_supported_plural_index));
+		return {};
+	}
+
+	auto tail = std::string_view(line).substr(close + 1);
+	tail = str::trim(tail);
+	if (!tail.empty() && tail.front() != '"')
+	{
+		errors.emplace_back(line_number, "Malformed msgstr plural index");
+		return {};
+	}
+
+	return form;
+}
+
+po_load_result load_po_report(const df::file_path lang_file)
+{
+	po_load_result result;
 	std::ifstream fs(platform::to_stream_path(lang_file));
 
 	enum class parse_po_state
@@ -244,11 +293,13 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 	auto parse_state = parse_po_state::none;
 	int extra_index = 0;
 	po_entry entry;
+	size_t line_number = 0;
 
 	while (fs)
 	{
 		std::string line;
 		std::getline(fs, line);
+		++line_number;
 
 		std::string::size_type pos = line.find_last_not_of(" \t\r\n");
 		if (pos != std::string::npos && pos < line.size() - 1)
@@ -264,14 +315,8 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 				{
 					// Parse the form index N from msgstr[N]. Forms 0 and 1 map to
 					// str/str_plural; forms >= 2 (Slavic "many" etc.) go to str_extra.
-					const auto open = line.find('[');
-					int form = -1;
-
-					if (open != std::string::npos)
-					{
-						const auto* const first = line.data() + open + 1;
-						if (std::from_chars(first, line.data() + line.size(), form).ec != std::errc{}) form = -1;
-					}
+					const auto parsed_form = parse_msgstr_plural_index(line, result.errors, line_number);
+					const auto form = parsed_form.value_or(-1);
 
 					if (form == 0) parse_state = parse_po_state::str;
 					else if (form == 1) parse_state = parse_po_state::str1;
@@ -292,7 +337,7 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 
 				if (parse_state == parse_po_state::id && !entry.is_empty() && line[0] != u8'\"')
 				{
-					result.emplace_back(std::move(entry));
+					result.entries.emplace_back(std::move(entry));
 					entry.clear();
 				}
 
@@ -306,17 +351,28 @@ std::vector<po_entry> load_po(const df::file_path lang_file)
 			}
 			catch (std::invalid_argument&)
 			{
-				// Malformed msgstr[N] index: skip the line rather than reject the whole catalog.
+				result.errors.emplace_back(line_number, "Malformed PO entry");
+				parse_state = parse_po_state::ignore;
 			}
 		}
 	}
 
 	if (!entry.is_empty())
 	{
-		result.emplace_back(std::move(entry));
+		result.entries.emplace_back(std::move(entry));
 	}
 
 	return result;
+}
+
+std::vector<po_entry> load_po(const df::file_path lang_file)
+{
+	auto result = load_po_report(lang_file);
+	for (const auto& error : result.errors)
+	{
+		df::log(__FUNCTION__, std::format("{}:{}: {}", lang_file.name(), error.line, error.message));
+	}
+	return std::move(result.entries);
 }
 
 
@@ -494,13 +550,15 @@ void app_text_t::load_lang(const std::string_view lang_file, const std::vector<p
 
 void app_text_t::clear()
 {
-	for (auto&& m : _text_mapping)
+	for (auto&& t : _all_texts)
 	{
-		m.second.get().clear();
+		t.get().clear();
 	}
 
 	for (auto&& p : _all_plurals)
 	{
+		p.get().one.clear();
+		p.get().plural.clear();
 		p.get().extra_forms.store(nullptr, std::memory_order_release);
 	}
 

@@ -47,6 +47,7 @@ struct av_pts_correction;
 struct audio_info_t;
 struct video_info_t;
 struct file_load_result;
+struct load_diagnostic;
 
 // These cannot be forward-declared: an opaque enum declaration is an MSVC extension, and giving
 // them a fixed underlying type here would contradict FFmpeg's own definition.
@@ -59,6 +60,46 @@ extern "C"
 
 using av_packet_ptr = std::shared_ptr<av_packet>;
 using av_frame_ptr = std::shared_ptr<av_frame>;
+
+struct av_nearest_frame_choice
+{
+	bool found = false;
+	bool reached = false;
+	double best_time = 0.0;
+	double best_dist = std::numeric_limits<double>::max();
+
+	bool consider(const double time, const double wanted_time, const double tolerance)
+	{
+		const auto dist = fabs(time - wanted_time);
+		const auto improved = dist < best_dist;
+
+		if (improved)
+		{
+			best_dist = dist;
+			best_time = time;
+			found = true;
+		}
+
+		if (time >= wanted_time || (found && best_dist <= tolerance))
+		{
+			reached = true;
+		}
+
+		return improved;
+	}
+};
+
+inline bool should_drain_delayed_video_frames_at_eof(const av_nearest_frame_choice& choice)
+{
+	return !choice.reached;
+}
+
+inline bool should_use_kept_sequential_frame(const double kept_time, const double decoded_time,
+                                             const double target_time)
+{
+	return !df::equiv(kept_time, decoded_time) &&
+		fabs(kept_time - target_time) <= fabs(decoded_time - target_time);
+}
 
 inline bool is_key(const std::string_view l, const std::string_view r)
 {
@@ -221,7 +262,7 @@ public:
 	// container_sar carries the demuxer's stream aspect ratio, which is the only place an MP4 pasp
 	// box surfaces - FFmpeg never copies it onto the codec parameters or the decoded frame.
 	bool scale_frame(const AVFrame& frame, ui::surface_ptr& surface, sizei max_dim, double time,
-	                 ui::orientation orientation, av_rational container_sar = {});
+	                 ui::orientation orientation, av_rational container_sar = {}, bool preserve_alpha = false);
 };
 
 // Decodes one still image from encoded bytes. This is the path for the formats Diffractor reads but
@@ -230,7 +271,8 @@ public:
 //
 // TGA, SGI, the portable pixmaps and DPX have no signature worth probing, so a caller that knows the
 // file name passes its extension: that is the only thing that can name the format for those.
-ui::surface_ptr av_decode_still(df::cspan data, sizei max_dim, std::string_view extension_hint = {});
+ui::surface_ptr av_decode_still(df::cspan data, sizei max_dim, std::string_view extension_hint = {},
+                                load_diagnostic* diagnostic = nullptr);
 
 
 template <typename T>
@@ -507,6 +549,8 @@ private:
 	// jump. Negative means the position is unknown and the next call must seek. Any seek clears it,
 	// so a decoder shared with another extraction path cannot walk on from somewhere it no longer is.
 	mutable double _sequential_time = -1;
+	mutable av_frame_ptr _sequential_prev;
+	mutable av_frame_ptr _sequential_next;
 
 	av_rational _video_base;
 	av_rational _audio_base;
@@ -539,6 +583,8 @@ private:
 	// once `abandon` fires.
 	bool decode_nearest_frame(ui::surface_ptr& dest_surface, sizei max_dim, double wanted_time, double tolerance,
 	                          df::cancel_token abandon);
+	void clear_sequential_frame_bracket() const;
+	bool scale_sequential_frame(ui::surface_ptr& dest_surface, sizei max_dim, const av_frame& frame) const;
 
 	friend class av_player;
 	friend class av_session;

@@ -23,6 +23,22 @@
 #include "test_runner.h"
 #include "app_util.h"
 
+static void assert_assertion_fails(const std::function<void()>& f, const std::string_view name)
+{
+	auto failed = false;
+
+	try
+	{
+		f();
+	}
+	catch (const test_assert_exception&)
+	{
+		failed = true;
+	}
+
+	assert_equal(true, failed, name);
+}
+
 static void should_complete_result_scope()
 {
 	const auto results = std::make_shared<null_item_results_ui>();
@@ -223,11 +239,47 @@ static void should_follow_the_filesystem_for_path_identity()
 	const auto ft_upper = files::file_type_from_name(upper);
 	assert_equal(true, ft_lower == ft_upper, "file type does not follow path identity");
 
+	const auto accented_acute = root.parent().combine("album-é");
+	const auto accented_grave = root.parent().combine("album-è");
+	assert_equal(false, df::folder_contains(accented_acute.text(), accented_grave.combine("child").text()),
+	             "accented sibling folders are distinct");
+	assert_equal(true, df::folder_contains(accented_acute.text(), accented_acute.combine("child").text()),
+	             "a real child is contained");
+	assert_equal(false, df::folder_contains(root.text(), root.parent().combine("photoshop").text()),
+	             "prefix matches stop at a separator boundary");
+	assert_equal(same, df::folder_contains(root_upper.text(), root.combine("child").text()),
+	             "case aliases follow filesystem identity only");
+
 	// A key held as a string has to answer the same way, or the rename planner disagrees with the
 	// index about whether a destination is occupied.
 	assert_equal(same, df::compare_path_key(lower.pack(), upper.pack()) == 0, "packed key identity");
 	assert_equal(same, df::path_text_starts(root_upper.text(), root.text()), "prefix match identity");
 	assert_equal(true, df::path_text_starts(root.text(), root.text()), "a path contains itself");
+}
+
+static void should_parse_files_directly_under_the_root()
+{
+	const auto root = df::folder_path(df::windows_path_semantics ? "c:\\" : "/");
+	const auto direct_text = df::windows_path_semantics ? "c:\\photo.jpg" : "/photo.jpg";
+	const auto direct = df::file_path(direct_text);
+	const auto combined = root.combine_file("photo.jpg");
+
+	assert_equal(root.text(), direct.folder().text(), "root folder is preserved");
+	assert_equal("photo.jpg", direct.name(), "root child keeps its name");
+	assert_equal(".jpg", direct.extension(), "root child keeps its extension");
+	assert_equal(direct_text, direct.pack(), "root child packs without a trailing folder separator");
+	assert_equal(true, direct == combined, "direct and combined root children are equal");
+	const df::ihash hash;
+	assert_equal(hash(combined), hash(direct), "direct and combined root children hash alike");
+
+	auto reused = root.combine_file("old-name.txt");
+	reused.un_pack(direct_text);
+	assert_equal(root.text(), reused.folder().text(), "reuse refreshes the folder");
+	assert_equal("photo.jpg", reused.name(), "reuse refreshes the name");
+
+	reused.un_pack(std::string(root.text()));
+	assert_equal(root.text(), reused.folder().text(), "folder-only unpack keeps the folder");
+	assert_equal(true, reused.name().is_empty(), "folder-only unpack clears a stale name");
 }
 
 static void should_group_elements_by_folder()
@@ -325,7 +377,7 @@ static void should_cancel_superseded_tokens()
 static void should_calc_HMACSHA1()
 {
 	const auto signature = crypto::hmac_sha1("Jefe", "what do ya want for nothing?");
-	assert_equal("7/zfauXrL6LSdBbV8YTfnCWafHk=", signature, "Signature");
+	assert_equal_strict("7/zfauXrL6LSdBbV8YTfnCWafHk=", signature, "Signature");
 }
 
 static void should_calc_hashes()
@@ -340,20 +392,24 @@ static void should_calc_hashes()
 	const auto crc_data = "hello world"s;
 	const auto crc_result = crypto::crc32c(crc_data.data(), crc_data.size());
 	assert_equal(0xc99465aa, crc_result, "crc32");
+	assert_equal(0xe3069283, crypto::crc32c("123456789"sv), "crc32 standard vector");
 
 	const auto crc_c = ~calc_crc32c_c(crypto::CRCINIT, crc_data.data(), crc_data.size());
 	assert_equal(0xc99465aa, crc_c, "crc32 c");
+	assert_equal(0xe3069283, ~calc_crc32c_c(crypto::CRCINIT, "123456789", 9), "crc32 c standard vector");
 
 	if (platform::crc32_supported)
 	{
 		const auto crc_x86 = ~calc_crc32c_x86(crypto::CRCINIT, crc_data.data(), crc_data.size());
 		assert_equal(0xc99465aa, crc_x86, "crc32 x86");
+		assert_equal(0xe3069283, ~calc_crc32c_x86(crypto::CRCINIT, "123456789", 9), "crc32 x86 standard vector");
 	}
 
 	if (platform::arm_crc32_supported)
 	{
 		const auto crc_neon = ~calc_crc32c_arm(crypto::CRCINIT, crc_data.data(), crc_data.size());
 		assert_equal(0xc99465aa, crc_neon, "crc32 neon");
+		assert_equal(0xe3069283, ~calc_crc32c_arm(crypto::CRCINIT, "123456789", 9), "crc32 arm standard vector");
 	}
 
 	alignas(16) std::array<uint8_t, 96> boundary_data;
@@ -643,6 +699,117 @@ static void should_split()
 	assert_equal("ee ff ", parts2[3], "Split 4");
 	assert_equal("ранку!", parts3[1], "Split 5");
 
+	const auto internal_quote = str::split("Jane O'Brien; Alex", true, str::is_artist_separator);
+	assert_equal(2_z, internal_quote.size(), "internal apostrophe does not merge names");
+	assert_equal("Jane O'Brien", internal_quote[0], "internal apostrophe is preserved");
+	assert_equal(" Alex", internal_quote[1], "separator policy still owns surrounding spaces");
+
+	const auto quoted_separators = str::split("'Jane; O\\'Brien';\"Alex, Pat\";Sam", true,
+	                                          str::is_artist_separator);
+	assert_equal(3_z, quoted_separators.size(), "outer quotes protect separators");
+	assert_equal("Jane; O\\'Brien", quoted_separators[0], "single-quoted separator");
+	assert_equal("Alex, Pat", quoted_separators[1], "double-quoted separator");
+	assert_equal("Sam", quoted_separators[2], "unquoted tail");
+
+	const auto spaced_quote = str::split("Jane; \"Smith; Pat\"", true, str::is_artist_separator);
+	assert_equal(2_z, spaced_quote.size(), "quote after separator whitespace wraps");
+	assert_equal("Smith; Pat", spaced_quote[1], "separator whitespace is outside the wrapping quote");
+
+	const auto quoted_prefix = str::split("\"Weird Al\" Yankovic; Madonna", true, str::is_artist_separator);
+	assert_equal(2_z, quoted_prefix.size(), "quoted prefix does not swallow artist separator");
+	assert_equal("\"Weird Al\" Yankovic", quoted_prefix[0], "quoted prefix stays literal");
+	assert_equal(" Madonna", quoted_prefix[1], "quoted prefix tail splits");
+
+	const auto quote_with_space_before_separator = str::split("\"Doe, Jane\" ; Alex", true, str::is_artist_separator);
+	assert_equal(2_z, quote_with_space_before_separator.size(), "space before separator keeps wrapping quote");
+	assert_equal("Doe, Jane", quote_with_space_before_separator[0], "wrapped token before spaced separator");
+	assert_equal(" Alex", quote_with_space_before_separator[1], "spaced separator tail splits");
+
+	const auto quote_with_trailing_space = str::split("\"Doe, Jane\" ", true, str::is_artist_separator);
+	assert_equal(1_z, quote_with_trailing_space.size(), "trailing whitespace keeps wrapping quote");
+	assert_equal("Doe, Jane", quote_with_trailing_space[0], "trailing whitespace outside quote");
+
+	// A tab separates artists and genres while a space does not; skipping whitespace after a closing
+	// quote must stop at that separator rather than carry on past it.
+	for (const auto& pred : {std::function<bool(char)>(str::is_artist_separator),
+	                         std::function<bool(char)>(str::is_genre_separator)})
+	{
+		const auto quote_space_tab = str::split("\"Doe, Jane\" \tAlex", true, pred);
+		assert_equal(2_z, quote_space_tab.size(), "space then tab after a closing quote ends the token");
+		assert_equal("Doe, Jane", quote_space_tab[0], "quoted token before a space and tab separator");
+		assert_equal("Alex", quote_space_tab[1], "token after a space and tab separator");
+	}
+
+	const auto quoted_first_word = str::split("Jane Doe; 'Bud' Abbott; Lou Costello", true,
+	                                         str::is_artist_separator);
+	assert_equal(3_z, quoted_first_word.size(), "quoted first word does not swallow later separators");
+	assert_equal(" 'Bud' Abbott", quoted_first_word[1], "quoted first word stays literal");
+	assert_equal(" Lou Costello", quoted_first_word[2], "tail after quoted first word splits");
+
+	const auto unmatched_leading_quote = str::split("Alex; 'Til Tuesday; Bob", true, str::is_artist_separator);
+	assert_equal(3_z, unmatched_leading_quote.size(), "unmatched leading quote does not swallow later separators");
+	assert_equal(" 'Til Tuesday", unmatched_leading_quote[1], "unmatched leading quote stays literal");
+	assert_equal(" Bob", unmatched_leading_quote[2], "tail after unmatched quote splits");
+
+	const auto collection_roots = str::split("\"C:\\Photos\"\n\"D:\\\"", true,
+	                                         [](const char c) { return c == '\n' || c == '\r'; });
+	assert_equal(2_z, collection_roots.size(), "quoted collection roots split");
+	assert_equal("C:\\Photos", collection_roots[0], "quoted collection root");
+	assert_equal("D:\\", collection_roots[1], "quoted drive root keeps trailing slash");
+
+	const auto command_line_drive = str::split("\"D:\\\" -no-gpu", true, str::is_white_space);
+	assert_equal(2_z, command_line_drive.size(), "quoted drive-root argument splits from switch");
+	assert_equal("D:\\", command_line_drive[0], "quoted drive-root argument");
+	assert_equal("-no-gpu", command_line_drive[1], "switch after quoted drive-root");
+
+	const auto command_line_trailing_slash = str::split("\"C:\\My Photos\\\" -no-gpu", true, str::is_white_space);
+	assert_equal(2_z, command_line_trailing_slash.size(), "quoted trailing-slash path splits from switch");
+	assert_equal("C:\\My Photos\\", command_line_trailing_slash[0], "quoted trailing-slash path");
+	assert_equal("-no-gpu", command_line_trailing_slash[1], "switch after quoted trailing-slash path");
+
+	std::string long_escaped_artist;
+	constexpr auto escaped_artist_count = 50'000;
+	for (auto i = 0; i < escaped_artist_count; ++i)
+	{
+		if (i != 0) long_escaped_artist += '\\';
+		long_escaped_artist += "'a";
+	}
+	const auto long_escaped_artist_parts = str::split(long_escaped_artist, true, str::is_artist_separator);
+	assert_equal(static_cast<size_t>(escaped_artist_count), long_escaped_artist_parts.size(),
+	             "long escaped-quote artist text splits");
+	assert_equal("'a", long_escaped_artist_parts.front(), "long escaped-quote first token");
+	assert_equal("'a", long_escaped_artist_parts.back(), "long escaped-quote last token");
+	for (const auto part : long_escaped_artist_parts)
+	{
+		assert_equal("'a", part, "long escaped-quote token");
+	}
+
+	// The same chain ending in a quote that cannot close: every token-start quote stops at that final
+	// quote, which the scan caches instead of rescanning to it once per token (linearity was verified
+	// separately; this asserts the tokens).
+	const auto stopped_chain = long_escaped_artist + "'b";
+	const auto stopped_chain_parts = str::split(stopped_chain, true, str::is_artist_separator);
+	assert_equal(static_cast<size_t>(escaped_artist_count), stopped_chain_parts.size(),
+	             "escaped-quote chain ending in an unclosed quote splits");
+	assert_equal("'a", stopped_chain_parts.front(), "stopped chain first token");
+	assert_equal("'a'b", stopped_chain_parts.back(), "stopped chain keeps the unclosed quote literal");
+
+	std::string long_blank = "A;";
+	long_blank.append(200'000, ' ');
+	long_blank += 'B';
+	const auto long_blank_parts = str::split(long_blank, true, str::is_artist_separator);
+	assert_equal(2_z, long_blank_parts.size(), "long whitespace-prefix token splits");
+	assert_equal("A", long_blank_parts[0], "long whitespace first token");
+	assert_equal(200'001_z, long_blank_parts[1].size(), "long whitespace token length");
+	assert_equal(' ', long_blank_parts[1].front(), "long whitespace token starts with space");
+	assert_equal('B', long_blank_parts[1].back(), "long whitespace token keeps tail");
+
+	const auto mixed_quotes = str::split("\"Jane 'JJ' Doe\" 'Alex \"Ace\" Roe' \"unmatched", true);
+	assert_equal(3_z, mixed_quotes.size(), "mixed quote characters split into tokens");
+	assert_equal("Jane 'JJ' Doe", mixed_quotes[0], "inner single quotes preserved");
+	assert_equal("Alex \"Ace\" Roe", mixed_quotes[1], "inner double quotes preserved");
+	assert_equal("\"unmatched", mixed_quotes[2], "unmatched wrapping quote stays literal");
+
 	// Random data checking for crashes
 	std::string_view strings[] = {
 		"In vollen Zügen genießen",
@@ -765,6 +932,8 @@ static void should_match_wildcard()
 	assert_equal(true, str::wildcard_icmp("ДОБРОГО РАНКУ", "*ранку"));
 	assert_equal(true, str::wildcard_icmp("💉💎👦🏻👓⚡", "*💎*"));
 	assert_equal(true, str::wildcard_icmp("💉💎👦🏻👓⚡", "💉*"));
+	assert_equal(true, str::wildcard_icmp("Οδός", "οδ*"));
+	assert_equal(false, str::wildcard_icmp("Οδός", "sd*"));
 }
 
 static void should_detect_wildcard()
@@ -819,6 +988,20 @@ static void should_parse_command_line()
 	cl5.parse("----- --no-gpu");
 	assert_equal(true, cl5.no_gpu, "no_gpu");
 
+	const auto root_path = df::windows_path_semantics
+		                       ? std::string(test_files_folder.text().sv().substr(0, 3))
+		                       : "/"s;
+	command_line_t cl_drive_root;
+	cl_drive_root.parse(std::format("\"{}\" -no-gpu", root_path));
+	assert_equal(true, cl_drive_root.no_gpu, "quoted drive root no_gpu");
+	assert_equal(false, cl_drive_root.folder_path.is_empty(), "quoted drive root folder path");
+
+	const auto trailing_slash = std::string(spaced.text().sv()) + "\\";
+	command_line_t cl_trailing_slash;
+	cl_trailing_slash.parse(std::format("\"{}\" -no-gpu", trailing_slash));
+	assert_equal(true, cl_trailing_slash.no_gpu, "quoted trailing slash no_gpu");
+	assert_equal(false, cl_trailing_slash.folder_path.is_empty(), "quoted trailing slash folder path");
+
 	command_line_t cl6;
 	cl6.parse("-no-gpu -no-indexing");
 	assert_equal(true, cl6.no_gpu, "multiple options no_gpu");
@@ -849,19 +1032,37 @@ static void should_trim_strings()
 
 static void should_format_text()
 {
-	assert_equal("ac-dc", std::format("{2}{0}-{1}{0}", "c", "d", "a"), "order");
-	assert_equal("0.00123", std::format("{}", 0.00123), "double");
-	assert_equal("0.001", std::format("{:.3f}", 0.00123), "double");
-	assert_equal("5.5", std::format("{}", 5.5000), "double");
-	assert_equal("123", std::format("{}", 123), "int");
-	assert_equal("0123", std::format("{:04}", 123), "int");
-	assert_equal(" 123", std::format("{:4}", 123), "int");
-	assert_equal("hex=7B", std::format("hex={:x}", 0x7B), "hex");
-	assert_equal("-test-", std::format("-{}-", "test"), "char*");
-	assert_equal("-test-", std::format("-{}-", std::string("test")), "string");
-	assert_equal("-test-", std::format("-{}-", std::string_view("test")), "string_view");
-	assert_equal("33 {} {test}", std::format("{} {{}} {{test}}", 33), "string_view");
-	assert_equal("22 x 33", std::format("{} x {}", 22, 33), "string_view");
+	assert_equal_strict("ac-dc", std::format("{2}{0}-{1}{0}", "c", "d", "a"), "order");
+	assert_equal_strict("0.00123", std::format("{}", 0.00123), "double");
+	assert_equal_strict("0.001", std::format("{:.3f}", 0.00123), "double");
+	assert_equal_strict("5.5", std::format("{}", 5.5000), "double");
+	assert_equal_strict("123", std::format("{}", 123), "int");
+	assert_equal_strict("0123", std::format("{:04}", 123), "int");
+	assert_equal_strict(" 123", std::format("{:4}", 123), "int");
+	assert_equal_strict("hex=7b", std::format("hex={:x}", 0x7B), "hex");
+	assert_equal_strict("-test-", std::format("-{}-", "test"), "char*");
+	assert_equal_strict("-test-", std::format("-{}-", std::string("test")), "string");
+	assert_equal_strict("-test-", std::format("-{}-", std::string_view("test")), "string_view");
+	assert_equal_strict("33 {} {test}", std::format("{} {{}} {{test}}", 33), "string_view");
+	assert_equal_strict("22 x 33", std::format("{} x {}", 22, 33), "string_view");
+	assert_equal_strict("0", str::to_hex(uint32_t{0}), "zero hex has one digit");
+	assert_equal_strict("10", str::to_hex(uint32_t{0x10}), "interior zero nibble preserved");
+	assert_equal_strict("1001", str::to_hex(uint32_t{0x1001}), "interior zero byte preserved");
+	assert_equal_strict("100000000", str::to_hex(uint64_t{0x100000000ull}), "64-bit scalar width");
+	assert_equal_strict("F0", str::to_hex(uint32_t{0xF0}), "trailing zero nibble preserved");
+	assert_equal(0x1001u, str::hex_to_num(str::to_hex(uint32_t{0x1001})), "scalar hex round-trips");
+	const uint8_t fixed_width[] = {0x00, 0x10};
+	assert_equal_strict("0010", str::to_hex(fixed_width, 2, false, false), "fixed-width hex is unchanged");
+}
+
+static void should_reject_invalid_assertion_inputs()
+{
+	assert_assertion_fails([] { assert_near(1.0, std::numeric_limits<double>::quiet_NaN(), 0.1); },
+	                       "NaN actual is rejected");
+	assert_assertion_fails([] { assert_near(1.0, 1.0, std::numeric_limits<double>::quiet_NaN()); },
+	                       "NaN tolerance is rejected");
+	assert_assertion_fails([] { assert_equal(df::date_t(100), df::date_t(110)); },
+	                       "distinct invalid dates compare by value");
 }
 
 // str::to_string(double) used a 128-byte buffer, and _fcvt_s ends the process - through the CRT's
@@ -912,6 +1113,11 @@ static void should_find_text()
 	const auto cyrillic = str::ifind2("\xd0\xbf\xd1\x80\xd0\xb8\xd0\xb2\xd0\xb5\xd1\x82", "\xd0\xb2\xd0\xb5", 0);
 	assert_equal(true, cyrillic.found, "cyrillic match found");
 	assert_equal(6, static_cast<int>(cyrillic.parts[0].offset), "cyrillic match byte offset");
+
+	assert_equal(true, str::ifind2("Οδός", "οδ", 0).found, "Greek case folds consistently");
+	assert_equal(true, str::ifind2("crème brûlée", "creme brulee", 0).found,
+	             "Latin accent folding remains intentional");
+	assert_equal(false, str::ifind2("Οδός", "sd", 0).found, "Greek omicron is not ASCII s");
 }
 
 static void should_compare_versions()
@@ -1075,6 +1281,53 @@ static void should_save_a_blob_without_truncating_the_destination()
 	assert_equal(1_z, contents.files.size(), "the save leaves only the destination behind");
 }
 
+static std::string replace_file_bytes(const df::file_path path, const std::string_view initial, const int64_t start,
+                                      const int64_t replace, const std::string_view replacement)
+{
+	write_test_file(path, initial);
+	{
+		df::file file(platform::open_file(path, platform::file_open_mode::read_write));
+		assert_equal(true, file.insert(std::bit_cast<const uint8_t*>(replacement.data()),
+		                               static_cast<int64_t>(replacement.size()), start, replace),
+		             "replacement succeeds");
+	}
+	return read_test_file(path);
+}
+
+static void should_replace_bytes_in_files()
+{
+	const auto scratch = _temps.next_folder("file-insert");
+	const auto path = scratch.combine_file("payload.bin");
+
+	assert_equal("0123X789", replace_file_bytes(path, "0123456789", 4, 3, "X"),
+	             "shrinking keeps prefix and tail");
+	assert_equal("0123ABCDE789", replace_file_bytes(path, "0123456789", 4, 3, "ABCDE"),
+	             "growing keeps prefix and tail");
+	assert_equal("0123XYZ789", replace_file_bytes(path, "0123456789", 4, 3, "XYZ"),
+	             "equal-size replacement");
+	assert_equal("X3456789", replace_file_bytes(path, "0123456789", 0, 3, "X"),
+	             "replace at beginning");
+	assert_equal("012345X", replace_file_bytes(path, "0123456789", 6, 4, "X"),
+	             "replace through end");
+	assert_equal("012345X", replace_file_bytes(path, "012345", 6, 0, "X"),
+	             "append with empty tail");
+
+	std::string large;
+	large.reserve(df::sixty_four_k + 32);
+	for (auto i = 0; i < static_cast<int>(df::sixty_four_k) + 32; ++i) large += static_cast<char>('A' + i % 26);
+	const auto large_actual = replace_file_bytes(path, large, 8, 3, "x");
+	auto large_expected = large;
+	large_expected.replace(8, 3, "x");
+	assert_equal(large_expected, large_actual, "shrinking tail crosses a 64 KiB block boundary");
+
+	write_test_file(path, "0123456789");
+	{
+		df::file file(platform::open_file(path, platform::file_open_mode::read_write));
+		assert_equal(false, file.insert(reinterpret_cast<const uint8_t*>("X"), 1, 20, 1), "invalid range fails");
+	}
+	assert_equal("0123456789", read_test_file(path), "failed replacement leaves bytes unchanged");
+}
+
 static void should_map_files()
 {
 	const auto scratch = _temps.next_folder("map-file");
@@ -1124,6 +1377,61 @@ static void should_map_files()
 	assert_equal(true, platform::map_file(empty_path) == nullptr, "an empty file does not map");
 }
 
+static void should_clean_temporary_fixtures()
+{
+	temp_files temps;
+	const auto scratch = temps.next_folder("cleanup");
+	const auto fixed = scratch.combine_file("fixed.txt");
+	write_test_file(fixed, "fixed");
+
+	const auto nested = scratch.combine("nested");
+	platform::create_folder(nested);
+	write_test_file(nested.combine_file("derived.xmp"), "derived");
+
+	const auto tracked = temps.next_path(".jpg");
+	write_test_file(tracked, "tracked");
+	write_test_file(tracked.extension(".xmp"), "sidecar");
+
+	const auto locked = temps.next_path(".bin");
+	write_test_file(locked, "locked");
+	auto locked_handle = platform::open_file(locked, platform::file_open_mode::read);
+	assert_equal(true, locked_handle != nullptr, "locked temp file opened");
+
+#ifdef _WIN32
+	const auto blocked = temps.delete_temps();
+	assert_equal(true, !blocked.empty(), "cleanup reports denied deletion");
+	assert_equal(true, locked.exists(), "denied file remains owned for retry");
+
+	locked_handle.reset();
+	const auto cleaned = temps.delete_temps();
+	assert_equal(0, static_cast<int>(cleaned.size()), "cleanup retry succeeds");
+#else
+	const auto cleaned = temps.delete_temps();
+	assert_equal(0, static_cast<int>(cleaned.size()), "POSIX cleanup can unlink an open file");
+	locked_handle.reset();
+#endif
+	assert_equal(false, scratch.exists(), "owned subfolder is removed");
+	assert_equal(false, tracked.exists(), "tracked file is removed");
+	assert_equal(false, tracked.extension(".xmp").exists(), "derived sidecar is removed");
+
+	const auto preexisting = _temps.next_folder("cleanup-preexisting");
+	const auto unrelated = preexisting.combine_file("unrelated.txt");
+	write_test_file(unrelated, "unrelated");
+	const auto unrelated_child = preexisting.combine("unrelated-child");
+	platform::create_folder(unrelated_child);
+	write_test_file(unrelated_child.combine_file("unrelated.txt"), "unrelated child");
+
+	temp_files unowned(preexisting);
+	const auto registered = unowned.next_path(".tmp");
+	write_test_file(registered, "registered");
+
+	const auto unowned_cleanup = unowned.delete_temps();
+	assert_equal(0, static_cast<int>(unowned_cleanup.size()), "unowned cleanup reports registered-file success");
+	assert_equal(false, registered.exists(), "registered file in pre-existing folder is removed");
+	assert_equal(true, unrelated.exists(), "pre-existing folder file is preserved");
+	assert_equal(true, unrelated_child.exists(), "pre-existing child folder is preserved");
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Issue #203 - Search broken with Russian letter "Х" (U+0425)
 // Cyrillic characters must be properly case-folded for case-insensitive comparison.
@@ -1163,6 +1471,15 @@ static void should_handle_cyrillic_case_folding()
 	// москва = U+043C U+043E U+0441 U+043A U+0432 U+0430
 	assert_equal(true, str::icmp("\u041c\u041e\u0421\u041a\u0412\u0410",
 	                             "\u043c\u043e\u0441\u043a\u0432\u0430") == 0, "MOSKVA icmp");
+
+	// Greek omicron must case-fold as Greek, not as an unrelated ASCII letter.
+	assert_equal(0, str::icmp("\u039f", "\u03bf"), "Greek omicron case-folds");
+	assert_equal(false, str::icmp("\u039f", "s") == 0, "Greek omicron is not ASCII s");
+	assert_equal(false, str::icmp("\u03bf", "y") == 0, "Greek omicron is not ASCII y");
+	assert_equal(str::normalize_for_compare(0x03bf), str::normalize_for_compare(0x039f),
+	             "Greek omicron normalizes consistently");
+	assert_equal(false, str::normalize_for_compare(0x039f) == 's', "Greek omicron does not normalize to ASCII s");
+	assert_equal(false, str::normalize_for_compare(0x03bf) == 'y', "Greek omicron does not normalize to ASCII y");
 
 	// Latin Extended pairs
 	assert_equal(0, str::icmp("\u00C0", "\u00E0"), "A-grave icmp");
@@ -1239,6 +1556,66 @@ static void should_query_kdtree_bounds()
 	std::vector<kd_coordinates_t> all;
 	tree.find_in_bounds(pts, -1.0f, -1.0f, 100.0f, 100.0f, all);
 	assert_equal(100, static_cast<int>(all.size()), "full window", "kd bounds");
+}
+
+static void should_rotate_points()
+{
+	constexpr auto quarter_turn = 3.14159265358979323846 / 2.0;
+	const pointd origin(0, 0);
+	const pointd point(2, 3);
+
+	const auto zero = point.rotate(0.0, origin);
+	assert_equal(true, df::equiv(point.X, zero.X) && df::equiv(point.Y, zero.Y), "zero-angle identity");
+
+	const auto quarter = pointd(2, 0).rotate(quarter_turn, origin);
+	assert_equal(true, df::equiv(0.0, quarter.X) && df::equiv(2.0, quarter.Y), "quarter turn");
+
+	const pointd center(10, 10);
+	const auto full = point.rotate(quarter_turn * 4.0, center);
+	assert_equal(true, std::abs(point.X - full.X) < 1e-9 && std::abs(point.Y - full.Y) < 1e-9,
+	             "full turn around center");
+
+	const auto rotated = point.rotate(quarter_turn, center);
+	const auto restored = rotated.rotate(-quarter_turn, center);
+	assert_equal(true, std::abs(point.X - restored.X) < 1e-9 && std::abs(point.Y - restored.Y) < 1e-9,
+	             "inverse rotation");
+
+	const auto dx_before = point.X - center.X;
+	const auto dy_before = point.Y - center.Y;
+	const auto dx_after = rotated.X - center.X;
+	const auto dy_after = rotated.Y - center.Y;
+	assert_equal(true, df::equiv(dx_before * dx_before + dy_before * dy_before,
+	                             dx_after * dx_after + dy_after * dy_after), "distance preserved");
+}
+
+static void should_intersect_rectangle_bounds()
+{
+	rectd out;
+	assert_equal(true, rectd::intersect(out, rectd(0, 0, 2, 2), rectd(1, 1, 2, 2)), "overlap intersects");
+	assert_equal(true, df::equiv(1.0, out.X) && df::equiv(1.0, out.Y) &&
+	             df::equiv(1.0, out.Width) && df::equiv(1.0, out.Height), "overlap result");
+
+	assert_equal(false, rectd::intersect(out, rectd(0, 0, 1, 1), rectd(2, 2, 1, 1)), "separated");
+	assert_equal(true, out.is_empty(), "separated result is empty");
+
+	assert_equal(true, rectd::intersect(out, rectd(0, 0, 4, 4), rectd(1, 1, 1, 1)), "contained");
+	assert_equal(true, df::equiv(1.0, out.X) && df::equiv(1.0, out.Y) &&
+	             df::equiv(1.0, out.Width) && df::equiv(1.0, out.Height), "contained result");
+
+	assert_equal(false, rectd::intersect(out, rectd(0, 0, 1, 1), rectd(1, 0, 1, 1)), "touching edge");
+	assert_equal(false, rectd::intersect(out, rectd(0, 0, 0, 1), rectd(0, 0, 1, 1)), "zero-size input");
+
+	rectd symmetric;
+	assert_equal(true, rectd::intersect(out, rectd(1, 1, 3, 2), rectd(2, 0, 1, 4)), "asymmetric overlap");
+	assert_equal(true, rectd::intersect(symmetric, rectd(2, 0, 1, 4), rectd(1, 1, 3, 2)), "symmetric overlap");
+	assert_equal(true, df::equiv(out.X, symmetric.X) && df::equiv(out.Y, symmetric.Y) &&
+	             df::equiv(out.Width, symmetric.Width) && df::equiv(out.Height, symmetric.Height),
+	             "intersection is symmetric");
+
+	rectd aliased(0, 0, 2, 2);
+	assert_equal(true, aliased.intersect(rectd(1, 1, 2, 2)), "aliased output");
+	assert_equal(true, df::equiv(1.0, aliased.X) && df::equiv(1.0, aliased.Y) &&
+	             df::equiv(1.0, aliased.Width) && df::equiv(1.0, aliased.Height), "aliased result");
 }
 
 static void should_find_the_closest_kdtree_point()
@@ -1393,10 +1770,10 @@ static void should_bucket_performance_latency()
 // differs per remainder.
 static void should_round_trip_base64()
 {
-	assert_equal("", base64_encode(""sv), "empty encodes to empty");
-	assert_equal("TQ==", base64_encode("M"sv), "one byte pads twice");
-	assert_equal("TWE=", base64_encode("Ma"sv), "two bytes pad once");
-	assert_equal("TWFu", base64_encode("Man"sv), "three bytes need no padding");
+	assert_equal_strict("", base64_encode(""sv), "empty encodes to empty");
+	assert_equal_strict("TQ==", base64_encode("M"sv), "one byte pads twice");
+	assert_equal_strict("TWE=", base64_encode("Ma"sv), "two bytes pad once");
+	assert_equal_strict("TWFu", base64_encode("Man"sv), "three bytes need no padding");
 
 	for (auto length = 0u; length < 64u; ++length)
 	{
@@ -1444,7 +1821,30 @@ static void should_rank_the_most_common_values()
 	assert_equal("alpha", all[0], "sorted by name when nothing is dropped");
 
 	assert_equal(0, static_cast<int>(top_map(counts, 0).size()), "a zero limit returns nothing");
+	assert_equal(0, static_cast<int>(top_map(counts, -1).size()), "a negative limit returns nothing");
 	assert_equal(0, static_cast<int>(top_map({}, 5).size()), "no counts returns nothing");
+
+	df::string_counts tied;
+	std::vector<std::string> tied_names;
+	tied_names.reserve(203);
+	for (auto i = 0; i < 200; ++i)
+	{
+		tied_names.emplace_back(std::format("value-{:03}", i));
+		tied[tied_names.back()] = i;
+	}
+	tied_names.emplace_back("tie-a");
+	tied[tied_names.back()] = 250;
+	tied_names.emplace_back("tie-b");
+	tied[tied_names.back()] = 250;
+	tied_names.emplace_back("tie-c");
+	tied[tied_names.back()] = 250;
+	const auto top_five = top_map(tied, 5);
+	assert_equal(5, static_cast<int>(top_five.size()), "large candidate set is limited");
+	assert_equal("tie-a", top_five[0], "ties are retained by name");
+	assert_equal("tie-b", top_five[1], "second tie retained by name");
+	assert_equal("tie-c", top_five[2], "third tie retained by name");
+	assert_equal("value-198", top_five[3], "next non-tie retained");
+	assert_equal("value-199", top_five[4], "highest non-tie retained");
 }
 
 void register_util_tests(view_state& state, test_registry& tests)
@@ -1456,10 +1856,14 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should cancel superseded tokens"s, should_cancel_superseded_tokens);
 	tests.add("Should group elements by folder"s, should_group_elements_by_folder);
 	tests.add("Should follow the filesystem for path identity"s, should_follow_the_filesystem_for_path_identity);
+	// SRC-004 - direct children of the Linux root were parsed as folder-only paths.
+	tests.add("Should parse root child paths"s, should_parse_files_directly_under_the_root);
 	tests.add("Should report file presence"s, should_report_file_presence);
 	tests.add("Should map files"s, should_map_files);
+	tests.add("Should clean temporary fixtures"s, should_clean_temporary_fixtures);
 	tests.add("Should save a blob without truncating the destination"s,
 	          should_save_a_blob_without_truncating_the_destination);
+	tests.add("Should replace bytes in files"s, should_replace_bytes_in_files);
 	tests.add("Should intern strings"s, should_intern_strings);
 	tests.add("Should round-trip base64"s, should_round_trip_base64);
 	tests.add("Should rank the most common values"s, should_rank_the_most_common_values);
@@ -1468,6 +1872,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should calc perceptual hashes"s, should_calc_perceptual_hashes);
 	tests.add("Should recognise the same picture"s, should_recognise_the_same_picture);
 	tests.add("Should recognise a rotated picture"s, should_recognise_a_rotated_picture);
+	tests.add("Should rotate points"s, should_rotate_points);
 	tests.add("Should convert Utf8"s, should_convert_utf8);
 	tests.add("Should split"s, should_split);
 	tests.add("Should split genre"s, should_split_genre);
@@ -1479,6 +1884,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should parse command line"s, should_parse_command_line);
 	tests.add("Should trim strings"s, should_trim_strings);
 	tests.add("Should format text"s, should_format_text);
+	tests.add("Should reject invalid assertion inputs"s, should_reject_invalid_assertion_inputs);
 	tests.add("Should format a double of any magnitude"s, should_format_a_double_of_any_magnitude);
 	tests.add("Should find text"s, should_find_text);
 
@@ -1497,6 +1903,7 @@ void register_util_tests(view_state& state, test_registry& tests)
 	// kd-tree
 	//
 	tests.add("Should query kd-tree bounds"s, should_query_kdtree_bounds);
+	tests.add("Should intersect rectangle bounds"s, should_intersect_rectangle_bounds);
 	tests.add("Should find the closest kd-tree point"s, should_find_the_closest_kdtree_point);
 	tests.add("Should weigh longitude by latitude when finding the closest"s,
 	          should_weigh_longitude_by_latitude_when_finding_the_closest);

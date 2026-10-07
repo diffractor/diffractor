@@ -7,8 +7,9 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Tests for the Movie document (model_movie) -- the derived output geometry, transition
-// and duration arithmetic, timeline edits and undo, the OpenTimelineIO project file, and the
-// Windows Live Movie Maker reader. docs/movie.md owns the behaviour.
+// and duration arithmetic, timeline edits and undo, what entering Movie does with the timeline it
+// holds, the OpenTimelineIO project file, and the Windows Live Movie Maker reader. docs/movie.md
+// owns the behaviour.
 
 #include "pch.h"
 #include "test.h"
@@ -384,6 +385,13 @@ static void should_select_and_move_movie_clips()
 	project.move_selection(0);
 	assert_equal(before, project.can_undo(), "a block dropped where it already is changes nothing");
 
+	movie_project no_history;
+	no_history.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30), make_video("b.mp4", 10, {1920, 1080}, 30)});
+	no_history.mark_seeded();
+	no_history.select(0, false, false);
+	no_history.move_selection(0);
+	assert_equal(false, no_history.can_undo(), "a no-op move consumes no undo step from an empty history");
+
 	project.select(1, false, false);
 	project.select(2, true, false);
 	project.remove_selection();
@@ -569,6 +577,13 @@ static void should_round_trip_a_movie_project()
 	             "a same-root sibling source is stored relative");
 	assert_equal(sibling_path.pack(), read_otio(sibling_json, project_folder).clips[0].path.pack(),
 	             "and the sibling relative path resolves back");
+
+	const auto empty_json = write_otio({}, settings, movie_test_folder());
+	const auto empty_read = read_otio(empty_json, movie_test_folder());
+	assert_equal(true, static_cast<bool>(empty_read), "an empty Diffractor project is a valid project");
+	assert_equal(0_z, empty_read.clips.size(), "with no clips");
+	assert_equal(true, empty_read.settings.transition == movie_transition::crossfade,
+	             "and it keeps the saved settings");
 }
 
 // A '%' went into the project as it was and came back through the reader's percent decoding, so
@@ -739,55 +754,188 @@ static void should_import_a_movie_maker_project()
 	             "a project with no media is refused");
 }
 
-// Re-entering Movie with a different selection must replace a timeline that is still exactly what
-// the last selection produced, and must leave an edited one alone. The view decides that from the
-// seed and the modified flag, so this is what those two have to mean.
+// A timeline built from a selection is not an edit the user made: it has nothing to save and nothing
+// to undo, and the first change they make is what leaving Movie has to ask about.
 static void should_tell_a_seeded_timeline_from_an_edited_one()
 {
-	const std::vector<df::file_path> seed{movie_test_path("a.mp4"), movie_test_path("b.mp4")};
-
 	movie_project project;
-	project.append(make_video("a.mp4", 10, {1920, 1080}, 30));
-	project.append(make_video("b.mp4", 10, {1920, 1080}, 30));
-	project.mark_seeded(seed);
+	project.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30), make_video("b.mp4", 10, {1920, 1080}, 30)});
+	project.mark_seeded();
 
 	assert_equal(false, project.is_modified(), "seeding is not an edit the user made");
 	assert_equal(false, project.can_undo(), "and there is nothing before a seed to undo to");
-	assert_equal(seed.size(), project.seeded_from().size(), "the seed is what the timeline was built from");
-	assert_equal(true, seed == project.seeded_from(), "and it is that selection exactly");
 
 	project.trim(0, 1.0, 5.0);
-	assert_equal(true, project.is_modified(), "a trim is an edit, so the timeline is now a document");
+	assert_equal(true, project.is_modified(), "a trim is an edit, so the timeline now holds unsaved work");
 
-	// A project file is not a seed: re-entering with any selection must leave it alone.
+	project.undo();
+	assert_equal(false, project.is_modified(), "undoing back to the seed leaves nothing to lose");
+
 	project.reset({make_video("c.mp4", 10, {1920, 1080}, 30)}, {}, movie_test_path("p.otio"));
 	assert_equal(false, project.is_modified(), "a freshly opened project is unmodified");
-	assert_equal(true, project.seeded_from().empty(), "but it came from no selection, so it is never replaced");
 }
 
-// Saving is what turns a timeline into a document. A seeded one that has been written to a file is
-// no longer a view of the selection that produced it, and while it still carried that seed - and
-// saving cleared the modified flag - re-entering Movie with a different selection read it as an
-// untouched seed and replaced the file the user had just saved.
-static void should_treat_a_saved_seed_as_a_document()
+// Re-entering Movie with five videos selected showed the timeline from the first visit, because an
+// edited timeline was kept and never asked about until the application closed. Leaving now settles
+// unsaved work, so the selection decides what entering shows.
+static void should_decide_what_entering_movie_does()
 {
-	const std::vector<df::file_path> seed{movie_test_path("a.mp4"), movie_test_path("b.mp4")};
+	const std::vector first{movie_test_path("a.mp4"), movie_test_path("b.mp4")};
+	const std::vector second{movie_test_path("c.mp4"), movie_test_path("d.mp4"), movie_test_path("e.mp4")};
+	const std::vector<df::file_path> none;
 
 	movie_project project;
-	project.append(make_video("a.mp4", 10, {1920, 1080}, 30));
-	project.append(make_video("b.mp4", 10, {1920, 1080}, 30));
-	project.mark_seeded(seed);
+	assert_equal(true, decide_movie_entry(project, first, none) == movie_entry::seed,
+	             "an empty timeline is built from the selection");
+	assert_equal(true, decide_movie_entry(project, none, first) == movie_entry::seed,
+	             "and stays empty when nothing is selected");
 
-	// What the view asks: unmodified and seeded from something means it is still that selection.
-	assert_equal(true, !project.is_modified() && !project.seeded_from().empty(),
-	             "before it is saved it is still a view of the selection");
+	project.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30), make_video("b.mp4", 10, {1920, 1080}, 30)});
+	project.mark_seeded();
 
+	assert_equal(true, decide_movie_entry(project, first, first) == movie_entry::resume,
+	             "the same selection returns to the timeline left behind");
+	assert_equal(true, decide_movie_entry(project, none, first) == movie_entry::resume,
+	             "so does entering with no photo or video selected");
+	assert_equal(true, decide_movie_entry(project, second, first) == movie_entry::seed,
+	             "a different selection starts a new timeline");
+
+	// A saved timeline is the work the user kept, so the selection that made it returns to it - and
+	// it is on disk, so another selection can replace it without losing anything.
+	project.trim(0, 1, 5);
 	project.mark_saved(movie_test_path("holiday.otio"), project.revision());
+	assert_equal(true, decide_movie_entry(project, first, first) == movie_entry::resume,
+	             "the selection that made a saved timeline returns to it, trims and all");
+	assert_equal(true, decide_movie_entry(project, second, first) == movie_entry::seed,
+	             "and a different selection replaces it");
 
-	assert_equal(true, project.seeded_from().empty(), "saving leaves no seed behind");
-	assert_equal(false, !project.is_modified() && !project.seeded_from().empty(),
-	             "so a saved timeline is never read as an untouched seed");
-	assert_equal(false, project.is_modified(), "and saving still settles the modified flag");
+	// A project opened in Movie answers to the selection the timeline it replaced was built from.
+	project.reset({make_video("p.mp4", 10, {1920, 1080}, 30)}, {}, movie_test_path("p.otio"));
+	assert_equal(true, decide_movie_entry(project, first, first) == movie_entry::resume,
+	             "an opened project is returned to while the selection is unchanged");
+
+	// Leaving asks about unsaved work, so a timeline still holding some got here another way and
+	// replacing it would lose work nobody was asked about.
+	project.trim(0, 2, 5);
+	assert_equal(true, decide_movie_entry(project, second, first) == movie_entry::resume,
+	             "a timeline holding unsaved work is never replaced");
+
+	project.select_all();
+	project.remove_selection();
+	assert_equal(true, project.is_empty(), "removing every clip can leave an edited empty timeline");
+	assert_equal(true, project.is_modified(), "that empty timeline is still unsaved work");
+	assert_equal(true, decide_movie_entry(project, second, first) == movie_entry::resume,
+	             "so entering again must not reseed over it silently");
+}
+
+// The panel's native controls report every notification they raise, including the echo of a value
+// the view wrote, and a trim handle can be pressed and let go without moving. None of those is an
+// edit: before this, any of them cost an undo step and made leaving ask about unsaved work.
+static void should_not_count_a_no_op_as_an_edit()
+{
+	movie_project project;
+	project.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30), make_photo("b.jpg", 4, {4000, 3000})});
+	project.mark_seeded();
+
+	project.settings(project.settings());
+	assert_equal(false, project.can_undo(), "settings set to what they already are are not an edit");
+
+	project.trim(0, 0, 10);
+	assert_equal(false, project.can_undo(), "a trim to the range already kept is not an edit");
+
+	project.replace(1, project.clips()[1]);
+	assert_equal(false, project.can_undo(), "replacing a clip with itself is not an edit");
+
+	project.replace_many({{0, project.clips()[0]}, {1, project.clips()[1]}});
+	assert_equal(false, project.can_undo(), "nor is relinking every clip to where it already is");
+	assert_equal(false, project.is_modified(), "so the timeline holds nothing to save");
+
+	project.trim(1, 0, 4);
+	assert_equal(true, project.can_undo(), "a photo given its own length, even its current one, is an edit");
+	assert_equal(false, project.clips()[1].photo_duration_is_default, "because it stops following the default");
+
+	auto settings = project.settings();
+	settings.fade_in = !settings.fade_in;
+	project.settings(settings);
+	project.settings(settings);
+	project.undo();
+	assert_equal(true, settings.fade_in != project.settings().fade_in,
+	             "a setting reported twice is one edit, so one undo takes it back");
+}
+
+// Undo returns to the state last saved, seeded or opened, and from there leaving has nothing to ask.
+// Past that point, or once the history that led back to it is gone, the timeline is a change again.
+static void should_undo_back_to_an_unmodified_timeline()
+{
+	movie_project project;
+	project.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30), make_video("b.mp4", 10, {1920, 1080}, 30)});
+	project.mark_seeded();
+
+	project.trim(0, 1, 9);
+	project.mark_saved(movie_test_path("movie.otio"), project.revision());
+	assert_equal(false, project.is_modified(), "a save settles the timeline");
+
+	project.trim(0, 2, 8);
+	assert_equal(true, project.is_modified(), "an edit after the save is unsaved work");
+	project.undo();
+	assert_equal(false, project.is_modified(), "undoing it returns to what was saved");
+	project.undo();
+	assert_equal(true, project.is_modified(), "undoing past the save is a change from what is on disk");
+
+	// An edit made after undoing past the save replaces the history that led back to it, so the depth
+	// the save stood at now holds something else.
+	project.trim(1, 3, 7);
+	project.trim(1, 4, 6);
+	project.undo();
+	assert_equal(true, project.is_modified(), "the depth the save stood at no longer holds what was saved");
+
+	// A save overtaken by an edit wrote a state no undo depth stands for.
+	movie_project overtaken;
+	overtaken.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30)});
+	overtaken.mark_seeded();
+	const auto stale = overtaken.revision();
+	overtaken.trim(0, 1, 9);
+	overtaken.mark_saved(movie_test_path("movie.otio"), stale);
+	overtaken.undo();
+	assert_equal(true, overtaken.is_modified(), "an overtaken save leaves the timeline needing another");
+
+	// The bounded stack can drop the clean snapshot itself.
+	movie_project deep;
+	deep.insert_many(0, {make_video("a.mp4", 100, {1920, 1080}, 30)});
+	deep.mark_seeded();
+
+	for (size_t i = 0; i <= movie_project::max_undo; ++i)
+	{
+		deep.trim(0, static_cast<double>(i % 50) + 1, 99);
+	}
+
+	while (deep.can_undo()) deep.undo();
+	assert_equal(true, deep.is_modified(), "a clean state that fell off the stack is not claimed after undo");
+}
+
+// One Add or one drop of several files is one action, so one undo takes all of it back.
+static void should_add_several_clips_as_one_edit()
+{
+	movie_project project;
+	project.append(make_video("a.mp4", 10, {1920, 1080}, 30));
+	project.mark_seeded();
+
+	project.insert_many(1, {
+		                    make_video("b.mp4", 10, {1920, 1080}, 30), make_photo("c.jpg", 4, {4000, 3000}),
+		                    make_video("d.mp4", 10, {1920, 1080}, 30)
+	                    });
+
+	assert_equal(4, static_cast<int>(project.size()), "every clip was inserted");
+	assert_equal("b.mp4", project.clips()[1].path.name().sv(), "at the drop point, in order");
+	assert_equal("d.mp4", project.clips()[3].path.name().sv(), "with the last after the others");
+	assert_equal(1, static_cast<int>(project.current()), "focus lands on the first clip inserted");
+
+	project.undo();
+	assert_equal(1, static_cast<int>(project.size()), "one undo takes the whole insertion back");
+	assert_equal(false, project.can_undo(), "as one step");
+
+	project.insert_many(0, {});
+	assert_equal(false, project.can_undo(), "inserting nothing is not an edit");
 }
 
 // A clip nobody has looked for yet and a clip that has been looked for and is gone are one state in
@@ -921,17 +1069,27 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	//
 	tests.add("Should edit the movie timeline"s, should_edit_the_movie_timeline);
 	tests.add("Should render only a resolved movie"s, should_render_only_a_resolved_movie);
+	// TEST-013 - a no-op movie move must not consume an undo step.
 	tests.add("Should select and move movie clips"s, should_select_and_move_movie_clips);
 	tests.add("Should trim movie clips"s, should_trim_movie_clips);
 	tests.add("Should tell a seeded movie timeline from an edited one"s,
 	          should_tell_a_seeded_timeline_from_an_edited_one);
-	tests.add("Should treat a saved movie seed as a document"s, should_treat_a_saved_seed_as_a_document);
+	tests.add("Should not count a movie no-op as an edit"s, should_not_count_a_no_op_as_an_edit);
+	tests.add("Should undo back to an unmodified movie timeline"s, should_undo_back_to_an_unmodified_timeline);
+	tests.add("Should add several movie clips as one edit"s, should_add_several_clips_as_one_edit);
 	tests.add("Should tell an unprobed movie clip from a lost one"s,
 	          should_tell_an_unprobed_clip_from_a_lost_one);
 
 	//
+	// Entering Movie
+	//
+	// VIEW-015 - an edited empty Movie document is still unsaved work.
+	tests.add("Should decide what entering movie does"s, should_decide_what_entering_movie_does);
+
+	//
 	// The project file
 	//
+	// VIEW-015 - Save/Open support a valid empty Movie project.
 	tests.add("Should round trip a movie project"s, should_round_trip_a_movie_project);
 	tests.add("Should round trip percent signs in clip paths"s, should_round_trip_percent_signs_in_clip_paths);
 	tests.add("Should bound movie project durations"s, should_bound_movie_project_durations);

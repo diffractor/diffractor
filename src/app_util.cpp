@@ -24,6 +24,10 @@
 
 command_line_t command_line;
 
+std::function<void(df::file_path path)> test_before_import_rollback_cleanup;
+std::function<std::optional<platform::file_op_result>(df::file_path destination)>
+test_import_sidecar_write_override;
+
 crash_files_db& crash_files()
 {
 	static crash_files_db instance(df::probe_data_file("diffractor-files-that-crash.txt"),
@@ -194,6 +198,10 @@ void view_state::modify_items(const df::results_ptr& results, const df::item_ele
 
 				            if (!update_result.success())
 				            {
+					            if (failed_write_needs_forced_rescan(update_result))
+					            {
+						            needs_force.emplace_back(request.scan);
+					            }
 					            message = update_result.format_error();
 					            break;
 				            }
@@ -276,6 +284,20 @@ static platform::file_op_result move_or_copy(const df::file_path source_path, co
 	return is_move
 		       ? platform::move_file(source_path, dest_path, fail_if_exists)
 		       : platform::copy_file(source_path, dest_path, fail_if_exists, false);
+}
+
+static platform::file_op_result delete_temp_file(const df::file_path path)
+{
+	if (path.is_empty()) return {platform::file_op_result_code::OK};
+	if (!path.exists()) return {platform::file_op_result_code::OK};
+
+	platform::make_file_writable(path);
+	const auto result = platform::delete_file(path);
+	if (result.failed())
+	{
+		df::log(__FUNCTION__, std::format("could not delete temporary file {}; {}", path.str(), result.format_error()));
+	}
+	return result;
 }
 
 static df::file_path rename_destination(const rename_source& item, const std::string_view name)
@@ -903,19 +925,78 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 				continue;
 			}
 
-			// Sidecars are written before the file they describe and undone in reverse if anything in the
-			// group fails, so the group either arrives whole or is left entirely at the source. A move
-			// always undoes: the destination it replaced is gone either way, and putting the sidecar
-			// back is what leaves the group whole. A copy that replaced an existing destination stays
-			// where it is - deleting it would leave that path empty rather than restoring the user's
-			// file, which the copy already consumed.
-			auto undo_sidecar = [&](const std::pair<df::file_path, df::file_path>& moved)
+			struct sidecar_undo
 			{
-				if (options.is_move) move_or_copy(moved.second, moved.first, true, false);
-				else platform::delete_file(moved.second);
+				df::file_path source;
+				df::file_path destination;
+				df::file_path rollback;
+				bool moved = false;
 			};
 
-			std::vector<std::pair<df::file_path, df::file_path>> moved_sidecars;
+			// Sidecars are written before the file they describe and undone in reverse if anything in the
+			// group fails, so the group either arrives whole or is left entirely at the source. Replaced
+			// destination sidecars keep a bounded rollback copy because deleting or moving back the new
+			// sidecar would otherwise leave the reviewed destination with the wrong metadata.
+			auto undo_sidecar = [&](const sidecar_undo& undo)
+			{
+				write_folders.emplace(undo.source.folder());
+				write_folders.emplace(undo.destination.folder());
+
+				platform::file_op_result undo_result{platform::file_op_result_code::OK, {}, {}};
+				if (!undo.rollback.is_empty())
+				{
+					if (undo.moved)
+					{
+						undo_result = move_or_copy(undo.destination, undo.source, true, false);
+						if (undo_result.failed())
+						{
+							df::log(__FUNCTION__,
+							        std::format(
+								        "could not restore import sidecar {}; replacement retained as {}; original retained as {}",
+								        undo.source.str(), undo.destination.str(), undo.rollback.str()));
+							return undo_result;
+						}
+					}
+
+					platform::make_file_writable(undo.destination);
+					undo_result = platform::replace_file(undo.destination, undo.rollback, false);
+					if (undo_result.failed())
+					{
+						df::log(__FUNCTION__, std::format("could not restore import sidecar {}; original retained as {}",
+						                                  undo.destination.str(), undo.rollback.str()));
+					}
+				}
+				else if (undo.moved)
+				{
+					undo_result = move_or_copy(undo.destination, undo.source, true, false);
+				}
+				else
+				{
+					undo_result = delete_temp_file(undo.destination);
+				}
+
+				return undo_result;
+			};
+			const auto restore_replaced_sidecar_if_changed = [&](const sidecar_undo& undo,
+			                                                     const platform::file_attributes_t& reviewed)
+			{
+				if (undo.rollback.is_empty() ||
+					unchanged_since_analysis(undo.destination, reviewed.modified, reviewed.size))
+				{
+					return delete_temp_file(undo.rollback);
+				}
+
+				platform::make_file_writable(undo.destination);
+				const auto restore_result = platform::replace_file(undo.destination, undo.rollback, false);
+				if (restore_result.failed())
+				{
+					df::log(__FUNCTION__, std::format("could not restore import sidecar {}; original retained as {}",
+					                                  undo.destination.str(), undo.rollback.str()));
+				}
+				return restore_result;
+			};
+
+			std::vector<sidecar_undo> moved_sidecars;
 			auto move_or_copy_result = platform::file_op_result{platform::file_op_result_code::OK, {}, {}};
 
 			for (const auto& sidecar : i.sidecars)
@@ -923,11 +1004,38 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 				// The same rule the primary takes: only a destination the review actually saw is a
 				// reviewed replacement, so anything that appeared since has to stop the write.
 				const auto sidecar_fail_if_exists = fail_if_exists || !sidecar.destination_fi.exists();
+				sidecar_undo undo{sidecar.source, sidecar.destination};
+
+				if (!sidecar_fail_if_exists)
+				{
+					undo.rollback = platform::temp_file(sidecar.destination.extension(), sidecar.destination.folder());
+					move_or_copy_result = platform::copy_file(sidecar.destination, undo.rollback, true, false);
+					if (move_or_copy_result.failed())
+					{
+						delete_temp_file(undo.rollback);
+						break;
+					}
+				}
+
 				move_or_copy_result = move_or_copy(sidecar.source, sidecar.destination, options.is_move,
 				                                   sidecar_fail_if_exists);
-				if (move_or_copy_result.failed()) break;
-				if (sidecar_fail_if_exists || options.is_move)
-					moved_sidecars.emplace_back(sidecar.source, sidecar.destination);
+				if (move_or_copy_result.success() && test_import_sidecar_write_override)
+				{
+					if (auto overridden = test_import_sidecar_write_override(sidecar.destination))
+					{
+						move_or_copy_result = std::move(*overridden);
+					}
+				}
+				if (move_or_copy_result.failed())
+				{
+					if (!undo.rollback.is_empty())
+					{
+						restore_replaced_sidecar_if_changed(undo, sidecar.destination_fi);
+					}
+					break;
+				}
+				undo.moved = options.is_move;
+				moved_sidecars.emplace_back(std::move(undo));
 			}
 
 			if (move_or_copy_result.success())
@@ -937,7 +1045,23 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 
 			if (move_or_copy_result.failed())
 			{
-				for (auto s = moved_sidecars.rbegin(); s != moved_sidecars.rend(); ++s) undo_sidecar(*s);
+				for (auto s = moved_sidecars.rbegin(); s != moved_sidecars.rend(); ++s)
+				{
+					const auto undo_result = undo_sidecar(*s);
+					if (undo_result.failed()) move_or_copy_result = undo_result;
+				}
+			}
+			else
+			{
+				for (const auto& undo : moved_sidecars)
+				{
+					if (!undo.rollback.is_empty())
+					{
+						if (test_before_import_rollback_cleanup) test_before_import_rollback_cleanup(undo.rollback);
+						const auto cleanup_result = delete_temp_file(undo.rollback);
+						(void)cleanup_result;
+					}
+				}
 			}
 
 			if (move_or_copy_result.success())
@@ -1074,17 +1198,27 @@ size_t count_import_colliding_writes(const import_analysis_result& items)
 	return result;
 }
 
-std::vector<import_source> calc_import_sources(const view_state& s)
+std::optional<import_source> calc_import_selected_source(const view_state& s)
 {
-	std::vector<import_source> result;
-
 	if (s.has_selection())
 	{
 		import_source source;
 		source.text = str_format(tt.selected_items_fmt.sv(),
 		                         format_plural_text(tt.title_item_count_fmt, s.selected_items()));
 		source.items = s.selected_items();
-		result.emplace_back(source);
+		return source;
+	}
+
+	return {};
+}
+
+std::vector<import_source> calc_import_sources(std::optional<import_source> selected_source)
+{
+	std::vector<import_source> result;
+
+	if (selected_source)
+	{
+		result.emplace_back(std::move(*selected_source));
 	}
 
 	const auto onedrive_camera_roll = known_path(platform::known_folder::onedrive_camera_roll);
@@ -1163,6 +1297,21 @@ static bool path_contains(const df::folder_path parent, const df::folder_path ch
 	return df::folder_contains(parent.text().sv(), child.text().sv());
 }
 
+static std::optional<std::string> relative_folder(const df::folder_path root, const df::folder_path path)
+{
+	if (root == path) return std::string{};
+	if (!path_contains(root, path)) return {};
+
+	auto result = std::string(path.text().sv().substr(root.text().sv().size()));
+
+	while (!result.empty() && (result.front() == '\\' || result.front() == '/'))
+	{
+		result.erase(result.begin());
+	}
+
+	return result;
+}
+
 std::string sync_invalid_message(const sync_analysis_result& analysis)
 {
 	if (analysis.valid) return {};
@@ -1210,6 +1359,24 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 	// root. A relative folder claimed twice cannot name a local destination for a remote-only file.
 	std::map<std::string, df::folder_path, df::path_key_less> local_roots_by_relative;
 	std::set<std::string, df::path_key_less> ambiguous_relatives;
+	struct relative_root_claim
+	{
+		df::unique_folders roots;
+		df::unique_folders excluded_roots;
+	};
+	std::map<std::string, relative_root_claim, df::path_key_less> local_root_claims_by_relative;
+
+	for (const auto& root : local_roots.folders)
+	{
+		for (const auto& exclude : local_roots.excludes)
+		{
+			const auto relative = relative_folder(root, exclude);
+			if (!relative) continue;
+			auto& claim = local_root_claims_by_relative[*relative];
+			claim.roots.emplace(root);
+			claim.excluded_roots.emplace(root);
+		}
+	}
 
 	std::vector<sync_analysis_folder> local_folders_to_scan;
 
@@ -1264,6 +1431,7 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 			{
 				auto relative = relative_combine(folder.relative, sub_folder.name);
 				auto sub_folder_path = folder.path.combine(sub_folder.name);
+				local_root_claims_by_relative[relative].roots.emplace(folder.root);
 				sync_analysis_folder unknown = {sub_folder_path, folder.root, relative};
 				local_folders_to_scan.emplace_back(unknown);
 
@@ -1284,6 +1452,41 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 	std::vector<sync_analysis_folder> remote_folders_to_scan;
 	remote_folders_to_scan.emplace_back(remote_path, remote_path);
 
+	const auto local_counterpart = [&](const std::string& relative)
+	{
+		const auto found_relative = local_roots_by_relative.find(relative);
+
+		if (found_relative != local_roots_by_relative.end() && !ambiguous_relatives.contains(relative))
+		{
+			return found_relative->second.combine(relative);
+		}
+
+		if (local_roots.folders.size() == 1)
+		{
+			return local_roots.folders.begin()->combine(relative);
+		}
+
+		return df::folder_path{};
+	};
+
+	enum class remote_exclusion_result
+	{
+		scan,
+		skip,
+		ambiguous,
+	};
+
+	const auto remote_exclusion = [&](const std::string& relative)
+	{
+		const auto found = local_root_claims_by_relative.find(relative);
+		if (found == local_root_claims_by_relative.end()) return remote_exclusion_result::scan;
+
+		const auto& claim = found->second;
+		if (claim.roots.size() == claim.excluded_roots.size()) return remote_exclusion_result::skip;
+		if (!claim.excluded_roots.empty()) return remote_exclusion_result::ambiguous;
+		return remote_exclusion_result::scan;
+	};
+
 	while (!remote_folders_to_scan.empty())
 	{
 		if (token.is_cancelled())
@@ -1295,8 +1498,21 @@ sync_analysis_result sync_analysis(const df::index_roots& local_roots, const df:
 
 		const auto folder = remote_folders_to_scan.back();
 		remote_folders_to_scan.pop_back();
+		const auto counterpart = local_counterpart(folder.relative);
+		const auto exclusion = remote_exclusion(folder.relative);
 
-		if (!is_excluded(local_roots, folder.path))
+		if (exclusion == remote_exclusion_result::ambiguous)
+		{
+			result.clear();
+			result.valid = false;
+			result.reason = sync_invalid_reason::ambiguous_local_root;
+			result.invalid_folder = folder.path;
+			return result;
+		}
+
+		if (exclusion != remote_exclusion_result::skip &&
+			!is_excluded(local_roots, folder.path) &&
+			(counterpart.is_empty() || !is_excluded(local_roots, counterpart)))
 		{
 			const auto contents = platform::iterate_file_items(folder.path, setting.show_hidden);
 			if (!contents.success)
@@ -1767,7 +1983,17 @@ icon_index drive_icon(const platform::drive_type d)
 
 bool df::is_excluded(const index_roots& roots, const folder_path path)
 {
-	if (roots.excludes.contains(path)) return true;
+	if (std::ranges::any_of(roots.excludes, [&roots, path](const folder_path exclude)
+	{
+		if (!folder_contains(exclude.text().sv(), path.text().sv())) return false;
+
+		return std::ranges::none_of(roots.folders, [&roots, exclude, path](const folder_path root)
+		{
+			return exclude != root &&
+				folder_contains(exclude.text().sv(), root.text().sv()) &&
+				folder_contains(root.text().sv(), path.text().sv());
+		});
+	})) return true;
 
 	const auto name = path.name();
 

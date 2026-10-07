@@ -21,6 +21,8 @@ class location_cache;
 
 namespace df
 {
+	enum class copy_grade : uint32_t;
+
 	enum class search_result_type
 	{
 		no_match,
@@ -710,6 +712,11 @@ namespace df
 		file_size size = {};
 		file_type_ref ft = nullptr;
 		uint32_t group = 0;
+		uint32_t exact_group = 0;
+		copy_grade duplicate_grade = static_cast<copy_grade>(0);
+		bool duplicate_crowded = false;
+		crypto::phash_rotations phash{};
+		sizei dimensions;
 		uint8_t season = 0;
 		xy8 episode = {0, 0};
 		xy8 disk = {0, 0};
@@ -889,7 +896,20 @@ namespace df
 			{
 				if (s.is_recursive())
 				{
-					s = s.parent();
+					s = item_selector(s.folder(), false, s.wildcard());
+				}
+			}
+
+			_raw.clear();
+		}
+
+		void set_recursive(const bool recursive)
+		{
+			for (auto&& s : _selectors)
+			{
+				if (s.is_recursive() != recursive)
+				{
+					s = item_selector(s.folder(), recursive, s.wildcard());
 				}
 			}
 
@@ -942,7 +962,7 @@ namespace df
 			return *this;
 		}
 
-		search_t& with(const prop::key_ref k, float v)
+		search_t& with(const prop::key_ref k, const double v)
 		{
 			_terms.emplace_back(k, v, search_term_modifier(true));
 			_raw.clear();

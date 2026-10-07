@@ -1239,7 +1239,7 @@ public:
 	               const ui::color c, const ui::color bg)
 	{
 		_clr = c;
-		_highlights.clear();
+		ui::clear_text_highlights(_highlights);
 		_font->draw(_ctx, this, text, bounds, style, c, bg);
 	}
 
@@ -1247,35 +1247,17 @@ public:
 	               const ui::style::text_style style, const ui::color clr, const ui::color bg)
 	{
 		_clr = clr;
-		_highlights.clear();
-		_highlights.reserve(highlights.size());
+		const auto converted = ui::utf8_to_utf16(text, highlights);
+		_highlights = converted.highlights;
 
-		std::wstring w;
-		w.reserve(text.size());
-
-		auto i_text = text.begin();
-		auto i_highlights = highlights.begin();
-
-		while (i_text < text.end())
-		{
-			const auto i = std::distance(text.begin(), i_text);
-			w.append(1, static_cast<wchar_t>(str::pop_utf8_char(i_text, text.end())));
-
-			if (i_highlights != highlights.end() && i == i_highlights->offset)
-			{
-				_highlights.emplace_back(static_cast<uint32_t>(w.size() - 1u), i_highlights->length, i_highlights->clr);
-				++i_highlights;
-			}
-		}
-
-		_font->draw(_ctx, this, w, bounds, style, clr, bg, _highlights);
+		_font->draw(_ctx, this, converted.text, bounds, style, clr, bg, _highlights);
 	}
 
 	void draw_layout(const std::shared_ptr<text_layout_impl>& text, const recti bounds, const ui::color clr,
 	                 const ui::color bg)
 	{
 		_clr = clr;
-		_highlights.clear();
+		ui::clear_text_highlights(_highlights);
 		text->_renderer->draw(_ctx, this, text->_layout.Get(), bounds, clr, bg);
 	}
 
@@ -1349,8 +1331,13 @@ public:
 	{
 		if (!glyphRun) return S_OK;
 
-		auto char_pos = glyphRunDescription ? glyphRunDescription->textPosition : 0;
-		auto i_highlights = _highlights.begin();
+		const auto text_position = glyphRunDescription ? glyphRunDescription->textPosition : 0u;
+		const auto text_length = glyphRunDescription ? glyphRunDescription->stringLength : glyphRun->glyphCount;
+		const auto* const cluster_map = glyphRunDescription ? glyphRunDescription->clusterMap : nullptr;
+		const auto cluster_spans = _highlights.empty()
+			                           ? std::vector<ui::text_cluster_span>{}
+			                           : ui::text_cluster_spans_for_glyph_run(
+				                           glyphRun->glyphCount, cluster_map, text_length, text_position);
 
 		const auto ty = std::floor(baselineOriginY + 0.5f);
 		const auto is_left_to_right = (glyphRun->bidiLevel & 0x01) == 0;
@@ -1362,12 +1349,13 @@ public:
 			const auto c = glyphRun->glyphIndices[i];
 			const auto ax = glyphRun->glyphAdvances[i];
 			auto sx = tx;
-			auto sy = ty - _base_line_height;
+			auto sy = ui::glyph_top_from_baseline(static_cast<float>(ty), _base_line_height, 0.0f);
 
 			if (glyphRun->glyphOffsets)
 			{
 				sx += glyphRun->glyphOffsets[i].advanceOffset;
-				sy += glyphRun->glyphOffsets[i].ascenderOffset;
+				sy = ui::glyph_top_from_baseline(static_cast<float>(ty), _base_line_height,
+				                                  glyphRun->glyphOffsets[i].ascenderOffset);
 			}
 
 			sx = is_left_to_right ? baselineOriginX + sx - _spacing : baselineOriginX - sx - ax - _spacing;
@@ -1375,14 +1363,9 @@ public:
 			if (c != 0)
 			{
 				auto clr = _clr;
-
-				if (i_highlights != _highlights.end())
+				if (!_highlights.empty() && i < cluster_spans.size())
 				{
-					const auto begin = i_highlights->offset;
-					const auto end = begin + i_highlights->length;
-
-					if (char_pos >= begin && char_pos < end) clr = i_highlights->clr;
-					if (char_pos >= end - 1u) ++i_highlights;
+					clr = ui::text_cluster_color(_clr, cluster_spans[i], _highlights);
 				}
 
 				const auto& g = glyph(c, glyphRun);
@@ -1390,7 +1373,6 @@ public:
 			}
 
 			tx += ax;
-			char_pos += 1;
 		}
 
 		return S_OK;

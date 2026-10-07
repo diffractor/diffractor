@@ -50,8 +50,8 @@
 
 
 const std::string_view s_app_name = "Diffractor";
-const std::string_view s_app_version = "127.2";
-const std::string_view g_app_build = "1308";
+const std::string_view s_app_version = "127.3";
+const std::string_view g_app_build = "1310";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);
@@ -121,6 +121,8 @@ static gps_coordinate parse_coordinates(const std::string_view text, const gps_c
 static void check_for_updates_and_location(const app_frame_ptr& app, view_state& s)
 {
 	log_func lf(__FUNCTION__);
+
+	spell().configure_async(&s._async);
 
 	if (platform::is_online())
 	{
@@ -509,9 +511,7 @@ void view_frame::draw_view_status(ui::draw_context& dc) const
 
 	if (progress.active && progress.total == 0)
 	{
-		constexpr int64_t period_ms = 1200;
-		const auto phase = static_cast<double>(platform::tick_count() % period_ms) / period_ms;
-		const auto alpha = 0.45f + 0.35f * static_cast<float>((std::sin(phase * M_PI * 2.0) + 1.0) / 2.0);
+		const auto alpha = command_progress_alpha(progress.active, progress.total, platform::tick_count());
 		const auto text_extent = dc.measure_text(status, ui::style::font_face::dialog,
 		                                         ui::style::text_style::single_line, _extent.cx);
 		const auto bounds = center_rect(text_extent, recti(_extent)).inflate(dc.padding2, dc.padding1);
@@ -736,7 +736,7 @@ void app_frame::prepare_frame()
 			frame_delay = std::min(frame_delay, animation_delay_ms);
 		}
 
-		if (progress.active && progress.total == 0)
+		if (command_progress_needs_animation(progress.active, progress.total))
 		{
 			frame_delay = std::min(frame_delay, animation_delay_ms);
 		}
@@ -826,7 +826,7 @@ void app_frame::tick()
 		if (_state.view_mode() == view_type::movie) _view_movie->tick();
 
 		const auto progress = _view->progress();
-		const auto animate_status = (progress.active && progress.total == 0) || setting.show_debug_info;
+		const auto animate_status = status_needs_animation(progress.active, progress.total, setting.show_debug_info);
 
 		if (animate_status && _view_frame)
 		{
@@ -2709,13 +2709,20 @@ void app_frame::on_mouse_move(const pointi loc, const bool is_tracking)
 		const auto logo_hover = _title_bounds.contains(loc);
 		if (_app_logo->hover(logo_hover))
 		{
-			ui::animations[_app_logo.get()] = [logo = _app_logo, frame = _app_frame]
+			if (ui::animations_enabled)
 			{
-				const auto animating = logo->step_background();
-				if (animating) frame->invalidate(logo->invalidate_bounds());
-				return animating;
-			};
-			invalidate_view(view_invalid::animations);
+				ui::animations[_app_logo.get()] = [logo = _app_logo, frame = _app_frame]
+				{
+					const auto animating = logo->step_background();
+					if (animating) frame->invalidate(logo->invalidate_bounds());
+					return animating;
+				};
+				invalidate_view(view_invalid::animations);
+			}
+			else
+			{
+				if (_app_logo->step_background_if_animations_disabled()) _app_frame->invalidate(_app_logo->invalidate_bounds());
+			}
 		}
 
 		if (_app_logo_hover != logo_hover)
@@ -2735,13 +2742,20 @@ void app_frame::on_mouse_leave(const pointi loc)
 		_app_logo_hover = false;
 		if (_app_logo->hover(false))
 		{
-			ui::animations[_app_logo.get()] = [logo = _app_logo, frame = _app_frame]
+			if (ui::animations_enabled)
 			{
-				const auto animating = logo->step_background();
-				if (animating) frame->invalidate(logo->invalidate_bounds());
-				return animating;
-			};
-			invalidate_view(view_invalid::animations);
+				ui::animations[_app_logo.get()] = [logo = _app_logo, frame = _app_frame]
+				{
+					const auto animating = logo->step_background();
+					if (animating) frame->invalidate(logo->invalidate_bounds());
+					return animating;
+				};
+				invalidate_view(view_invalid::animations);
+			}
+			else
+			{
+				if (_app_logo->step_background_if_animations_disabled()) _app_frame->invalidate(_app_logo->invalidate_bounds());
+			}
 		}
 		invalidate_view(view_invalid::tooltip);
 	}
@@ -2843,9 +2857,11 @@ void app_frame::delete_items(const df::item_set& items)
 		const auto& info_fmt = will_recycle ? tt.delete_info_fmt : tt.delete_info_permanent_fmt;
 
 		std::vector<view_element_ptr> controls;
-		controls.emplace_back(set_margin(std::make_shared<ui::title_control2>(
-			dlg->_frame, icon_index::cancel, title, format_plural_text(info_fmt, items), items.thumbs(),
-			items.size())));
+		auto title_control = std::make_shared<ui::title_control2>(
+			dlg->_frame, icon_index::cancel, title, format_plural_text(info_fmt, items), std::vector<ui::const_surface_ptr>{},
+			items.size());
+		title_control->selection_async(items.thumbs(), items.size(), _state._async);
+		controls.emplace_back(set_margin(title_control));
 
 		const auto add_warning = [&controls](const std::string_view text)
 		{
@@ -2870,9 +2886,8 @@ void app_frame::delete_items(const df::item_set& items)
 		controls.emplace_back(std::make_shared<divider_element>());
 		controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_delete));
 
-		// Skipping the confirmation is a convenience for the recycle bin, where the delete is
-		// recoverable. A permanent delete is always confirmed, otherwise the command would
-		// either destroy files with no prompt or - as it used to - do nothing at all.
+		// Skipping the application confirmation is a convenience for deletions that should recycle.
+		// The shell still owns the mandatory consent if that requested recycle would become permanent.
 		const auto needs_confirmation = setting.confirm_deletions || !will_recycle;
 
 		if (!needs_confirmation || dlg->show_modal(controls) == ui::close_result::ok)
@@ -3300,6 +3315,9 @@ void app_frame::system_event(const ui::os_event_type ost)
 
 void app_frame::final_exit()
 {
+	spell().flush_pending_custom_words();
+	spell().configure_async(nullptr);
+
 	// One aggregate block for the whole session - per-event tracing would swamp the log.
 	df::log_perf_summary();
 	log_file_op_summary();

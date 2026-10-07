@@ -40,6 +40,27 @@ extern icon_index volumes_icons[5];
 std::vector<std::pair<std::string_view, std::string>> calc_app_info(const index_state& index, bool include_state);
 bool is_app_installed();
 
+inline float command_progress_alpha(const bool active, const int64_t total, const uint64_t tick_count)
+{
+	if (!active || total != 0) return 1.0f;
+	if (!ui::animations_enabled) return 0.65f;
+
+	constexpr int64_t period_ms = 1200;
+	constexpr double pi = 3.14159265358979323846;
+	const auto phase = static_cast<double>(tick_count % period_ms) / period_ms;
+	return 0.45f + 0.35f * static_cast<float>((std::sin(phase * pi * 2.0) + 1.0) / 2.0);
+}
+
+inline bool command_progress_needs_animation(const bool active, const int64_t total)
+{
+	return ui::animations_enabled && active && total == 0;
+}
+
+inline bool status_needs_animation(const bool progress_active, const int64_t progress_total, const bool show_debug_info)
+{
+	return command_progress_needs_animation(progress_active, progress_total) || show_debug_info;
+}
+
 // Defined in app.cpp so callers do not need the whole sidebar header for the logo lockup.
 view_element_ptr create_app_logo_element(view_state& s, ui::style::font_face font, bool interactive,
                                          bool show_plasma, double logo_scale,

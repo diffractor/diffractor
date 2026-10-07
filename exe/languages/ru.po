@@ -3217,11 +3217,11 @@ msgstr[0] "Импортирован 1 элемент, но не удалось �
 msgstr[1] "Импортировано {count} элемента, но не удалось установить их дату создания."
 msgstr[2] "Импортировано {count} элементов, но не удалось установить их дату создания."
 
-msgid "{first-name} will be moved to the recycle bin."
-msgid_plural "{count} items ({size}) will be moved to the recycle bin."
-msgstr[0] "{first-name} будет перемещен в Корзину."
-msgstr[1] "{count} элемента ({size}) будут перемещены в Корзину."
-msgstr[2] "{count} элементов ({size}) будут перемещены в Корзину."
+msgid "{first-name} will be moved to the recycle bin when Windows can recycle it."
+msgid_plural "{count} items ({size}) will be moved to the recycle bin when Windows can recycle them."
+msgstr[0] "{first-name} будет перемещен в корзину, если Windows сможет его туда переместить."
+msgstr[1] "{count} элементов ({size}) будут перемещены в корзину, если Windows сможет их туда переместить."
+msgstr[2] "{count} элементов ({size}) будут перемещены в корзину, если Windows сможет их туда переместить."
 
 msgid "{first-name} will be permanently deleted."
 msgid_plural "{count} items ({size}) will be permanently deleted."

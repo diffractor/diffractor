@@ -14,6 +14,7 @@
 #include "metadata_exif.h"
 
 #include <png.h>
+#include <zlib.h>
 
 static void png_error_handler(png_structp png_ptr, const png_const_charp msg)
 {
@@ -31,6 +32,8 @@ static void png_warning_handler(png_structp, const png_const_charp msg)
 }
 
 static constexpr auto png_xmp_key = "XML:com.adobe.xmp";
+static constexpr size_t max_png_metadata_chunk = 16u * 1024u * 1024u;
+static constexpr size_t max_png_decompressed_text = 16u * 1024u * 1024u;
 
 // png_destroy_read_struct / png_destroy_write_struct only free the info struct when
 // it is passed in. Destroying the png struct alone leaks the info struct and
@@ -51,6 +54,7 @@ public:
 		if (_png)
 		{
 			_info = png_create_info_struct(_png);
+			png_set_benign_errors(_png, 1);
 		}
 
 		if (!_png || !_info)
@@ -247,6 +251,202 @@ static void png_read_callback2(const png_structp png_ptr, const png_bytep result
 	stream->read(result, result_size);
 }
 
+static uint32_t read_png_be32(const uint8_t* p)
+{
+	return (static_cast<uint32_t>(p[0]) << 24) |
+		(static_cast<uint32_t>(p[1]) << 16) |
+		(static_cast<uint32_t>(p[2]) << 8) |
+		static_cast<uint32_t>(p[3]);
+}
+
+static bool png_chunk_type_is(const std::array<uint8_t, 4>& type, const char (&name)[5])
+{
+	return type[0] == static_cast<uint8_t>(name[0]) &&
+		type[1] == static_cast<uint8_t>(name[1]) &&
+		type[2] == static_cast<uint8_t>(name[2]) &&
+		type[3] == static_cast<uint8_t>(name[3]);
+}
+
+static bool png_crc_matches(const std::array<uint8_t, 4>& type, const df::blob& data, const uint32_t expected)
+{
+	auto crc = crc32(0, Z_NULL, 0);
+	crc = crc32(crc, type.data(), static_cast<uInt>(type.size()));
+	if (!data.empty()) crc = crc32(crc, data.data(), static_cast<uInt>(data.size()));
+	return crc == expected;
+}
+
+static df::cspan png_exif_payload(const df::cspan data)
+{
+	const auto payload = is_exif_signature(data) ? data.sub(exif_signature_len) : data;
+
+	if (payload.size < 4)
+	{
+		return {};
+	}
+
+	const auto* const p = payload.data;
+	const auto little_endian_tiff = p[0] == 'I' && p[1] == 'I' && p[2] == 0x2a && p[3] == 0x00;
+	const auto big_endian_tiff = p[0] == 'M' && p[1] == 'M' && p[2] == 0x00 && p[3] == 0x2a;
+
+	return little_endian_tiff || big_endian_tiff ? payload : df::cspan{};
+}
+
+static df::blob png_inflate_text(const uint8_t* const compressed, const size_t compressed_size)
+{
+	df::blob result;
+	z_stream z = {};
+
+	if (inflateInit(&z) != Z_OK)
+	{
+		return {};
+	}
+
+	z.next_in = const_cast<Bytef*>(compressed);
+	z.avail_in = static_cast<uInt>(std::min<size_t>(compressed_size, std::numeric_limits<uInt>::max()));
+
+	std::array<uint8_t, 4096> temp = {};
+	auto ok = true;
+
+	do
+	{
+		z.next_out = temp.data();
+		z.avail_out = static_cast<uInt>(temp.size());
+
+		const auto ret = inflate(&z, Z_NO_FLUSH);
+		if (ret != Z_OK && ret != Z_STREAM_END)
+		{
+			ok = false;
+			break;
+		}
+
+		const auto produced = temp.size() - z.avail_out;
+		if (produced > max_png_decompressed_text || result.size() > max_png_decompressed_text - produced)
+		{
+			ok = false;
+			break;
+		}
+
+		result.insert(result.end(), temp.begin(), temp.begin() + produced);
+
+		if (ret == Z_STREAM_END)
+		{
+			break;
+		}
+	}
+	while (z.avail_out == 0 || z.avail_in != 0);
+
+	inflateEnd(&z);
+	if (!ok) return {};
+	return result;
+}
+
+static const uint8_t* find_nul(const uint8_t* const first, const uint8_t* const last)
+{
+	return std::find(first, last, 0);
+}
+
+static void read_png_text_chunk(metadata_parts& metadata, const std::array<uint8_t, 4>& type, const df::blob& data)
+{
+	const auto* const first = data.data();
+	const auto* const last = first + data.size();
+	const auto* const key_end = find_nul(first, last);
+
+	if (key_end == last || std::string_view(reinterpret_cast<const char*>(first), key_end - first) != png_xmp_key)
+	{
+		return;
+	}
+
+	if (png_chunk_type_is(type, "tEXt"))
+	{
+		metadata.xmp.assign(key_end + 1, last);
+	}
+	else if (png_chunk_type_is(type, "zTXt"))
+	{
+		if (last - key_end < 2 || key_end[1] != 0) return;
+		metadata.xmp = png_inflate_text(key_end + 2, last - (key_end + 2));
+	}
+	else if (png_chunk_type_is(type, "iTXt"))
+	{
+		if (last - key_end < 3) return;
+
+		const auto compressed = key_end[1] != 0;
+		if (key_end[2] != 0) return;
+
+		const auto* const language_end = find_nul(key_end + 3, last);
+		if (language_end == last) return;
+
+		const auto* const translated_end = find_nul(language_end + 1, last);
+		if (translated_end == last) return;
+
+		const auto* const text = translated_end + 1;
+		if (compressed)
+		{
+			metadata.xmp = png_inflate_text(text, last - text);
+		}
+		else
+		{
+			metadata.xmp.assign(text, last);
+		}
+	}
+}
+
+static void scan_png_chunks_for_metadata(read_stream& rs, metadata_parts& metadata)
+{
+	const auto file_size = rs.size();
+	constexpr auto sig_len = 8u;
+	auto pos = static_cast<uint64_t>(sig_len);
+
+	while (pos <= file_size && file_size - pos >= 12)
+	{
+		uint8_t header[8] = {};
+		rs.read(pos, header, sizeof(header));
+		const auto chunk_size = read_png_be32(header);
+		const std::array<uint8_t, 4> type = {header[4], header[5], header[6], header[7]};
+		const auto data_pos = pos + sizeof(header);
+
+		if (chunk_size > file_size - data_pos || file_size - data_pos - chunk_size < 4)
+		{
+			return;
+		}
+
+		const auto crc_pos = data_pos + chunk_size;
+		uint8_t crc_bytes[4] = {};
+		rs.read(crc_pos, crc_bytes, sizeof(crc_bytes));
+		const auto expected_crc = read_png_be32(crc_bytes);
+
+		if (png_chunk_type_is(type, "eXIf") || png_chunk_type_is(type, "tEXt") ||
+			png_chunk_type_is(type, "zTXt") || png_chunk_type_is(type, "iTXt"))
+		{
+			if (chunk_size > max_png_metadata_chunk)
+			{
+				return;
+			}
+
+			auto data = rs.read(data_pos, chunk_size);
+			if (!png_crc_matches(type, data, expected_crc))
+			{
+				return;
+			}
+
+			if (png_chunk_type_is(type, "eXIf"))
+			{
+				const auto exif = png_exif_payload(data);
+				if (exif.size > 0)
+				{
+					metadata.exif.assign(exif.data, exif.data + exif.size);
+				}
+			}
+			else
+			{
+				read_png_text_chunk(metadata, type, data);
+			}
+		}
+
+		pos = crc_pos + 4;
+		if (png_chunk_type_is(type, "IEND")) return;
+	}
+}
+
 ui::surface_ptr load_png(const df::cspan data)
 {
 	if (data.size < 8 || png_sig_cmp(data.data, 0, 8))
@@ -343,12 +543,23 @@ ui::surface_ptr load_png(const df::cspan data)
 
 	if (png_get_eXIf_1(png.get(), info_ptr, &num_exif, &exif_data))
 	{
-		if (num_exif > 16)
+		const auto exif = png_exif_payload({exif_data, num_exif});
+		if (exif.size > 16)
 		{
 			prop::item_metadata md;
-			metadata_exif::parse(md, {exif_data, num_exif});
+			metadata_exif::parse(md, exif);
 			result->orientation(md.orientation);
 		}
+	}
+
+	metadata_parts trailing_metadata;
+	mem_read_stream metadata_stream(data);
+	scan_png_chunks_for_metadata(metadata_stream, trailing_metadata);
+	if (!trailing_metadata.exif.empty())
+	{
+		prop::item_metadata md;
+		metadata_exif::parse(md, trailing_metadata.exif);
+		result->orientation(md.orientation);
 	}
 
 	return result;
@@ -493,6 +704,8 @@ file_scan_result scan_png(read_stream& rs)
 			result.metadata.xmp = load_profile(txt);
 		}
 	}
+
+	scan_png_chunks_for_metadata(rs, result.metadata);
 
 	result.success = true;
 	return result;

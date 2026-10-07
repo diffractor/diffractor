@@ -18,7 +18,6 @@
 #include "files.h"
 #include "app_text.h"
 
-
 namespace ui
 {
 	bool browse_for_term(view_state& vs, const control_frame_ptr& parent, std::string& result);
@@ -90,6 +89,7 @@ namespace ui
 		int _min;
 		int _max;
 		std::function<void()> _changed;
+		bool _showing_bound_value = false;
 
 	public:
 		slider_control(const control_frame_ptr& h, const std::string_view label, int& v, const int min, const int max,
@@ -180,8 +180,21 @@ namespace ui
 			}
 		}
 
+		// Shows the bound value again after its owner changed it directly, as an undo or a
+		// reloaded document does. The native edit reports text written from code as typed, so the
+		// change callback is muted while the value is written: an echo is not an edit.
+		void show_bound_value()
+		{
+			_showing_bound_value = true;
+			update_slider();
+			update_edit();
+			_showing_bound_value = false;
+		}
+
 		void edit_change(const std::string_view text)
 		{
+			if (_showing_bound_value) return;
+
 			_val = str::to_int(text);
 			update_slider();
 			if (_changed) _changed();
@@ -1218,6 +1231,7 @@ namespace ui
 	{
 		const_surface_ptr _before;
 		const_surface_ptr _after;
+		simple_transform _after_transform = simple_transform::none;
 
 		mutable texture_ptr _tex_before;
 		mutable texture_ptr _tex_after;
@@ -1230,12 +1244,30 @@ namespace ui
 		{
 		}
 
+		before_after_control(const_surface_ptr before, const simple_transform after_transform) : _before(before),
+			_after(std::move(before)), _after_transform(after_transform)
+		{
+		}
+
+		static sizei transform_dimensions(sizei dims, const simple_transform t)
+		{
+			if (t == simple_transform::rot_90 || t == simple_transform::rot_270) std::swap(dims.cx, dims.cy);
+			return dims;
+		}
+
+		static simple_transform preview_destination_transform(const simple_transform t)
+		{
+			if (t == simple_transform::rot_90) return simple_transform::rot_270;
+			if (t == simple_transform::rot_270) return simple_transform::rot_90;
+			return t;
+		}
+
 		sizei measure(measure_context& mc, const int cx) const override
 		{
 			_text_height = mc.text_line_height(style::font_face::dialog);
 
 			const auto s1 = scale_dimensions(_before->dimensions(), cx / 2);
-			const auto s2 = scale_dimensions(_after->dimensions(), cx / 2);
+			const auto s2 = scale_dimensions(transform_dimensions(_after->dimensions(), _after_transform), cx / 2);
 			return {cx, std::max(s1.cy, s2.cy) + _text_height};
 		}
 
@@ -1277,7 +1309,17 @@ namespace ui
 
 			auto r2 = rImage;
 			r2.left = center.x + 2;
-			if (_tex_after) dc.draw_texture(_tex_after, scale_dimensions(_tex_after->dimensions(), r2));
+			if (_tex_after)
+			{
+				const auto after_bounds = scale_dimensions(transform_dimensions(_tex_after->dimensions(),
+				                                                               _after_transform), r2);
+				const auto destination_transform = preview_destination_transform(_after_transform);
+				const auto after_destination = destination_transform == simple_transform::none
+					                               ? quadd(after_bounds)
+					                               : quadd(after_bounds).transform(destination_transform);
+				dc.draw_texture(_tex_after, after_destination, recti({}, _tex_after->dimensions()), dc.colors.alpha,
+				                texture_sampler::bilinear);
+			}
 
 			r1.top -= _text_height;
 			r2.top -= _text_height;
@@ -2018,6 +2060,7 @@ namespace ui
 		mutable std::vector<sizei> _surface_extents;
 		std::vector<recti> _surface_bounds;
 		size_t _selection_overflow_count = 0;
+		uint64_t _surface_generation = 0;
 
 		const size_t max_surfaces = 7;
 
@@ -2054,6 +2097,15 @@ namespace ui
 			init(surfaces);
 		}
 
+		title_control2(control_frame_ptr h, const icon_index& icon, const std::string_view text,
+		               const std::string_view text2, const std::vector<const_surface_ptr>& surfaces,
+		               const size_t selection_count) : _text1(text),
+		                                               _text2(text2), _icon(icon), _parent(std::move(h))
+		{
+			init(surfaces);
+			_selection_overflow_count = selection_count - std::min(selection_count, _surfaces.size());
+		}
+
 		void init(const std::vector<const_image_ptr>& images)
 		{
 			files ff;
@@ -2063,7 +2115,8 @@ namespace ui
 			{
 				if (is_valid(image))
 				{
-					_surfaces.emplace_back(ff.image_to_surface(image, scale_dimensions(image->dimensions(), max_dims)));
+					auto surface = ff.image_to_surface(image, scale_dimensions(image->dimensions(), max_dims));
+					if (is_valid(surface)) _surfaces.emplace_back(std::move(surface));
 					if (_surfaces.size() >= max_surfaces) break;
 				}
 			}
@@ -2078,7 +2131,8 @@ namespace ui
 			{
 				if (is_valid(surface))
 				{
-					_surfaces.emplace_back(ff.fit_within(surface, max_dims));
+					auto fitted = ff.fit_within(surface, max_dims);
+					if (is_valid(fitted)) _surfaces.emplace_back(std::move(fitted));
 					if (_surfaces.size() >= max_surfaces) break;
 				}
 			}
@@ -2094,16 +2148,55 @@ namespace ui
 			_text1 = a;
 		}
 
-		void selection(const std::string_view text, const std::vector<const_image_ptr>& images,
+		void selection(const std::string_view text, const std::vector<const_surface_ptr>& surfaces,
 		               const size_t selection_count)
 		{
+			++_surface_generation;
 			_text2 = text;
 			_surfaces.clear();
 			_textures.clear();
 			_surface_extents.clear();
 			_surface_bounds.clear();
-			init(images);
+			init(surfaces);
 			_selection_overflow_count = selection_count - std::min(selection_count, _surfaces.size());
+		}
+
+		void selection_async(const std::vector<const_image_ptr>& images, const size_t selection_count,
+		                     df::async_i& async)
+		{
+			const auto generation = ++_surface_generation;
+			const auto weak = weak_from_this();
+			const auto max = max_surfaces;
+			auto staged_images = images;
+
+			async.queue_async(async_queue::render, [weak, generation, max, selection_count,
+			                                        staged_images = std::move(staged_images), &async]() mutable
+			{
+				files ff;
+				constexpr sizei max_dims(128, 128);
+				std::vector<const_surface_ptr> surfaces;
+				surfaces.reserve(std::min(max, staged_images.size()));
+
+				for (const auto& image : staged_images)
+				{
+					if (is_valid(image))
+					{
+						auto surface = ff.image_to_surface(image, scale_dimensions(image->dimensions(), max_dims));
+						if (is_valid(surface)) surfaces.emplace_back(std::move(surface));
+						if (surfaces.size() >= max) break;
+					}
+				}
+
+				async.queue_ui([weak, generation, selection_count, surfaces = std::move(surfaces)]() mutable
+				{
+					const auto self = weak.lock();
+					if (!self || self->_surface_generation != generation) return;
+
+					self->selection(self->_text2, surfaces, selection_count);
+					self->_parent->layout();
+					self->_parent->invalidate();
+				});
+			});
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
@@ -2261,22 +2354,21 @@ namespace ui
 				             color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 
-			if (_textures.empty())
-			{
-				for (const auto& s : _surfaces)
-				{
-					auto t = dc.create_texture();
+			if (_textures.size() != _surfaces.size()) _textures.resize(_surfaces.size());
 
-					if (t && t->update(s) != texture_update_result::failed)
-					{
-						_textures.emplace_back(t);
-					}
-				}
+			for (auto index = 0u; index < _surfaces.size(); ++index)
+			{
+				if (_textures[index]) continue;
+
+				auto t = dc.create_texture();
+
+				if (t && t->update(_surfaces[index]) != texture_update_result::failed) _textures[index] = std::move(t);
 			}
 
-			for (auto i = 0u; i < std::min(_textures.size(), _surface_bounds.size()); ++i)
+			for (auto i = 0u; i < std::min(_surfaces.size(), _surface_bounds.size()); ++i)
 			{
 				const auto& texture = _textures[i];
+				if (!texture) continue;
 				const auto orientation = _surfaces[i]->orientation();
 				const auto draw_bounds = _surface_bounds[i].offset(element_offset);
 				const auto destination = setting.show_rotated
@@ -2300,7 +2392,8 @@ namespace ui
 		}
 	};
 
-	class selection_thumbnails_control final : public view_element
+	class selection_thumbnails_control final : public view_element,
+	                                         public std::enable_shared_from_this<selection_thumbnails_control>
 	{
 		control_frame_ptr _parent;
 		std::vector<const_surface_ptr> _surfaces;
@@ -2308,6 +2401,7 @@ namespace ui
 		mutable std::vector<sizei> _surface_extents;
 		std::vector<recti> _surface_bounds;
 		size_t _overflow_count = 0;
+		uint64_t _surface_generation = 0;
 		static constexpr size_t max_surfaces = 7;
 
 	public:
@@ -2315,20 +2409,22 @@ namespace ui
 		{
 		}
 
-		void selection(const std::vector<const_image_ptr>& images, const size_t selection_count)
+		void selection(const std::vector<const_surface_ptr>& surfaces, const size_t selection_count)
 		{
+			++_surface_generation;
 			_surfaces.clear();
 			_textures.clear();
 			_surface_extents.clear();
 			_surface_bounds.clear();
 
-			files ff;
 			constexpr sizei max_dims(128, 128);
-			for (const auto& image : images)
+			files ff;
+			for (const auto& surface : surfaces)
 			{
-				if (is_valid(image))
+				if (is_valid(surface))
 				{
-					_surfaces.emplace_back(ff.image_to_surface(image, scale_dimensions(image->dimensions(), max_dims)));
+					auto fitted = ff.fit_within(surface, max_dims);
+					if (is_valid(fitted)) _surfaces.emplace_back(std::move(fitted));
 					if (_surfaces.size() >= max_surfaces) break;
 				}
 			}
@@ -2336,6 +2432,43 @@ namespace ui
 				                  ? 0
 				                  : selection_count - std::min(selection_count, _surfaces.size());
 			is_visible(!_surfaces.empty());
+		}
+
+		void selection_async(const std::vector<const_image_ptr>& images, const size_t selection_count,
+		                     df::async_i& async)
+		{
+			const auto generation = ++_surface_generation;
+			const auto weak = weak_from_this();
+			auto staged_images = images;
+
+			async.queue_async(async_queue::render, [weak, generation, selection_count,
+			                                        staged_images = std::move(staged_images), &async]() mutable
+			{
+				files ff;
+				constexpr sizei max_dims(128, 128);
+				std::vector<const_surface_ptr> surfaces;
+				surfaces.reserve(std::min(max_surfaces, staged_images.size()));
+
+				for (const auto& image : staged_images)
+				{
+					if (is_valid(image))
+					{
+						auto surface = ff.image_to_surface(image, scale_dimensions(image->dimensions(), max_dims));
+						if (is_valid(surface)) surfaces.emplace_back(std::move(surface));
+						if (surfaces.size() >= max_surfaces) break;
+					}
+				}
+
+				async.queue_ui([weak, generation, selection_count, surfaces = std::move(surfaces)]() mutable
+				{
+					const auto self = weak.lock();
+					if (!self || self->_surface_generation != generation) return;
+
+					self->selection(surfaces, selection_count);
+					self->_parent->layout();
+					self->_parent->invalidate();
+				});
+			});
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
@@ -2376,18 +2509,19 @@ namespace ui
 
 		void render(draw_context& dc, const pointi element_offset) const override
 		{
-			if (_textures.empty())
+			if (_textures.size() != _surfaces.size()) _textures.resize(_surfaces.size());
+
+			for (auto index = 0u; index < _surfaces.size(); ++index)
 			{
-				for (const auto& surface : _surfaces)
-				{
-					auto texture = dc.create_texture();
-					if (texture && texture->update(surface) != texture_update_result::failed)
-						_textures.emplace_back(texture);
-				}
+				if (_textures[index]) continue;
+				auto texture = dc.create_texture();
+				if (texture && texture->update(_surfaces[index]) != texture_update_result::failed)
+					_textures[index] = std::move(texture);
 			}
 
-			for (auto index = 0u; index < std::min(_textures.size(), _surface_bounds.size()); ++index)
+			for (auto index = 0u; index < std::min(_surfaces.size(), _surface_bounds.size()); ++index)
 			{
+				if (!_textures[index]) continue;
 				const auto draw_bounds = _surface_bounds[index].offset(element_offset);
 				const auto orientation = _surfaces[index]->orientation();
 				const auto destination = setting.show_rotated
@@ -2712,6 +2846,11 @@ namespace ui
 			handler(_check);
 		}
 
+		bool child_interactive() const
+		{
+			return _val && child_shown() && _child && _child->is_visible();
+		}
+
 		void on_check(const bool checked) const
 		{
 			_val = checked;
@@ -2727,6 +2866,15 @@ namespace ui
 			if (_val == checked) return;
 			on_check(checked);
 			_check->set_checked(checked);
+		}
+
+		// Shows the bound value again after its owner changed it directly, as an undo or a
+		// reloaded document does. checked() cannot: it compares against the bound value, which
+		// already holds the new answer. The change callback does not run.
+		void show_bound_value() const
+		{
+			on_check(_val);
+			_check->set_checked(_val);
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
@@ -2796,6 +2944,18 @@ namespace ui
 			{
 				_child->render(dc, element_offset);
 			}
+		}
+
+		bool is_control_area(const pointi loc, const pointi element_offset) const override
+		{
+			return child_interactive() && _child->is_control_area(loc, element_offset);
+		}
+
+		view_controller_ptr controller_from_location(const view_host_ptr& host, const pointi loc,
+		                                             const pointi element_offset,
+		                                             hit_test_context& ctx) override
+		{
+			return child_interactive() ? _child->controller_from_location(host, loc, element_offset, ctx) : nullptr;
 		}
 
 		void dispatch_event(const view_element_event& event) override
@@ -3395,7 +3555,7 @@ namespace ui
 		void visit_controls(const std::function<void(const control_base_ptr&)>& handler) override
 		{
 			handler(_edit);
-			handler(_list->_frame);
+			handler(_list->frame());
 		}
 
 		sizei measure(measure_context& mc, const int cx) const override
@@ -3432,7 +3592,7 @@ namespace ui
 
 			auto search_bounds = bounds;
 			search_bounds.top = search_bounds.top + _edit_line_height + mc.padding2;
-			positions.emplace_back(_list->_frame, search_bounds, is_visible());
+			positions.emplace_back(_list->frame(), search_bounds, is_visible());
 		}
 
 		bool key_down(const int key_code, const key_state keys) const

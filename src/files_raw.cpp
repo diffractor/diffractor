@@ -427,19 +427,27 @@ static std::string cfa_pattern(const libraw_iparams_t& P1)
 	return result;
 }
 
+bool is_raw_gps_fix_present(const bool gpsparsed, const double lat, const double lon)
+{
+	if (!gpsparsed) return false;
+
+	const auto alat = std::fabs(lat);
+	const auto alon = std::fabs(lon);
+
+	return alat <= gps_coordinate::max_valid_latitude &&
+		alon < gps_coordinate::invalid_coordinate &&
+		!(lat == 0.0 && lon == 0.0);
+}
+
 // LibRaw sets gpsparsed for any non-empty GPS IFD, and many cameras (for example the Canon
 // EOS 7D) write a GPS IFD containing only GPSVersionID. Without this check those files land
-// at 0,0. Matches the zero rejection the EXIF path applies in exif_gps_coordinate_builder.
+// at 0,0. Matches the presence, range and no-fix rules the EXIF path applies in
+// exif_gps_coordinate_builder.
 static bool raw_has_gps_fix(const libraw_gps_info_t& gps)
 {
-	if (!gps.gpsparsed) return false;
-
 	const auto lat = gps_coordinate::dms_to_decimal(gps.latitude[0], gps.latitude[1], gps.latitude[2]);
 	const auto lon = gps_coordinate::dms_to_decimal(gps.longitude[0], gps.longitude[1], gps.longitude[2]);
-
-	return lat > 0.0 && lon > 0.0 &&
-		lat <= gps_coordinate::max_valid_latitude &&
-		lon < gps_coordinate::invalid_coordinate;
+	return is_raw_gps_fix_present(gps.gpsparsed, lat, lon);
 }
 
 static void populate_raw_metadata(file_scan_result& result, const libraw_data_t& data, const scan_intent intent)
@@ -472,7 +480,11 @@ static void populate_raw_metadata(file_scan_result& result, const libraw_data_t&
 		{
 			const auto created = df::date_t(local_tm.tm_year + 1900, local_tm.tm_mon + 1, local_tm.tm_mday,
 			                                local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
-			if (created.is_valid()) result.created_utc = created;
+			if (created.is_valid())
+			{
+				result.created_local = created;
+				result.created_local_source = prop::date_source::embedded_created;
+			}
 		}
 	}
 

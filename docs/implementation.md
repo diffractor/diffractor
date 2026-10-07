@@ -98,6 +98,20 @@ shared-texture handoff. Atomic reference counting synchronizes lifetime only.
 
 `item_element` remains entirely UI-owned. `index_file_item` is a synchronized index record whose
 atomic metadata pointer publishes complete immutable snapshots; published payloads are never mutated.
+`index_folder_item` is a synchronized index record: the index worker publishes replacement nodes
+through `index_items`, scan/database workers update per-file atomics in place, and a content revision
+lets folder replacement reject a node built before an in-place update. The revision protects the
+folder contents as a set of per-file metadata/search-presence/cache fields; immutable replacement
+alone is insufficient because scanning a whole folder for each individual metadata update would
+clone large folder vectors and move file scanning back under publication contention.
+Indexing progress is an immutable snapshot owned by the index worker and atomically published for
+UI/sidebar readers; paired total/remaining counters must be read together, and handing every paint
+call through the index queue or posting a UI callback for each scanned file would either block Paint
+on Source work or create unbounded invalidation traffic.
+`view_state` owns the visit timeline on the UI thread, while `_visits_generation` is atomic only so
+the location worker can observe superseded visit derivations through `df::cancel_token`; the worker
+still publishes a complete detached `visit_timeline` back to the UI thread before the UI-owned value
+is replaced.
 
 Three process-wide values are also published to every thread. A translation - and the extra plural
 forms of a plural text - is an atomic pointer into storage `app_text_t` only ever appends to: the UI
@@ -131,6 +145,13 @@ a prefilter that could omit an exact result. Query generations prevent stale res
 Folder-scoped searches validate their filesystem scope; index-wide searches answer from cached
 records. In-app file operations report every changed source and destination folder so search refresh
 does not depend on a live watcher.
+
+The summary keeps authoritative tag histograms and word counts for every indexed tag. Tag-companion
+recommendations are auxiliary typeahead hints and are bounded per pathological item: when one item
+contains more distinct tags than the companion budget can cover, only that item's first bounded set
+contributes companion pairs. Normal collections are not globally capped, so their companion scores do
+not depend on folder hash order. Search counts, tag summaries, and exact tag matching remain complete;
+only recommendation breadth for a single pathological item is traded for bounded per-item CPU.
 
 Duplicate prediction narrows by cheap metadata and CRC, then requests perceptual hashes only for
 unresolved candidates. Every attempted hash reaches a terminal state. Duplicate search, related

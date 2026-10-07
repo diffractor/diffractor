@@ -22,6 +22,8 @@ namespace
 {
 	constexpr int timeline_tile_cx = 96;
 	constexpr int timeline_tile_cy = 72;
+	// How fast a block dragged against either end of the strip carries it along.
+	constexpr double edge_scroll_tiles_per_second = 6.0;
 	// One frame, larger than the two ends it replaced, because judging a cut from a thumbnail is the
 	// thing this control exists to stop.
 	constexpr int trim_frame_cy = 120;
@@ -56,10 +58,25 @@ namespace
 	constexpr double preview_preopen_seconds = 1.5;
 
 	// Seconds of mixed sound kept ahead of the playhead: long enough that a paint or a layout
-	// cannot starve the endpoint, short enough that a seek does not play half a second of the
-	// position the user has just left.
-	constexpr double preview_audio_lead = 0.4;
+	// cannot starve the endpoint, short enough that a setting changed during playback is heard soon.
+	// A seek restarts the sound, so this is never heard as the position the user has just left.
+	constexpr double preview_audio_lead = 0.5;
 	constexpr double preview_audio_chunk = 0.05;
+	// The endpoint's ring. The mixer refills it from the UI tick rather than from a thread waiting on
+	// the device, so it must outlast the gap between two ticks with room for the whole lead: the
+	// engine's own minimum is a device period or two, and the preview stuttered on every tick.
+	constexpr double preview_audio_ring_seconds = 1.0;
+	// How long the picture waits for its sound when playback starts or jumps. Longer than a window
+	// takes to read, so a start is not silent; short enough that a busy reader cannot freeze it.
+	constexpr double preview_audio_max_priming = 1.5;
+	// Each window is read in one task; shorter ones start sooner. The overlap lets a chunk that
+	// straddles the boundary read from one buffer.
+	constexpr double preview_audio_window_seconds = 10.0;
+	constexpr double preview_audio_window_overlap = 1.0;
+	// Where the playhead's next sound is asked for, ahead of where it is mixed. Two points, so a run
+	// of clips shorter than the reach is still read before each is heard.
+	constexpr double preview_audio_prefetch_near = 1.5;
+	constexpr double preview_audio_prefetch_far = 3.0;
 	constexpr double movie_audio_cache_seconds = 30.0;
 	constexpr double movie_audio_overlap_seconds = 2.0;
 	// The mixer works in stereo 16-bit, because that is what a clip buffer is. The endpoint may want
@@ -123,6 +140,23 @@ namespace
 		}
 
 		return result;
+	}
+
+	struct audio_window
+	{
+		double start = 0;
+		double end = 0;
+	};
+
+	// The stretch of a clip's sound the preview reads to hear `source_time`. Windows start on whole
+	// multiples of the window length from the in point, so every caller asking about one moment
+	// names the same window and finds it already read.
+	audio_window preview_audio_window(const movie_clip& clip, const double source_time)
+	{
+		const auto offset = std::max(0.0, source_time - clip.start);
+		const auto start = clip.start + std::floor(offset / preview_audio_window_seconds) *
+			preview_audio_window_seconds;
+		return {start, std::min(clip.end, start + preview_audio_window_seconds + preview_audio_window_overlap)};
 	}
 }
 
@@ -339,11 +373,14 @@ private:
 
 	void publish(const request_state& req, ui::const_surface_ptr surface, const uint64_t generation)
 	{
-		_in_flight = false;
-
 		// The key carries every input the frame depends on, so a decoded frame is never wrong and is
 		// always worth keeping -- only a cache that has since been cleared refuses it.
-		if (generation == _generation && is_valid(surface))
+		const auto decision = decide_movie_frame_cache_completion(_generation, generation, !_queue.empty());
+		if (!decision.accept) return;
+
+		if (decision.clear_in_flight) _in_flight = false;
+
+		if (is_valid(surface))
 		{
 			if (req.slot < _slots.size())
 			{
@@ -380,12 +417,12 @@ private:
 			_state.invalidate_view(view_invalid::view_redraw);
 			if (on_answered) on_answered();
 		}
-		else if (generation == _generation)
+		else
 		{
 			_failed.emplace(req.key);
 		}
 
-		if (!_queue.empty())
+		if (decision.dispatch_next && !_queue.empty())
 		{
 			const auto next = _queue.front();
 			_queue.erase(_queue.begin());
@@ -473,12 +510,12 @@ private:
 
 	void publish_peaks(const df::file_path path, std::vector<uint8_t> peaks, const uint64_t generation)
 	{
-		_peaks_pending.erase(path);
-
 		// A file with no audio answers with an empty result, and that answer is kept: without it the
 		// next paint would ask again, and every paint after that.
-		if (generation != _generation) return;
+		const auto decision = decide_movie_peak_completion(_generation, generation);
+		if (!decision.accept) return;
 
+		if (decision.clear_pending_path) _peaks_pending.erase(path);
 		_peaks.insert_or_assign(path, std::move(peaks));
 		_state.invalidate_view(view_invalid::view_redraw);
 		if (on_answered) on_answered();
@@ -542,8 +579,12 @@ public:
 
 	sizei measure(ui::measure_context& mc, const int cx) const override
 	{
-		return {cx, df::round(timeline_tile_cy * mc.scale_factor) + mc.padding2 * 3 + mc.text_line_height(
-			        ui::style::font_face::dialog)};
+		// The scrollbar's row is always reserved, so a timeline that grows past the width does not
+		// push the strip, and the preview above it, upwards.
+		return {
+			cx, df::round(timeline_tile_cy * mc.scale_factor) + mc.padding2 * 3 +
+			mc.text_line_height(ui::style::font_face::dialog) + scrollbar_row_cy(mc)
+		};
 	}
 
 	void layout(ui::measure_context& mc, const recti bounds_in, ui::control_layouts& positions) override
@@ -555,6 +596,15 @@ public:
 		_tile_cx = df::round(timeline_tile_cx * mc.scale_factor);
 		_tile_cy = df::round(timeline_tile_cy * mc.scale_factor);
 		_pad = mc.padding2;
+		_scrollbar_cy = scrollbar_row_cy(mc);
+
+		if (_pending_reveal)
+		{
+			const auto index = *_pending_reveal;
+			_pending_reveal.reset();
+			reveal(index);
+		}
+
 		clamp_scroll();
 	}
 
@@ -571,63 +621,79 @@ public:
 
 		_drawn.clear();
 
-		for (size_t i = 0; i < project.size(); ++i)
 		{
-			const auto tile = tile_bounds(i, r);
-			if (tile.right < r.left || tile.left > r.right) continue;
+			// A tile scrolled part way out of the strip is cut at the strip's edge rather than drawn
+			// over the margin beside it.
+			const ui::scoped_clip strip_clip(dc, r);
 
-			const auto& clip = project.clips()[i];
-			const auto is_focus = i == project.current();
-			const auto is_selected = project.is_selected(i);
-
-			// Selection is the set a command acts on; focus is the one the panel describes. They are
-			// drawn differently because they are different facts.
-			dc.draw_rect(tile, ui::color(is_selected
-				                             ? ui::style::color::dialog_selected_background
-				                             : ui::style::color::dialog_background,
-			                             dc.colors.alpha * (dragging && is_selected ? 0.5f : 1.0f)));
-
-			draw_thumbnail(dc, clip, i, tile.inflate(-dc.padding1));
-
-			if (is_focus)
+			for (size_t i = 0; i < project.size(); ++i)
 			{
-				// Focus is one clip and the selection is a set, so focus is an outline over the
-				// selected fill rather than another fill.
-				dc.draw_border(tile.inflate(-dc.padding1), tile,
-				               ui::color(dc.colors.foreground, dc.colors.alpha),
-				               ui::color(dc.colors.foreground, 0.0f));
+				const auto tile = tile_bounds(i, r);
+				if (tile.right < r.left || tile.left > r.right) continue;
+
+				const auto& clip = project.clips()[i];
+				const auto is_focus = i == project.current();
+				const auto is_selected = project.is_selected(i);
+
+				// Selection is the set a command acts on; focus is the one the panel describes. They
+				// are drawn differently because they are different facts.
+				dc.draw_rect(tile, ui::color(is_selected
+					                             ? ui::style::color::dialog_selected_background
+					                             : ui::style::color::dialog_background,
+				                             dc.colors.alpha * (dragging && is_selected ? 0.5f : 1.0f)));
+
+				draw_thumbnail(dc, clip, i, tile.inflate(-dc.padding1));
+
+				if (is_focus)
+				{
+					// Focus is one clip and the selection is a set, so focus is an outline over the
+					// selected fill rather than another fill.
+					dc.draw_border(tile.inflate(-dc.padding1), tile,
+					               ui::color(dc.colors.foreground, dc.colors.alpha),
+					               ui::color(dc.colors.foreground, 0.0f));
+				}
+
+				if (static_cast<int>(i) == playing_index)
+				{
+					const auto play_clr = ui::color(ui::style::color::important_background, dc.colors.alpha);
+					const recti bar{tile.left, tile.bottom - dc.padding1, tile.right, tile.bottom};
+					dc.draw_rect(bar, play_clr);
+				}
+
+				const recti label{tile.left, tile.bottom, tile.right, tile.bottom + text_cy};
+				const auto text = clip.is_trimmed()
+					                  ? std::format("{} *", format_clock(clip.duration()))
+					                  : format_clock(clip.duration());
+
+				dc.draw_text(text, label, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
+				             ui::color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 
-			if (static_cast<int>(i) == playing_index)
+			if (dragging)
 			{
-				const auto play_clr = ui::color(ui::style::color::important_background, dc.colors.alpha);
-				const recti bar{tile.left, tile.bottom - dc.padding1, tile.right, tile.bottom};
-				dc.draw_rect(bar, play_clr);
+				const auto x = r.left + _pad + _drag_to * (_tile_cx + _pad) - _pad / 2 - _scroll;
+				dc.draw_rect({x - 1, r.top + _pad, x + 2, r.top + _pad + _tile_cy},
+				             ui::color(dc.colors.foreground, dc.colors.alpha));
 			}
-
-			const recti label{tile.left, tile.bottom, tile.right, tile.bottom + text_cy};
-			const auto text = clip.is_trimmed()
-				                  ? std::format("{} *", format_clock(clip.duration()))
-				                  : format_clock(clip.duration());
-
-			dc.draw_text(text, label, ui::style::font_face::dialog, ui::style::text_style::single_line_center,
-			             ui::color(dc.colors.foreground, dc.colors.alpha), {});
 		}
 
-		if (dragging)
+		// The same track and thumb the selector strip draws, so a strip that runs off the side reads
+		// the same way in every view.
+		if (can_scroll())
 		{
-			const auto x = r.left + _pad + _drag_to * (_tile_cx + _pad) - _pad / 2 - _scroll;
-			dc.draw_rect({x - 1, r.top + _pad, x + 2, r.top + _pad + _tile_cy},
-			             ui::color(dc.colors.foreground, dc.colors.alpha));
+			const auto track = scrollbar_bounds().offset(element_offset);
+			const auto thumb = scrollbar_thumb_bounds().offset(element_offset);
+			dc.draw_rounded_rect(track, ui::color(dc.colors.foreground, dc.colors.alpha * 0.15f), track.height() / 2);
+			dc.draw_rounded_rect(thumb, ui::color(dc.colors.foreground, dc.colors.alpha * 0.55f), thumb.height() / 2);
 		}
 
 		prune_textures();
 	}
 
-	// Which tile the point is over, or -1 when it is past the last one.
+	// Which tile the point is over, or -1 when it is past the last one or on the scrollbar.
 	int hit(const pointi loc) const
 	{
-		if (!bounds.contains(loc)) return -1;
+		if (!bounds.contains(loc) || (can_scroll() && loc.y >= tiles_bottom())) return -1;
 
 		const auto offset = loc.x - (bounds.left + _pad) + _scroll;
 		if (offset < 0) return -1;
@@ -639,25 +705,27 @@ public:
 	// The region a controller made for `loc` should claim. It has to be the tile, not the strip: the
 	// framework only rebuilds a controller once the pointer leaves its bounds, so a controller that
 	// claimed the whole strip went on answering for whichever tile the pointer first entered over,
-	// and every click after that selected the wrong clip.
+	// and every click after that selected the wrong clip. It stops above the scrollbar's row, which
+	// is the scrollbar's own region.
 	recti hit_bounds(const pointi loc) const
 	{
 		const auto step = std::max(1, _tile_cx + _pad);
 		const auto offset = loc.x - (bounds.left + _pad) + _scroll;
 		const auto count = static_cast<int>(_view->project().size());
+		const auto bottom = tiles_bottom();
 
-		if (offset < 0) return {bounds.left, bounds.top, bounds.left + _pad, bounds.bottom};
+		if (offset < 0) return {bounds.left, bounds.top, bounds.left + _pad, bottom};
 
 		const auto slot = offset / step;
 
 		if (slot >= count)
 		{
 			const auto x = bounds.left + _pad + count * step - _scroll;
-			return {std::max(bounds.left, x), bounds.top, bounds.right, bounds.bottom};
+			return {std::max(bounds.left, x), bounds.top, bounds.right, bottom};
 		}
 
 		const auto x = bounds.left + _pad + slot * step - _scroll;
-		return {x, bounds.top, x + step, bounds.bottom};
+		return {x, bounds.top, x + step, bottom};
 	}
 
 	// Where a dropped block would land: between tiles, never on one, because dropping onto a clip
@@ -671,19 +739,132 @@ public:
 
 	void scroll_by(const int dx)
 	{
-		_scroll += dx;
-		clamp_scroll();
+		set_scroll(_scroll + dx);
 	}
 
+	// Brings a tile fully into view. Asked before the first layout there are no bounds to fit it
+	// into, so the request waits for them rather than scrolling against a width of nothing.
 	void reveal(const size_t index)
 	{
-		const auto step = _tile_cx + _pad;
-		const auto left = static_cast<int>(index) * step;
+		if (bounds.width() <= 0)
+		{
+			_pending_reveal = index;
+			return;
+		}
 
-		if (left < _scroll) _scroll = std::max(0, left - _pad);
-		else if (left + _tile_cx - _scroll > bounds.width()) _scroll = left + _tile_cx - bounds.width() + _pad * 2;
+		const auto left = _pad + static_cast<int>(index) * (_tile_cx + _pad);
+		const auto right = left + _tile_cx;
 
-		clamp_scroll();
+		if (left - _pad < _scroll) set_scroll(left - _pad);
+		else if (right + _pad > _scroll + bounds.width()) set_scroll(right + _pad - bounds.width());
+	}
+
+	bool can_scroll() const
+	{
+		return bounds.width() > 0 && content_width() > bounds.width();
+	}
+
+	// The row reserved for the scrollbar beneath the clip lengths. The whole row answers for the
+	// scrollbar, not only the track painted inside it, so no sliver between the track and the tiles
+	// belongs to neither.
+	recti scrollbar_row() const
+	{
+		return {bounds.left, bounds.bottom - _scrollbar_cy, bounds.right, bounds.bottom};
+	}
+
+	// The painted track, inset within its row.
+	recti scrollbar_bounds() const
+	{
+		const auto row = scrollbar_row();
+		const auto inset = std::max(2, _scrollbar_cy / 4);
+		return {row.left + _pad, row.top + inset, row.right - _pad, row.bottom - inset};
+	}
+
+	// Sized to the share of the timeline in view, and never too small to grab.
+	recti scrollbar_thumb_bounds() const
+	{
+		const auto track = scrollbar_bounds();
+		const auto content = std::max(1, content_width());
+		const auto thumb_cx = std::min(track.width(), std::max(_scrollbar_cy * 3,
+		                                                       df::mul_div(track.width(), bounds.width(), content)));
+		const auto travel = std::max(0, track.width() - thumb_cx);
+		const auto left = track.left + df::mul_div(_scroll, travel, std::max(1, max_scroll()));
+		return {left, track.top, left + thumb_cx, track.bottom};
+	}
+
+	// Puts the thumb's left edge at `x`, so a drag keeps the point it was grabbed by.
+	void scrollbar_to(const int x)
+	{
+		const auto track = scrollbar_bounds();
+		const auto travel = std::max(1, track.width() - scrollbar_thumb_bounds().width());
+		set_scroll(df::mul_div(std::clamp(x - track.left, 0, travel), max_scroll(), travel));
+	}
+
+	// A wheel or touchpad delta, in the units the frame accumulates them in, scaled with the tiles so
+	// one detent moves the strip the same distance on screen at any display scale.
+	void scroll_by_wheel(const int delta)
+	{
+		scroll_by(df::mul_div(delta, _tile_cx, timeline_tile_cx));
+	}
+
+	bool is_dragging() const
+	{
+		return _drag_from >= 0 && _drag_to >= 0;
+	}
+
+	// Moves the drop marker to the pointer, carrying the strip along when the pointer is held near
+	// either end, so a block can be dropped at a position that was out of view when the drag began.
+	void drag_over(const pointi loc)
+	{
+		_drag_loc = loc;
+		edge_scroll();
+		_drag_to = drop_index(loc);
+	}
+
+	// One step of the carry. Called on every pointer move and on the idle tick, so a pointer resting
+	// at an edge keeps the strip moving. Timed rather than counted, so the speed does not depend on
+	// how often either arrives. Answers whether the strip moved.
+	bool edge_scroll()
+	{
+		const auto zone = std::max(1, _tile_cx / 2);
+		const auto into_left = bounds.left + zone - _drag_loc.x;
+		const auto into_right = _drag_loc.x - (bounds.right - zone);
+		const auto depth = into_left > 0 ? -std::min(into_left, zone) : into_right > 0 ? std::min(into_right, zone) : 0;
+
+		if (!is_dragging() || depth == 0)
+		{
+			_edge_scroll_tick = 0;
+			_edge_scroll_carry = 0;
+			return false;
+		}
+
+		const auto now = platform::tick_count();
+		// Bounded, so a stall between two steps does not throw the strip to its end.
+		const auto elapsed = _edge_scroll_tick == 0 ? 0.0 : std::min(0.25, (now - _edge_scroll_tick) / 1000.0);
+		_edge_scroll_tick = now;
+
+		// Up to six tiles a second at the very edge, slower nearer the middle. The part of a pixel a
+		// step falls short by is carried to the next, or a pointer that reports often near the
+		// zone's inner edge would round every step to nothing and the strip would never move.
+		const auto speed = edge_scroll_tiles_per_second * (_tile_cx + _pad) * depth / zone;
+		const auto travel = speed * elapsed + _edge_scroll_carry;
+		const auto step = static_cast<int>(travel);
+		_edge_scroll_carry = travel - step;
+
+		const auto before = _scroll;
+		set_scroll(_scroll + step);
+
+		if (_scroll == before) return false;
+
+		_drag_to = drop_index(_drag_loc);
+		return true;
+	}
+
+	void end_drag()
+	{
+		_drag_from = _drag_to = -1;
+		_edge_scroll_tick = 0;
+		_edge_scroll_carry = 0;
 	}
 
 	void dispatch_event(const view_element_event& event) override
@@ -701,10 +882,44 @@ private:
 		return {x, r.top + _pad, x + _tile_cx, r.top + _pad + _tile_cy};
 	}
 
+	static int scrollbar_row_cy(const ui::measure_context& mc)
+	{
+		return std::max(df::round(10 * mc.scale_factor), mc.padding1);
+	}
+
+	// Every tile and the gap after it, plus the gap before the first.
+	int content_width() const
+	{
+		return static_cast<int>(_view->project().size()) * (_tile_cx + _pad) + _pad;
+	}
+
+	int max_scroll() const
+	{
+		return std::max(0, content_width() - bounds.width());
+	}
+
+	// Where the tile columns end: above the scrollbar's row while there is a scrollbar, and at the
+	// strip's foot when there is not, where that row is only margin.
+	int tiles_bottom() const
+	{
+		return can_scroll() ? bounds.bottom - _scrollbar_cy : bounds.bottom;
+	}
+
+	// Every change of scroll goes through here. The tile under a resting pointer is a different clip
+	// afterwards, so the controller made for the old one is retired rather than left to act on the
+	// new one at the next click. One made while a button is held is retired on its release.
+	void set_scroll(const int scroll)
+	{
+		const auto clamped = std::clamp(scroll, 0, max_scroll());
+		if (clamped == _scroll) return;
+
+		_scroll = clamped;
+		_state.invalidate_view(view_invalid::view_redraw | view_invalid::controller);
+	}
+
 	void clamp_scroll()
 	{
-		const auto total = static_cast<int>(_view->project().size()) * (_tile_cx + _pad);
-		_scroll = std::clamp(_scroll, 0, std::max(0, total - bounds.width() + _pad * 2));
+		set_scroll(_scroll);
 	}
 
 	int clip_at_playhead() const
@@ -782,6 +997,11 @@ private:
 	int _tile_cx = timeline_tile_cx;
 	int _tile_cy = timeline_tile_cy;
 	int _pad = 6;
+	int _scrollbar_cy = 10;
+	std::optional<size_t> _pending_reveal;
+	pointi _drag_loc;
+	int64_t _edge_scroll_tick = 0;
+	double _edge_scroll_carry = 0;
 	mutable std::vector<movie_frame_key> _drawn;
 	mutable df::hash_map<movie_frame_key, std::pair<ui::const_surface_ptr, ui::texture_ptr>, movie_frame_key_hash>
 	_textures;
@@ -952,11 +1172,14 @@ public:
 		return {x - grab, track.top - grab, x + grab, track.bottom + grab};
 	}
 
-	double time_at(const pointi loc) const
+	// A time moved by a pointer's sideways travel, at the track's scale. Relative rather than read off
+	// the pointer's position, so a handle that has not been moved sideways keeps its exact time
+	// instead of the time of the pixel it is drawn on.
+	double time_moved(const double time, const int dx) const
 	{
 		const auto track = track_bounds(bounds);
-		if (track.width() <= 0 || _limit <= 0) return 0;
-		return std::clamp(static_cast<double>(loc.x - track.left) / track.width() * _limit, 0.0, _limit);
+		if (track.width() <= 0 || _limit <= 0) return time;
+		return std::clamp(time + static_cast<double>(dx) / track.width() * _limit, 0.0, _limit);
 	}
 
 private:
@@ -1142,7 +1365,7 @@ namespace
 
 		~timeline_controller() override
 		{
-			_strip->_drag_from = _strip->_drag_to = -1;
+			_strip->end_drag();
 		}
 
 		ui::style::cursor cursor() const override { return ui::style::cursor::link; }
@@ -1183,13 +1406,13 @@ namespace
 
 			_collapse_on_release = false;
 			_strip->_drag_from = _index;
-			_strip->_drag_to = _strip->drop_index(loc);
+			_strip->drag_over(loc);
 			_host->frame()->invalidate();
 		}
 
 		void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
 		{
-			if (_strip->_drag_from >= 0 && _strip->_drag_to >= 0)
+			if (_strip->is_dragging())
 			{
 				_view->move_selection(static_cast<size_t>(_strip->_drag_to));
 			}
@@ -1198,7 +1421,7 @@ namespace
 				_view->select_clip(static_cast<size_t>(_index), false, false);
 			}
 
-			_strip->_drag_from = _strip->_drag_to = -1;
+			_strip->end_drag();
 			_collapse_on_release = false;
 			_held = false;
 		}
@@ -1206,7 +1429,7 @@ namespace
 		bool escape() override
 		{
 			if (_strip->_drag_from < 0) return false;
-			_strip->_drag_from = _strip->_drag_to = -1;
+			_strip->end_drag();
 			_host->frame()->invalidate();
 			return true;
 		}
@@ -1220,6 +1443,64 @@ namespace
 		int _index;
 		bool _collapse_on_release = false;
 		bool _held = false;
+	};
+
+	// The strip's scrollbar. A press on the thumb drags it by the point it was grabbed at; a press on
+	// the track centres the thumb there -- the selector strip's behaviour, so both strips answer the
+	// same way.
+	class timeline_scroll_controller final : public view_controller
+	{
+	public:
+		timeline_scroll_controller(view_host_ptr host, const recti bounds, view_state& state,
+		                           std::shared_ptr<movie_timeline_element> strip) :
+			view_controller(std::move(host), bounds), _state(state), _strip(std::move(strip))
+		{
+		}
+
+		ui::style::cursor cursor() const override { return ui::style::cursor::left_right; }
+
+		void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
+		{
+			view_controller::on_mouse_left_button_down(loc, keys);
+			_tracking = true;
+
+			// The whole row is the control, so a press over the thumb grabs it at any height in the
+			// row; testing the painted thumb's height read a press in the row's margin as a press
+			// on the track, and the thumb jumped to centre on it.
+			const auto thumb = _strip->scrollbar_thumb_bounds();
+			_grab_offset = loc.x >= thumb.left && loc.x <= thumb.right ? loc.x - thumb.left : thumb.width() / 2;
+			scroll_to(loc);
+		}
+
+		void on_mouse_move(const pointi loc) override
+		{
+			if (_tracking) scroll_to(loc);
+		}
+
+		void on_mouse_left_button_up(const pointi loc, const ui::key_state keys) override
+		{
+			if (_tracking) scroll_to(loc);
+			_tracking = false;
+		}
+
+		bool escape() override
+		{
+			if (!_tracking) return false;
+			_tracking = false;
+			return true;
+		}
+
+	private:
+		void scroll_to(const pointi loc) const
+		{
+			_strip->scrollbar_to(loc.x - _grab_offset);
+			_state.invalidate_view(view_invalid::view_redraw);
+		}
+
+		view_state& _state;
+		std::shared_ptr<movie_timeline_element> _strip;
+		int _grab_offset = 0;
+		bool _tracking = false;
 	};
 
 	class scrubber_controller final : public view_controller
@@ -1287,7 +1568,13 @@ namespace
 			// preview belongs to the playhead and the handle belongs to the document.
 			_trim->_tracking = _handle;
 			_held = true;
-			move(loc);
+
+			// The handle travels as far as the pointer does from the press, and nowhere until then.
+			// Placed at the pointer instead, a press moved it by up to half a grab box, and any wobble
+			// rounded a trim stored to the millisecond onto the time of a pixel.
+			_press_x = loc.x;
+			_press_time = _handle == 0 ? _trim->_start : _trim->_end;
+			show_handle_frame();
 		}
 
 		void on_mouse_move(const pointi loc) override
@@ -1307,12 +1594,17 @@ namespace
 	private:
 		void move(const pointi loc) const
 		{
-			const auto time = _trim->time_at(loc);
+			const auto time = _trim->time_moved(_press_time, loc.x - _press_x);
 
 			// The handles cannot cross, and a clip cannot be trimmed to nothing.
 			if (_handle == 0) _trim->_start = std::min(time, _trim->_end - 0.1);
 			else _trim->_end = std::max(time, _trim->_start + 0.1);
 
+			show_handle_frame();
+		}
+
+		void show_handle_frame() const
+		{
 			const auto preview_time = _handle == 0
 				                          ? _trim->_start
 				                          : std::max(_trim->_start, _trim->_end - frame_step_seconds);
@@ -1323,6 +1615,8 @@ namespace
 		movie_view* _view;
 		std::shared_ptr<movie_trim_control> _trim;
 		int _handle;
+		int _press_x = 0;
+		double _press_time = 0;
 		bool _held = false;
 	};
 }
@@ -1561,6 +1855,27 @@ void movie_view_controls::layout_controls(ui::measure_context& mc)
 	}
 }
 
+void movie_view_controls::show_document_values() const
+{
+	if (_controls.empty()) return;
+
+	_crossfade_check->show_bound_value();
+	_cut_check->show_bound_value();
+	_transition_slider->show_bound_value();
+	_fade_in_check->show_bound_value();
+	_fade_out_check->show_bound_value();
+	_photo_slider->show_bound_value();
+	show_clip_values();
+}
+
+void movie_view_controls::show_clip_values() const
+{
+	if (_controls.empty()) return;
+
+	_clip_hold_slider->show_bound_value();
+	_clip_hold_default_check->show_bound_value();
+}
+
 void movie_view_controls::options_changed()
 {
 	view_controls_host::options_changed();
@@ -1625,24 +1940,26 @@ void movie_view::activate(const sizei extent)
 	_state.stop();
 	_movie_state.playing = movie_view_state::playing_t::nothing;
 
-	auto& project = _movie_state.project;
 	const auto selection = media_paths(_state.selected_items());
 
-	// A timeline that is still exactly what a selection produced is a view of that selection, so a
-	// different selection replaces it. One the user has edited, or opened from a project, is a
-	// document and is left alone: re-entering must not silently throw work away.
-	const auto is_untouched_seed = !project.is_modified() && !project.seeded_from().empty();
-
-	if (project.is_empty() || (is_untouched_seed && !selection.empty() && selection != project.seeded_from()))
+	// Leaving settles unsaved edits, so the timeline held here is saved, untouched or empty, and a
+	// different selection can replace it without losing anything. The same selection, or none,
+	// returns to it: that is the movie the user left, including what they saved of it.
+	if (decide_movie_entry(_movie_state.project, selection, _movie_state.built_from) == movie_entry::seed)
 	{
 		seed_from(selection);
+
+		// Recorded only when a timeline is built from it. A timeline kept because it still held
+		// unsaved work answers to the selection it was built from, so the new one replaces it once
+		// that work is settled.
+		_movie_state.built_from = selection;
 	}
 	else
 	{
 		probe_clips();
 	}
 
-	_movie_state.read_from_project();
+	read_document();
 	changed();
 }
 
@@ -1650,11 +1967,37 @@ void movie_view::seed_from(const std::vector<df::file_path>& paths)
 {
 	auto& project = _movie_state.project;
 
+	if (should_clear_movie_probe_retries_after_document_replace(true)) _probe_retries.clear();
 	project.reset({}, project.settings(), {});
 	_movie_state.import_ignored = 0;
 	add_paths_at(paths, 0);
-	project.mark_seeded(paths);
+	project.mark_seeded();
+	if (_timeline) _timeline->reveal(0);
 	seek(0);
+}
+
+// Discard on leaving throws the timeline away, so entering again starts from whatever is selected
+// then. The settings stay: they are how this user makes movies, not part of the one discarded.
+void movie_view::discard_timeline()
+{
+	stop_playback();
+
+	auto& project = _movie_state.project;
+	if (should_clear_movie_probe_retries_after_document_replace(true)) _probe_retries.clear();
+	project.reset({}, project.settings(), {});
+	_movie_state.import_ignored = 0;
+	_movie_state.playhead = 0;
+	_preview_override.reset();
+	_show_focus_frame = false;
+
+	read_document();
+	changed();
+}
+
+void movie_view::read_document()
+{
+	_movie_state.read_from_project();
+	if (_controls) _controls->show_document_values();
 }
 
 void movie_view::deactivate()
@@ -1667,6 +2010,8 @@ void movie_view::deactivate()
 	// The endpoint goes with the view: a movie nobody is watching has no business holding one.
 	_preview_device.reset();
 	_preview_audio_rate = 0;
+	_preview_audio_priming = false;
+	_preview_audio_source_generation = next_movie_preview_audio_source_generation(_preview_audio_source_generation);
 	for (auto& entry : _preview_audio) entry = {};
 
 	_sources->clear();
@@ -1949,6 +2294,12 @@ view_controller_ptr movie_view::controller_from_location(const view_host_ptr& ho
 		return std::make_shared<scrubber_controller>(host, _scrubber_bounds, this);
 	}
 
+	// The scrollbar's row is tested before the tiles above it, so a press on it never picks a clip.
+	if (_timeline && _timeline->can_scroll() && ctx.occluded(_timeline->scrollbar_row()))
+	{
+		return std::make_shared<timeline_scroll_controller>(host, _timeline->scrollbar_row(), _state, _timeline);
+	}
+
 	if (_timeline && ctx.occluded(_timeline->bounds))
 	{
 		const auto index = _timeline->hit(loc);
@@ -1961,11 +2312,12 @@ view_controller_ptr movie_view::controller_from_location(const view_host_ptr& ho
 bool movie_view::mouse_wheel(const pointi loc, const ui::wheel_notch notch)
 {
 	// The strip is one row that runs off the side, so either axis moves it along: there is nothing
-	// else for the wheel to do while the pointer is over it.
+	// else for the wheel to do while the pointer is over it. It follows the smooth delta rather than
+	// whole detents, so a precision touchpad moves it as far as the fingers did.
 	if (!_timeline || !_timeline->bounds.contains(loc)) return false;
 
-	_timeline->scroll_by(-notch.steps * timeline_tile_cx);
-	_state.invalidate_view(view_invalid::view_redraw);
+	// Moving the strip retires the controller under the pointer: the tile there is a different clip.
+	_timeline->scroll_by_wheel(notch.is_vertical() ? -notch.delta : notch.delta);
 	return true;
 }
 
@@ -2008,9 +2360,7 @@ bool movie_view::key_down(const char32_t key, const ui::key_state keys)
 bool movie_view::escape()
 {
 	if (!_movie_state.is_playing()) return false;
-	_movie_state.playing = movie_view_state::playing_t::nothing;
-	stop_preview_audio();
-	_state.invalidate_view(view_invalid::view_redraw);
+	stop_playback();
 	return true;
 }
 
@@ -2021,13 +2371,41 @@ bool movie_view::can_exit()
 	return !_progress.active;
 }
 
+// Close, Items and Escape all arrive here, and leaving is where a timeline holding unsaved work
+// is settled: saved, discarded, or kept by staying. Settling it here rather than at shutdown is
+// what lets entering again with another selection start a new timeline without losing anything.
 void movie_view::exit()
 {
+	// A project read or write finishes in moments. Leaving under it would apply its result to a
+	// timeline nobody is looking at, or leave a save the user asked for unfinished.
+	if (_project_io_active) return;
+	if (!confirm_render_cancel()) return;
+
+	const auto had_unsaved = has_unsaved_changes();
+	const auto weak = weak_from_this();
+
+	// Save leaves once the project is written. A cancelled or failed save stays, with the timeline
+	// as it was: it never counts as permission to discard.
+	if (!confirm_save_or_discard([weak]
+	{
+		if (const auto self = weak.lock(); self && self->_state.view_mode() == view_type::movie)
+		{
+			self->_state.view_mode(view_type::items);
+		}
+	}))
+	{
+		return;
+	}
+
+	if (had_unsaved) discard_timeline();
 	_state.view_mode(view_type::items);
 }
 
 void movie_view::tick()
 {
+	// A block held against an end of the strip keeps carrying it while the pointer rests there.
+	if (_timeline && _timeline->is_dragging()) _timeline->edge_scroll();
+
 	if (!_movie_state.is_playing()) return;
 
 	const auto now = platform::tick_count();
@@ -2037,7 +2415,10 @@ void movie_view::tick()
 	if (_movie_state.playing == movie_view_state::playing_t::movie)
 	{
 		const auto total = duration();
-		_movie_state.playhead += elapsed;
+
+		// The picture holds while its sound primes, so the two start together. Priming ends inside
+		// the pump, and the next tick moves the playhead from where the sound began.
+		if (!_preview_audio_priming) _movie_state.playhead += elapsed;
 
 		if (_movie_state.playhead >= total)
 		{
@@ -2303,9 +2684,10 @@ void movie_view::update_preview_source(const size_t slot, const int clip_index, 
 
 	auto& preview = _preview_sources[slot];
 
-	// The session runs while the movie runs and holds while it is parked. Both clocks are the wall
-	// clock, so a clip that started in step with the movie stays in step with it.
-	const auto playing = _movie_state.playing == movie_view_state::playing_t::movie;
+	// The session runs while the movie runs and holds while it is parked -- or while the movie waits
+	// for its sound, or it would walk on ahead of a playhead that is standing still. Both clocks are
+	// the wall clock, so a clip that started in step with the movie stays in step with it.
+	const auto playing = _movie_state.playing == movie_view_state::playing_t::movie && !_preview_audio_priming;
 
 	if (playing != preview.session->is_playing())
 	{
@@ -2370,9 +2752,13 @@ void movie_view::close_preview_sources()
 // only being assembled has nothing to say, and holding an audio device open to say it is rude.
 void movie_view::start_preview_audio()
 {
+	// Set again by the reset below when there is a device to prime. Without one there is nothing to
+	// wait for, and a flag left over from before would hold the picture for ever.
+	_preview_audio_priming = false;
+
 	if (!_preview_device)
 	{
-		_preview_device = create_av_audio_device({});
+		_preview_device = create_av_audio_device({}, preview_audio_ring_seconds);
 
 		// No endpoint is not a failure the user has to be told about: the preview is silent, which
 		// is what it was before it could speak at all.
@@ -2380,17 +2766,25 @@ void movie_view::start_preview_audio()
 
 		const auto format = _preview_device->format();
 
-		if (format.sample_rate == 0 || format.channel_count() == 0)
+		// write_device_samples speaks float, 16-bit and 32-bit; an endpoint mixing in anything else
+		// is left silent rather than fed noise.
+		if (format.sample_rate == 0 || format.channel_count() == 0 || format.bytes_per_sample() == 0 ||
+			format.sample_fmt == prop::audio_sample_t::none)
 		{
 			_preview_device.reset();
 			return;
 		}
 
 		_preview_audio_buffer.init(format);
-		_preview_audio_rate = static_cast<int>(format.sample_rate);
+		const auto rate = static_cast<int>(format.sample_rate);
 
-		// The buffers hold samples at whatever rate the last endpoint wanted, so they go with it.
-		for (auto& entry : _preview_audio) entry = {};
+		// The windows hold samples at whatever rate the last endpoint wanted, so a different rate
+		// takes them with it.
+		if (rate != _preview_audio_rate)
+		{
+			for (auto& entry : _preview_audio) entry = {};
+			_preview_audio_rate = rate;
+		}
 	}
 
 	reset_preview_audio();
@@ -2398,15 +2792,23 @@ void movie_view::start_preview_audio()
 
 void movie_view::stop_preview_audio()
 {
+	_preview_audio_priming = false;
 	if (!_preview_device) return;
 
 	_preview_device->stop();
 	_preview_audio_buffer.clear();
 }
 
+void movie_view::drop_preview_device()
+{
+	_preview_device.reset();
+	_preview_audio_buffer.clear();
+	_preview_audio_priming = false;
+}
+
 // Everything queued was mixed for where the playhead was going, so a playhead that has gone
-// somewhere else drops it. The generation is what stops a chunk built before the move being
-// appended to one built after it.
+// somewhere else drops it and the sound primes again from where the playhead is. The generation is
+// what stops a chunk built before the move being appended to one built after it.
 void movie_view::reset_preview_audio()
 {
 	if (!_preview_device) return;
@@ -2415,28 +2817,50 @@ void movie_view::reset_preview_audio()
 	_preview_audio_buffer.clear();
 	_preview_audio_time = _movie_state.playhead;
 	_preview_device->reset();
+	_preview_audio_priming = true;
+	_preview_audio_priming_since = platform::tick_count();
 }
 
 void movie_view::pump_preview_audio()
 {
 	if (!_preview_device || _preview_audio_rate <= 0) return;
 
+	if (_preview_device->is_device_lost())
+	{
+		drop_preview_device();
+		return;
+	}
+
 	const auto& project = _movie_state.project;
 	const auto format = _preview_device->format();
 	const auto channels = format.channel_count();
 	const auto sample_bytes = format.bytes_per_sample();
 
-	if (channels == 0 || sample_bytes == 0) return;
+	if (channels == 0 || sample_bytes == 0)
+	{
+		drop_preview_device();
+		return;
+	}
 
-	// A playhead the queue has fallen behind -- a stall, a long modal, a device reset -- is caught
-	// up to rather than played from where it was, which would run the sound behind the picture for
-	// the rest of the movie.
-	if (_preview_audio_time < _movie_state.playhead - preview_audio_lead ||
-		_preview_audio_time > _movie_state.playhead + preview_audio_lead * 2)
+	// The sound has to stay where the picture is. A queue that ran out behind the playhead -- a stall
+	// longer than the lead -- or one left far ahead of it by a jump back, or sound piling up because
+	// the endpoint stopped taking it, restarts from the playhead rather than playing out of step with
+	// the picture for the rest of the movie. The endpoint's own clock is not asked: a Bluetooth
+	// headset reports a latency that is not a drift, and an endpoint whose clock does not move would
+	// restart the sound for ever.
+	if (!_preview_audio_priming &&
+		(_preview_audio_time < _movie_state.playhead ||
+			_preview_audio_time > _movie_state.playhead + preview_audio_lead * 2 ||
+			_preview_audio_buffer.seconds() > preview_audio_lead))
 	{
 		reset_preview_audio();
 	}
 
+	// While priming, a window still being read holds the start back so the movie begins with its
+	// sound. Once playing it is silence instead: a gap is shorter than the restart a stall costs, and
+	// the sound comes back in step as soon as the window arrives.
+	const auto waited = (platform::tick_count() - _preview_audio_priming_since) / 1000.0;
+	const auto may_wait = _preview_audio_priming && waited < preview_audio_max_priming;
 	const auto target = std::min(duration(), _movie_state.playhead + preview_audio_lead);
 
 	std::vector<int32_t> mixed;
@@ -2453,23 +2877,28 @@ void movie_view::pump_preview_audio()
 		// The same decision the picture is composed from, at the same instant, so the sound and the
 		// frame cannot disagree about which clips are playing or at what weight.
 		const auto frame = calc_movie_frame(project.clips(), project.settings(), _preview_audio_time);
+		auto unread = false;
 
-		const auto mix = [&](const movie_frame_source& source, const size_t slot)
+		const auto mix = [&](const movie_frame_source& source)
 		{
-			if (source.index < 0 || source.weight <= 0.0) return true;
+			if (source.index < 0 || source.weight <= 0.0) return;
 
 			const auto& clip = project.clips()[source.index];
-			if (clip.is_photo || clip.is_missing) return true;
+			if (clip.is_photo || clip.is_missing) return;
 
-			const auto* const pcm = preview_pcm(slot, clip, source.source_time);
-			if (!pcm) return false;
-			if (pcm->empty()) return true;
-			const auto& audio = _preview_audio[slot];
+			auto window_start = 0.0;
+			const auto pcm = preview_pcm(clip, source.source_time, window_start);
+
+			if (!pcm)
+			{
+				unread = true;
+				return;
+			}
 
 			// The fade at the movie's ends is a fade of the movie, not of its picture.
 			const auto weight = source.weight * (1.0 - frame.fade_to_black);
 			const auto first = static_cast<int64_t>(
-				std::llround((source.source_time - audio.start) * _preview_audio_rate)) * 2;
+				std::llround((source.source_time - window_start) * _preview_audio_rate)) * 2;
 
 			for (size_t i = 0; i < mixed.size(); ++i)
 			{
@@ -2478,11 +2907,12 @@ void movie_view::pump_preview_audio()
 
 				mixed[i] += static_cast<int32_t>(std::lround((*pcm)[static_cast<size_t>(at)] * weight));
 			}
-
-			return true;
 		};
 
-		if (!mix(frame.a, 0) || !mix(frame.b, 1)) return;
+		mix(frame.a);
+		mix(frame.b);
+
+		if (unread && may_wait) break;
 
 		chunk.assign(frames * channels * sample_bytes, 0);
 		write_device_samples(chunk.data(), mixed, channels, format.sample_fmt);
@@ -2493,94 +2923,154 @@ void movie_view::pump_preview_audio()
 		_preview_audio_time += static_cast<double>(frames) / _preview_audio_rate;
 	}
 
-	if (!_preview_audio_buffer.is_empty())
+	prefetch_preview_audio();
+
+	// The user's media volume, as the player applies it. Past 100% is a gain the player puts on its
+	// decoded samples, and this mixer has none, so it stops at full.
+	_preview_device->volume(std::clamp(setting.media_volume, 0, 1000) / 1000.0);
+
+	if (!_preview_audio_buffer.is_empty()) _preview_device->write(_preview_audio_buffer);
+
+	// Started once the lead is queued, so the device begins on a cushion rather than on a sliver it
+	// would run through before the next tick.
+	if (_preview_audio_priming && (_preview_audio_time >= target - 0.001 || !may_wait))
 	{
-		_preview_device->write(_preview_audio_buffer);
-		if (_preview_device->is_stopped()) _preview_device->start();
+		_preview_audio_priming = false;
+		_preview_device->start();
 	}
 }
 
-const std::vector<int16_t>* movie_view::preview_pcm(const size_t slot, const movie_clip& clip,
-	const double source_time)
+void movie_view::prefetch_preview_audio()
 {
-	if (slot >= _preview_audio.size() || _preview_audio_rate <= 0) return nullptr;
+	const auto& project = _movie_state.project;
+	const auto total = duration();
 
-	auto& entry = _preview_audio[slot];
-	const auto offset = std::max(0.0, source_time - clip.start);
-	const auto start = clip.start + std::floor(offset / movie_audio_cache_seconds) * movie_audio_cache_seconds;
-	const auto end = std::min(clip.end, start + movie_audio_cache_seconds + movie_audio_overlap_seconds);
-	if (end <= start) return nullptr;
-
-	const auto matches = [&](const preview_audio& candidate)
+	for (const auto reach : {preview_audio_prefetch_near, preview_audio_prefetch_far})
 	{
-		return candidate.path == clip.path && candidate.start == start && candidate.end == end &&
-			candidate.sample_rate == _preview_audio_rate;
-	};
+		const auto ahead = _preview_audio_time + reach;
+		if (ahead >= total) break;
 
-	if (!entry.pcm)
-	{
-		const auto reusable = std::ranges::find_if(_preview_audio, [&](const preview_audio& candidate)
+		const auto frame = calc_movie_frame(project.clips(), project.settings(), ahead);
+
+		for (const auto& source : {frame.a, frame.b})
 		{
-			return &candidate != &entry && candidate.pcm && matches(candidate);
-		});
+			if (source.index < 0) continue;
 
-		if (reusable != _preview_audio.end()) entry = *reusable;
+			const auto& clip = project.clips()[source.index];
+			if (clip.is_photo || clip.is_missing) continue;
+
+			auto window_start = 0.0;
+			preview_pcm(clip, source.source_time, window_start);
+		}
+	}
+}
+
+std::shared_ptr<const std::vector<int16_t>> movie_view::preview_pcm(const movie_clip& clip,
+                                                                    const double source_time, double& window_start)
+{
+	if (_preview_audio_rate <= 0) return {};
+
+	const auto window = preview_audio_window(clip, source_time);
+	window_start = window.start;
+
+	// Nothing of the clip is left to hear at this instant. That is silence, not a read to wait for:
+	// answered as unread, it would hold the start of playback for the whole priming allowance.
+	if (window.end <= window.start)
+	{
+		static const auto silence = std::make_shared<const std::vector<int16_t>>();
+		return silence;
 	}
 
-	if (!matches(entry))
+	const auto stamp = ++_preview_audio_wanted;
+	auto* oldest = &_preview_audio.front();
+
+	for (auto& entry : _preview_audio)
 	{
-		entry = {};
-		entry.path = clip.path;
-		entry.start = start;
-		entry.end = end;
-		entry.sample_rate = _preview_audio_rate;
-
-		const auto weak = weak_from_this();
-		const auto path = clip.path;
-		const auto rate = _preview_audio_rate;
-
-		// Not the render queue: reading a whole stream takes seconds, and the preview's pictures
-		// must not wait behind the sound the user has not reached yet.
-		_state.queue_async(async_queue::load, [weak, slot, path, start, end, rate, &s = _state]
+		if (entry.path == clip.path && entry.start == window.start && entry.end == window.end &&
+			entry.sample_rate == _preview_audio_rate)
 		{
-			std::vector<int16_t> pcm;
-			av_format_decoder decoder;
+			entry.wanted = stamp;
+			return entry.pcm;
+		}
 
-			if (decoder.open(path, media_intent::playback))
+		if (entry.wanted < oldest->wanted) oldest = &entry;
+	}
+
+	*oldest = {};
+	oldest->path = clip.path;
+	oldest->start = window.start;
+	oldest->end = window.end;
+	oldest->sample_rate = _preview_audio_rate;
+	oldest->wanted = stamp;
+
+	const auto weak = weak_from_this();
+	const auto path = clip.path;
+	const auto start = window.start;
+	const auto end = window.end;
+	const auto rate = _preview_audio_rate;
+	const auto source_generation = _preview_audio_source_generation;
+	oldest->source_generation = source_generation;
+
+	// Not the render queue: the preview's pictures must not wait behind sound the playhead has not
+	// reached yet.
+	_state.queue_async(async_queue::load, [weak, path, start, end, rate, source_generation, &s = _state]
+	{
+		std::vector<int16_t> pcm;
+		av_format_decoder decoder;
+
+		if (decoder.open(path, media_intent::playback))
+		{
+			decoder.init_streams(-1, -1, false, false, false);
+			pcm = decoder.extract_audio_pcm_range(rate, start, end - start);
+		}
+
+		s.queue_ui([weak, path, start, end, rate, source_generation, pcm = std::move(pcm)]() mutable
+		{
+			// The weak pointer is a lifetime token only; it is locked here, back on the thread
+			// that owns the view.
+			if (const auto self = weak.lock())
 			{
-				decoder.init_streams(-1, -1, false, false, false);
-				pcm = decoder.extract_audio_pcm_range(rate, start, end - start);
+				self->preview_pcm_loaded(path, start, end, rate, source_generation, std::move(pcm));
 			}
-
-			s.queue_ui([weak, slot, path, start, end, rate, pcm = std::move(pcm)]() mutable
-			{
-				// The weak pointer is a lifetime token only; it is locked here, back on the thread
-				// that owns the view.
-				if (const auto self = weak.lock())
-				{
-					self->preview_pcm_loaded(slot, path, start, end, rate, std::move(pcm));
-				}
-			});
 		});
+	});
 
-		return nullptr;
-	}
-
-	return entry.pcm ? entry.pcm.get() : nullptr;
+	return {};
 }
 
-void movie_view::preview_pcm_loaded(const size_t slot, const df::file_path path, const double start,
-	const double end, const int sample_rate, std::vector<int16_t> pcm)
+void movie_view::preview_pcm_loaded(const df::file_path path, const double start, const double end,
+                                    const int sample_rate, const int source_generation, std::vector<int16_t> pcm)
 {
-	if (slot >= _preview_audio.size()) return;
+	if (!should_accept_movie_preview_pcm_loaded(_preview_audio_source_generation, source_generation)) return;
 
-	auto& entry = _preview_audio[slot];
+	// The window may have been replaced while it was read. Sound for a window nothing is waiting on
+	// is dropped rather than kept: lifetime is not currency here either.
+	for (auto& entry : _preview_audio)
+	{
+		if (!entry.pcm && entry.path == path && entry.start == start && entry.end == end &&
+			entry.sample_rate == sample_rate && entry.source_generation == source_generation)
+		{
+			entry.pcm = std::make_shared<const std::vector<int16_t>>(std::move(pcm));
+			return;
+		}
+	}
+}
 
-	// The slot may have moved to another clip while the stream was being read. A buffer for a clip
-	// nothing is mixing is dropped rather than kept: lifetime is not currency here either.
-	if (entry.path != path || entry.start != start || entry.end != end || entry.sample_rate != sample_rate) return;
-
-	entry.pcm = std::make_shared<const std::vector<int16_t>>(std::move(pcm));
+void movie_view::retire_source_state()
+{
+	close_clip_session();
+	close_preview_sources();
+	stop_preview_audio();
+	if (should_clear_movie_preview_audio_after_source_retire(true))
+	{
+		_preview_audio_source_generation = next_movie_preview_audio_source_generation(_preview_audio_source_generation);
+		for (auto& entry : _preview_audio) entry = {};
+	}
+	if (_sources) _sources->clear();
+	_texture_a.reset();
+	_texture_b.reset();
+	_drawn_a.reset();
+	_drawn_b.reset();
 }
 
 ui::texture_ptr movie_view::clip_texture(ui::draw_context& dc)
@@ -2638,8 +3128,17 @@ void movie_view::step_clip(const bool forward)
 	// disagree with it across a crossfade, where one instant belongs to two clips.
 	const auto current = static_cast<int>(project.current());
 	const auto next = std::clamp(current + (forward ? 1 : -1), 0, static_cast<int>(project.size()) - 1);
+	const auto playing = _movie_state.playing == movie_view_state::playing_t::movie;
 
 	select_clip(static_cast<size_t>(next), false, false);
+
+	// While the movie plays, stepping is the transport's skip: playback carries on from the clip's
+	// start. Parking on its first frame instead froze the picture while the sound played on.
+	if (playing)
+	{
+		const auto timing = project.timing();
+		if (static_cast<size_t>(next) < timing.starts.size()) seek(timing.starts[next]);
+	}
 }
 
 // Picking a clip parks the preview on that clip's first kept frame and puts the playhead at its
@@ -2664,9 +3163,9 @@ void movie_view::select_clip(const size_t index, const bool extend, const bool t
 {
 	_movie_state.project.select(index, extend, toggle);
 	if (_timeline) _timeline->reveal(_movie_state.project.current());
-	rewind_clip_player();
+	if (should_rewind_movie_clip_after_document_focus_change(true)) rewind_clip_player();
 	show_focused_clip();
-	_movie_state.read_from_project();
+	read_focused_clip();
 	changed(false);
 }
 
@@ -2674,10 +3173,18 @@ void movie_view::set_focus(const size_t index)
 {
 	_movie_state.project.focus(index);
 	if (_timeline) _timeline->reveal(index);
-	rewind_clip_player();
+	if (should_rewind_movie_clip_after_document_focus_change(true)) rewind_clip_player();
 	show_focused_clip();
-	_movie_state.read_from_project();
+	read_focused_clip();
 	changed(false);
+}
+
+// Focus changes only what the clip half of the panel describes, so only that half is rewritten.
+// A movie setting the user is typing into keeps its text.
+void movie_view::read_focused_clip()
+{
+	_movie_state.read_from_project();
+	if (_controls) _controls->show_clip_values();
 }
 
 // The clip player belongs to the focused clip, so moving focus retires it. Without this a position
@@ -2692,12 +3199,12 @@ void movie_view::rewind_clip_player()
 	}
 
 	close_clip_session();
-	_movie_state.clip_playhead = clip ? clip->start : 0.0;
+	_movie_state.clip_playhead = rewound_movie_clip_playhead(clip);
 }
 
 void movie_view::stop_playback()
 {
-	if (_movie_state.playing == movie_view_state::playing_t::nothing) return;
+	if (!should_retire_movie_clip_session_for_stop(_movie_state.playing)) return;
 
 	_movie_state.playing = movie_view_state::playing_t::nothing;
 	close_clip_session();
@@ -2728,9 +3235,11 @@ menu_type movie_view::context_menu(const pointi loc)
 	if (!_timeline || !_timeline->bounds.contains(loc)) return menu_type::view;
 
 	// Right-clicking outside the selection moves it, as everywhere else: the menu must act on what
-	// the user just pointed at, not on what happened to be selected before.
+	// the user just pointed at, not on what happened to be selected before. Picking it stops playback
+	// as a click does, rather than parking the picture on it while the sound plays on.
 	if (const auto index = _timeline->hit(loc); index >= 0 && !_movie_state.project.is_selected(index))
 	{
+		stop_playback();
 		select_clip(static_cast<size_t>(index), false, false);
 	}
 
@@ -2775,11 +3284,21 @@ void movie_view::hold_changed()
 	{
 		auto updated = *clip;
 		updated.photo_duration_is_default = true;
+		updated.start = 0;
+		updated.end = project.settings().photo_seconds;
 		project.replace(project.current(), updated);
-		project.apply_photo_duration();
 	}
 	else
 	{
+		// Turning the default off keeps the length the photo already has. The slider that appears
+		// last showed whatever this photo held before it followed the default, and the movie default
+		// may have moved since.
+		if (clip->photo_duration_is_default)
+		{
+			_movie_state.clip_hold_tenths = std::clamp(df::round(clip->duration() * 10), 1, 600);
+			if (_controls) _controls->show_clip_values();
+		}
+
 		project.trim(project.current(), 0, _movie_state.clip_hold_tenths / 10.0);
 	}
 
@@ -2818,15 +3337,22 @@ void movie_view::add_paths_at(const std::vector<df::file_path>& paths, const siz
 {
 	if (paths.empty()) return;
 
-	auto index = std::min(at, _movie_state.project.size());
+	auto& project = _movie_state.project;
+	std::vector<movie_clip> clips;
+	clips.reserve(paths.size());
 
 	for (const auto& path : paths)
 	{
-		_movie_state.project.insert(index++, make_movie_clip(path, _movie_state.project.settings()));
+		clips.emplace_back(make_movie_clip(path, project.settings()));
 	}
 
+	// One Add, or one drop, is one undo step however many files it carried.
+	project.insert_many(at, clips);
+	if (_timeline) _timeline->reveal(project.current());
+
 	probe_clips();
-	_movie_state.read_from_project();
+	read_document();
+	rewind_clip_player();
 	changed();
 }
 
@@ -2857,8 +3383,10 @@ void movie_view::remove_current()
 	auto& project = _movie_state.project;
 	if (project.is_empty()) return;
 
+	if (should_retire_movie_clip_session_for_document_focus_change(true)) stop_playback();
 	project.remove_selection();
-	_movie_state.read_from_project();
+	read_document();
+	rewind_clip_player();
 	changed();
 }
 
@@ -2866,8 +3394,13 @@ void movie_view::undo()
 {
 	if (!_movie_state.project.can_undo()) return;
 
+	if (should_retire_movie_clip_session_for_document_focus_change(true)) stop_playback();
 	_movie_state.project.undo();
-	_movie_state.read_from_project();
+
+	// A snapshot taken before the probe answered holds clips it never measured. Left unprobed they
+	// would never be ready to render, so they are measured again.
+	probe_clips();
+	read_document();
 	changed();
 }
 
@@ -2932,6 +3465,11 @@ void movie_view::probe_clips()
 			{
 				results.emplace_back(probe);
 			}
+			else
+			{
+				probe.changed_during_probe = true;
+				results.emplace_back(probe);
+			}
 		}
 
 		s.queue_ui([weak, generation, revision, results = std::move(results)]
@@ -2952,6 +3490,9 @@ void movie_view::apply_probe(const std::vector<movie_probe_result>& results)
 {
 	auto& project = _movie_state.project;
 	auto changed_any = false;
+	auto retry_any = false;
+	constexpr auto max_probe_retries = 2;
+	auto retry_updates = decide_movie_changed_probe_retries(results, _probe_retries, max_probe_retries);
 
 	for (size_t i = 0; i < project.size(); ++i)
 	{
@@ -2964,7 +3505,25 @@ void movie_view::apply_probe(const std::vector<movie_probe_result>& results)
 		if (found == results.end()) continue;
 
 		auto updated = clip;
+
+		if (found->changed_during_probe)
+		{
+			if (movie_path_list_contains(retry_updates.retry_paths, clip.path))
+			{
+				retry_any = true;
+				continue;
+			}
+			if (!movie_path_list_contains(retry_updates.missing_paths, clip.path)) continue;
+
+			updated.is_probed = true;
+			updated.is_missing = true;
+			project.replace_quietly(i, updated);
+			changed_any = true;
+			continue;
+		}
+
 		updated.is_probed = true;
+		_probe_retries.erase(clip.path);
 
 		// A source that was not there is now known to be gone rather than merely unexamined. It
 		// keeps its stored times, so a relink restores the clip and not just the file.
@@ -2999,11 +3558,19 @@ void movie_view::apply_probe(const std::vector<movie_probe_result>& results)
 		changed_any = true;
 	}
 
+	if (should_erase_movie_probe_retry_after_missing(!retry_updates.missing_paths.empty()))
+	{
+		for (const auto& path : retry_updates.missing_paths) _probe_retries.erase(path);
+	}
+
 	if (changed_any)
 	{
-		_movie_state.read_from_project();
+		// A probe can only have measured clips, so only the clip half of the panel can have moved.
+		read_focused_clip();
 		changed();
 	}
+
+	if (retry_any) probe_clips();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3111,10 +3678,18 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 
 				// A Movie Maker project is imported, not opened: saving it proposes an OTIO sibling.
 				const auto project_path = is_wlmp ? path.extension(".otio") : path;
+				if (should_retire_movie_sources_after_project_change(true))
+				{
+					current->stop_playback();
+					current->retire_source_state();
+				}
 				current->_movie_state.project.reset(std::move(result->clips), result->settings, project_path);
 				current->_movie_state.import_ignored = result->ignored_elements;
-				current->_movie_state.read_from_project();
+				current->_probe_retries.clear();
+				current->read_document();
 				current->probe_clips();
+				if (current->_timeline) current->_timeline->reveal(0);
+				if (should_rewind_movie_clip_after_document_focus_change(true)) current->rewind_clip_player();
 				current->seek(0);
 				current->changed();
 			};
@@ -3158,11 +3733,6 @@ void movie_view::save_project()
 
 void movie_view::save_project(std::function<void(bool)> complete)
 {
-	if (_movie_state.project.is_empty())
-	{
-		if (complete) complete(false);
-		return;
-	}
 	if (_project_io_active)
 	{
 		if (complete) complete(false);
@@ -3348,8 +3918,15 @@ void movie_view::relink_missing()
 			}
 
 			project.replace_many(replacements);
+			if (should_retire_movie_sources_after_project_change(true))
+			{
+				self->stop_playback();
+				self->retire_source_state();
+			}
+			self->_probe_retries.clear();
 			self->probe_clips();
-			self->_movie_state.read_from_project();
+			self->read_document();
+			if (should_rewind_movie_clip_after_document_focus_change(true)) self->rewind_clip_player();
 			self->changed();
 		});
 	});
@@ -3953,31 +4530,11 @@ view_base::progress_state movie_view::progress() const
 	return _progress;
 }
 
-// Leaving the view keeps the timeline: it is a document, and its state lives on the application, so
-// Close asks nothing. Quitting is the one point at which the document is actually lost, so it is the
-// one point that asks.
+// Quitting while Movie is open asks what leaving it asks. Quitting from another view finds nothing
+// to ask about, because leaving Movie already settled the timeline.
 bool movie_view::confirm_exit()
 {
-	// A render is asked about first: it is running work, and the document question below is about
-	// work that is only sitting there.
-	if (_progress.active)
-	{
-		const auto busy = make_dlg(_host->owner());
-
-		const std::vector<view_element_ptr> controls = {
-			set_margin(std::make_shared<ui::title_control2>(busy->_frame, icon_index::question,
-			                                               tt.cancel_operation_title,
-			                                               str_format(tt.cancel_operation_fmt.sv(),
-			                                                          operation_name()))),
-			std::make_shared<divider_element>(),
-			std::make_shared<ui::ok_cancel_control>(busy->_frame, tt.button_cancel_operation,
-			                                       tt.button_keep_running),
-		};
-
-		if (busy->show_modal(controls, {44}, {33}) != ui::close_result::ok) return false;
-
-		cancel_operation();
-	}
+	if (!confirm_render_cancel()) return false;
 
 	const auto weak = weak_from_this();
 	return confirm_save_or_discard([weak]
@@ -3986,10 +4543,43 @@ bool movie_view::confirm_exit()
 	});
 }
 
+// A render is asked about before the timeline: it is running work, and the save question is about
+// work that is only sitting there. Answers whether the caller may go on.
+bool movie_view::confirm_render_cancel()
+{
+	if (!_progress.active) return true;
+
+	const auto busy = make_dlg(_host->owner());
+
+	const std::vector<view_element_ptr> controls = {
+		set_margin(std::make_shared<ui::title_control2>(busy->_frame, icon_index::question,
+		                                               tt.cancel_operation_title,
+		                                               str_format(tt.cancel_operation_fmt.sv(),
+		                                                          operation_name()))),
+		std::make_shared<divider_element>(),
+		std::make_shared<ui::ok_cancel_control>(busy->_frame, tt.button_cancel_operation,
+		                                       tt.button_keep_running),
+	};
+
+	if (busy->show_modal(controls, {44}, {33}) != ui::close_result::ok) return false;
+
+	cancel_operation();
+	return true;
+}
+
+bool movie_view::has_unsaved_changes() const
+{
+	return _movie_state.project.is_modified();
+}
+
+bool movie_view::can_save_project() const
+{
+	return has_clips() || has_unsaved_changes();
+}
+
 bool movie_view::confirm_save_or_discard(std::function<void()> after_save)
 {
-	const auto& project = _movie_state.project;
-	if (project.is_empty() || !project.is_modified()) return true;
+	if (!has_unsaved_changes()) return true;
 
 	enum class exit_choice
 	{

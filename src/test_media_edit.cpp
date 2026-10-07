@@ -14,6 +14,8 @@
 #include "test_fixtures.h"
 #include "metadata_xmp.h"
 #include "view_edit.h"
+#include "app_util.h"
+#include "app_commands.h"
 
 
 // Writing metadata updates xmp:ModifyDate, and on a file that carried no XMP the toolkit can add an
@@ -305,9 +307,12 @@ static void should_apply_temperature_and_tint()
 	edits.temperature(0.5);
 	edits.tint(0.25);
 	const auto adjusted = source->transform(edits)->get_pixel(0, 0);
+	const auto adjusted_red = ui::get_b(adjusted);
+	const auto adjusted_green = ui::get_g(adjusted);
+	const auto adjusted_blue = ui::get_r(adjusted);
 
-	assert_equal(true, ui::get_r(adjusted) > ui::get_b(adjusted), "temperature warms neutral pixel");
-	assert_equal(true, ui::get_g(adjusted) < ui::get_r(adjusted), "positive tint reduces green");
+	assert_equal(true, adjusted_red > adjusted_blue, "temperature warms neutral pixel");
+	assert_equal(true, adjusted_green < adjusted_red, "positive tint reduces green");
 }
 
 static void should_initialize_edit_rotation_from_orientation()
@@ -351,6 +356,42 @@ static void should_initialize_edit_rotation_from_orientation()
 			             "right-top edit pixels match image view");
 		}
 	}
+}
+
+static void should_rotate_displayed_oriented_pixels_clockwise()
+{
+	const auto assert_orientation = [](const ui::orientation orientation, const std::string_view message)
+	{
+		const auto source = std::make_shared<ui::surface>();
+		source->alloc(3, 2, ui::texture_format::RGB);
+		for (auto y = 0; y < 2; ++y)
+		{
+			for (auto x = 0; x < 3; ++x)
+			{
+				source->set_pixel(x, y, ui::rgba(10 + x + y * 3, 0, 0));
+			}
+		}
+
+		image_edits edits;
+		edits.crop_bounds(rotate_command_crop_bounds(source->dimensions(), orientation, simple_transform::rot_90, true));
+		const auto actual = source->transform(edits);
+		const auto displayed = source->transform(to_simple_transform(orientation));
+		const auto expected = displayed->transform(simple_transform::rot_270);
+
+		assert_equal(true, ui::is_valid(actual), message, "actual rotated surface is valid");
+		assert_equal(true, ui::is_valid(expected), message, "expected rotated surface is valid");
+		assert_equal(true, expected->dimensions() == actual->dimensions(), message, "dimensions");
+		for (auto y = 0u; y < actual->height(); ++y)
+		{
+			for (auto x = 0u; x < actual->width(); ++x)
+			{
+				assert_equal(expected->get_pixel(x, y), actual->get_pixel(x, y), message, "pixels");
+			}
+		}
+	};
+
+	assert_orientation(ui::orientation::right_top, "right_top");
+	assert_orientation(ui::orientation::left_bottom, "left_bottom");
 }
 
 static void should_build_rotated_edit_preview_surface()
@@ -467,6 +508,24 @@ static void should_update_label(const std::string_view name)
 		const auto actual_scanned = ff_scan_after_update(ff, label_cleared, save_path, detect_xmp_sidecar(save_path));
 		assert_equal(std::string_view{}, actual_scanned.to_props()->label, "cleared label");
 	}
+}
+
+static void should_roundtrip_xmp_disc_metadata()
+{
+	const auto source = test_files_folder.combine_file("Byzantium.avi");
+	const auto path = _temps.next_path(source.extension());
+	platform::copy_file(source, path, false, false);
+
+	files ff;
+	metadata_edits edits;
+	edits.disk_num = df::xy8{2, 3};
+	auto result = ff.update(path, edits, {}, {}, false, {}, ff_inspect_rescan(path));
+	assert_equal(true, result.success(), std::format("disc metadata saved ({})", result.format_error()));
+
+	const auto scanned = ff_scan_after_update(ff, result, path, detect_xmp_sidecar(path));
+	const auto props = scanned.to_props();
+	assert_equal(2, static_cast<int>(props->disk.x), "disc number round trips from XMP");
+	assert_equal(3, static_cast<int>(props->disk.y), "disc total round trips from XMP");
 }
 
 // Issue #252 - a rotated video reported its rotation until a label was applied, after which the
@@ -740,6 +799,43 @@ static void should_update_metadata(const std::string_view name)
 	assert_metadata(*expected, *actual);
 }
 
+static void should_preserve_creator_names_with_apostrophes()
+{
+	files ff;
+
+	const auto load_path = test_files_folder.combine_file("Test.jpg");
+
+	const auto assert_creator_round_trip = [&ff, load_path](const std::string_view input,
+	                                                        const std::vector<std::string>& creator_names)
+	{
+		const auto save_path = _temps.next_path(".jpg");
+
+		metadata_edits edits;
+		edits.copyright_creator = input;
+		auto written = ff.update(load_path, save_path, edits, {}, {}, false, {}, {}, ff_inspect_rescan(save_path));
+		assert_equal(true, written.success(), std::format("creator written ({})", written.format_error()));
+
+		const auto scanned = ff_scan_after_update(ff, written, save_path, detect_xmp_sidecar(save_path));
+		const auto props = scanned.to_props();
+		const auto expected_creator = str::combine(creator_names);
+		assert_equal(expected_creator, props->copyright_creator, "creator array read-back");
+
+		const auto read_back_names = str::split(props->copyright_creator, true);
+		assert_equal(creator_names.size(), read_back_names.size(), "creator array boundary count");
+		for (auto i = 0_z; i < creator_names.size(); ++i)
+		{
+			assert_equal(creator_names[i], read_back_names[i], "creator array item");
+		}
+	};
+
+	assert_creator_round_trip("Jane O'Brien; Alex; \"Smith; Pat\"", {"Jane O'Brien", "Alex", "Smith; Pat"});
+	assert_creator_round_trip("\"Weird Al\" Yankovic; Madonna", {"\"Weird Al\" Yankovic", "Madonna"});
+	assert_creator_round_trip("\"Doe, Jane\" ; Alex", {"Doe, Jane", "Alex"});
+	assert_creator_round_trip("Jane Doe; 'Bud' Abbott; Lou Costello", {"Jane Doe", "'Bud' Abbott", "Lou Costello"});
+	assert_creator_round_trip("\"Doe, Jane\" ", {"Doe, Jane"});
+	assert_creator_round_trip("Alex; 'Til Tuesday; Bob", {"Alex", "'Til Tuesday", "Bob"});
+}
+
 static void should_add_remove_tags(const std::string_view name)
 {
 	const auto ext = name.substr(df::find_ext(name));
@@ -803,18 +899,20 @@ static void should_remove_shell_written_tags()
 	}
 
 	// Verify Diffractor can read the shell-written tags
+	tag_set baseline_tags;
 	{
 		const auto sr = ff_scan_file(ff, save_path);
 		const auto ps = sr.to_props();
-		const tag_set scanned_tags(ps->tags);
-		assert_equal(true, scanned_tags.size() >= 3u, "diffractor read shell tags");
+		baseline_tags = tag_set(ps->tags);
+		assert_equal(true, baseline_tags.size() >= 3u, "diffractor read shell tags");
 	}
 
 	// Remove one tag via Diffractor
 	{
 		metadata_edits edits;
 		edits.remove_tags = tag_set("ShellTag2");
-		ff.update(save_path, edits, {}, {}, false, {});
+		const auto remove_result = ff.update(save_path, edits, {}, {}, false, {});
+		assert_equal(true, remove_result.success(), std::format("remove ShellTag2 ({})", remove_result.format_error()));
 	}
 
 	// Verify the tag is removed from Diffractor's perspective
@@ -823,46 +921,41 @@ static void should_remove_shell_written_tags()
 		const auto ps = sr.to_props();
 		const tag_set remaining(ps->tags);
 
-		// ShellTag2 should be gone
-		tag_set check_removed("ShellTag2");
-		tag_set test_set = remaining;
-		const auto size_before = test_set.size();
-		test_set.remove(check_removed);
-		assert_equal(size_before, test_set.size(), "ShellTag2 should not be present");
+		auto expected = baseline_tags;
+		expected.remove(tag_set("ShellTag2"));
+		assert_equal_strict(expected.to_string(" ", false), remaining.to_string(" ", false),
+		                    "only ShellTag2 is removed from Diffractor tags");
 	}
 
 	// Verify tags are also removed from shell perspective (IPTC/EXIF)
 	{
 		const auto shell_meta = platform::read_shell_metadata(save_path);
-		bool found_removed = false;
-		for (const auto& t : shell_meta.tags)
-		{
-			if (str::icmp(t, "ShellTag2") == 0) found_removed = true;
-		}
-		assert_equal(false, found_removed, "ShellTag2 removed from shell");
+		assert_equal_strict(tag_set("ShellTag1 ShellTag3").to_string(" ", false),
+		                    tag_set(shell_meta.tags).to_string(" ", false),
+		                    "only ShellTag2 is removed from shell tags");
 	}
 
 	// Remove all remaining tags
 	{
 		metadata_edits edits;
 		edits.remove_tags = tag_set("ShellTag1 ShellTag3");
-		ff.update(save_path, edits, {}, {}, false, {});
+		const auto remove_result = ff.update(save_path, edits, {}, {}, false, {});
+		assert_equal(true, remove_result.success(),
+		             std::format("remove remaining shell tags ({})", remove_result.format_error()));
 	}
 
 	// Verify all tags are gone
 	{
 		const auto sr = ff_scan_file(ff, save_path);
 		const auto ps = sr.to_props();
-		// Only original tags from Test.jpg should remain (if any)
+		auto expected = baseline_tags;
+		expected.remove(tag_set("ShellTag1 ShellTag2 ShellTag3"));
+		assert_equal_strict(expected.to_string(" ", false), tag_set(ps->tags).to_string(" ", false),
+		                    "unrelated baseline tags survive");
+
 		const auto shell_meta = platform::read_shell_metadata(save_path);
-		bool found_any_shell = false;
-		for (const auto& t : shell_meta.tags)
-		{
-			if (str::icmp(t, "ShellTag1") == 0 || str::icmp(t, "ShellTag2") == 0 || str::icmp(t, "ShellTag3") ==
-				0)
-				found_any_shell = true;
-		}
-		assert_equal(false, found_any_shell, "all shell tags removed");
+		assert_equal_strict(tag_set().to_string(" ", false), tag_set(shell_meta.tags).to_string(" ", false),
+		                    "all shell-written tags removed");
 	}
 }
 
@@ -900,16 +993,13 @@ static void should_read_asf_wm_categories()
 	const auto save_path = _temps.next_path(".wmv");
 
 	files ff;
-	ff.update(load_path, save_path, {}, {}, {}, false, {});
+	const auto copy_result = ff.update(load_path, save_path, {}, {}, {}, false, {});
+	assert_equal(true, copy_result.success(), std::format("asf copy written ({})", copy_result.format_error()));
 
-	const std::vector<std::string> shell_tags = {"AsfTagA", "AsfTagB", "AsfTagC"};
-	const auto tagged = !platform::write_shell_tags(save_path, shell_tags).failed();
-
-	// The runner fails a test that asserts nothing, so the skip has to say what it decided rather
-	// than returning silently - otherwise a host without Media Foundation reads as a regression.
-	assert_equal(true, save_path.exists(), "asf copy written");
-
-	if (!tagged) return; // Windows Media Foundation unavailable; skip the rest on this host
+	metadata_edits edits;
+	edits.add_tags = tag_set("AsfTagA AsfTagB AsfTagC");
+	const auto tag_result = ff.update(save_path, edits, {}, {}, false, {}, ff_inspect_rescan(save_path));
+	assert_equal(true, tag_result.success(), std::format("asf tags written ({})", tag_result.format_error()));
 
 	const auto sr = ff_scan_file(ff, save_path);
 
@@ -1282,6 +1372,212 @@ static void should_edit_raw_sidecar_only()
 	assert_equal(5, sr.to_props()->rating, "rating round trips");
 }
 
+// A RAW capture date corrected through the Date tool is written to the sidecar. The embedded RAW
+// timestamp is still present on rescan, but it must not outrank the sidecar's corrected Original
+// date or the tool appears to do nothing.
+static void should_write_raw_sidecar_original_date()
+{
+	const auto path = _temps.next_path(".CR2");
+	const auto path_xmp = path.extension(".xmp");
+	const auto raw_folder = test_files_folder.combine("raw");
+
+	platform::copy_file(raw_folder.combine_file("Screws.CR2"), path, false, false);
+	platform::copy_file(raw_folder.combine_file("Screws.xmp"), path_xmp, false, false);
+
+	files ff;
+	const auto before = ff_scan_file(ff, path, detect_xmp_sidecar(path)).to_props();
+	assert_equal(df::date_t(2011, 9, 23, 23, 49, 16), before->dates.best(), "raw starts at embedded date");
+
+	metadata_edits edits;
+	edits.date_original = df::date_t(1980, 6, 1, 9, 30, 0);
+	const auto written = ff.update(path, edits, {}, {}, false, {});
+	assert_equal(true, written.success(), std::format("raw date saved ({})", written.format_error()));
+
+	const auto after = ff_scan_file(ff, path, detect_xmp_sidecar(path)).to_props();
+	assert_equal(df::date_t(1980, 6, 1, 9, 30, 0), after->dates.original(), "sidecar original date wins");
+	assert_equal(df::date_t(1980, 6, 1, 9, 30, 0), after->dates.best(), "and is the item date");
+}
+
+static df::blob make_xmp_packet(const std::string_view body)
+{
+	const auto xml = std::format(
+		"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+		"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+		"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+		"<rdf:Description rdf:about=\"\" "
+		"xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+		"xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\">{}</rdf:Description>"
+		"</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>",
+		body);
+	return {std::bit_cast<const uint8_t*>(xml.data()), std::bit_cast<const uint8_t*>(xml.data() + xml.size())};
+}
+
+static void write_xmp_packet(const df::file_path path, const std::string_view body)
+{
+	df::blob_save_to_file(make_xmp_packet(body), path);
+}
+
+static void set_raw_source_xmp(const df::file_path path)
+{
+	metadata_xmp::set_test_raw_source_xmp(path, make_xmp_packet(
+		                                      "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Embedded title</rdf:li></rdf:Alt></dc:title>"
+		                                      "<dc:subject><rdf:Bag><rdf:li>embedded-tag</rdf:li></rdf:Bag></dc:subject>"));
+}
+
+static void should_seed_first_raw_sidecar_from_embedded_xmp()
+{
+	const auto path = _temps.next_path(".CR2");
+	const auto path_xmp = path.extension(".xmp");
+	const auto raw_folder = test_files_folder.combine("raw");
+	platform::copy_file(raw_folder.combine_file("Screws.CR2"), path, false, false);
+	const auto raw_before = df::blob_from_file(path);
+	set_raw_source_xmp(path);
+
+	metadata_edits edits;
+	edits.rating = 4;
+	files ff;
+	const auto result = ff.update(path, edits, {}, {}, false, {});
+	metadata_xmp::set_test_raw_source_xmp({}, {});
+
+	assert_equal(true, result.success(), std::format("rating saved ({})", result.format_error()));
+	assert_equal(true, path_xmp.exists(), "first sidecar created");
+	assert_equal(true, raw_before == df::blob_from_file(path), "raw bytes unchanged");
+
+	prop::item_metadata sidecar;
+	metadata_xmp::parse(sidecar, path_xmp);
+	assert_equal("Embedded title", sidecar.title, "embedded title seeds sidecar");
+	assert_equal("embedded-tag", sidecar.tags, "embedded tags seed sidecar");
+	assert_equal(4, sidecar.rating, "edit applied");
+}
+
+static void should_use_existing_partial_raw_sidecar_as_source()
+{
+	const auto path = _temps.next_path(".CR2");
+	const auto path_xmp = path.extension(".xmp");
+	const auto raw_folder = test_files_folder.combine("raw");
+	platform::copy_file(raw_folder.combine_file("Screws.CR2"), path, false, false);
+	write_xmp_packet(path_xmp,
+	                 "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Sidecar title</rdf:li></rdf:Alt></dc:title>");
+	set_raw_source_xmp(path);
+
+	metadata_edits edits;
+	edits.rating = 2;
+	files ff;
+	const auto result = ff.update(path, edits, {}, {}, false, {});
+	metadata_xmp::set_test_raw_source_xmp({}, {});
+
+	assert_equal(true, result.success(), std::format("rating saved ({})", result.format_error()));
+	prop::item_metadata sidecar;
+	metadata_xmp::parse(sidecar, path_xmp);
+	assert_equal("Sidecar title", sidecar.title, "existing sidecar title survives");
+	assert_equal(true, str::is_empty(sidecar.tags), "partial sidecar remains authoritative over embedded tags");
+	assert_equal(2, sidecar.rating, "edit applied");
+}
+
+static void should_keep_empty_raw_sidecar_subject_authoritative()
+{
+	const auto path = _temps.next_path(".CR2");
+	const auto path_xmp = path.extension(".xmp");
+	const auto raw_folder = test_files_folder.combine("raw");
+	platform::copy_file(raw_folder.combine_file("Screws.CR2"), path, false, false);
+	write_xmp_packet(path_xmp, "<dc:subject><rdf:Bag/></dc:subject>");
+	set_raw_source_xmp(path);
+
+	metadata_edits edits;
+	edits.rating = 1;
+	files ff;
+	const auto result = ff.update(path, edits, {}, {}, false, {});
+	metadata_xmp::set_test_raw_source_xmp({}, {});
+
+	assert_equal(true, result.success(), std::format("rating saved ({})", result.format_error()));
+	prop::item_metadata sidecar;
+	metadata_xmp::parse(sidecar, path_xmp);
+	assert_equal(true, str::is_empty(sidecar.tags), "explicit empty sidecar subject stays authoritative");
+	assert_equal(1, sidecar.rating, "edit applied");
+}
+
+static void should_force_rescan_after_failed_live_metadata_write()
+{
+	file_update_result untouched_failure;
+	untouched_failure.code = platform::file_op_result_code::FAILED;
+	assert_equal(false, failed_write_needs_forced_rescan(untouched_failure),
+	             "ordinary failures keep existing failure reporting without a forced scan");
+
+	file_update_result changed_failure;
+	changed_failure.code = platform::file_op_result_code::FAILED;
+	changed_failure.live_file_maybe_changed = true;
+	assert_equal(true, failed_write_needs_forced_rescan(changed_failure),
+	             "live-mutating failures are still failures and force a rescan");
+	assert_equal(false, changed_failure.success(), "the failed result stays visible");
+}
+
+static void should_revalidate_folder_after_failed_live_date_write()
+{
+	file_update_result changed_failure;
+	changed_failure.code = platform::file_op_result_code::FAILED;
+	changed_failure.live_file_maybe_changed = true;
+	changed_failure.error_message = "distinctive live write failure";
+
+	std::string first_error;
+	df::unique_folders written;
+	const auto status = apply_batch_update_result(written, _temps.folder(), first_error, changed_failure);
+	assert_equal(true, item_status::fail == status, "date batches mark the item failed");
+	assert_equal(true, written.contains(_temps.folder()), "date batches revalidate a failed live-mutating write");
+	assert_equal("distinctive live write failure", first_error, "date batches keep the failed write error");
+}
+
+static void should_mark_retry_failure_after_live_metadata_mutation()
+{
+	const auto source = test_files_folder.combine_file("gizmo.mp4");
+	const auto path = _temps.next_path(".mp4");
+	platform::copy_file(source, path, false, false);
+
+	metadata_edits first;
+	first.rating = 3;
+	files ff;
+	assert_equal(true, ff.update(path, first, {}, {}, false, {}).success(), "packet embedded");
+
+	metadata_edits second;
+	second.rating = 4;
+	metadata_xmp::set_test_update_failure_sequence({1, 2});
+	const auto result = ff.update(path, second, {}, {}, false, {});
+	metadata_xmp::set_test_update_failure_sequence({});
+
+	assert_equal(false, result.success(), "retry failure is reported");
+	assert_equal(true, result.live_file_maybe_changed, "retry mutation is carried for recovery scan");
+}
+
+// The source is made unreadable with a Windows share-mode lock; POSIX has no mandatory lock to
+// hold it with, so the test is registered on Windows only.
+#ifdef _WIN32
+static void should_refuse_first_raw_sidecar_when_raw_source_is_unreadable()
+{
+	const auto path = _temps.next_path(".CR2");
+	const auto staged_path = _temps.next_path(".xmp");
+	const auto raw_folder = test_files_folder.combine("raw");
+	platform::copy_file(raw_folder.combine_file("Screws.CR2"), path, false, false);
+
+	metadata_edits edits;
+	edits.rating = 5;
+
+	const auto lock = platform::open_file(path, platform::file_open_mode::read_write);
+	assert_equal(true, static_cast<bool>(lock), "raw locked");
+
+	auto refused = false;
+	try
+	{
+		metadata_xmp::update(path, path, edits, {}, staged_path);
+	}
+	catch (const std::exception&)
+	{
+		refused = true;
+	}
+
+	assert_equal(true, refused, "unreadable raw source is refused, not shadowed by a default sidecar");
+	assert_equal(false, staged_path.exists(), "no default sidecar is staged");
+}
+#endif
+
 // A sidecar that exists but cannot be read is unknown, not empty. Applying the edits to a default
 // packet and swapping it over the file would replace every property the sidecar already holds, so
 // the write has to fail instead. Asserted against the staged packet rather than the swap, because a
@@ -1549,6 +1845,9 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	}
 
 	tests.add("Should update gps in exif"s, should_update_gps_in_exif);
+	tests.add("Should round-trip Xmp disc metadata Byzantium.avi"s, should_roundtrip_xmp_disc_metadata);
+	tests.add("Should preserve metadata creator names with apostrophes"s,
+	          should_preserve_creator_names_with_apostrophes);
 	// Issue #252 - rotated video keeps its rotation across a metadata write
 	tests.add("Should keep video rotation through a metadata write"s,
 	          should_keep_video_rotation_through_a_metadata_write);
@@ -1576,6 +1875,30 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	          [] { should_stage_metadata_edit("Byzantium.avi"); });
 	tests.add("Should stage metadata edit Test.jpg"s, [] { should_stage_metadata_edit("Test.jpg"); });
 	tests.add("Should edit raw sidecar only"s, should_edit_raw_sidecar_only);
+	tests.add("Should write raw sidecar original date"s, should_write_raw_sidecar_original_date);
+	// SRC-020 - first RAW sidecar starts from effective embedded XMP
+	tests.add("Should seed first raw sidecar from embedded xmp"s,
+	          should_seed_first_raw_sidecar_from_embedded_xmp);
+	// SRC-020 - existing sidecar remains the source packet
+	tests.add("Should use existing partial raw sidecar as source"s,
+	          should_use_existing_partial_raw_sidecar_as_source);
+	// SRC-020 - explicit empty dc:subject has precedence over embedded tags
+	tests.add("Should keep empty raw sidecar subject authoritative"s,
+	          should_keep_empty_raw_sidecar_subject_authoritative);
+	// SRC-030 - failed in-place writes that may have touched live bytes force recovery scans
+	tests.add("Should force rescan after failed live metadata write"s,
+	          should_force_rescan_after_failed_live_metadata_write);
+	// SRC-030 - date batches need the same recovery folder validation as metadata batches
+	tests.add("Should revalidate folder after failed live date write"s,
+	          should_revalidate_folder_after_failed_live_date_write);
+	// SRC-030 - a retry that mutates and throws must still force a rescan
+	tests.add("Should mark retry failure after live metadata mutation"s,
+	          should_mark_retry_failure_after_live_metadata_mutation);
+#ifdef _WIN32
+	// SRC-020 - unknown RAW source metadata must not be replaced by a default packet
+	tests.add("Should refuse first raw sidecar when raw source is unreadable"s,
+	          should_refuse_first_raw_sidecar_when_raw_source_is_unreadable);
+#endif
 	tests.add("Should refuse to write an unreadable sidecar"s, should_refuse_to_write_an_unreadable_sidecar);
 	tests.add("Should save as with distinct xmp sidecar"s, should_save_as_with_distinct_xmp_sidecar);
 	tests.add("Should update exif rating"s, should_update_exif_rating);
@@ -1627,6 +1950,8 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	tests.add("Should apply temperature and tint"s, should_apply_temperature_and_tint);
 	tests.add("Should crop without resampling"s, should_crop_without_resampling);
 	tests.add("Should initialize edit rotation from orientation"s, should_initialize_edit_rotation_from_orientation);
+	tests.add("Should rotate displayed oriented pixels clockwise"s,
+	          should_rotate_displayed_oriented_pixels_clockwise);
 	tests.add("Should build rotated edit preview surface"s, should_build_rotated_edit_preview_surface);
 	tests.add("Should build straightened edit preview without black corners"s,
 	          should_build_straightened_edit_preview_without_black_corners);

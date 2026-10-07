@@ -707,11 +707,13 @@ class d3d11_text_renderer final : df::no_copy, public IDWriteTextRenderer
 	factories_ptr _f;
 	std::shared_ptr<d3d11_draw_context_impl> _canvas;
 	ComPtr<ID3D11Texture2D> _texture;
+	ui::style::font_face _font_type = ui::style::font_face::dialog;
 
 	uint32_t _xy_tex = 0u;
 	uint32_t _spacing = 0u;
 	uint32_t _line_height = 0u;
 	uint32_t _base_line_height = 0u;
+	int _base_font_size = 0;
 
 	struct coords
 	{
@@ -754,8 +756,10 @@ public:
 	d3d11_text_renderer() = default;
 	~d3d11_text_renderer() override = default;
 
-	void reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f, font_renderer_ptr fr);
+	void reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f,
+	           ui::style::font_face font_type, int base_font_size, font_renderer_ptr fr);
 	void reset();
+	bool ensure_font();
 
 	[[nodiscard]] font_renderer_ptr font() const
 	{
@@ -1193,13 +1197,24 @@ void d3d11_draw_context_impl::update_font_size(const int base_font_size)
 		_base_font_size = base_font_size;
 
 		const auto c = shared_from_this();
-		_font[ui::style::font_face::code].reset(c, _f, _f->font_face(ui::style::font_face::code, base_font_size));
-		_font[ui::style::font_face::dialog].reset(c, _f, _f->font_face(ui::style::font_face::dialog, base_font_size));
-		_font[ui::style::font_face::title].reset(c, _f, _f->font_face(ui::style::font_face::title, base_font_size));
-		_font[ui::style::font_face::mega].reset(c, _f, _f->font_face(ui::style::font_face::mega, base_font_size));
-		_font[ui::style::font_face::icons].reset(c, _f, _f->font_face(ui::style::font_face::icons, base_font_size));
+		_font[ui::style::font_face::code].reset(
+			c, _f, ui::style::font_face::code, base_font_size,
+			_f->font_face(ui::style::font_face::code, base_font_size));
+		_font[ui::style::font_face::dialog].reset(
+			c, _f, ui::style::font_face::dialog, base_font_size,
+			_f->font_face(ui::style::font_face::dialog, base_font_size));
+		_font[ui::style::font_face::title].reset(
+			c, _f, ui::style::font_face::title, base_font_size,
+			_f->font_face(ui::style::font_face::title, base_font_size));
+		_font[ui::style::font_face::mega].reset(
+			c, _f, ui::style::font_face::mega, base_font_size,
+			_f->font_face(ui::style::font_face::mega, base_font_size));
+		_font[ui::style::font_face::icons].reset(
+			c, _f, ui::style::font_face::icons, base_font_size,
+			_f->font_face(ui::style::font_face::icons, base_font_size));
 		_font[ui::style::font_face::small_icons].reset(
-			c, _f, _f->font_face(ui::style::font_face::small_icons, base_font_size));
+			c, _f, ui::style::font_face::small_icons, base_font_size,
+			_f->font_face(ui::style::font_face::small_icons, base_font_size));
 	}
 }
 
@@ -2864,14 +2879,24 @@ sizei d3d11_draw_context_impl::measure_string(const std::string_view text, const
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
-	return _font[font].measure_text(text, s, style);
+	auto& renderer = _font[font];
+	if (should_retry_font_renderer(renderer.font()))
+	{
+		renderer.reset(shared_from_this(), _f, font, _base_font_size, _f->font_face(font, _base_font_size));
+	}
+	return renderer.measure_text(text, s, style);
 }
 
 int d3d11_draw_context_impl::line_height(const ui::style::font_face font)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	df::assert_true(ui::is_ui_thread());
-	return _font[font].line_height();
+	auto& renderer = _font[font];
+	if (should_retry_font_renderer(renderer.font()))
+	{
+		renderer.reset(shared_from_this(), _f, font, _base_font_size, _f->font_face(font, _base_font_size));
+	}
+	return renderer.line_height();
 }
 
 
@@ -3207,6 +3232,11 @@ d3d11_text_renderer::coords d3d11_text_renderer::find_glyph(const uint16_t c, co
 	df::scope_rendering_func rf(__FUNCTION__);
 	coords result = {0, 0, 0, 0, 0};
 
+	if (!ensure_font())
+	{
+		return result;
+	}
+
 	if (!glyph_run)
 	{
 		return result;
@@ -3323,21 +3353,42 @@ void d3d11_text_renderer::draw_text(const std::shared_ptr<text_layout_impl>& tex
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = clr;
+	ui::clear_text_highlights(_highlights);
+	if (!text || !text->_renderer || !ensure_font()) return;
 	text->_renderer->draw(_canvas.get(), this, text->_layout.Get(), bounds, clr, bg);
 }
 
 void d3d11_text_renderer::reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f,
-                                font_renderer_ptr fr)
+                                const ui::style::font_face font_type, const int base_font_size, font_renderer_ptr fr)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	reset();
 
 	_f = f;
 	_canvas = c;
+	_font_type = font_type;
+	_base_font_size = base_font_size;
 	_font = std::move(fr);
+	if (!ensure_font()) return;
 	_line_height = _font->calc_line_height();
 	_base_line_height = _font->calc_base_line_height();
 	_spacing = 2;
+}
+
+bool d3d11_text_renderer::ensure_font()
+{
+	if (!_font && _f)
+	{
+		_font = _f->font_face(_font_type, _base_font_size);
+		if (_font)
+		{
+			_line_height = _font->calc_line_height();
+			_base_line_height = _font->calc_base_line_height();
+			if (_spacing == 0) _spacing = 2;
+		}
+	}
+
+	return _font != nullptr;
 }
 
 void d3d11_text_renderer::reset()
@@ -3347,6 +3398,7 @@ void d3d11_text_renderer::reset()
 	_glyph_keys.clear();
 	_chars_to_glyphs.clear();
 	_texture.Reset();
+	ui::clear_text_highlights(_highlights);
 	_spacing = 0;
 	_xy_tex = 0;
 	_line_height = 0;
@@ -3360,8 +3412,9 @@ void d3d11_text_renderer::draw_text(const std::string_view text, const recti bou
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = c;
+	ui::clear_text_highlights(_highlights);
 
-	if (_font)
+	if (ensure_font())
 	{
 		_font->draw(_canvas.get(), this, text, bounds, style, c, bg);
 	}
@@ -3374,31 +3427,12 @@ void d3d11_text_renderer::draw_text(const std::string_view text, const std::vect
 	df::scope_rendering_func rf(__FUNCTION__);
 	_clr = clr;
 
-	_highlights.clear();
-	_highlights.reserve(highlights.size());
+	const auto converted = ui::utf8_to_utf16(text, highlights);
+	_highlights = converted.highlights;
 
-	std::wstring w;
-	w.reserve(text.size());
-
-	auto i_text = text.begin();
-	auto i_highlights = highlights.begin();
-
-	while (i_text < text.end())
+	if (ensure_font())
 	{
-		const auto i = std::distance(text.begin(), i_text);
-
-		w.append(1, static_cast<wchar_t>(str::pop_utf8_char(i_text, text.end())));
-
-		if (i_highlights != highlights.end() && i == i_highlights->offset)
-		{
-			_highlights.emplace_back(static_cast<uint32_t>(w.size() - 1u), i_highlights->length, i_highlights->clr);
-			++i_highlights;
-		}
-	}
-
-	if (_font)
-	{
-		_font->draw(_canvas.get(), this, w, bounds, style, clr, bg, _highlights);
+		_font->draw(_canvas.get(), this, converted.text, bounds, style, clr, bg, _highlights);
 	}
 }
 
@@ -3428,8 +3462,13 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 	if (glyphRun && _canvas)
 	{
 		const auto client_extent = _canvas->client_extent();
-		auto char_pos = glyphRunDescription ? glyphRunDescription->textPosition : 0;
-		auto i_highlights = _highlights.begin();
+		const auto text_position = glyphRunDescription ? glyphRunDescription->textPosition : 0u;
+		const auto text_length = glyphRunDescription ? glyphRunDescription->stringLength : glyphRun->glyphCount;
+		const auto* const cluster_map = glyphRunDescription ? glyphRunDescription->clusterMap : nullptr;
+		const auto cluster_spans = _highlights.empty()
+			                           ? std::vector<ui::text_cluster_span>{}
+			                           : ui::text_cluster_spans_for_glyph_run(
+				                           glyphRun->glyphCount, cluster_map, text_length, text_position);
 
 		const pointd screen_scale(client_extent.cx, client_extent.cy);
 		// find_glyph can grow the atlas, which replaces the texture and invalidates the scale used for
@@ -3480,12 +3519,13 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 			}
 
 			auto sx = tx;
-			auto sy = ty - _base_line_height; // coord.x_offset;
+			auto sy = ui::glyph_top_from_baseline(static_cast<float>(ty), _base_line_height, 0.0f);
 
 			if (glyphRun->glyphOffsets)
 			{
 				sx += glyphRun->glyphOffsets[i].advanceOffset;
-				sy += glyphRun->glyphOffsets[i].ascenderOffset;
+				sy = ui::glyph_top_from_baseline(static_cast<float>(ty), _base_line_height,
+				                                  glyphRun->glyphOffsets[i].ascenderOffset);
 			}
 
 			if (is_left_to_right)
@@ -3513,21 +3553,9 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 				pointd br(sx + w, sy + h);
 
 				auto clr = _clr;
-
-				if (i_highlights != _highlights.end())
+				if (!_highlights.empty() && i < cluster_spans.size())
 				{
-					const auto begin = i_highlights->offset;
-					const auto end = begin + i_highlights->length;
-
-					if (char_pos >= begin && char_pos < end)
-					{
-						clr = i_highlights->clr;
-					}
-
-					if (char_pos >= end - 1u)
-					{
-						++i_highlights;
-					}
+					clr = ui::text_cluster_color(_clr, cluster_spans[i], _highlights);
 				}
 
 				const auto left_color = clr;
@@ -3561,7 +3589,6 @@ HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOA
 			}
 
 			tx += ax;
-			char_pos += 1;
 		}
 
 		// The remainder is flushed here rather than on the last iteration: the last glyph in a
@@ -3912,7 +3939,7 @@ ui::vertices_ptr d3d11_draw_context_impl::create_vertices()
 font_renderer_ptr d3d11_draw_context_impl::find_font(const ui::style::font_face font)
 {
 	const auto found = _font.find(font);
-	if (found != _font.end()) return found->second.font();
+	if (found != _font.end() && !should_retry_font_renderer(found->second.font())) return found->second.font();
 	return _f->font_face(font, _base_font_size);
 }
 

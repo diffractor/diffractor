@@ -70,6 +70,22 @@ struct po_entry
 	}
 };
 
+constexpr size_t max_supported_plural_forms = 4;
+constexpr size_t max_supported_plural_index = max_supported_plural_forms - 1;
+
+struct po_parse_error
+{
+	size_t line = 0;
+	std::string message;
+};
+
+struct po_load_result
+{
+	std::vector<po_entry> entries;
+	std::vector<po_parse_error> errors;
+};
+
+po_load_result load_po_report(df::file_path lang_file);
 std::vector<po_entry> load_po(df::file_path lang_file);
 
 std::string format_plural_text(const plural_text& fmt, int64_t count, int64_t of_total = 0);
@@ -1503,8 +1519,8 @@ struct app_text_t
 		"{count} items were imported but their created date could not be set."
 	};
 	plural_text delete_info_fmt = {
-		"{first-name} will be moved to the recycle bin.",
-		"{count} items ({size}) will be moved to the recycle bin."
+		"{first-name} will be moved to the recycle bin when Windows can recycle it.",
+		"{count} items ({size}) will be moved to the recycle bin when Windows can recycle them."
 	};
 	plural_text delete_info_permanent_fmt = {
 		"{first-name} will be permanently deleted.",

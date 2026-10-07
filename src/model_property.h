@@ -264,6 +264,7 @@ namespace prop
 	extern key album_artist;
 	extern key audio_codec;
 	extern key audio_sample_rate;
+	extern key audio_sample_rate_full;
 	extern key audio_sample_type;
 	extern key bitrate;
 	extern key camera_manufacturer;
@@ -439,7 +440,7 @@ namespace prop
 		uint16_t iso_speed = 0;
 		int16_t rating = 0;
 		uint16_t audio_channels = 0;
-		uint16_t audio_sample_rate = 0;
+		uint32_t audio_sample_rate = 0;
 		uint16_t audio_sample_type = 0;
 		uint16_t width = 0;
 		uint16_t year = 0;
@@ -558,6 +559,7 @@ namespace prop
 	std::string format_gps(double lat, double lon);
 	std::string format_iso(int i);
 	std::string format_audio_sample_rate(int v);
+	std::string format_audio_sample_rate(uint32_t v);
 	std::string format_audio_sample_rate(uint16_t v);
 	std::string format_audio_sample_type(audio_sample_t v);
 	std::string format_audio_channels(int v);

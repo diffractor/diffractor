@@ -14,6 +14,10 @@
 #include "ui.h"
 
 class view_state;
+namespace ui
+{
+	class complete_strategy_t;
+}
 
 enum class commands
 {
@@ -229,3 +233,14 @@ struct command_accelerator
 // nothing else can tell whether two commands have quietly claimed the same key.
 std::vector<command_accelerator> default_keyboard_accelerators();
 
+// Configured external tools accept one {item-path}; the Open menu therefore offers them only for a
+// single selected file. Association handlers keep their separate whole-selection contract.
+df::file_path selected_external_tool_target(const df::item_set& selected_items);
+quadd rotate_command_crop_bounds(sizei dimensions, ui::orientation stored_orientation, simple_transform transform,
+                                 bool show_rotated);
+
+using destination_folder_enumerator = std::function<df::folder_paths(const df::folder_path&)>;
+
+std::shared_ptr<ui::complete_strategy_t> make_destination_folder_auto_complete_for_test(
+	view_state& state, std::shared_ptr<void> picker_lifetime, std::shared_ptr<const df::folder_counts> folders,
+	destination_folder_enumerator enumerate_child_folders = {});

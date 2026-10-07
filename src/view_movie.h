@@ -30,10 +30,17 @@ struct movie_probe_result
 {
 	df::file_path path;
 	bool found = false;
+	bool changed_during_probe = false;
 	bool is_photo = false;
 	sizei extent;
 	double duration = 0;
 	double frame_rate = 0;
+};
+
+struct movie_probe_retry_updates
+{
+	std::vector<df::file_path> retry_paths;
+	std::vector<df::file_path> missing_paths;
 };
 
 // Why a render stopped, as a reason rather than a sentence. The worker cannot word it: the text a
@@ -75,6 +82,129 @@ struct movie_render_control
 	}
 };
 
+struct movie_frame_cache_completion_decision
+{
+	bool accept = false;
+	bool clear_in_flight = false;
+	bool dispatch_next = false;
+};
+
+inline movie_frame_cache_completion_decision decide_movie_frame_cache_completion(const uint64_t current_generation,
+                                                                                 const uint64_t result_generation,
+                                                                                 const bool has_queued_request)
+{
+	if (current_generation != result_generation) return {};
+	return {true, true, has_queued_request};
+}
+
+struct movie_peak_completion_decision
+{
+	bool accept = false;
+	bool clear_pending_path = false;
+};
+
+inline movie_peak_completion_decision decide_movie_peak_completion(const uint64_t current_generation,
+                                                                   const uint64_t result_generation)
+{
+	if (current_generation != result_generation) return {};
+	return {true, true};
+}
+
+enum class movie_probe_changed_action
+{
+	retry,
+	mark_missing,
+};
+
+inline movie_probe_changed_action decide_movie_changed_probe_action(const int retry_count_after_increment,
+                                                                    const int max_retries)
+{
+	return retry_count_after_increment <= max_retries
+		       ? movie_probe_changed_action::retry
+		       : movie_probe_changed_action::mark_missing;
+}
+
+inline bool movie_path_list_contains(const std::vector<df::file_path>& paths, const df::file_path& path)
+{
+	return std::find(paths.begin(), paths.end(), path) != paths.end();
+}
+
+inline movie_probe_retry_updates decide_movie_changed_probe_retries(const std::vector<movie_probe_result>& results,
+                                                                    df::hash_map<df::file_path, int, df::ihash,
+	                                                                    df::ieq>& retries,
+                                                                    const int max_retries)
+{
+	movie_probe_retry_updates updates;
+
+	for (const auto& result : results)
+	{
+		if (!result.changed_during_probe || movie_path_list_contains(updates.retry_paths, result.path) ||
+			movie_path_list_contains(updates.missing_paths, result.path))
+		{
+			continue;
+		}
+
+		const auto count = ++retries[result.path];
+
+		if (decide_movie_changed_probe_action(count, max_retries) == movie_probe_changed_action::retry)
+			updates.retry_paths.emplace_back(result.path);
+		else
+			updates.missing_paths.emplace_back(result.path);
+	}
+
+	return updates;
+}
+
+inline bool should_clear_movie_probe_retries_after_document_replace(const bool document_replaced)
+{
+	return document_replaced;
+}
+
+inline bool should_erase_movie_probe_retry_after_missing(const bool marked_missing_after_budget)
+{
+	return marked_missing_after_budget;
+}
+
+inline bool should_retire_movie_clip_session_for_stop(const movie_view_state::playing_t playing)
+{
+	return playing != movie_view_state::playing_t::nothing;
+}
+
+inline bool should_retire_movie_clip_session_for_document_focus_change(const bool document_operation_can_change_focus)
+{
+	return document_operation_can_change_focus;
+}
+
+inline bool should_rewind_movie_clip_after_document_focus_change(const bool document_operation_can_change_focus)
+{
+	return document_operation_can_change_focus;
+}
+
+inline double rewound_movie_clip_playhead(const movie_clip* const clip)
+{
+	return clip ? clip->start : 0.0;
+}
+
+inline bool should_retire_movie_sources_after_project_change(const bool project_changed_successfully)
+{
+	return project_changed_successfully;
+}
+
+inline bool should_clear_movie_preview_audio_after_source_retire(const bool project_changed_successfully)
+{
+	return project_changed_successfully;
+}
+
+inline int next_movie_preview_audio_source_generation(const int current_generation)
+{
+	return current_generation + 1;
+}
+
+inline bool should_accept_movie_preview_pcm_loaded(const int current_generation, const int request_generation)
+{
+	return current_generation == request_generation;
+}
+
 class movie_view_controls final : public view_controls_host
 {
 public:
@@ -109,6 +239,12 @@ public:
 
 	// Refreshes the text and the visibility that depend on the document rather than on a control.
 	void update_for_document();
+
+	// The controls bind to movie_view_state, but a native control shows what it was last given, so
+	// a value the document changed -- an undo, an opened project, another clip in focus -- has to be
+	// shown again. Neither raises a change: an echo of the view's own write is not an edit.
+	void show_document_values() const;
+	void show_clip_values() const;
 };
 
 class movie_view final : public view_base, public std::enable_shared_from_this<movie_view>
@@ -158,19 +294,31 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 
 	// The preview's own sound. The player owns one audio device and plays one session on it, and
 	// the clip player already borrows that session -- so a crossfade, which needs two sources
-	// audible at once, is mixed here from bounded source-time chunks and written to a device this
+	// audible at once, is mixed here from bounded source-time windows and written to a device this
 	// view owns. The clip is heard through the player's resampler and device; the movie uses this
 	// mixer, and the two never play at once.
+	//
+	// One decoded window of a clip's sound, at the endpoint's rate. Held by source window rather
+	// than by contributor, so the clip a crossfade hands from b to a keeps the sound already read
+	// for it, and a window read ahead of the playhead is there when the playhead arrives.
 	struct preview_audio
 	{
 		df::file_path path;
 		double start = 0;
 		double end = 0;
 		int sample_rate = 0;
+		// Null while the window is being read; it is asked for once, not on every pump.
 		std::shared_ptr<const std::vector<int16_t>> pcm;
+		// When it was last wanted. The least recently wanted window is the one a new one replaces.
+		uint64_t wanted = 0;
+		int source_generation = 0;
 	};
 
-	std::array<preview_audio, av_max_frame_sessions> _preview_audio;
+	// Two contributors now, and the two the playhead reaches at each of two points ahead of it.
+	static constexpr size_t preview_audio_windows = 6;
+
+	std::array<preview_audio, preview_audio_windows> _preview_audio;
+	uint64_t _preview_audio_wanted = 0;
 	av_audio_device_ptr _preview_device;
 	audio_buffer _preview_audio_buffer;
 	// Movie time up to which samples have been queued to the device, and the epoch that tells a
@@ -180,6 +328,12 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 	// The endpoint's rate. Clip buffers are decoded at it, so the mixer never resamples: only the
 	// sample format and the channel count are left to translate.
 	int _preview_audio_rate = 0;
+	int _preview_audio_source_generation = 0;
+	// Set when the sound restarts and cleared once the device has been started on enough of it.
+	// Until then the playhead waits, so the picture does not run ahead of a soundtrack that has not
+	// begun -- for a moment at most: past that the movie plays on and the sound joins it.
+	bool _preview_audio_priming = false;
+	int64_t _preview_audio_priming_since = 0;
 
 	std::string _title;
 	int64_t _last_tick = 0;
@@ -211,6 +365,7 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 	bool _project_io_active = false;
 	size_t _project_io_generation = 0;
 	size_t _probe_generation = 0;
+	df::hash_map<df::file_path, int, df::ihash, df::ieq> _probe_retries;
 	std::function<void(bool)> _project_save_complete;
 
 public:
@@ -281,6 +436,10 @@ public:
 	                     const std::string& message, str::cached name);
 
 	bool has_clips() const { return !_movie_state.project.is_empty(); }
+	// Clips the user has changed since the timeline was last saved, seeded or opened: what leaving,
+	// opening another project, or quitting has to ask about.
+	bool has_unsaved_changes() const;
+	bool can_save_project() const;
 	bool has_missing_clips() const;
 	bool can_undo() const { return _movie_state.project.can_undo(); }
 	bool can_render() const;
@@ -348,15 +507,22 @@ private:
 	void close_preview_source(size_t slot);
 	void close_preview_sources();
 	// The preview's sound. Opened when the movie starts playing, fed a little ahead of the playhead
-	// on every tick, and reset whenever the playhead moves somewhere it was not going.
+	// on every tick, and restarted whenever the playhead moves somewhere it was not going.
 	void start_preview_audio();
 	void stop_preview_audio();
 	void reset_preview_audio();
 	void pump_preview_audio();
-	// The clip's whole audio, or null while it is being read. Decoded once per clip, off the queue
-	// the preview's pictures do not use, so reading a long stream never delays a frame.
-	const std::vector<int16_t>* preview_pcm(size_t slot, const movie_clip& clip, double source_time);
-	void preview_pcm_loaded(size_t slot, df::file_path path, double start, double end, int sample_rate,
+	// Lets go of an endpoint that has gone away. The preview carries on silent until the next Play,
+	// which opens whatever the default endpoint is by then.
+	void drop_preview_device();
+	// Asks for the windows the playhead will reach next -- the clip's next stretch and the clips
+	// after it -- while there is still time to read them.
+	void prefetch_preview_audio();
+	// The window of `clip`'s sound holding `source_time`, or null while it is read. Asking is what
+	// reads it, on a queue the preview's pictures do not use, so reading never delays a frame.
+	std::shared_ptr<const std::vector<int16_t>> preview_pcm(const movie_clip& clip, double source_time,
+	                                                        double& window_start);
+	void preview_pcm_loaded(df::file_path path, double start, double end, int sample_rate, int source_generation,
 	                        std::vector<int16_t> pcm);
 	// Retires the clip player and puts its position back at the focused clip's in point.
 	void rewind_clip_player();
@@ -364,11 +530,21 @@ private:
 	void open_clip_session(df::file_path path, double at);
 	void clip_session_opened(df::file_path path, std::shared_ptr<av_session> ses);
 	void close_clip_session();
+	void retire_source_state();
+	// Asks before a running render is abandoned. Answers whether the caller may go on.
+	bool confirm_render_cancel();
 	bool confirm_save_or_discard(std::function<void()> after_save = {});
 	void save_project(std::function<void(bool)> complete);
-	// Replaces the timeline with the clips a selection produces. Only ever called for a timeline the
-	// user has not edited; an edited one is a document and is left alone.
+	// Replaces the timeline with the clips a selection produces. Only ever reached for a timeline
+	// holding no unsaved work; leaving Movie is where unsaved work is settled.
 	void seed_from(const std::vector<df::file_path>& paths);
+	// What Discard on leaving does: the timeline goes, the movie settings stay.
+	void discard_timeline();
+	// Re-reads the bound panel values from the document and shows them, for a change the panel did
+	// not make itself. The narrower form leaves the movie settings alone, so text being typed into
+	// one of them is not rewritten under the user.
+	void read_document();
+	void read_focused_clip();
 	void load_project(df::file_path path, bool is_wlmp);
 	recti calc_preview_target(sizei source) const;
 };

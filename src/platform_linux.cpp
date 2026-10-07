@@ -20,13 +20,20 @@
 #include "util_base64.h"
 
 #include <condition_variable>
+#include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/random.h>
+#include <sys/syscall.h>
+#include <linux/fs.h>
 #include <linux/limits.h>
 #include <ctime>
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Media
@@ -479,18 +486,76 @@ void* platform::memory_pool::alloc(const size_t size)
 	return result;
 }
 
+namespace
+{
+	platform::linux_move_file_test_failures move_file_failures;
+
+	int rename_no_replace(const std::string& from, const std::string& to)
+	{
+		if (move_file_failures.rename_no_replace_unsupported)
+		{
+			errno = EINVAL;
+			return -1;
+		}
+
+		return static_cast<int>(::syscall(SYS_renameat2, AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(),
+		                                  RENAME_NOREPLACE));
+	}
+
+	int link_no_replace(const std::string& from, const std::string& to)
+	{
+		if (move_file_failures.link_unsupported)
+		{
+			errno = EPERM;
+			return -1;
+		}
+
+		return ::link(from.c_str(), to.c_str());
+	}
+}
+
 platform::file_op_result platform::move_file(const df::file_path existing, const df::file_path destination,
                                              const bool fail_if_exists)
 {
 	const auto from = existing.str();
 	const auto to = destination.str();
+	const auto copy_then_unlink = [&]
+	{
+		const auto copied = copy_file(existing, destination, true, false);
+		if (copied.failed()) return copied;
+
+		if (::unlink(from.c_str()) != 0)
+		{
+			return file_op_result{file_op_result_code::FAILED, std::string(::strerror(errno))};
+		}
+
+		return file_op_result{file_op_result_code::OK};
+	};
 
 	if (fail_if_exists)
 	{
+		if (rename_no_replace(from, to) == 0)
+		{
+			return {file_op_result_code::OK};
+		}
+
+		const auto rename_error = errno;
+		if (rename_error == EEXIST) return {file_op_result_code::ALREADY_EXISTS};
+
+		if (rename_error == EXDEV)
+		{
+			return copy_then_unlink();
+		}
+
+		if (rename_error != ENOSYS && rename_error != EINVAL)
+		{
+			return {file_op_result_code::FAILED, std::string(::strerror(rename_error))};
+		}
+
 		// rename() has no refusal mode, and a stat-then-rename would silently replace a destination
 		// created in the window between them. link() refuses atomically with EEXIST, so the pair is
 		// the refusal; the source is only unlinked once the new name is known to be this move's.
-		if (::link(from.c_str(), to.c_str()) == 0)
+		if (link_no_replace(from, to) == 0)
 		{
 			if (::unlink(from.c_str()) == 0)
 			{
@@ -507,19 +572,12 @@ platform::file_op_result platform::move_file(const df::file_path existing, const
 			return {file_op_result_code::ALREADY_EXISTS};
 		}
 
-		// Hard links are not available for this source - a filesystem without them, or one that
-		// refuses them across its boundaries. The pre-check is then the best refusal there is, and
-		// it is the one this function already made.
-		if (errno != EPERM && errno != EXDEV && errno != EMLINK && errno != EOPNOTSUPP && errno != ENOSYS)
+		if (errno == EXDEV || errno == EPERM || errno == EOPNOTSUPP || errno == EMLINK || errno == ENOSYS)
 		{
-			return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+			return copy_then_unlink();
 		}
 
-		struct stat st = {};
-		if (::stat(to.c_str(), &st) == 0)
-		{
-			return {file_op_result_code::ALREADY_EXISTS};
-		}
+		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
 	}
 
 	if (::rename(from.c_str(), to.c_str()) != 0)
@@ -545,6 +603,16 @@ platform::file_op_result platform::move_file(const df::file_path existing, const
 	}
 
 	return {file_op_result_code::OK};
+}
+
+void platform::test_linux_move_file_failures(linux_move_file_test_failures failures)
+{
+	move_file_failures = failures;
+}
+
+void platform::test_linux_clear_move_file_failures()
+{
+	test_linux_move_file_failures({});
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

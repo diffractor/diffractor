@@ -149,25 +149,36 @@ public:
 		if (t.type_ == TYPE_MLUC)
 		{
 			// multiLocalizedUnicodeType: 4 byte reserved, record count, record size, then records
-			// of language, country, length and offset. The first record is enough here.
-			if (d.size() < 28) return {};
-			const auto len = be32(20);
-			auto offset = be32(24);
-			// Offsets are from the start of the tag, and the payload begins after the 4 byte signature.
-			if (offset < 4) return {};
-			offset -= 4;
-			if (len < 2 || offset > d.size() || len > d.size() - offset) return {};
+			// of language, country, length and tag-relative offset.
+			if (d.size() < 24) return {};
+			const auto count = be32(4);
+			const auto record_size = be32(8);
+			constexpr size_t records_at = 12;
+			constexpr size_t minimum_record_size = 12;
+			if (count == 0 || record_size < minimum_record_size) return {};
+			if (count > (d.size() - records_at) / record_size) return {};
 
-			// The payload is UTF-16BE, so the code unit is two bytes on every platform.
-			std::u16string utf16;
-			utf16.reserve(len / 2);
-
-			for (size_t i = 0; i + 1 < len; i += 2)
+			for (size_t record = 0; record < count; ++record)
 			{
-				utf16.push_back(static_cast<char16_t>(d[offset + i] << 8 | d[offset + i + 1]));
-			}
+				const auto record_at = records_at + record * record_size;
+				const auto len = be32(record_at + 4);
+				auto offset = be32(record_at + 8);
+				// Offsets are from the start of the tag, and the payload begins after the 4 byte signature.
+				if (offset < 4) continue;
+				offset -= 4;
+				if (len < 2 || (len & 1u) != 0 || offset > d.size() || len > d.size() - offset) continue;
 
-			return str::utf16_to_utf8(utf16);
+				// The payload is UTF-16BE, so the code unit is two bytes on every platform.
+				std::u16string utf16;
+				utf16.reserve(len / 2);
+
+				for (size_t i = 0; i + 1 < len; i += 2)
+				{
+					utf16.push_back(static_cast<char16_t>(d[offset + i] << 8 | d[offset + i + 1]));
+				}
+
+				return str::utf16_to_utf8(utf16);
+			}
 		}
 
 		if (t.type_ == TYPE_TEXT)
@@ -359,7 +370,8 @@ public:
 
 	std::string describe_tag(const Tag& t) const
 	{
-		const auto text = str::strip(decode_text(t));
+		const auto decoded = decode_text(t);
+		const auto text = str::strip(decoded);
 		if (!text.empty()) return std::string(text);
 
 		if (t.type_ == TYPE_XYZ && t.data().size() >= 16)
@@ -411,7 +423,8 @@ public:
 
 			if (found != tags_.end())
 			{
-				const auto text = str::strip(decode_text(found->second));
+				const auto decoded = decode_text(found->second);
+				const auto text = str::strip(decoded);
 				if (!text.empty()) add_row(result, name, std::string(text), 1);
 			}
 		}

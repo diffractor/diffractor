@@ -692,8 +692,8 @@ public:
 		const auto s = sin(theta);
 		const auto c = cos(theta);
 
-		const auto x = (X - center.X) * c - (center.Y - Y) * s;
-		const auto y = (center.Y - Y) * c - (X - center.X) * s;
+		const auto x = (X - center.X) * c - (Y - center.Y) * s;
+		const auto y = (X - center.X) * s + (Y - center.Y) * c;
 
 		return {center.X + x, center.Y + y};
 	}
@@ -928,14 +928,20 @@ public:
 	{
 		const auto right = std::min(a.right(), b.right());
 		const auto bottom = std::min(a.bottom(), b.bottom());
-		const auto left = std::min(a.left(), b.left());
-		const auto top = std::min(a.top(), b.top());
+		const auto left = std::max(a.left(), b.left());
+		const auto top = std::max(a.top(), b.top());
+
+		if (right <= left || bottom <= top)
+		{
+			c = {};
+			return false;
+		}
 
 		c.X = left;
 		c.Y = top;
 		c.Width = right - left;
 		c.Height = bottom - top;
-		return !c.is_empty();
+		return true;
 	}
 
 	constexpr bool intersects(const rectd rect) const noexcept

@@ -572,7 +572,6 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 			{
 				// Consumers match this against a character-start byte offset, so measure before the pop.
 				const auto match_start = static_cast<size_t>(std::distance(text.begin(), text_start));
-				auto match_len = 0u;
 
 				auto text_match = text_p;
 				auto sub_match = sub_p;
@@ -581,16 +580,22 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 
 				while (matching && sub_match < sub_end && text_match < text_end)
 				{
+					const auto text_before = text_match;
+					const auto sub_before = sub_match;
 					const auto text_match_char = normalize_for_compare(pop_utf8_char(text_match, text_end));
 					sub_match_char = normalize_for_compare(pop_utf8_char(sub_match, sub_end));
 
 					matching = text_match_char == sub_match_char && sub_match_char != 0x20;
-					match_len += 1;
+					if (!matching)
+					{
+						text_match = text_before;
+						if (sub_match_char != 0x20) sub_match = sub_before;
+					}
 				}
 
 				if (matching && sub_match == sub_end)
 				{
-					parts.emplace_back(match_start + parts_offset, match_len + 1);
+					parts.emplace_back(match_start + parts_offset, static_cast<size_t>(text_match - text_start));
 
 					result.found = true;
 					result.parts = std::move(parts);
@@ -598,14 +603,14 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 				}
 
 				// word match scan for remaining
-				if (sub_match_char == 0x20 && match_len > 0 && sub_match < sub_end && text_match < text_end)
+				if (sub_match_char == 0x20 && text_match > text_start && sub_match < sub_end && text_match < text_end)
 				{
 					while (sub_match_char == 0x20 && sub_match < sub_end)
 					{
 						sub_match_char = normalize_for_compare(pop_utf8_char(sub_match, sub_end));
 					}
 
-					parts.emplace_back(match_start + parts_offset, match_len);
+					parts.emplace_back(match_start + parts_offset, static_cast<size_t>(text_match - text_start));
 
 					first_sub_char = sub_match_char;
 					text_p = text_match;
@@ -618,6 +623,26 @@ str::find_result str::ifind2(const std::string_view text, const std::string_view
 	return result;
 }
 
+uint32_t str::matched_text_byte_length(const std::string_view text, const size_t offset, const std::string_view query)
+{
+	auto text_pos = text.begin() + static_cast<std::ptrdiff_t>(std::min(offset, text.size()));
+	auto query_pos = query.begin();
+	const auto text_begin = text_pos;
+
+	while (text_pos < text.end() && query_pos < query.end())
+	{
+		auto next_text = text_pos;
+		auto next_query = query_pos;
+		const auto text_char = normalize_for_compare(pop_utf8_char(next_text, text.end()));
+		const auto query_char = normalize_for_compare(pop_utf8_char(next_query, query.end()));
+		if (text_char != query_char) break;
+		text_pos = next_text;
+		query_pos = next_query;
+	}
+
+	return static_cast<uint32_t>(text_pos - text_begin);
+}
+
 bool str::is_quote(const char c)
 {
 	return c == '\"' || c == '\'';
@@ -628,57 +653,133 @@ void str::split2(const std::string_view text, const bool detect_quotes,
 {
 	if (!text.empty())
 	{
-		auto in_quotes = false;
-		char quote_char = 0;
-		auto i = 0u;
+		auto i = size_t{0};
 		auto split_start = std::string_view::npos;
-		auto split_len = 0;
+		auto split_end = std::string_view::npos;
+		auto token_is_blank = false;
+		size_t cached_quote_close[2] = {std::string_view::npos, std::string_view::npos};
+		size_t cached_quote_no_close_from[2] = {std::string_view::npos, std::string_view::npos};
+		// Whether a quote is skipped depends only on its own position, so a scan that stopped at an
+		// unescaped quote that cannot close answers every later opening quote before that stop too.
+		size_t cached_quote_stop[2] = {std::string_view::npos, std::string_view::npos};
+
+		const auto quote_index = [](const char c) { return c == '"' ? 0_z : 1_z; };
+		const auto is_quote_close_at_boundary = [&text, &pred](const size_t close)
+		{
+			auto boundary = close + 1;
+			if (boundary == text.size() || pred(text[boundary])) return true;
+			while (boundary < text.size() && !pred(text[boundary]) && str::is_white_space(text[boundary]))
+			{
+				++boundary;
+			}
+			return boundary == text.size() || pred(text[boundary]);
+		};
+
+		const auto find_closing_quote = [&text, &quote_index, &cached_quote_close, &cached_quote_no_close_from,
+			&cached_quote_stop, &is_quote_close_at_boundary](const size_t open, const char quote)
+		{
+			const auto index = quote_index(quote);
+			const auto cached_close = cached_quote_close[index];
+			if (cached_close != std::string_view::npos && open < cached_close) return cached_close;
+			if (cached_quote_stop[index] != std::string_view::npos && open < cached_quote_stop[index])
+			{
+				return std::string_view::npos;
+			}
+			if (cached_quote_no_close_from[index] != std::string_view::npos &&
+				open > cached_quote_no_close_from[index])
+			{
+				return std::string_view::npos;
+			}
+
+			for (auto close = open + 1; close < text.size(); ++close)
+			{
+				if (text[close] == quote)
+				{
+					const auto closes_token = is_quote_close_at_boundary(close);
+					if (close > open + 1 && text[close - 1] == '\\' && !closes_token) continue;
+					if (closes_token)
+					{
+						cached_quote_close[index] = close;
+						return close;
+					}
+					cached_quote_stop[index] = close;
+					return std::string_view::npos;
+				}
+			}
+
+			cached_quote_no_close_from[index] = open;
+			return std::string_view::npos;
+		};
 
 		while (i < text.size())
 		{
 			const auto c = text[i];
 
-			if (is_quote(c) && (quote_char == 0 || quote_char == c) && detect_quotes)
+			if (pred(c))
 			{
-				in_quotes = !in_quotes;
-				quote_char = in_quotes ? c : 0;
-			}
-			else if (in_quotes || !pred(c))
-			{
-				if (split_start == std::string_view::npos)
+				if (split_start != std::string_view::npos && split_end > split_start)
 				{
-					split_start = i;
-				}
-
-				split_len += 1;
-			}
-			else
-			{
-				if (split_start != std::string_view::npos && split_len > 0)
-				{
-					const auto part = text.substr(split_start, split_len);
-
-					if (!part.empty())
-					{
-						inserter(part);
-					}
+					inserter(text.substr(split_start, split_end - split_start));
 				}
 
 				split_start = std::string_view::npos;
-				split_len = 0;
+				split_end = std::string_view::npos;
+				token_is_blank = false;
+			}
+			else
+			{
+				const auto quote_at_token_boundary = split_start == std::string_view::npos ||
+					(split_end == i && token_is_blank);
+
+				if (detect_quotes && is_quote(c) && quote_at_token_boundary)
+				{
+					const auto close = find_closing_quote(i, c);
+					if (close < text.size())
+					{
+						auto boundary = close + 1;
+						const auto closes_at_boundary = boundary == text.size() || pred(text[boundary]);
+						while (!closes_at_boundary && boundary < text.size() && !pred(text[boundary]) &&
+							str::is_white_space(text[boundary]))
+						{
+							++boundary;
+						}
+
+						split_start = i + 1;
+						split_end = close;
+						i = boundary;
+						continue;
+					}
+
+					if (split_start == std::string_view::npos)
+					{
+						split_start = i;
+					}
+
+					split_end = i + 1;
+					token_is_blank = false;
+				}
+				else if (split_start == std::string_view::npos)
+				{
+					split_start = i;
+					split_end = i + 1;
+					token_is_blank = str::is_white_space(c);
+				}
+				else
+				{
+					split_end = i + 1;
+					if (!str::is_white_space(c))
+					{
+						token_is_blank = false;
+					}
+				}
 			}
 
 			++i;
 		}
 
-		if (split_start != std::string_view::npos && split_len > 0)
+		if (split_start != std::string_view::npos && split_end > split_start)
 		{
-			const auto last = text.substr(split_start, split_len);
-
-			if (!last.empty())
-			{
-				inserter(last);
-			}
+			inserter(text.substr(split_start, split_end - split_start));
 		}
 	}
 }
@@ -1700,7 +1801,7 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x0273, 'n'}, // latin small letter n with retroflex hook -- no decomposition
 		{0x0274, 'n'}, // latin letter small capital n -- no decomposition
 		{0x0275, 'o'}, // latin small letter barred o -- no decomposition
-		{0x0276, 'oe'}, // latin letter small capital oe -- no decomposition
+		{0x0276, 'o'}, // latin letter small capital oe -- no decomposition
 		{0x0277, 'o'}, // latin small letter closed omega -- no decomposition
 		{0x0279, 'r'}, // latin small letter turned r -- no decomposition
 		{0x027a, 'r'}, // latin small letter turned r with long leg -- no decomposition
@@ -1754,278 +1855,6 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x02e1, 'l'}, // modifier letter small l
 		{0x02e2, 's'}, // modifier letter small s
 		{0x02e3, 'x'}, // modifier letter small x
-		{0x0380, 'a'}, //	LATIN CAPITAL LETTER A WITH GRAVE
-		{0x0381, 'a'}, //	LATIN CAPITAL LETTER A WITH ACUTE
-		{0x0382, 'a'}, //	LATIN CAPITAL LETTER A WITH CIRCUMFLEX
-		{0x0383, 'a'}, //	LATIN CAPITAL LETTER A WITH TILDE
-		{0x0384, 'a'}, //	LATIN CAPITAL LETTER A WITH DIAERESIS
-		{0x0385, 'a'}, //	LATIN CAPITAL LETTER A WITH RING ABOVE
-		{0x0387, 'c'}, //	LATIN CAPITAL LETTER C WITH CEDILLA
-		{0x0388, 'e'}, //	LATIN CAPITAL LETTER E WITH GRAVE
-		{0x0389, 'e'}, //	LATIN CAPITAL LETTER E WITH ACUTE
-		{0x038a, 'e'}, //	LATIN CAPITAL LETTER E WITH CIRCUMFLEX
-		{0x038b, 'e'}, //	LATIN CAPITAL LETTER E WITH DIAERESIS
-		{0x038c, 'i'}, //	LATIN CAPITAL LETTER I WITH GRAVE
-		{0x038d, 'i'}, //	LATIN CAPITAL LETTER I WITH ACUTE
-		{0x038e, 'i'}, //	LATIN CAPITAL LETTER I WITH CIRCUMFLEX
-		{0x038f, 'i'}, //	LATIN CAPITAL LETTER I WITH DIAERESIS
-		{0x0391, 'n'}, //	LATIN CAPITAL LETTER N WITH TILDE
-		{0x0392, 'o'}, //	LATIN CAPITAL LETTER O WITH GRAVE
-		{0x0393, 'o'}, //	LATIN CAPITAL LETTER O WITH ACUTE
-		{0x0394, 'o'}, //	LATIN CAPITAL LETTER O WITH CIRCUMFLEX
-		{0x0395, 'o'}, //	LATIN CAPITAL LETTER O WITH TILDE
-		{0x0396, 'o'}, //	LATIN CAPITAL LETTER O WITH DIAERESIS
-		{0x0398, 'o'}, //	LATIN CAPITAL LETTER O WITH STROKE
-		{0x0399, 'u'}, //	LATIN CAPITAL LETTER U WITH GRAVE
-		{0x039a, 'u'}, //	LATIN CAPITAL LETTER U WITH ACUTE
-		{0x039b, 'u'}, //	LATIN CAPITAL LETTER U WITH CIRCUMFLEX
-		{0x039c, 'u'}, //	LATIN CAPITAL LETTER U WITH DIAERESIS
-		{0x039d, 'y'}, //	LATIN CAPITAL LETTER Y WITH ACUTE
-		{0x039f, 's'}, //	LATIN SMALL LETTER SHARP S
-		{0x03a0, 'a'}, //	LATIN SMALL LETTER A WITH GRAVE
-		{0x03a1, 'a'}, //	LATIN SMALL LETTER A WITH ACUTE
-		{0x03a2, 'a'}, //	LATIN SMALL LETTER A WITH CIRCUMFLEX
-		{0x03a3, 'a'}, //	LATIN SMALL LETTER A WITH TILDE
-		{0x03a4, 'a'}, //	LATIN SMALL LETTER A WITH DIAERESIS
-		{0x03a5, 'a'}, //	LATIN SMALL LETTER A WITH RING ABOVE
-		{0x03a7, 'c'}, //	LATIN SMALL LETTER C WITH CEDILLA
-		{0x03a8, 'e'}, //	LATIN SMALL LETTER E WITH GRAVE
-		{0x03a9, 'e'}, //	LATIN SMALL LETTER E WITH ACUTE
-		{0x03aa, 'e'}, //	LATIN SMALL LETTER E WITH CIRCUMFLEX
-		{0x03ab, 'e'}, //	LATIN SMALL LETTER E WITH DIAERESIS
-		{0x03ac, 'i'}, //	LATIN SMALL LETTER I WITH GRAVE
-		{0x03ad, 'i'}, //	LATIN SMALL LETTER I WITH ACUTE
-		{0x03ae, 'i'}, //	LATIN SMALL LETTER I WITH CIRCUMFLEX
-		{0x03af, 'i'}, //	LATIN SMALL LETTER I WITH DIAERESIS
-		{0x03b1, 'n'}, //	LATIN SMALL LETTER N WITH TILDE
-		{0x03b2, 'o'}, //	LATIN SMALL LETTER O WITH GRAVE
-		{0x03b3, 'o'}, //	LATIN SMALL LETTER O WITH ACUTE
-		{0x03b4, 'o'}, //	LATIN SMALL LETTER O WITH CIRCUMFLEX
-		{0x03b5, 'o'}, //	LATIN SMALL LETTER O WITH TILDE
-		{0x03b6, 'o'}, //	LATIN SMALL LETTER O WITH DIAERESIS
-		{0x03b8, 'o'}, //	LATIN SMALL LETTER O WITH STROKE
-		{0x03b9, 'u'}, //	LATIN SMALL LETTER U WITH GRAVE
-		{0x03ba, 'u'}, //	LATIN SMALL LETTER U WITH ACUTE
-		{0x03bb, 'u'}, //	LATIN SMALL LETTER U WITH CIRCUMFLEX
-		{0x03bc, 'u'}, //	LATIN SMALL LETTER U WITH DIAERESIS
-		{0x03bd, 'y'}, //	LATIN SMALL LETTER Y WITH ACUTE
-		{0x03bf, 'y'}, //	LATIN SMALL LETTER Y WITH DIAERESIS
-		{0x0480, 'a'}, //	LATIN CAPITAL LETTER A WITH MACRON
-		{0x0481, 'a'}, //	LATIN SMALL LETTER A WITH MACRON
-		{0x0482, 'a'}, //	LATIN CAPITAL LETTER A WITH BREVE
-		{0x0483, 'a'}, //	LATIN SMALL LETTER A WITH BREVE
-		{0x0484, 'a'}, //	LATIN CAPITAL LETTER A WITH OGONEK
-		{0x0485, 'a'}, //	LATIN SMALL LETTER A WITH OGONEK
-		{0x0486, 'c'}, //	LATIN CAPITAL LETTER C WITH ACUTE
-		{0x0487, 'c'}, //	LATIN SMALL LETTER C WITH ACUTE
-		{0x0488, 'c'}, //	LATIN CAPITAL LETTER C WITH CIRCUMFLEX
-		{0x0489, 'c'}, //	LATIN SMALL LETTER C WITH CIRCUMFLEX
-		{0x048a, 'c'}, //	LATIN CAPITAL LETTER C WITH DOT ABOVE
-		{0x048b, 'c'}, //	LATIN SMALL LETTER C WITH DOT ABOVE
-		{0x048c, 'c'}, //	LATIN CAPITAL LETTER C WITH CARON
-		{0x048d, 'c'}, //	LATIN SMALL LETTER C WITH CARON
-		{0x048e, 'd'}, //	LATIN CAPITAL LETTER D WITH CARON
-		{0x048f, 'd'}, //	LATIN SMALL LETTER D WITH CARON
-		{0x0490, 'd'}, //	LATIN CAPITAL LETTER D WITH STROKE
-		{0x0491, 'd'}, //	LATIN SMALL LETTER D WITH STROKE
-		{0x0492, 'e'}, //	LATIN CAPITAL LETTER E WITH MACRON
-		{0x0493, 'e'}, //	LATIN SMALL LETTER E WITH MACRON
-		{0x0494, 'e'}, //	LATIN CAPITAL LETTER E WITH BREVE
-		{0x0495, 'e'}, //	LATIN SMALL LETTER E WITH BREVE
-		{0x0496, 'e'}, //	LATIN CAPITAL LETTER E WITH DOT ABOVE
-		{0x0497, 'e'}, //	LATIN SMALL LETTER E WITH DOT ABOVE
-		{0x0498, 'e'}, //	LATIN CAPITAL LETTER E WITH OGONEK
-		{0x0499, 'e'}, //	LATIN SMALL LETTER E WITH OGONEK
-		{0x049a, 'e'}, //	LATIN CAPITAL LETTER E WITH CARON
-		{0x049b, 'e'}, //	LATIN SMALL LETTER E WITH CARON
-		{0x049c, 'g'}, //	LATIN CAPITAL LETTER G WITH CIRCUMFLEX
-		{0x049d, 'g'}, //	LATIN SMALL LETTER G WITH CIRCUMFLEX
-		{0x049e, 'g'}, //	LATIN CAPITAL LETTER G WITH BREVE
-		{0x049f, 'g'}, //	LATIN SMALL LETTER G WITH BREVE
-		{0x04a0, 'g'}, //	LATIN CAPITAL LETTER G WITH DOT ABOVE
-		{0x04a1, 'g'}, //	LATIN SMALL LETTER G WITH DOT ABOVE
-		{0x04a2, 'g'}, //	LATIN CAPITAL LETTER G WITH CEDILLA
-		{0x04a3, 'g'}, //	LATIN SMALL LETTER G WITH CEDILLA
-		{0x04a4, 'h'}, //	LATIN CAPITAL LETTER H WITH CIRCUMFLEX
-		{0x04a5, 'h'}, //	LATIN SMALL LETTER H WITH CIRCUMFLEX
-		{0x04a6, 'h'}, //	LATIN CAPITAL LETTER H WITH STROKE
-		{0x04a7, 'h'}, //	LATIN SMALL LETTER H WITH STROKE
-		{0x04a8, 'i'}, //	LATIN CAPITAL LETTER I WITH TILDE
-		{0x04a9, 'i'}, //	LATIN SMALL LETTER I WITH TILDE
-		{0x04aa, 'i'}, //	LATIN CAPITAL LETTER I WITH MACRON
-		{0x04ab, 'i'}, //	LATIN SMALL LETTER I WITH MACRON
-		{0x04ac, 'i'}, //	LATIN CAPITAL LETTER I WITH BREVE
-		{0x04ad, 'i'}, //	LATIN SMALL LETTER I WITH BREVE
-		{0x04ae, 'i'}, //	LATIN CAPITAL LETTER I WITH OGONEK
-		{0x04af, 'i'}, //	LATIN SMALL LETTER I WITH OGONEK
-		{0x04b0, 'i'}, //	LATIN CAPITAL LETTER I WITH DOT ABOVE
-		{0x04b1, 'i'}, //	LATIN SMALL LETTER DOTLESS I
-		{0x04b4, 'j'}, //	LATIN CAPITAL LETTER J WITH CIRCUMFLEX
-		{0x04b5, 'j'}, //	LATIN SMALL LETTER J WITH CIRCUMFLEX
-		{0x04b6, 'k'}, //	LATIN CAPITAL LETTER K WITH CEDILLA
-		{0x04b7, 'k'}, //	LATIN SMALL LETTER K WITH CEDILLA
-		{0x04b8, 'k'}, //	LATIN SMALL LETTER KRA
-		{0x04b9, 'l'}, //	LATIN CAPITAL LETTER L WITH ACUTE
-		{0x04ba, 'l'}, //	LATIN SMALL LETTER L WITH ACUTE
-		{0x04bb, 'l'}, //	LATIN CAPITAL LETTER L WITH CEDILLA
-		{0x04bc, 'l'}, //	LATIN SMALL LETTER L WITH CEDILLA
-		{0x04bd, 'l'}, //	LATIN CAPITAL LETTER L WITH CARON
-		{0x04be, 'l'}, //	LATIN SMALL LETTER L WITH CARON
-		{0x04bf, 'l'}, //	LATIN CAPITAL LETTER L WITH MIDDLE DOT
-		{0x0580, 'l'}, //	LATIN SMALL LETTER L WITH MIDDLE DOT
-		{0x0581, 'l'}, //	LATIN CAPITAL LETTER L WITH STROKE
-		{0x0582, 'l'}, //	LATIN SMALL LETTER L WITH STROKE
-		{0x0583, 'n'}, //	LATIN CAPITAL LETTER N WITH ACUTE
-		{0x0584, 'n'}, //	LATIN SMALL LETTER N WITH ACUTE
-		{0x0585, 'n'}, //	LATIN CAPITAL LETTER N WITH CEDILLA
-		{0x0586, 'n'}, //	LATIN SMALL LETTER N WITH CEDILLA
-		{0x0587, 'n'}, //	LATIN CAPITAL LETTER N WITH CARON
-		{0x0588, 'n'}, //	LATIN SMALL LETTER N WITH CARON
-		{0x0589, 'n'}, //	LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
-		{0x058a, 'n'}, //	LATIN CAPITAL LETTER ENG
-		{0x058b, 'n'}, //	LATIN SMALL LETTER ENG
-		{0x058c, 'o'}, //	LATIN CAPITAL LETTER O WITH MACRON
-		{0x058d, 'o'}, //	LATIN SMALL LETTER O WITH MACRON
-		{0x058e, 'o'}, //	LATIN CAPITAL LETTER O WITH BREVE
-		{0x058f, 'o'}, //	LATIN SMALL LETTER O WITH BREVE
-		{0x0590, 'o'}, //	LATIN CAPITAL LETTER O WITH DOUBLE ACUTE
-		{0x0591, 'o'}, //	LATIN SMALL LETTER O WITH DOUBLE ACUTE
-		{0x0594, 'r'}, //	LATIN CAPITAL LETTER R WITH ACUTE
-		{0x0595, 'r'}, //	LATIN SMALL LETTER R WITH ACUTE
-		{0x0596, 'r'}, //	LATIN CAPITAL LETTER R WITH CEDILLA
-		{0x0597, 'r'}, //	LATIN SMALL LETTER R WITH CEDILLA
-		{0x0598, 'r'}, //	LATIN CAPITAL LETTER R WITH CARON
-		{0x0599, 'r'}, //	LATIN SMALL LETTER R WITH CARON
-		{0x059a, 's'}, //	LATIN CAPITAL LETTER S WITH ACUTE
-		{0x059b, 's'}, //	LATIN SMALL LETTER S WITH ACUTE
-		{0x059c, 's'}, //	LATIN CAPITAL LETTER S WITH CIRCUMFLEX
-		{0x059d, 's'}, //	LATIN SMALL LETTER S WITH CIRCUMFLEX
-		{0x059e, 's'}, //	LATIN CAPITAL LETTER S WITH CEDILLA
-		{0x059f, 's'}, //	LATIN SMALL LETTER S WITH CEDILLA
-		{0x05a0, 's'}, //	LATIN CAPITAL LETTER S WITH CARON
-		{0x05a1, 's'}, //	LATIN SMALL LETTER S WITH CARON
-		{0x05a2, 't'}, //	LATIN CAPITAL LETTER T WITH CEDILLA
-		{0x05a3, 't'}, //	LATIN SMALL LETTER T WITH CEDILLA
-		{0x05a4, 't'}, //	LATIN CAPITAL LETTER T WITH CARON
-		{0x05a5, 't'}, //	LATIN SMALL LETTER T WITH CARON
-		{0x05a6, 't'}, //	LATIN CAPITAL LETTER T WITH STROKE
-		{0x05a7, 't'}, //	LATIN SMALL LETTER T WITH STROKE
-		{0x05a8, 'u'}, //	LATIN CAPITAL LETTER U WITH TILDE
-		{0x05a9, 'u'}, //	LATIN SMALL LETTER U WITH TILDE
-		{0x05aa, 'u'}, //	LATIN CAPITAL LETTER U WITH MACRON
-		{0x05ab, 'u'}, //	LATIN SMALL LETTER U WITH MACRON
-		{0x05ac, 'u'}, //	LATIN CAPITAL LETTER U WITH BREVE
-		{0x05ad, 'u'}, //	LATIN SMALL LETTER U WITH BREVE
-		{0x05ae, 'u'}, //	LATIN CAPITAL LETTER U WITH RING ABOVE
-		{0x05af, 'u'}, //	LATIN SMALL LETTER U WITH RING ABOVE
-		{0x05b0, 'u'}, //	LATIN CAPITAL LETTER U WITH DOUBLE ACUTE
-		{0x05b1, 'u'}, //	LATIN SMALL LETTER U WITH DOUBLE ACUTE
-		{0x05b2, 'u'}, //	LATIN CAPITAL LETTER U WITH OGONEK
-		{0x05b3, 'u'}, //	LATIN SMALL LETTER U WITH OGONEK
-		{0x05b4, 'w'}, //	LATIN CAPITAL LETTER W WITH CIRCUMFLEX
-		{0x05b5, 'w'}, //	LATIN SMALL LETTER W WITH CIRCUMFLEX
-		{0x05b6, 'y'}, //	LATIN CAPITAL LETTER Y WITH CIRCUMFLEX
-		{0x05b7, 'y'}, //	LATIN SMALL LETTER Y WITH CIRCUMFLEX
-		{0x05b8, 'y'}, //	LATIN CAPITAL LETTER Y WITH DIAERESIS
-		{0x05b9, 'z'}, //	LATIN CAPITAL LETTER Z WITH ACUTE
-		{0x05ba, 'z'}, //	LATIN SMALL LETTER Z WITH ACUTE
-		{0x05bb, 'z'}, //	LATIN CAPITAL LETTER Z WITH DOT ABOVE
-		{0x05bc, 'z'}, //	LATIN SMALL LETTER Z WITH DOT ABOVE
-		{0x05bd, 'z'}, //	LATIN CAPITAL LETTER Z WITH CARON
-		{0x05be, 'z'}, //	LATIN SMALL LETTER Z WITH CARON
-		{0x05bf, 's'}, //	LATIN SMALL LETTER LONG S
-		{0x0680, 'b'}, //	LATIN SMALL LETTER B WITH STROKE
-		{0x0681, 'b'}, //	LATIN CAPITAL LETTER B WITH HOOK
-		{0x0682, 'b'}, //	LATIN CAPITAL LETTER B WITH TOPBAR
-		{0x0683, 'b'}, //	LATIN SMALL LETTER B WITH TOPBAR
-		{0x0684, 'b'}, //	LATIN CAPITAL LETTER TONE SIX
-		{0x0685, 'b'}, //	LATIN SMALL LETTER TONE SIX
-		{0x0686, 'o'}, //	LATIN CAPITAL LETTER OPEN O
-		{0x0687, 'c'}, //	LATIN CAPITAL LETTER C WITH HOOK
-		{0x0688, 'c'}, //	LATIN SMALL LETTER C WITH HOOK
-		{0x0689, 'd'}, //	LATIN CAPITAL LETTER AFRICAN D
-		{0x068a, 'd'}, //	LATIN CAPITAL LETTER D WITH HOOK
-		{0x068b, 'd'}, //	LATIN CAPITAL LETTER D WITH TOPBAR
-		{0x068c, 'd'}, //	LATIN SMALL LETTER D WITH TOPBAR
-		{0x068d, 'd'}, //	LATIN SMALL LETTER TURNED DELTA
-		{0x068e, 'e'}, //	LATIN CAPITAL LETTER REVERSED E
-		{0x068f, 'e'}, //	LATIN CAPITAL LETTER SCHWA
-		{0x0690, 'e'}, //	LATIN CAPITAL LETTER OPEN E
-		{0x0691, 'f'}, //	LATIN CAPITAL LETTER F WITH HOOK
-		{0x0692, 'f'}, //	LATIN SMALL LETTER F WITH HOOK
-		{0x0693, 'g'}, //	LATIN CAPITAL LETTER G WITH HOOK
-		{0x0694, 'g'}, //	LATIN CAPITAL LETTER GAMMA
-		{0x0696, 'i'}, //	LATIN CAPITAL LETTER IOTA
-		{0x0697, 'i'}, //	LATIN CAPITAL LETTER I WITH STROKE
-		{0x0698, 'k'}, //	LATIN CAPITAL LETTER K WITH HOOK
-		{0x0699, 'k'}, //	LATIN SMALL LETTER K WITH HOOK
-		{0x069a, 'l'}, //	LATIN SMALL LETTER L WITH BAR
-		{0x069b, 'l'}, //	LATIN SMALL LETTER LAMBDA WITH STROKE
-		{0x069c, 'm'}, //	LATIN CAPITAL LETTER TURNED M
-		{0x069d, 'n'}, //	LATIN CAPITAL LETTER N WITH LEFT HOOK
-		{0x069e, 'n'}, //	LATIN SMALL LETTER N WITH LONG RIGHT LEG
-		{0x069f, 'o'}, //	LATIN CAPITAL LETTER O WITH MIDDLE TILDE
-		{0x06a0, 'o'}, //	LATIN CAPITAL LETTER O WITH HORN
-		{0x06a1, 'o'}, //	LATIN SMALL LETTER O WITH HORN
-		{0x06a4, 'p'}, //	LATIN CAPITAL LETTER P WITH HOOK
-		{0x06a5, 'p'}, //	LATIN SMALL LETTER P WITH HOOK
-		{0x06a7, '2'}, //	LATIN CAPITAL LETTER TONE TWO
-		{0x06a8, '2'}, //	LATIN SMALL LETTER TONE TWO
-		{0x06ab, 't'}, //	LATIN SMALL LETTER T WITH PALATAL HOOK
-		{0x06ac, 't'}, //	LATIN CAPITAL LETTER T WITH HOOK
-		{0x06ad, 't'}, //	LATIN SMALL LETTER T WITH HOOK
-		{0x06ae, 't'}, //	LATIN CAPITAL LETTER T WITH RETROFLEX HOOK
-		{0x06af, 'u'}, //	LATIN CAPITAL LETTER U WITH HORN
-		{0x06b0, 'u'}, //	LATIN SMALL LETTER U WITH HORN
-		{0x06b1, 'u'}, //	LATIN CAPITAL LETTER UPSILON
-		{0x06b2, 'v'}, //	LATIN CAPITAL LETTER V WITH HOOK
-		{0x06b3, 'y'}, //	LATIN CAPITAL LETTER Y WITH HOOK
-		{0x06b4, 'y'}, //	LATIN SMALL LETTER Y WITH HOOK
-		{0x06b5, 'z'}, //	LATIN CAPITAL LETTER Z WITH STROKE
-		{0x06b6, 'z'}, //	LATIN SMALL LETTER Z WITH STROKE
-		{0x06bb, '2'}, //	LATIN LETTER TWO WITH STROKE
-		{0x06bc, '5'}, //	LATIN CAPITAL LETTER TONE FIVE
-		{0x06bd, '5'}, //	LATIN SMALL LETTER TONE FIVE
-		{0x078d, 'a'}, //	LATIN CAPITAL LETTER A WITH CARON
-		{0x078e, 'a'}, //	LATIN SMALL LETTER A WITH CARON
-		{0x078f, 'i'}, //	LATIN CAPITAL LETTER I WITH CARON
-		{0x0790, 'i'}, //	LATIN SMALL LETTER I WITH CARON
-		{0x0791, 'o'}, //	LATIN CAPITAL LETTER O WITH CARON
-		{0x0792, 'o'}, //	LATIN SMALL LETTER O WITH CARON
-		{0x0793, 'u'}, //	LATIN CAPITAL LETTER U WITH CARON
-		{0x0794, 'u'}, //	LATIN SMALL LETTER U WITH CARON
-		{0x0795, 'u'}, //	LATIN CAPITAL LETTER U WITH DIAERESIS AND MACRON
-		{0x0796, 'u'}, //	LATIN SMALL LETTER U WITH DIAERESIS AND MACRON
-		{0x0797, 'u'}, //	LATIN CAPITAL LETTER U WITH DIAERESIS AND ACUTE
-		{0x0798, 'u'}, //	LATIN SMALL LETTER U WITH DIAERESIS AND ACUTE
-		{0x0799, 'u'}, //	LATIN CAPITAL LETTER U WITH DIAERESIS AND CARON
-		{0x079a, 'u'}, //	LATIN SMALL LETTER U WITH DIAERESIS AND CARON
-		{0x079b, 'u'}, //	LATIN CAPITAL LETTER U WITH DIAERESIS AND GRAVE
-		{0x079c, 'u'}, //	LATIN SMALL LETTER U WITH DIAERESIS AND GRAVE
-		{0x079d, 'e'}, //	LATIN SMALL LETTER TURNED E
-		{0x079e, 'a'}, //	LATIN CAPITAL LETTER A WITH DIAERESIS AND MACRON
-		{0x079f, 'a'}, //	LATIN SMALL LETTER A WITH DIAERESIS AND MACRON
-		{0x07a0, 'a'}, //	LATIN CAPITAL LETTER A WITH DOT ABOVE AND MACRON
-		{0x07a1, 'a'}, //	LATIN SMALL LETTER A WITH DOT ABOVE AND MACRON
-		{0x07a4, 'g'}, //	LATIN CAPITAL LETTER G WITH STROKE
-		{0x07a5, 'g'}, //	LATIN SMALL LETTER G WITH STROKE
-		{0x07a6, 'g'}, //	LATIN CAPITAL LETTER G WITH CARON
-		{0x07a7, 'g'}, //	LATIN SMALL LETTER G WITH CARON
-		{0x07a8, 'k'}, //	LATIN CAPITAL LETTER K WITH CARON
-		{0x07a9, 'k'}, //	LATIN SMALL LETTER K WITH CARON
-		{0x07aa, 'o'}, //	LATIN CAPITAL LETTER O WITH OGONEK
-		{0x07ab, 'o'}, //	LATIN SMALL LETTER O WITH OGONEK
-		{0x07ac, 'o'}, //	LATIN CAPITAL LETTER O WITH OGONEK AND MACRON
-		{0x07ad, 'o'}, //	LATIN SMALL LETTER O WITH OGONEK AND MACRON
-		{0x07b0, 'j'}, //	LATIN SMALL LETTER J WITH CARON
-		{0x07b4, 'g'}, //	LATIN CAPITAL LETTER G WITH ACUTE
-		{0x07b5, 'g'}, //	LATIN SMALL LETTER G WITH ACUTE
-		{0x07b8, 'n'}, //	LATIN CAPITAL LETTER N WITH GRAVE
-		{0x07b9, 'n'}, //	LATIN SMALL LETTER N WITH GRAVE
-		{0x07ba, 'a'}, //	LATIN CAPITAL LETTER A WITH RING ABOVE AND ACUTE
-		{0x07bb, 'a'}, //	LATIN SMALL LETTER A WITH RING ABOVE AND ACUTE
-		{0x07be, 'o'}, //	LATIN CAPITAL LETTER O WITH STROKE AND ACUTE
-		{0x07bf, 'o'}, //	LATIN SMALL LETTER O WITH STROKE AND ACUTE
 		{0x1d00, 'a'}, // latin letter small capital a -- no decomposition
 		{0x1d03, 'b'}, // latin letter small capital barred b -- no decomposition
 		{0x1d04, 'c'}, // latin letter small capital c -- no decomposition
@@ -2073,7 +1902,7 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x1d3a, 'n'}, // modifier letter capital n
 		{0x1d3b, 'n'}, // modifier letter capital reversed n -- no decomposition
 		{0x1d3c, 'o'}, // modifier letter capital o
-		{0x1d3d, 'ou'}, // modifier letter capital ou
+		{0x1d3d, 'o'}, // modifier letter capital ou
 		{0x1d3e, 'p'}, // modifier letter capital p
 		{0x1d3f, 'r'}, // modifier letter capital r
 		{0x1d40, 't'}, // modifier letter capital t
@@ -2081,7 +1910,7 @@ static df::dense_hash_map<int, char32_t> make_normalizations()
 		{0x1d42, 'w'}, // modifier letter capital w
 		{0x1d43, 'a'}, // modifier letter small a
 		{0x1d44, 'a'}, // modifier letter small turned a
-		{0x1d46, 'ae'}, // modifier letter small turned ae
+		{0x1d46, 'a'}, // modifier letter small turned ae
 		{0x1d47, 'b'}, // modifier letter small b
 		{0x1d48, 'd'}, // modifier letter small d
 		{0x1d49, 'e'}, // modifier letter small e

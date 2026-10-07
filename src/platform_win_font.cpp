@@ -887,10 +887,33 @@ static void configure_layout(const ComPtr<IDWriteTextLayout>& layout, const ui::
 
 void text_layout_impl::update(const std::string_view text, const ui::style::text_style text_style)
 {
+	if (!_renderer)
+	{
+		_layout.Reset();
+		return;
+	}
+
 	const auto textw = str::utf8_to_utf16(text);
 
 	for (auto& m : _measured) m.valid = false;
 	_measured_next = 0;
+	_utf8_offsets.clear();
+	_utf16_positions.clear();
+	_utf8_offsets.emplace_back(0);
+	_utf16_positions.emplace_back(0);
+
+	auto i = text.begin();
+	auto utf16_pos = 0u;
+	while (i != text.end())
+	{
+		auto next = i;
+		const auto cp = str::pop_utf8_char(next, text.end());
+		if (next == i) break;
+		utf16_pos += cp > 0xffff ? 2u : 1u;
+		i = next;
+		_utf8_offsets.emplace_back(static_cast<size_t>(i - text.begin()));
+		_utf16_positions.emplace_back(utf16_pos);
+	}
 
 	ComPtr<IDWriteTextLayout> layout;
 	const auto hr = _renderer->_factory->CreateTextLayout(textw.data(), static_cast<int>(textw.size()),
@@ -909,8 +932,6 @@ void text_layout_impl::update(const std::string_view text, const ui::style::text
 
 sizei text_layout_impl::measure_text(const int cx, const int cy)
 {
-	df::assert_true(_layout);
-
 	for (const auto& m : _measured)
 	{
 		if (m.valid && m.limit.cx == cx && m.limit.cy == cy) return m.extent;
@@ -934,6 +955,47 @@ sizei text_layout_impl::measure_text(const int cx, const int cy)
 	}
 
 	return {};
+}
+
+std::vector<int> text_layout_impl::offset_xs(const std::vector<size_t>& utf8_offsets, const int cx, const int cy)
+{
+	if (!_layout)
+	{
+		std::vector<int> result;
+		result.resize(utf8_offsets.size());
+		return result;
+	}
+
+	_layout->SetMaxWidth(static_cast<float>(cx));
+	_layout->SetMaxHeight(static_cast<float>(cy));
+
+	UINT32 cluster_count = 0;
+	auto hr = _layout->GetClusterMetrics(nullptr, 0, &cluster_count);
+	if (hr != E_NOT_SUFFICIENT_BUFFER && FAILED(hr)) return {};
+
+	std::vector<DWRITE_CLUSTER_METRICS> dwrite_clusters(cluster_count);
+	hr = _layout->GetClusterMetrics(dwrite_clusters.data(), cluster_count, &cluster_count);
+	if (FAILED(hr)) return {};
+
+	std::vector<ui::text_cluster_metric> clusters;
+	clusters.reserve(cluster_count);
+	for (const auto& cluster : dwrite_clusters)
+	{
+		clusters.push_back({cluster.length, cluster.width});
+	}
+
+	std::vector<uint32_t> positions;
+	positions.reserve(utf8_offsets.size());
+	for (const auto offset : utf8_offsets)
+	{
+		const auto found = std::ranges::lower_bound(_utf8_offsets, offset);
+		const auto index = found == _utf8_offsets.end()
+			                   ? _utf16_positions.size() - 1
+			                   : static_cast<size_t>(found - _utf8_offsets.begin());
+		positions.emplace_back(_utf16_positions[index]);
+	}
+
+	return ui::logical_text_offset_xs(positions, clusters);
 }
 
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const std::wstring_view text,

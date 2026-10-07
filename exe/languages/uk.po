@@ -3228,12 +3228,12 @@ msgstr[1] "Імпортовано {count} елементи, але не вдал
 msgstr[2] "Імпортовано {count} елементів, але не вдалося встановити їхню дату створення."
 msgstr[3] "Імпортовано {count} елемента, але не вдалося встановити їхню дату створення."
 
-msgid "{first-name} will be moved to the recycle bin."
-msgid_plural "{count} items ({size}) will be moved to the recycle bin."
-msgstr[0] "{first-name} буде переміщено до Кошика."
-msgstr[1] "{count} елементи ({size}) буде переміщено до Кошика."
-msgstr[2] "{count} елементів ({size}) буде переміщено до Кошика."
-msgstr[3] "{count} елемента ({size}) буде переміщено до Кошика."
+msgid "{first-name} will be moved to the recycle bin when Windows can recycle it."
+msgid_plural "{count} items ({size}) will be moved to the recycle bin when Windows can recycle them."
+msgstr[0] "{first-name} буде переміщено до кошика, якщо Windows зможе це зробити."
+msgstr[1] "{count} елементів ({size}) буде переміщено до кошика, якщо Windows зможе це зробити."
+msgstr[2] "{count} елементів ({size}) буде переміщено до кошика, якщо Windows зможе це зробити."
+msgstr[3] "{count} елементів ({size}) буде переміщено до кошика, якщо Windows зможе це зробити."
 
 msgid "{first-name} will be permanently deleted."
 msgid_plural "{count} items ({size}) will be permanently deleted."

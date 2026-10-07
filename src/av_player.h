@@ -33,6 +33,18 @@ enum class render_valid
 	valid
 };
 
+struct av_texture_upload_state
+{
+	double time = -1;
+	const ui::texture* destination = nullptr;
+};
+
+inline bool should_upload_video_frame(const av_texture_upload_state& state, const ui::texture* const destination,
+                                      const bool destination_valid, const double time)
+{
+	return destination && (!destination_valid || state.destination != destination || !is_equal(state.time, time));
+}
+
 // design.md: resume "applies to media longer than ten seconds only when the saved position is more
 // than two seconds from the start and five seconds from the end, avoiding a surprising resume for
 // barely started or effectively completed media".
@@ -51,6 +63,39 @@ inline double position_to_save(const bool is_synchronizing, const double accepte
                                const double last_frame_time)
 {
 	return is_synchronizing ? accepted_seek : last_frame_time;
+}
+
+inline bool should_drain_audio_while_output_unavailable(const bool has_audio, const bool output_available)
+{
+	return has_audio && !output_available;
+}
+
+enum class video_queue_front_action
+{
+	present,
+	discard,
+	mark_eof
+};
+
+inline video_queue_front_action classify_video_queue_front(const int frame_gen, const int seek_gen, const bool eof)
+{
+	if (frame_gen != seek_gen) return video_queue_front_action::discard;
+	return eof ? video_queue_front_action::mark_eof : video_queue_front_action::present;
+}
+
+inline bool should_finish_video_settle(const bool has_current_frame_candidate, const bool reached,
+                                       const double best_frame_time, const double target_time,
+                                       const bool current_eof_handled)
+{
+	return current_eof_handled || (has_current_frame_candidate && (reached || best_frame_time >= target_time));
+}
+
+inline bool should_coalesce_seek_request(const double last_seek, const double pos, const bool pending_time_sync,
+                                         const bool was_scrubbing, const bool scrubbing, const bool force = false)
+{
+	if (force) return false;
+	const auto near_existing = fabs(last_seek - pos) <= 0.1 && pos >= 0.1;
+	return near_existing && (pending_time_sync || (was_scrubbing && scrubbing && df::equiv(last_seek, pos)));
 }
 
 // How many sessions the player will decode frames for beside the one it is playing. Two, because
@@ -119,6 +164,9 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	std::atomic<bool> _reset_time_offset = false;
 	std::atomic<bool> _pending_time_sync = false;
 	std::atomic<bool> _settling = false;
+	mutable platform::mutex _audio_recovery_seek_mutex;
+	_Guarded_by_(_audio_recovery_seek_mutex) double _audio_recovery_seek = -1.0;
+	_Guarded_by_(_audio_recovery_seek_mutex) int _audio_recovery_seek_gen = 0;
 
 	// Set once the audio stream's end has been handled (decoder tail drained and a
 	// silence pad queued). has_ended() waits for this for audio sessions so the wall
@@ -161,9 +209,9 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	// Read by the UI thread (pos(), last_frame_time()) and written by the read/decode
 	// threads (update_texture/update_visualizer); atomic to avoid a torn read.
 	mutable std::atomic<double> _last_frame_time = -1;
-	// Written by update_texture under a shared lock, which admits concurrent holders, so it
-	// carries its own atomicity rather than relying on the lock.
-	mutable std::atomic<double> _last_texture_time = -1;
+	// Written by update_texture under _presentation_mutex. The destination is part of the upload
+	// identity: after device loss the same frame must fill the replacement texture.
+	_Guarded_by_(_presentation_mutex) mutable av_texture_upload_state _last_texture;
 
 	// Wall clock reading at the previous present, used only to spot a gap no playback could
 	// explain. UI thread only, under _presentation_mutex.
@@ -204,6 +252,42 @@ public:
 	bool has_audio_clock() const
 	{
 		return _has_audio && !_audio_unavailable;
+	}
+
+	void mark_audio_output_unavailable(const double time_now = df::now())
+	{
+		if (_audio_unavailable.exchange(true)) return;
+		if (_pending_time_sync.exchange(false))
+		{
+			_time_offset = time_now - _last_seek;
+		}
+	}
+
+	void request_audio_recovery_seek(const double time_now = df::now())
+	{
+		const auto gen = _seek_gen.load();
+		const auto recovery_pos = pos(time_now);
+		platform::exclusive_lock lock(_audio_recovery_seek_mutex);
+		_audio_recovery_seek_gen = gen;
+		_audio_recovery_seek = std::max(0.0, recovery_pos);
+	}
+
+	bool process_pending_audio_recovery_seek()
+	{
+		double recovery_pos = -1.0;
+		int recovery_gen = 0;
+
+		{
+			platform::exclusive_lock lock(_audio_recovery_seek_mutex);
+			recovery_pos = _audio_recovery_seek;
+			recovery_gen = _audio_recovery_seek_gen;
+			_audio_recovery_seek = -1.0;
+		}
+
+		if (recovery_pos < 0.0) return false;
+		if (recovery_gen != _seek_gen) return false;
+		seek(recovery_pos, _scrubbing, true);
+		return true;
 	}
 
 	// True when this media is presented as an audio visualisation rather than a video texture.
@@ -409,7 +493,7 @@ public:
 		_vis_resampler.store(nullptr);
 	}
 
-	void seek(double pos, bool scrubbing);
+	void seek(double pos, bool scrubbing, bool force = false);
 
 	void process_video(const platform::thread_event& _read_event)
 	{
@@ -561,6 +645,40 @@ public:
 		}
 	}
 
+	void discard_audio_while_output_unavailable(const platform::thread_event& read_event)
+	{
+		auto loop_iteration = 0;
+
+		if (should_drain_audio_while_output_unavailable(_has_audio, false))
+		{
+			while (_audio_frames.should_receive())
+			{
+				{
+					platform::shared_lock lock(_decoder_rw);
+					_decoder.receive_frames(_audio_packets, _audio_frames);
+				}
+
+				av_frame_ptr frame;
+
+				while (_audio_frames.pop(frame))
+				{
+					const auto is_current = av_seek_gen_from_frame(frame) == _seek_gen;
+					if (is_current && av_frame_is_eof(frame)) _audio_eof_handled = true;
+				}
+
+				if (_audio_packets.should_receive())
+				{
+					read_event.set();
+				}
+
+				if (_state == av_play_state::closed || df::is_closing || ++loop_iteration > max_loop_iteration)
+				{
+					break;
+				}
+			}
+		}
+	}
+
 	void process_io(const platform::thread_event& video_event, const platform::thread_event& audio_event);
 
 	bool has_ended(const double time_now) const
@@ -657,15 +775,19 @@ public:
 		av_frame_ptr f;
 		auto frame_popped = false;
 
-		// Consume any end-of-stream marker sitting at the head of the queue. It carries no media
-		// timestamp, so front_time() reports zero for it and every distance comparison below
-		// would refuse to look past it.
-		for (auto front = _video_frames.front(); av_frame_is_eof(front); front = _video_frames.front())
+		// Consume stale frames and current-generation end-of-stream markers before distance
+		// comparisons. A frame decoded after a seek's queue clear may still arrive with the old
+		// generation; accepting it would let it settle or present a position the user already left.
+		for (auto front = _video_frames.front(); front; front = _video_frames.front())
 		{
-			if (av_seek_gen_from_frame(front) == _seek_gen) _video_eof_handled = true;
+			const auto action = classify_video_queue_front(av_seek_gen_from_frame(front), _seek_gen,
+			                                               av_frame_is_eof(front));
 
-			av_frame_ptr eof_marker;
-			if (!_video_frames.pop(eof_marker)) break;
+			if (action == video_queue_front_action::present) break;
+			if (action == video_queue_front_action::mark_eof) _video_eof_handled = true;
+
+			av_frame_ptr discarded;
+			if (!_video_frames.pop(discarded)) break;
 		}
 
 		const auto seek_ver_invalid = av_seek_gen_from_frame(_frame) != _seek_gen;
@@ -690,13 +812,15 @@ public:
 			// while scrubbing or pending) rather than stepping one frame per present,
 			// so the view reaches the target as decoding catches up.
 			auto best_ft = frame_popped ? av_time_from_frame(f) : current_ft;
+			auto has_best = !seek_ver_invalid || (frame_popped && !av_is_frame_empty(f));
 			auto reached = false;
 
 			while (!_video_frames.is_empty())
 			{
 				const auto front_time = _video_frames.front_time();
 
-				if (time_distance(best_ft, time) <= time_distance(front_time, time) && !df::equiv(best_ft, front_time))
+				if (has_best && time_distance(best_ft, time) <= time_distance(front_time, time) &&
+					!df::equiv(best_ft, front_time))
 				{
 					reached = true; // the next frame is past the target; this one is nearest
 					break;
@@ -709,27 +833,32 @@ public:
 					break;
 				}
 
-				if (av_frame_is_eof(next))
-				{
-					// Only the current epoch's EOF proves nothing further will arrive; a marker
-					// left over from before a seek is discarded and the drain continues.
-					if (av_seek_gen_from_frame(next) != _seek_gen) continue;
+				const auto next_action = classify_video_queue_front(av_seek_gen_from_frame(next), _seek_gen,
+				                                                    av_frame_is_eof(next));
 
+				if (next_action == video_queue_front_action::mark_eof)
+				{
 					reached = true; // no frame beyond the target will arrive
 					break;
+				}
+
+				if (next_action == video_queue_front_action::discard)
+				{
+					continue;
 				}
 
 				if (!av_is_frame_empty(next))
 				{
 					f = std::move(next);
 					best_ft = av_time_from_frame(f);
+					has_best = true;
 					frame_popped = true;
 				}
 			}
 
 			// A settle that runs out of frames at the end of the stream would otherwise never
 			// complete, leaving pos() frozen on the sought position.
-			if (reached || best_ft >= time || _video_eof_handled)
+			if (should_finish_video_settle(has_best, reached, best_ft, time, _video_eof_handled))
 			{
 				_settling = false;
 			}
@@ -796,14 +925,14 @@ public:
 
 	render_valid update_texture(const ui::texture_ptr& texture) const
 	{
-		platform::shared_lock lock_present(_presentation_mutex);
+		platform::exclusive_lock lock_present(_presentation_mutex);
 		auto result = render_valid::valid;
 		const auto vf = _frame;
 
 		if (vf && texture)
 		{
 			const auto time = av_time_from_frame(vf);
-			const auto needs_render = !is_equal(_last_texture_time.load(), time);
+			const auto needs_render = should_upload_video_frame(_last_texture, texture.get(), texture->is_valid(), time);
 
 			if (needs_render)
 			{
@@ -812,7 +941,7 @@ public:
 				if (update_result != ui::texture_update_result::failed)
 				{
 					_last_frame_time = time;
-					_last_texture_time = time;
+					_last_texture = {time, texture.get()};
 
 					if (update_result == ui::texture_update_result::tex_created) result = render_valid::invalid;
 					if (update_result == ui::texture_update_result::tex_updated) result = render_valid::present;
@@ -1196,10 +1325,17 @@ public:
 
 				if (ds)
 				{
+					const auto recovered_audio = session && session->_audio_unavailable.exchange(false);
 					play_audio_device_id(ds->id());
 					playback_buffer.init(ds->format());
 					need_create_device = false;
-					if (session) session->_audio_unavailable = false;
+					if (recovered_audio)
+					{
+						session->request_audio_recovery_seek();
+						_read_event.set();
+						playback_buffer.clear();
+						vis_buffer.clear();
+					}
 				}
 				else
 				{
@@ -1215,7 +1351,7 @@ public:
 					// time itself off the wall clock; without that it freezes on the sought
 					// position, which on a machine with no audio endpoint at all means every
 					// video stops dead and a slideshow never advances.
-					if (session) session->_audio_unavailable = true;
+					if (session) session->mark_audio_output_unavailable();
 				}
 
 				playback_gen = 0;
@@ -1358,6 +1494,10 @@ public:
 						session->_time_offset = df::now() - audio_time;
 					}
 				}
+				else
+				{
+					session->discard_audio_while_output_unavailable(_read_event);
+				}
 			}
 		}
 	}
@@ -1389,6 +1529,7 @@ public:
 
 			if (const auto session = _thread_session.load())
 			{
+				session->process_pending_audio_recovery_seek();
 				session->process_io(_video_event, _audio_event);
 			}
 
