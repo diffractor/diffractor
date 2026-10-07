@@ -185,6 +185,31 @@ inline double rewound_movie_clip_playhead(const movie_clip* const clip)
 	return clip ? clip->start : 0.0;
 }
 
+// The clip Previous and Next count from. Stopped, that is the focus: stepping moves it. While the
+// movie plays they are the transport's skip, and playback does not move the focus, so they count
+// from the clip the playhead is in -- otherwise Next during clip 6 with clip 0 focused went back to
+// clip 1. A clip is the one playing from its own start onwards, so inside a crossfade the incoming
+// clip already counts. Counting from the outgoing one sent Next back to the start of the transition
+// it was already in, and every later press landed there again.
+inline size_t movie_step_origin(const std::vector<double>& starts, const size_t focus, const bool playing,
+                                const double playhead)
+{
+	if (!playing || starts.empty()) return focus;
+
+	const auto after = std::upper_bound(starts.begin(), starts.end(), playhead);
+	return after == starts.begin() ? 0 : static_cast<size_t>(after - starts.begin() - 1);
+}
+
+inline size_t movie_step_target(const std::vector<double>& starts, const size_t focus, const bool playing,
+                                const double playhead, const bool forward)
+{
+	if (starts.empty()) return focus;
+
+	const auto origin = movie_step_origin(starts, focus, playing, playhead);
+	if (forward) return std::min(origin + 1, starts.size() - 1);
+	return origin == 0 ? 0 : origin - 1;
+}
+
 inline bool should_retire_movie_sources_after_project_change(const bool project_changed_successfully)
 {
 	return project_changed_successfully;

@@ -109,6 +109,121 @@ static void should_match_simd_software_blends()
 #endif
 }
 
+// The CPU renderer and every CPU conversion map HDR through the cube the GPU samples, so the lookup has
+// to be the arithmetic of a trilinear texture sample: the signal scaled onto the samples, with 0 and
+// 65535 on the end samples, and the eight around it blended by distance. Each output channel is a
+// different function of the axes, so a swapped axis, channel or byte order shows; the SIMD path and
+// the one other architectures run must both agree with an independent double-precision sample.
+static void should_tone_map_through_a_cube_as_a_trilinear_sample()
+{
+	constexpr int n = 5;
+	ui::tone_map_lut lut;
+	lut.size = n;
+	lut.rgba.resize(static_cast<size_t>(n) * n * n * 4);
+
+	const auto at = [](const int r, const int g, const int b)
+	{
+		const auto fr = r / (n - 1.0);
+		const auto fg = g / (n - 1.0);
+		const auto fb = b / (n - 1.0);
+		return std::array{fr, fg * fg * (1.0 - 0.5 * fb), fb * (1.0 - 0.5 * fr) + 0.25 * fg * fr};
+	};
+
+	for (auto b = 0; b < n; ++b)
+	{
+		for (auto g = 0; g < n; ++g)
+		{
+			for (auto r = 0; r < n; ++r)
+			{
+				const auto v = at(r, g, b);
+				auto* const out = lut.rgba.data() + ((static_cast<size_t>(b) * n + g) * n + r) * 4;
+				for (auto c = 0; c < 3; ++c) out[c] = static_cast<uint16_t>(std::lround(std::clamp(v[c], 0.0, 1.0) * 65535.0));
+				out[3] = 0xffff;
+			}
+		}
+	}
+
+	// The sample a texture unit would take, in the cube's own 16-bit units.
+	const auto expected = [&lut](const uint16_t* const px)
+	{
+		std::array<double, 3> result = {};
+		std::array<int, 3> index = {};
+		std::array<double, 3> weight = {};
+
+		for (auto axis = 0; axis < 3; ++axis)
+		{
+			const auto x = px[axis] / 65535.0 * (n - 1);
+			index[axis] = std::min(static_cast<int>(x), n - 2);
+			weight[axis] = x - index[axis];
+		}
+
+		for (auto corner = 0; corner < 8; ++corner)
+		{
+			auto w = 1.0;
+			std::array<int, 3> sample = {};
+
+			for (auto axis = 0; axis < 3; ++axis)
+			{
+				const auto upper = (corner >> axis & 1) != 0;
+				sample[axis] = index[axis] + (upper ? 1 : 0);
+				w *= upper ? weight[axis] : 1.0 - weight[axis];
+			}
+
+			const auto* const s = lut.rgba.data() + ((static_cast<size_t>(sample[2]) * n + sample[1]) * n + sample[0]) * 4;
+			for (auto c = 0; c < 3; ++c) result[c] += w * s[c];
+		}
+
+		return result;
+	};
+
+	std::vector<uint16_t> signal = {0, 0, 0, 65535, 65535, 65535, 65535, 0, 0, 0, 65535, 0, 0, 0, 65535, 32768, 16384, 49152};
+	uint32_t seed = 12345;
+	for (auto i = 0; i < 3 * 500; ++i)
+	{
+		seed = seed * 1664525u + 1013904223u;
+		signal.push_back(static_cast<uint16_t>(seed >> 16));
+	}
+
+	const auto pixels = signal.size() / 3;
+	std::vector<ui::color32> fast(pixels);
+	std::vector<ui::color32> baseline(pixels);
+	lut.apply(signal.data(), pixels, fast.data());
+	lut.apply_baseline(signal.data(), pixels, baseline.data());
+
+	auto worst = 0;
+
+	for (size_t i = 0; i < pixels; ++i)
+	{
+		const auto want = expected(signal.data() + i * 3);
+
+		for (const auto& [name, got] : {std::pair{"SIMD", fast[i]}, std::pair{"baseline", baseline[i]}})
+		{
+			// Blue is the low byte of a packed RGB pixel, red the third, and the cube's alpha is opaque.
+			const std::array channels = {static_cast<int>(got >> 16 & 0xff), static_cast<int>(got >> 8 & 0xff),
+			                             static_cast<int>(got & 0xff)};
+			assert_equal(0xffu, got >> 24, std::format("{} pixel {} is opaque", name, i));
+
+			for (auto c = 0; c < 3; ++c)
+			{
+				worst = std::max(worst, std::abs(channels[c] - static_cast<int>(std::lround(want[c] * 255.0 / 65535.0))));
+			}
+		}
+	}
+
+	assert_equal(true, worst <= 1, std::format("both lookups take the trilinear sample to within one level ({})", worst));
+
+	const auto sample_pixel = [&lut](const int r, const int g, const int b)
+	{
+		const auto* const s = lut.rgba.data() + ((static_cast<size_t>(b) * n + g) * n + r) * 4;
+		const auto byte = [](const uint16_t v) { return static_cast<uint32_t>(std::lround(v * 255.0 / 65535.0)); };
+		return 0xff000000u | byte(s[0]) << 16 | byte(s[1]) << 8 | byte(s[2]);
+	};
+
+	assert_equal(sample_pixel(n - 1, n - 1, n - 1), fast[1], "the brightest signal takes the last sample");
+	assert_equal(sample_pixel(0, 0, 0), fast[0], "and the darkest the first");
+	assert_equal(sample_pixel(n - 1, 0, 0), fast[2], "full red takes the sample at the end of the red axis");
+}
+
 static void should_convert_yuv_surfaces_for_software_rendering()
 {
 	auto check_output = [](const ui::surface_ptr& output)
@@ -1830,6 +1945,8 @@ void register_render_tests(view_state& state, test_registry& tests)
 	          should_rasterise_one_scene_to_one_answer_on_every_platform);
 	tests.add("Should convert YUV surfaces for software rendering"s,
 	          should_convert_yuv_surfaces_for_software_rendering);
+	tests.add("Should tone map through a cube as a trilinear sample"s,
+	          should_tone_map_through_a_cube_as_a_trilinear_sample);
 	tests.add("Should area downscale packed and planar surfaces"s, should_area_downscale_packed_and_planar_surfaces);
 	tests.add("Should bilinear resize packed surfaces"s, should_bilinear_resize_packed_surfaces);
 	tests.add("Should estimate decode cost"s, should_estimate_decode_cost);

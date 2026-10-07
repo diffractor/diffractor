@@ -81,6 +81,17 @@ if (TARGET diffractor_zlib)
             "${CMAKE_SOURCE_DIR}/third-party/ZLib" "")
 endif ()
 
+# FFmpeg's own AV1 decoder only drives a hardware accelerator, so without libdav1d an AV1 file has
+# no software decoder at all: no thumbnail, no preview, and no playback where the GPU cannot decode
+# AV1. The vendored dav1d is already linked for AVIF; this registers it with libavcodec too.
+set(_ff_dav1d "")
+
+if (TARGET diffractor_dav1d)
+    set(_ff_dav1d --enable-libdav1d)
+    _ff_describe_vendored(dav1d diffractor_dav1d 1.5.4
+            "${CMAKE_SOURCE_DIR}/third-party/dav1d/include" "-lpthread -lm")
+endif ()
+
 # bzlib and lzma have no pkg-config path in configure at all -- it probes them with a hard coded
 # -lbz2 and -llzma -- so the vendored archives are staged under the names it looks for. Naming the
 # system copies instead would put a second bzip2 and a second lzma in a binary that already links
@@ -122,8 +133,11 @@ endif ()
 # Diffractor is a broad-support reader: every decoder and demuxer is wanted, and nothing that writes
 # a media stream is. The encoder, muxer, filter, device and protocol switches below are the Windows
 # configure line from docs/third-party.md, which this had not been matching -- the whole encoder and
-# muxer set was being compiled in here. avif is the one intentional muxer, and file the one
-# intentional protocol.
+# muxer set was being compiled in here. file is the one intentional protocol, and there is no muxer.
+#
+# --enable-small is deliberately absent. It buys a smaller binary by stripping codec and profile
+# names and by sending H.264 macroblocks, MPEG motion compensation and swscale output down their
+# slow generic paths, and here it would also compile the whole library at -Os rather than -O3.
 ExternalProject_Add(ffmpeg_external
         SOURCE_DIR "${_ff_stage}"
         DOWNLOAD_COMMAND "${CMAKE_COMMAND}" -E copy_directory "${_ff_src}" "${_ff_stage}"
@@ -138,16 +152,15 @@ ExternalProject_Add(ffmpeg_external
         --disable-network
         --disable-encoders
         --disable-muxers
-        --enable-muxer=avif
         --disable-devices
         --disable-filters
         --disable-protocols
         --enable-protocol=file
-        --enable-small
         --enable-zlib
         ${_ff_compression}
         --enable-pic
         ${_ff_openmpt}
+        ${_ff_dav1d}
         BUILD_COMMAND make -j${_ff_jobs}
         INSTALL_COMMAND make install
         BUILD_IN_SOURCE 1
@@ -175,7 +188,7 @@ set_property(GLOBAL PROPERTY DIFFRACTOR_GROUPED_ARCHIVES "${_ff_archives}")
 
 # configure links a probe against the archives named in the .pc files, so they have to be on disk
 # before the external project starts rather than merely before the application links.
-foreach (_ff_dep IN ITEMS diffractor_openmpt diffractor_zlib ffmpeg_compression_libs)
+foreach (_ff_dep IN ITEMS diffractor_openmpt diffractor_zlib diffractor_dav1d ffmpeg_compression_libs)
     if (TARGET ${_ff_dep})
         add_dependencies(ffmpeg_external ${_ff_dep})
     endif ()

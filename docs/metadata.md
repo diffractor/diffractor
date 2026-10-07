@@ -90,8 +90,8 @@ from the existing packet and reconcile only fields managed by the toolkit and Di
 
 FFmpeg container dictionaries are normalized into shared properties. Language-suffixed comment and
 description keys are selected by plain value, UI language, then any available value. Container
-duration, streams, codecs, bitrate, frame rate, and pixel/audio format are technical properties and
-are not written through the user metadata editor.
+duration, streams, codecs and their profiles, bitrate, frame rate, pixel/audio format, bit depth and
+HDR transfer are technical properties and are not written through the user metadata editor.
 
 A video's shape also comes from the container rather than from its frames: the sample aspect ratio
 gives the displayed dimensions for anamorphic video, and the display matrix gives the orientation.

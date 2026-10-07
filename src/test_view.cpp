@@ -7,8 +7,9 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: View-geometry tests. Covers the zoom model (fit, stepping, anchoring, panning and the
-// navigator) and the item selector / view scroller widgets. Pure geometry: no file, codec or
-// database access, so these run in microseconds and stay apart from the media-edit tests.
+// navigator), the item selector / view scroller widgets, and the Movie view's pure decisions
+// (clip stepping, session retirement, stale completions). No file, codec or database access, so
+// these run in microseconds and stay apart from the media-edit tests.
 
 #include "pch.h"
 #include "test_fixtures.h"
@@ -54,6 +55,48 @@ static void should_decide_when_movie_clip_sessions_are_retired()
 	clip.start = 12.0;
 	assert_equal(12.0, rewound_movie_clip_playhead(&clip), "rewind parks at the focused clip's in point");
 	assert_equal(0.0, rewound_movie_clip_playhead(nullptr), "an empty timeline rewinds to zero");
+}
+
+static void should_step_movie_clips_from_the_playhead_while_playing()
+{
+	std::vector<movie_clip> clips;
+
+	for (auto i = 0; i < 9; ++i)
+	{
+		auto clip = make_movie_clip(df::file_path(df::windows_path_semantics ? "c:\\movie\\c.mp4" : "/movie/c.mp4"), {});
+		clip.start = 0.0;
+		clip.end = 10.0;
+		clips.emplace_back(clip);
+	}
+
+	movie_settings settings;
+	settings.transition = movie_transition::crossfade;
+	settings.transition_seconds = 1.0;
+
+	// Clip i starts at 9i and its crossfade into clip i + 1 runs from 9(i + 1) to 9(i + 1) + 1.
+	const auto starts = calc_movie_timing(clips, settings).starts;
+	constexpr size_t focus = 0;
+
+	// Counting from the focus, as the transport used to, makes the first answer 1.
+	assert_equal(size_t{7}, movie_step_target(starts, focus, true, 58.0, true),
+	             "Next while clip 6 plays goes to clip 7, whatever is focused");
+	assert_equal(size_t{5}, movie_step_target(starts, focus, true, 58.0, false),
+	             "and Previous to clip 5");
+
+	// Counting from the clip that dominates the picture -- the outgoing one -- makes these 7: the
+	// incoming clip's start is still the outgoing clip at full weight, so Next would land there again.
+	assert_equal(size_t{8}, movie_step_target(starts, focus, true, starts[7], true),
+	             "a second Next from the start Next landed on moves on");
+	assert_equal(size_t{8}, movie_step_target(starts, focus, true, starts[7] + 0.5, true),
+	             "inside a crossfade the incoming clip is the one playing");
+
+	assert_equal(size_t{8}, movie_step_target(starts, focus, true, 80.0, true), "Next stops at the last clip");
+	assert_equal(size_t{0}, movie_step_target(starts, focus, true, 1.0, false), "and Previous at the first");
+
+	assert_equal(size_t{1}, movie_step_target(starts, focus, false, 58.0, true),
+	             "stopped, stepping counts from the focus");
+	assert_equal(size_t{3}, movie_step_target(starts, 4, false, 58.0, false), "in both directions");
+	assert_equal(size_t{4}, movie_step_target({}, 4, true, 58.0, true), "an empty timeline leaves the focus");
 }
 
 static void should_reject_stale_movie_cache_completions_before_state_changes()
@@ -4019,6 +4062,8 @@ void register_view_tests(view_state& state, test_registry& tests)
 	// VIEW-012 - Movie clip sessions are retired before playback/focus no longer owns them.
 	tests.add("Should decide when Movie clip sessions are retired"s,
 	          should_decide_when_movie_clip_sessions_are_retired);
+	tests.add("Should step Movie clips from the playhead while playing"s,
+	          should_step_movie_clips_from_the_playhead_while_playing);
 	// VIEW-013 - stale Movie cache completions must not mutate current request state.
 	tests.add("Should reject stale Movie cache completions before state changes"s,
 	          should_reject_stale_movie_cache_completions_before_state_changes);

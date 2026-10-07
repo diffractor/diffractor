@@ -53,10 +53,12 @@ static void set_can_animate(const bool can_animate)
 // Whether a decoder may produce NV12 for this backend. Three things have to agree: the CPU
 // renderer presents BGRA and would convert a planar surface straight back, a device may not
 // sample NV12 at all, and setting.use_yuv is the durable latch a driver fault sets (see
-// disable_yuv_textures). It is not a preference - nothing offers it to the user.
-static void set_yuv_textures(const bool enabled)
+// disable_yuv_textures). It is not a preference - nothing offers it to the user. P010 is asked of
+// the device separately, since sampling NV12 does not imply it.
+static void set_yuv_textures(const bool enabled, const bool p010 = false)
 {
 	ui::yuv_textures_enabled = enabled;
+	ui::p010_textures_enabled = enabled && p010;
 }
 
 static constexpr std::string_view to_string(const D3D_FEATURE_LEVEL fl)
@@ -335,7 +337,7 @@ bool factories::init(const bool use_gpu)
 			df::log(__FUNCTION__, "     yuv textures disabled by a previous driver fault");
 		}
 
-		set_yuv_textures(supports_nv12 && setting.use_yuv);
+		set_yuv_textures(supports_nv12 && setting.use_yuv, supports_p010);
 	}
 
 	if (SUCCEEDED(hr) && device)
@@ -650,6 +652,9 @@ struct texture_binding
 {
 	ComPtr<ID3D11ShaderResourceView> y;
 	ComPtr<ID3D11ShaderResourceView> uv; // chroma plane; null for everything but NV12/P010
+	// The 3D cube an HDR picture's planes are drawn through; null for SDR. Held here, with the planes
+	// it maps, so every atom drawing the picture keeps the cube alive too.
+	ComPtr<ID3D11ShaderResourceView> tone_map;
 
 	// Identity for atom merging and redundant-bind filtering. Two textures cannot share a view,
 	// and the binding holds the view, so this stays meaningful for as long as it is used.
@@ -913,10 +918,16 @@ public:
 			_binding = make_texture_binding(_f ? _f->d3d_device.Get() : nullptr, _texture.Get(), _format);
 			_binding_source = _texture.Get();
 			_binding_format = _format;
+			if (_binding) _binding.tone_map = _tone_map_view;
 		}
 
 		return _binding;
 	}
+
+	// Takes the cube a picture's planes are drawn through, or drops it for an SDR picture. A clip's
+	// frames share one cube, so the 3D texture is made when the clip's first frame arrives and not
+	// again until the mapping changes.
+	void tone_map(const ui::tone_map_lut_ptr& lut);
 
 	ui::texture_update_result update(const av_frame_ptr& frame) override;
 	ui::texture_update_result update(const ui::const_surface_ptr& surface) override;
@@ -930,6 +941,8 @@ private:
 	texture_binding _binding;
 	ID3D11Texture2D* _binding_source = nullptr;
 	ui::texture_format _binding_format = ui::texture_format::None;
+	ComPtr<ID3D11ShaderResourceView> _tone_map_view;
+	ui::tone_map_lut_ptr _tone_map_source;
 };
 
 class d3d11_vertices;
@@ -1003,6 +1016,8 @@ public:
 	ComPtr<ID3D11PixelShader> _pixel_shader_circle;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv;
 	ComPtr<ID3D11PixelShader> _pixel_shader_yuv_bicubic;
+	ComPtr<ID3D11PixelShader> _pixel_shader_yuv_hdr;
+	ComPtr<ID3D11PixelShader> _pixel_shader_yuv_hdr_bicubic;
 	ComPtr<ID3D11PixelShader> _pixel_shader_pano;
 	ComPtr<ID3D11Buffer> _yuv_cbuffer;
 	ComPtr<ID3D11Buffer> _texture_transform_cbuffer;
@@ -1073,7 +1088,7 @@ public:
 		return _client_extent;
 	}
 
-	ID3D11PixelShader* calc_shader(bool is_bicubic, ui::texture_format tex_fmt) const;
+	ID3D11PixelShader* calc_shader(bool is_bicubic, ui::texture_format tex_fmt, bool tone_mapped = false) const;
 
 	void add_scene_atom(const texture_binding& tex, const ComPtr<ID3D11PixelShader>& ss,
 	                    ui::texture_format tex_fmt, ui::texture_sampler sampler, const vertex_2d* vertices,
@@ -1171,6 +1186,8 @@ void d3d11_draw_context_impl::destroy()
 	_pixel_shader_circle.Reset();
 	_pixel_shader_yuv.Reset();
 	_pixel_shader_yuv_bicubic.Reset();
+	_pixel_shader_yuv_hdr.Reset();
+	_pixel_shader_yuv_hdr_bicubic.Reset();
 	_pixel_shader_pano.Reset();
 	_yuv_cbuffer.Reset();
 	_texture_transform_cbuffer.Reset();
@@ -1327,6 +1344,19 @@ void d3d11_draw_context_impl::create(const factories_ptr& f, const ComPtr<IDXGIS
 		{
 			const auto shader = load_resource(IDR_SHADER_YUV_BICUBIC, L"SHADER");
 			hr = _f->d3d_device->CreatePixelShader(shader.data(), shader.size(), nullptr, &_pixel_shader_yuv_bicubic);
+		}
+
+		if (SUCCEEDED(hr))
+		{
+			const auto shader = load_resource(IDR_SHADER_YUV_HDR, L"SHADER");
+			hr = _f->d3d_device->CreatePixelShader(shader.data(), shader.size(), nullptr, &_pixel_shader_yuv_hdr);
+		}
+
+		if (SUCCEEDED(hr))
+		{
+			const auto shader = load_resource(IDR_SHADER_YUV_HDR_BICUBIC, L"SHADER");
+			hr = _f->d3d_device->CreatePixelShader(shader.data(), shader.size(), nullptr,
+			                                       &_pixel_shader_yuv_hdr_bicubic);
 		}
 
 		if (SUCCEEDED(hr))
@@ -1656,6 +1686,9 @@ struct context_state final
 	ID3D11Buffer* yuv_cbuffer = nullptr;
 	ID3D11Buffer* texture_transform_cbuffer = nullptr;
 	ID3D11Buffer* pano_cbuffer = nullptr;
+	// The state an HDR picture's cube is sampled through, at s1. Bound the first time an atom needs it.
+	ID3D11SamplerState* lut_sampler = nullptr;
+	bool lut_sampler_bound = false;
 	ui::color_space uploaded_cs = ui::color_space::rec601_limited;
 	ui::texture_format uploaded_yuv_format = ui::texture_format::None;
 	bool cs_uploaded = false;
@@ -1809,6 +1842,14 @@ struct context_state final
 			df::bump(df::gpu_perf.sampler_binds);
 		}
 
+		if (a.tex.tone_map && !lut_sampler_bound && lut_sampler)
+		{
+			lut_sampler_bound = true;
+			ID3D11SamplerState* samplers[] = {lut_sampler};
+			context->PSSetSamplers(1, 1, samplers);
+			df::bump(df::gpu_perf.sampler_binds);
+		}
+
 		if (vb != vertex_buffer)
 		{
 			vertex_buffer = vb;
@@ -1825,12 +1866,12 @@ struct context_state final
 
 		if (view != bound_view && view != nullptr)
 		{
-			// Both slots are bound together so a chroma view left over from a previous YUV atom does
-			// not stay bound to slot 1 - a stale binding keeps the video texture referenced and forces
-			// the runtime to unbind it on the next copy.
+			// All three slots are bound together so a chroma view or cube left over from a previous
+			// YUV atom does not stay bound - a stale binding keeps the video texture referenced and
+			// forces the runtime to unbind it on the next copy.
 			bound_view = view;
-			ID3D11ShaderResourceView* views_to_bind[] = {view, a.tex.uv.Get()};
-			context->PSSetShaderResources(0, 2, views_to_bind);
+			ID3D11ShaderResourceView* views_to_bind[] = {view, a.tex.uv.Get(), a.tex.tone_map.Get()};
+			context->PSSetShaderResources(0, 3, views_to_bind);
 			df::bump(df::gpu_perf.view_binds);
 		}
 
@@ -1953,6 +1994,7 @@ HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& c
 		state.yuv_cbuffer = _yuv_cbuffer.Get();
 		state.texture_transform_cbuffer = _texture_transform_cbuffer.Get();
 		state.pano_cbuffer = _pano_cbuffer.Get();
+		state.lut_sampler = _sampler_bilinear.Get();
 
 		for (const auto& a : _scene_atoms)
 		{
@@ -1989,8 +2031,8 @@ HRESULT d3d11_draw_context_impl::draw_scene(const ComPtr<ID3D11DeviceContext>& c
 	// of a back buffer is still bound, which would leave the window rendering at a stale size.
 	// The sampled textures go with it so a video surface is not still bound as an input when the
 	// next decoded frame is copied into it.
-	ID3D11ShaderResourceView* const no_views[] = {nullptr, nullptr};
-	context->PSSetShaderResources(0, 2, no_views);
+	ID3D11ShaderResourceView* const no_views[] = {nullptr, nullptr, nullptr};
+	context->PSSetShaderResources(0, 3, no_views);
 	context->OMSetRenderTargets(0, nullptr, nullptr);
 
 	return S_OK;
@@ -2095,14 +2137,22 @@ void d3d11_draw_context_impl::add_scene_atom(const texture_binding& tex,
 	}
 }
 
-ID3D11PixelShader* d3d11_draw_context_impl::calc_shader(const bool is_bicubic, const ui::texture_format tex_fmt) const
+ID3D11PixelShader* d3d11_draw_context_impl::calc_shader(const bool is_bicubic, const ui::texture_format tex_fmt,
+                                                        const bool tone_mapped) const
 {
 	df::scope_rendering_func rf(__FUNCTION__);
 	ID3D11PixelShader* shader = is_bicubic ? _pixel_shader_rgb_bicubic.Get() : _pixel_shader_rgb.Get();
 	if (tex_fmt == ui::texture_format::NV12 || tex_fmt == ui::texture_format::P010)
-		shader = is_bicubic
-			         ? _pixel_shader_yuv_bicubic.Get()
-			         : _pixel_shader_yuv.Get();
+	{
+		if (tone_mapped)
+			shader = is_bicubic
+				         ? _pixel_shader_yuv_hdr_bicubic.Get()
+				         : _pixel_shader_yuv_hdr.Get();
+		else
+			shader = is_bicubic
+				         ? _pixel_shader_yuv_bicubic.Get()
+				         : _pixel_shader_yuv.Get();
+	}
 	return shader;
 }
 
@@ -2189,8 +2239,9 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const rec
 			};
 
 			const auto tex_fmt = t->_format;
-			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt);
-			add_scene_atom(t->binding(), shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
+			const auto& binding = t->binding();
+			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt, binding.tone_map != nullptr);
+			add_scene_atom(binding, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
 			               std::size(indexes), t->_cs);
 		}
 	}
@@ -2231,8 +2282,9 @@ void d3d11_draw_context_impl::draw_texture(const texture_d3d11_ptr& t, const qua
 			};
 
 			const auto tex_fmt = t->_format;
-			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt);
-			add_scene_atom(t->binding(), shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
+			const auto& binding = t->binding();
+			const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tex_fmt, binding.tone_map != nullptr);
+			add_scene_atom(binding, shader, tex_fmt, sampler, vertices, std::size(vertices), indexes,
 			               std::size(indexes), t->_cs);
 		}
 	}
@@ -2520,6 +2572,100 @@ av_hw_decode_target av_platform_hw_decode_target()
 	return {AV_HWDEVICE_TYPE_D3D11VA, AV_PIX_FMT_D3D11};
 }
 
+// The decoder profiles FFmpeg's D3D11VA hwaccels ask the driver for (libavcodec/dxva2.c), spelled out
+// so the check needs no GUID library. Values as d3d11.h's D3D11_DECODER_PROFILE_*.
+namespace
+{
+	constexpr GUID profile_h264_nofgt = {0x1b81be68, 0xa0c7, 0x11d3, {0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5}};
+	constexpr GUID profile_h264_fgt = {0x1b81be69, 0xa0c7, 0x11d3, {0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5}};
+	constexpr GUID profile_mpeg2 = {0xee27417f, 0x5e28, 0x4e65, {0xbe, 0xea, 0x1d, 0x26, 0xb5, 0x08, 0xad, 0xc9}};
+	constexpr GUID profile_mpeg2and1 = {0x86695f12, 0x340e, 0x4f04, {0x9f, 0xd3, 0x92, 0x53, 0xdd, 0x32, 0x74, 0x60}};
+	constexpr GUID profile_vc1 = {0x1b81bea3, 0xa0c7, 0x11d3, {0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5}};
+	constexpr GUID profile_vc1_d2010 = {0x1b81bea4, 0xa0c7, 0x11d3, {0xb9, 0x84, 0x00, 0xc0, 0x4f, 0x2e, 0x73, 0xc5}};
+	constexpr GUID profile_hevc_main = {0x5b11d51b, 0x2f4c, 0x4452, {0xbc, 0xc3, 0x09, 0xf2, 0xa1, 0x16, 0x0c, 0xc0}};
+	constexpr GUID profile_hevc_main10 = {0x107af0e0, 0xef1a, 0x4d19, {0xab, 0xa8, 0x67, 0xa1, 0x63, 0x07, 0x3d, 0x13}};
+	constexpr GUID profile_vp9_0 = {0x463707f8, 0xa1d0, 0x4585, {0x87, 0x6d, 0x83, 0xaa, 0x6d, 0x60, 0xb8, 0x9e}};
+	constexpr GUID profile_vp9_2 = {0xa4c749ef, 0x6ecf, 0x48aa, {0x84, 0x48, 0x50, 0xa7, 0xa1, 0x16, 0x5f, 0xf7}};
+	constexpr GUID profile_av1_0 = {0xb8be4ccb, 0xcf53, 0x46ba, {0x8d, 0x59, 0xd6, 0xb8, 0xa6, 0xda, 0x5d, 0x2a}};
+
+	// The profiles that decode this codec at this depth; any one of them will do.
+	std::vector<GUID> hw_decoder_profiles(const AVCodecID codec, const int bit_depth)
+	{
+		switch (codec)
+		{
+		case AV_CODEC_ID_H264:
+			if (bit_depth <= 8) return {profile_h264_nofgt, profile_h264_fgt};
+			break;
+		case AV_CODEC_ID_MPEG2VIDEO:
+			if (bit_depth <= 8) return {profile_mpeg2, profile_mpeg2and1};
+			break;
+		case AV_CODEC_ID_VC1:
+		case AV_CODEC_ID_WMV3:
+			if (bit_depth <= 8) return {profile_vc1_d2010, profile_vc1};
+			break;
+		case AV_CODEC_ID_HEVC:
+			if (bit_depth <= 8) return {profile_hevc_main};
+			if (bit_depth == 10) return {profile_hevc_main10};
+			break;
+		case AV_CODEC_ID_VP9:
+			if (bit_depth <= 8) return {profile_vp9_0};
+			if (bit_depth == 10) return {profile_vp9_2};
+			break;
+		case AV_CODEC_ID_AV1:
+			if (bit_depth <= 10) return {profile_av1_0};
+			break;
+		default:
+			break;
+		}
+
+		return {};
+	}
+
+	ID3D11VideoDevice* hw_video_device(AVBufferRef* device)
+	{
+		const auto* const device_ctx = device ? std::bit_cast<const AVHWDeviceContext*>(device->data) : nullptr;
+		const auto* const hwctx = device_ctx ? static_cast<const AVD3D11VADeviceContext*>(device_ctx->hwctx) : nullptr;
+		return hwctx ? hwctx->video_device : nullptr;
+	}
+}
+
+// The questions FFmpeg's hwaccel asks at initialisation, asked first: the profile, the output format,
+// and a decoder configuration at this size.
+bool av_platform_hw_decode_supported(AVBufferRef* device, const AVCodecID codec, const int bit_depth, const int width,
+                                     const int height)
+{
+	auto* const video_device = hw_video_device(device);
+	if (!video_device || width <= 0 || height <= 0) return false;
+
+	const auto wanted = hw_decoder_profiles(codec, bit_depth);
+	const auto format = bit_depth > 8 ? DXGI_FORMAT_P010 : DXGI_FORMAT_NV12;
+	const auto count = video_device->GetVideoDecoderProfileCount();
+
+	for (UINT i = 0; i < count; ++i)
+	{
+		GUID profile = {};
+		if (FAILED(video_device->GetVideoDecoderProfile(i, &profile))) continue;
+		if (std::ranges::find(wanted, profile) == wanted.end()) continue;
+
+		BOOL supported = FALSE;
+		if (FAILED(video_device->CheckVideoDecoderFormat(&profile, format, &supported)) || !supported) continue;
+
+		const D3D11_VIDEO_DECODER_DESC desc = {profile, static_cast<UINT>(width), static_cast<UINT>(height), format};
+		UINT configs = 0;
+
+		if (SUCCEEDED(video_device->GetVideoDecoderConfigCount(&desc, &configs)) && configs > 0) return true;
+	}
+
+	return false;
+}
+
+bool av_platform_hw_device_usable(AVBufferRef* device)
+{
+	const auto* const device_ctx = device ? std::bit_cast<const AVHWDeviceContext*>(device->data) : nullptr;
+	const auto* const hwctx = device_ctx ? static_cast<const AVD3D11VADeviceContext*>(device_ctx->hwctx) : nullptr;
+	return hwctx && hwctx->device && hwctx->device->GetDeviceRemovedReason() == S_OK;
+}
+
 // Scoped hold of the FFmpeg D3D11VA device lock. The producer-side copy must run under it,
 // but it is released as early as possible (and on every error path) so decoding on the worker
 // thread is not serialised behind the render-device work that follows.
@@ -2555,6 +2701,12 @@ constexpr uint32_t shared_texture_acquire_ms = 8;
 ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
+
+	// Converted on the decode thread, so presenting it is an upload and nothing more.
+	if (const auto prepared = av_frame_surface(frame_in))
+	{
+		return update(prepared);
+	}
 
 	auto result = ui::texture_update_result::failed;
 	auto info = av_get_d3d_info(frame_in);
@@ -2638,6 +2790,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 			_shared_texture_refused_device = video_device;
 			_shared_texture_refused_dimensions = texture_extent;
 			_shared_texture_refused_format = video_tex_format;
+			av_request_cpu_video_frames();
 		}
 
 		if (video_texture_index >= tex_desc_src.ArraySize)
@@ -2732,10 +2885,12 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 				// The cross-device bridge this whole path exists for is unavailable. Say so once: without
 				// a line here the picture simply stops, with nothing to attribute it to. The refusal is
 				// remembered against this key so the attempt is not repeated per frame, and the CPU
-				// fallback below is what keeps video on screen.
+				// fallback below is what keeps video on screen - until the decode thread, asked here,
+				// starts downloading the frames itself and this thread only uploads them.
 				_shared_texture_refused_device = video_device;
 				_shared_texture_refused_dimensions = texture_extent;
 				_shared_texture_refused_format = video_tex_format;
+				av_request_cpu_video_frames();
 
 				df::log(__FUNCTION__, std::format("Video shared texture unavailable (0x{:08x}) - scaling on the CPU",
 				                                  static_cast<uint32_t>(hr)));
@@ -2850,7 +3005,12 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 		}
 	}
 
-	if (result == ui::texture_update_result::failed)
+	if (result != ui::texture_update_result::failed)
+	{
+		// The planes were shared as decoded, so an HDR picture still needs its cube.
+		tone_map(info.tone_map);
+	}
+	else
 	{
 		// Either a software-decoded frame, or a hardware frame whose shared-texture chain the driver
 		// refused. av_scaler downloads a hardware frame itself, so both reach a picture here - this
@@ -2927,6 +3087,7 @@ static void disable_yuv_textures()
 	setting.use_yuv = false;
 	setting.write();
 	ui::yuv_textures_enabled = false;
+	ui::p010_textures_enabled = false;
 }
 
 static HRESULT try_create_tex(ID3D11Device* pDevice, const D3D11_TEXTURE2D_DESC& desc,
@@ -3088,6 +3249,46 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 	return result;
 }
 
+void d3d11_texture::tone_map(const ui::tone_map_lut_ptr& lut)
+{
+	if (lut == _tone_map_source) return;
+
+	_tone_map_source = lut;
+	_tone_map_view.Reset();
+
+	auto* const device = _f ? _f->d3d_device.Get() : nullptr;
+
+	if (lut && device && lut->size > 1 && lut->rgba.size() >= static_cast<size_t>(lut->size) * lut->size * lut->size * 4)
+	{
+		const auto n = static_cast<UINT>(lut->size);
+
+		D3D11_TEXTURE3D_DESC desc = {};
+		desc.Width = n;
+		desc.Height = n;
+		desc.Depth = n;
+		desc.MipLevels = 1;
+		desc.Format = DXGI_FORMAT_R16G16B16A16_UNORM;
+		desc.Usage = D3D11_USAGE_IMMUTABLE;
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+		const UINT row_pitch = n * 4 * sizeof(uint16_t);
+		const D3D11_SUBRESOURCE_DATA data = {lut->rgba.data(), row_pitch, row_pitch * n};
+
+		ComPtr<ID3D11Texture3D> cube;
+		auto hr = device->CreateTexture3D(&desc, &data, &cube);
+		if (SUCCEEDED(hr)) hr = device->CreateShaderResourceView(cube.Get(), nullptr, &_tone_map_view);
+
+		if (FAILED(hr))
+		{
+			// Drawn without its cube the picture is shown as SDR, as before tone mapping existed.
+			df::log(__FUNCTION__, std::format("HDR tone map cube refused {:x}", static_cast<uint32_t>(hr)));
+			_tone_map_view.Reset();
+		}
+	}
+
+	if (_binding) _binding.tone_map = _tone_map_view;
+}
+
 ui::texture_update_result d3d11_texture::update(const ui::const_surface_ptr& s)
 {
 	df::scope_rendering_func rf(__FUNCTION__);
@@ -3111,10 +3312,12 @@ ui::texture_update_result d3d11_texture::update(const ui::const_surface_ptr& s)
 				return ui::texture_update_result::failed;
 			}
 
+			tone_map(nullptr);
 			return update(converted->dimensions(), converted->format(), converted->orientation(),
 			              converted->pixels(), converted->stride(), converted->size());
 		}
 
+		tone_map(ui::is_packed(fmt) ? nullptr : s->tone_map());
 		return update(s->dimensions(), fmt, s->orientation(), s->pixels(), s->stride(), s->size());
 	}
 
@@ -3871,14 +4074,15 @@ void d3d11_draw_context_impl::draw_texture(const ui::texture_ptr& t, const quadd
 		vertex_2d(d[3], {src.left / width, src.bottom / height}, color, dimensions),
 	};
 	constexpr WORD indexes[] = {0, 1, 2, 3, 0, 2};
-	const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tt->_format);
+	const auto& binding = tt->binding();
+	const auto shader = calc_shader(sampler == ui::texture_sampler::bicubic, tt->_format, binding.tone_map != nullptr);
 
 	if (!_last_transform || *_last_transform != transform)
 	{
 		_last_transform = std::make_shared<ui::texture_transform>(transform);
 	}
 
-	add_scene_atom(tt->binding(), shader, tt->_format, sampler, vertices, std::size(vertices), indexes,
+	add_scene_atom(binding, shader, tt->_format, sampler, vertices, std::size(vertices), indexes,
 	               std::size(indexes), tt->_cs, _last_transform);
 }
 

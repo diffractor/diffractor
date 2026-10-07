@@ -90,12 +90,31 @@ inline bool should_finish_video_settle(const bool has_current_frame_candidate, c
 	return current_eof_handled || (has_current_frame_candidate && (reached || best_frame_time >= target_time));
 }
 
+// A scrub request near the position already asked for is merged rather than sought: the demuxer and
+// the decoder stay where the earlier request put them, and seek() only moves the target the
+// presenter settles onto. Frames ahead of the one shown are usually decoded already, so a merged step
+// forward lands with no decoder restart at all; a step behind frames already shown is caught by
+// should_correct_settled_seek, which asks for one real seek. Outside a scrub, only a request that
+// arrives before the previous one has settled is merged.
 inline bool should_coalesce_seek_request(const double last_seek, const double pos, const bool pending_time_sync,
                                          const bool was_scrubbing, const bool scrubbing, const bool force = false)
 {
 	if (force) return false;
 	const auto near_existing = fabs(last_seek - pos) <= 0.1 && pos >= 0.1;
-	return near_existing && (pending_time_sync || (was_scrubbing && scrubbing && df::equiv(last_seek, pos)));
+	return near_existing && (pending_time_sync || (was_scrubbing && scrubbing));
+}
+
+// A merged seek moves the target without moving the decoder, and the presenter only walks forward,
+// so a target behind the frame it has already reached cannot be shown from this generation. When the
+// settled frame is past the target by more than half a frame, a nearer frame exists that only a real
+// seek can decode. Asked once per target: one before the stream's first key frame lands after it
+// however often it is sought.
+inline bool should_correct_settled_seek(const bool scrubbing, const bool has_current_frame, const double frame_time,
+                                        const double target, const double frame_interval,
+                                        const double corrected_target)
+{
+	if (!scrubbing || !has_current_frame || frame_interval <= 0.0) return false;
+	return frame_time - target > frame_interval / 2.0 && !df::equiv(corrected_target, target);
 }
 
 // How many sessions the player will decode frames for beside the one it is playing. Two, because
@@ -164,9 +183,16 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	std::atomic<bool> _reset_time_offset = false;
 	std::atomic<bool> _pending_time_sync = false;
 	std::atomic<bool> _settling = false;
-	mutable platform::mutex _audio_recovery_seek_mutex;
-	_Guarded_by_(_audio_recovery_seek_mutex) double _audio_recovery_seek = -1.0;
-	_Guarded_by_(_audio_recovery_seek_mutex) int _audio_recovery_seek_gen = 0;
+
+	// A seek another thread needs but cannot make: the demuxer belongs to the read thread, which
+	// performs it from process_pending_forced_seek. The audio thread asks after reopening a lost
+	// endpoint; the presenter asks when a merged seek left its target behind the frames still to come.
+	mutable platform::mutex _forced_seek_mutex;
+	_Guarded_by_(_forced_seek_mutex) double _forced_seek = -1.0;
+	_Guarded_by_(_forced_seek_mutex) int _forced_seek_gen = 0;
+	// A settle correction is for one target. If a later merged seek has moved the target by the time
+	// the read thread gets to it, the presenter judges the new target itself.
+	_Guarded_by_(_forced_seek_mutex) bool _forced_seek_is_correction = false;
 
 	// Set once the audio stream's end has been handled (decoder tail drained and a
 	// silence pad queued). has_ended() waits for this for audio sessions so the wall
@@ -216,6 +242,10 @@ class av_session final : public std::enable_shared_from_this<av_session>
 	// Wall clock reading at the previous present, used only to spot a gap no playback could
 	// explain. UI thread only, under _presentation_mutex.
 	_Guarded_by_(_presentation_mutex) double _last_present_time = 0.0;
+
+	// The target a settle correction was last asked for, so a target no seek can reach is asked for
+	// once rather than on every present. Cleared as soon as the target moves. Under _presentation_mutex.
+	_Guarded_by_(_presentation_mutex) double _correction_target = -1.0;
 
 	_Guarded_by_(_presentation_mutex)
 	av_frame_ptr _frame;
@@ -267,27 +297,37 @@ public:
 	{
 		const auto gen = _seek_gen.load();
 		const auto recovery_pos = pos(time_now);
-		platform::exclusive_lock lock(_audio_recovery_seek_mutex);
-		_audio_recovery_seek_gen = gen;
-		_audio_recovery_seek = std::max(0.0, recovery_pos);
+		platform::exclusive_lock lock(_forced_seek_mutex);
+		_forced_seek_gen = gen;
+		_forced_seek = std::max(0.0, recovery_pos);
+		_forced_seek_is_correction = false;
 	}
 
-	bool process_pending_audio_recovery_seek()
+	bool process_pending_forced_seek()
 	{
-		double recovery_pos = -1.0;
-		int recovery_gen = 0;
+		double target = -1.0;
+		int gen = 0;
+		bool is_correction = false;
 
 		{
-			platform::exclusive_lock lock(_audio_recovery_seek_mutex);
-			recovery_pos = _audio_recovery_seek;
-			recovery_gen = _audio_recovery_seek_gen;
-			_audio_recovery_seek = -1.0;
+			platform::exclusive_lock lock(_forced_seek_mutex);
+			target = _forced_seek;
+			gen = _forced_seek_gen;
+			is_correction = _forced_seek_is_correction;
+			_forced_seek = -1.0;
 		}
 
-		if (recovery_pos < 0.0) return false;
-		if (recovery_gen != _seek_gen) return false;
-		seek(recovery_pos, _scrubbing, true);
+		if (target < 0.0) return false;
+		if (gen != _seek_gen) return false;
+		if (is_correction && !df::equiv(target, _last_seek)) return false;
+		seek(target, _scrubbing, true);
 		return true;
+	}
+
+	// Seeks that restarted the decoder. A merged seek does not count, which is what makes it cheap.
+	int seek_generation() const
+	{
+		return _seek_gen;
 	}
 
 	// True when this media is presented as an audio visualisation rather than a video texture.
@@ -729,6 +769,25 @@ public:
 		return l < r ? r - l : l - r;
 	}
 
+	// Nominal for a variable-rate stream, which is all half a frame of judgement needs.
+	double video_frame_interval() const
+	{
+		const auto info = _info.load();
+		const auto rate = info ? info->video_frame_rate : 0.0;
+		return rate > 0.0 ? 1.0 / rate : 1.0 / 25.0;
+	}
+
+	// The presenter's half of should_correct_settled_seek. Recorded here and performed by the read
+	// thread, which owns the demuxer, as an audio recovery seek is.
+	void request_settle_correction_seek(const double target)
+	{
+		const auto gen = _seek_gen.load();
+		platform::exclusive_lock lock(_forced_seek_mutex);
+		_forced_seek_gen = gen;
+		_forced_seek = std::max(0.0, target);
+		_forced_seek_is_correction = true;
+	}
+
 	bool update_for_present(const double time_now)
 	{
 		platform::exclusive_lock lock_present(_presentation_mutex);
@@ -861,6 +920,15 @@ public:
 			if (should_finish_video_settle(has_best, reached, best_ft, time, _video_eof_handled))
 			{
 				_settling = false;
+			}
+
+			if (!df::equiv(_correction_target, time)) _correction_target = -1.0;
+
+			if (should_correct_settled_seek(_scrubbing, has_best, best_ft, time, video_frame_interval(),
+			                                _correction_target))
+			{
+				_correction_target = time;
+				request_settle_correction_seek(time);
 			}
 		}
 		else if (!seek_ver_invalid && _state == av_play_state::playing && !_pending_time_sync && !_reset_time_offset)
@@ -1529,13 +1597,17 @@ public:
 
 			if (const auto session = _thread_session.load())
 			{
-				session->process_pending_audio_recovery_seek();
+				session->process_pending_forced_seek();
 				session->process_io(_video_event, _audio_event);
 			}
 
 			for (const auto& slot : _frame_sessions)
 			{
-				if (const auto frames = slot.load()) frames->process_io(_video_event, _audio_event);
+				if (const auto frames = slot.load())
+				{
+					frames->process_pending_forced_seek();
+					frames->process_io(_video_event, _audio_event);
+				}
 			}
 		}
 	}

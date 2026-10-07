@@ -7,7 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: HEIF/HEIC image format support. Decodes High Efficiency Image Format files
-// using libheif, extracts metadata, reports container brands and items, and handles thumbnails.
+// using libheif, with HEVC steered to FFmpeg's decoder, extracts metadata, reports container
+// brands and items, and handles thumbnails.
 
 #include "pch.h"
 #include "files.h"
@@ -18,8 +19,81 @@
 #define LIBDE265_STATIC_BUILD 1
 
 #include <libheif/heif.h>
+#include <libheif/heif_items.h>
 #include <libheif/heif_properties.h>
 
+
+// libheif's plugin priority picks libde265 for HEVC. FFmpeg's HEVC decoder, linked for video anyway,
+// decodes the same pixels faster: a 4000x2252 photograph in 40 tiles took 105 ms against 151 ms, and
+// 264 ms against 463 ms on one thread. It is also correct where libde265 is not: libde265's 32-bit
+// build is not bit-exact, and corrupts blocks of a photograph that both 64-bit decoders agree on.
+// Null when libheif was built without the FFmpeg plugin, which leaves libheif's own choice.
+const char* heif_hevc_decoder_id()
+{
+	static const char* const id = []() -> const char*
+	{
+		std::array<const heif_decoder_descriptor*, 16> descriptors = {};
+		const auto count = heif_get_decoder_descriptors(heif_compression_HEVC, descriptors.data(),
+		                                                static_cast<int>(descriptors.size()));
+
+		for (auto i = 0; i < count; ++i)
+		{
+			const auto* const name = heif_decoder_descriptor_get_id_name(descriptors[i]);
+			if (name && std::string_view(name) == "ffmpeg") return "ffmpeg";
+		}
+
+		return nullptr;
+	}();
+
+	return id;
+}
+
+// Whether an item's pixels are HEVC: an hvc1 item, or a grid, overlay or identity image derived from
+// one. Only these are steered to FFmpeg, because the decoder a caller names is used for whatever the
+// item holds - a JPEG or AV1 item named to FFmpeg would change decoder too, and an uncompressed one
+// would not decode at all.
+static bool is_hevc_item(const heif_context* ctx, const heif_item_id id, const int depth = 0)
+{
+	const auto type = heif_item_get_item_type(ctx, id);
+	if (type == heif_fourcc('h', 'v', 'c', '1')) return true;
+
+	const auto derived = type == heif_fourcc('g', 'r', 'i', 'd') || type == heif_fourcc('i', 'o', 'v', 'l') ||
+		type == heif_fourcc('i', 'd', 'e', 'n');
+	if (!derived || depth >= 4) return false;
+
+	// A derived image's 'dimg' reference lists its inputs, which share one codec in every writer
+	// that exists, so the first stands for the rest.
+	for (auto index = 0; index < 16; ++index)
+	{
+		uint32_t reference_type = 0;
+		heif_item_id* references = nullptr;
+		const auto count = heif_context_get_item_references(ctx, id, index, &reference_type, &references);
+		const auto first = count > 0 ? references[0] : 0;
+		heif_release_item_references(ctx, &references);
+
+		if (count == 0) return false;
+		if (reference_type == heif_fourcc('d', 'i', 'm', 'g')) return is_hevc_item(ctx, first, depth + 1);
+	}
+
+	return false;
+}
+
+using heif_decoding_options_ptr = std::unique_ptr<heif_decoding_options, decltype(&heif_decoding_options_free)>;
+
+// The options an item decodes with: FFmpeg named for HEVC, and null - libheif's defaults - otherwise.
+static heif_decoding_options_ptr decoding_options_for(const heif_context* ctx, const heif_image_handle* handle)
+{
+	const auto* const id = heif_hevc_decoder_id();
+
+	if (!id || !is_hevc_item(ctx, heif_image_handle_get_item_id(handle)))
+	{
+		return {nullptr, heif_decoding_options_free};
+	}
+
+	heif_decoding_options_ptr options(heif_decoding_options_alloc(), heif_decoding_options_free);
+	if (options) options->decoder_id = id;
+	return options;
+}
 
 static ui::surface_ptr image_to_surface(const heif_image_handle* handle, const heif_image* img)
 {
@@ -496,8 +570,9 @@ file_scan_result scan_heif(read_stream& s, const scan_intent intent, const bool 
 				if (thumbnail_affordable)
 				{
 					heif_image* img = nullptr;
+					const auto options = decoding_options_for(src.get(), thumbnail_handle);
 					const auto decode_image_result = heif_decode_image(thumbnail_handle, &img, heif_colorspace_RGB,
-					                                                   heif_chroma_interleaved_RGBA, nullptr);
+					                                                   heif_chroma_interleaved_RGBA, options.get());
 					const df::releaser<heif_image> heif_image_releaser(img, [](auto* i) { heif_image_release(i); });
 
 					if (decode_image_result.code == heif_error_Ok)
@@ -552,8 +627,9 @@ ui::surface_ptr load_heif(read_stream& s, load_diagnostic* const diagnostic)
 
 			// decode the image and convert colorspace to RGB, saved as 32bit interleaved
 			heif_image* img = nullptr;
+			const auto options = decoding_options_for(src.get(), image_handle);
 			const auto decode_image_result = heif_decode_image(image_handle, &img, heif_colorspace_RGB,
-			                                                   heif_chroma_interleaved_RGBA, nullptr);
+			                                                   heif_chroma_interleaved_RGBA, options.get());
 
 			const df::releaser<heif_image> heif_image_releaser(img, [](auto* i) { heif_image_release(i); });
 
@@ -575,4 +651,22 @@ ui::surface_ptr load_heif(read_stream& s, load_diagnostic* const diagnostic)
 	}
 
 	return result;
+}
+
+const char* heif_primary_decoder_id(read_stream& s)
+{
+	const heif_source src(s);
+	if (!src.is_open()) return nullptr;
+
+	heif_image_handle* image_handle = nullptr;
+	const auto image_handle_result = heif_context_get_primary_image_handle(src.get(), &image_handle);
+	const df::releaser<heif_image_handle> image_handle_releaser(image_handle, [](auto* c)
+	{
+		heif_image_handle_release(c);
+	});
+
+	if (image_handle_result.code != heif_error_Ok) return nullptr;
+
+	const auto options = decoding_options_for(src.get(), image_handle);
+	return options ? options->decoder_id : nullptr;
 }

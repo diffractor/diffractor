@@ -101,17 +101,66 @@ until the decode landed. Video is the exception, because a decoded frame can car
 There the stored frame is not the shape to fill, so the destination takes the container's declared
 display dimensions and the frame is stretched into them.
 
+## Video Decode
+
+Video decoding runs off the UI thread, and so does preparing each picture for display: the decode
+thread converts it into the texture the renderer uploads - NV12 or P010 planes where the renderer
+samples YUV and the picture is 4:2:0 at an even size, with P010 only where the device samples it too,
+and packed BGRA otherwise - so presenting a frame is an upload and nothing more. A decoder reads only
+the streams it decodes; the others are discarded
+in the demuxer. Closing a session, or abandoning an audio walk, interrupts a read blocked inside the
+demuxer rather than waiting it out. Software decode uses frame and slice threads, bounded by the
+core count and by the memory each frame thread holds.
+
+AV1 has no FFmpeg software decoder of its own, so software AV1 decodes through libdav1d; FFmpeg's
+own `av1` decoder exists only to drive hardware acceleration.
+
 ## Hardware Video
 
-Video decoding runs off the UI thread. Hardware decode uses a dedicated D3D11 video device and
-shares completed textures with the render device through keyed synchronization. The decoder publishes
-an immutable frame description; the UI opens or copies it into render-owned resources and verifies
-session generation before display.
+Hardware decode is chosen per stream, before the decoder is opened, and only where FFmpeg's D3D11
+acceleration covers the stream and the driver reports a decoder for its profile and format. A stream
+the driver still refuses decodes in software from the same context rather than producing no
+pictures. One D3D11 decode device serves every video in the process, and is replaced only once it is
+no longer usable.
+
+Completed textures are shared with the render device through keyed synchronization. The decoder
+publishes an immutable frame description; the UI copies it into a render-owned texture, which
+releases the decoder's surface at once - sampling the shared texture directly would hold the decoder
+until the frame was presented. Session generation is verified before display. A renderer that cannot
+open the shared texture asks for CPU frames, and from then on hardware pictures are downloaded and
+prepared on the decode thread.
 
 When hardware decoding, shared textures, or YUV presentation are unavailable, playback falls back to
 software-decoded surfaces. The fallback preserves timing, orientation, color intent, and playback
 state. Closing or superseding a session releases decoder resources on their owning context before
 the render-side reference is discarded.
+
+## HDR Video
+
+PQ and HLG video is shown as the BT.709 SDR picture an SDR display can show, with 203 nits - where
+BT.2408 puts HDR reference white - as SDR white. Each clip's frames share one mapping, held as a
+33-sample cube over R'G'B' signal and made once per clip: swscale takes the signal to light and maps
+the wide gamut into BT.709 without moving any light level. The two transfers then part:
+
+- PQ is absolute light. The BT.2390 EETF rolls highlights off on luminance from the content's peak
+  (its MaxCLL, else its mastering display's, else 1000 nits) into SDR white; midtones pass untouched.
+- HLG is relative: it describes the scene, and each display renders it for its own peak. It is
+  rendered by FFmpeg's BT.2100 HLG EOTF for a display whose peak is SDR white, at the system gamma of
+  1.0 that EOTF uses below 1000 nits, so the signal's peak lands on white, HLG's own log segment rolls
+  the highlights off, and reference white shows at about a quarter of white's light. Rendering it as
+  1000-nit light and rolling that off as PQ is would squeeze phone HLG, most of which lies above
+  reference white, into the top of the range. A file's mastering display is not used for HLG.
+
+A saturated highlight that would carry one channel past white is desaturated towards its own
+luminance instead of clipped, which keeps its hue. HDR10+ per-scene metadata is not used, since the
+cube holds one static mapping per clip.
+
+The cube is the parity mechanism. The GPU samples it after the YUV matrix in dedicated shader
+variants, so SDR video pays nothing. The software backend and every CPU conversion - thumbnails,
+packed frames, captures - apply the same cube with the same trilinear arithmetic, so both backends
+and every thumbnail show the same picture. HDR planes are uploaded only as P010 with their cube; an
+8-bit HDR stream, or any HDR on a device that samples no P010, is tone mapped into BGRA on the decode
+thread instead.
 
 ## Resilience
 
@@ -131,6 +180,8 @@ initialized backend selected. Logical application state remains independent from
   target.
 - [platform_win_font.cpp](../src/platform_win_font.cpp): font resolution, shaping, and glyph masks.
 - [render_surface.cpp](../src/render_surface.cpp) and [render_software.h](../src/render_software.h):
-  shared surfaces and software rasterization.
-- [av_format.cpp](../src/av_format.cpp): video decode and hardware-frame publication.
+  shared surfaces and software rasterization, and the CPU side of the HDR cube.
+- [av_format.cpp](../src/av_format.cpp): video decode, hardware decode selection, decode-thread
+  picture preparation, the HDR mapping, and hardware-frame publication.
+- [yuv_common.hlsli](../src/shaders/yuv_common.hlsli): YUV sampling and the GPU side of the HDR cube.
 - [ui.h](../src/ui.h): backend-neutral draw interfaces and presentation results.

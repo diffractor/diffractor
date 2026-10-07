@@ -7,7 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Image surface management. Handles bitmap memory allocation,
-// pixel access, scaling, cropping, format conversions, and drawing the application mark.
+// pixel access, scaling, cropping, format conversions, the CPU lookup of the HDR tone-mapping cube,
+// and drawing the application mark.
 
 #include "pch.h"
 
@@ -31,6 +32,164 @@ void ui::surface::clear(const color32 clr) const
 			line[x] = clr;
 		}
 	}
+}
+
+namespace
+{
+	// Where one signal falls among the cube's samples on one axis: the sample below it, and how far
+	// it lies towards the next. 0 and 65535 land on the first and last sample, as a texture sampler
+	// places them.
+	struct cube_axis
+	{
+		int index = 0;
+		float weight = 0.0f;
+	};
+
+	cube_axis locate_in_cube(const uint16_t signal, const int last, const float scale)
+	{
+		const auto x = static_cast<float>(signal) * scale;
+		const auto index = std::min(static_cast<int>(x), last - 1);
+		return {index, x - static_cast<float>(index)};
+	}
+
+	bool is_complete(const ui::tone_map_lut& lut)
+	{
+		return lut.size > 1 && lut.rgba.size() >= static_cast<size_t>(lut.size) * lut.size * lut.size * 4;
+	}
+
+#if DF_X86_SIMD
+	// The four channels of a sample share one register, so the eight corners of a trilinear sample
+	// take seven blends rather than twenty-one. The three axes are located together as well, and the
+	// two samples either side along red sit side by side in memory, so each pair is one read.
+	void apply_tone_map_sse2(const ui::tone_map_lut& lut, const uint16_t* const rgb48, const size_t pixels,
+	                         ui::color32* const out)
+	{
+		const auto last = lut.size - 1;
+		const auto step_g = static_cast<ptrdiff_t>(lut.size) * 4;
+		const auto step_b = step_g * lut.size;
+		const auto* const samples = lut.rgba.data();
+
+		const auto zero = _mm_setzero_si128();
+		const auto scale = _mm_set1_ps(static_cast<float>(last) / 65535.0f);
+		const auto highest_below = _mm_set1_ps(static_cast<float>(last - 1));
+		const auto to_byte = _mm_set1_ps(255.0f / 65535.0f);
+		const auto half = _mm_set1_ps(0.5f);
+
+		// The sample at `sample` and the one after it along red.
+		const auto pair = [zero](const uint16_t* const sample, __m128& lower, __m128& upper)
+		{
+			const auto both = _mm_loadu_si128(reinterpret_cast<const __m128i*>(sample));
+			lower = _mm_cvtepi32_ps(_mm_unpacklo_epi16(both, zero));
+			upper = _mm_cvtepi32_ps(_mm_unpackhi_epi16(both, zero));
+		};
+
+		const auto lerp = [](const __m128 a, const __m128 b, const __m128 t)
+		{
+			return _mm_add_ps(a, _mm_mul_ps(_mm_sub_ps(b, a), t));
+		};
+
+		for (size_t i = 0; i < pixels; ++i)
+		{
+			const auto* const px = rgb48 + i * 3;
+
+			// Red and green, then blue, in the low three 16-bit lanes; nothing past the pixel is read.
+			uint32_t red_green = 0;
+			memcpy(&red_green, px, sizeof(red_green));
+			const auto signal = _mm_insert_epi16(_mm_cvtsi32_si128(static_cast<int>(red_green)), px[2], 2);
+
+			const auto position = _mm_mul_ps(_mm_cvtepi32_ps(_mm_unpacklo_epi16(signal, zero)), scale);
+			const auto below = _mm_cvtepi32_ps(_mm_cvttps_epi32(_mm_min_ps(position, highest_below)));
+			const auto weight = _mm_sub_ps(position, below);
+
+			alignas(16) int32_t index[4];
+			_mm_store_si128(reinterpret_cast<__m128i*>(index), _mm_cvttps_epi32(below));
+			const auto* const c = samples + (index[2] * step_b + index[1] * step_g + index[0] * 4);
+
+			const auto wr = _mm_shuffle_ps(weight, weight, _MM_SHUFFLE(0, 0, 0, 0));
+			const auto wg = _mm_shuffle_ps(weight, weight, _MM_SHUFFLE(1, 1, 1, 1));
+			const auto wb = _mm_shuffle_ps(weight, weight, _MM_SHUFFLE(2, 2, 2, 2));
+
+			__m128 c000, c100, c010, c110, c001, c101, c011, c111;
+			pair(c, c000, c100);
+			pair(c + step_g, c010, c110);
+			pair(c + step_b, c001, c101);
+			pair(c + step_b + step_g, c011, c111);
+
+			const auto x00 = lerp(c000, c100, wr);
+			const auto x10 = lerp(c010, c110, wr);
+			const auto x01 = lerp(c001, c101, wr);
+			const auto x11 = lerp(c011, c111, wr);
+			const auto rgba = lerp(lerp(x00, x10, wg), lerp(x01, x11, wg), wb);
+
+			// R, G, B, A in the lanes, rounded to bytes and stored B, G, R, A.
+			auto bytes = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(rgba, to_byte), half));
+			bytes = _mm_shuffle_epi32(bytes, _MM_SHUFFLE(3, 0, 1, 2));
+			bytes = _mm_packs_epi32(bytes, bytes);
+			bytes = _mm_packus_epi16(bytes, bytes);
+			out[i] = static_cast<ui::color32>(_mm_cvtsi128_si32(bytes));
+		}
+	}
+#endif
+}
+
+void ui::tone_map_lut::apply_baseline(const uint16_t* const rgb48, const size_t pixels, color32* const out) const
+{
+	if (!is_complete(*this))
+	{
+		std::fill_n(out, pixels, color32{0});
+		return;
+	}
+
+	const auto last = size - 1;
+	const auto scale = static_cast<float>(last) / 65535.0f;
+	const auto step_g = static_cast<ptrdiff_t>(size) * 4;
+	const auto step_b = step_g * size;
+	const auto* const samples = rgba.data();
+
+	const auto lerp = [](const float a, const float c, const float t) { return a + (c - a) * t; };
+
+	for (size_t i = 0; i < pixels; ++i)
+	{
+		const auto* const px = rgb48 + i * 3;
+		const auto r = locate_in_cube(px[0], last, scale);
+		const auto g = locate_in_cube(px[1], last, scale);
+		const auto b = locate_in_cube(px[2], last, scale);
+		const auto* const c = samples + (b.index * step_b + g.index * step_g + r.index * 4);
+
+		color32 pixel = 0xffu << 24;
+
+		for (auto channel = 0; channel < 3; ++channel)
+		{
+			const auto at = [c, channel](const ptrdiff_t offset) { return static_cast<float>(c[offset + channel]); };
+
+			const auto x00 = lerp(at(0), at(4), r.weight);
+			const auto x10 = lerp(at(step_g), at(step_g + 4), r.weight);
+			const auto x01 = lerp(at(step_b), at(step_b + 4), r.weight);
+			const auto x11 = lerp(at(step_b + step_g), at(step_b + step_g + 4), r.weight);
+			const auto v = lerp(lerp(x00, x10, g.weight), lerp(x01, x11, g.weight), b.weight);
+			const auto byte = std::min(static_cast<uint32_t>(v * (255.0f / 65535.0f) + 0.5f), 255u);
+
+			// Red, green and blue to bits 16, 8 and 0: blue in the low byte.
+			pixel |= byte << (16 - 8 * channel);
+		}
+
+		out[i] = pixel;
+	}
+}
+
+// The arithmetic of a trilinear 3D texture sample, so the CPU backend's tone mapping matches the
+// shader's: the signal is scaled onto the samples, and the eight around it are blended by distance.
+void ui::tone_map_lut::apply(const uint16_t* const rgb48, const size_t pixels, color32* const out) const
+{
+#if DF_X86_SIMD
+	if (is_complete(*this))
+	{
+		apply_tone_map_sse2(*this, rgb48, pixels, out);
+		return;
+	}
+#endif
+
+	apply_baseline(rgb48, pixels, out);
 }
 
 namespace

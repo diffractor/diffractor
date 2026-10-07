@@ -47,6 +47,17 @@ av_hw_decode_target av_platform_hw_decode_target()
 	return {};
 }
 
+// Never asked while av_platform_hw_decode_target answers that there is no hardware path.
+bool av_platform_hw_decode_supported(AVBufferRef*, AVCodecID, int, int, int)
+{
+	return false;
+}
+
+bool av_platform_hw_device_usable(AVBufferRef*)
+{
+	return false;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Paths and time
 ///////////////////////////////////////////////////////////////////////////////////////////////////

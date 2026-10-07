@@ -679,6 +679,10 @@ file_load_result load_raw(df::file_path path, bool can_load_preview);
 ui::surface_ptr load_png(df::cspan data);
 ui::surface_ptr load_webp(df::cspan data, bool can_use_yuv = false, sizei target_extent = {});
 ui::surface_ptr load_heif(read_stream& s, load_diagnostic* diagnostic = nullptr);
+// The libheif decoder plugin HEVC goes to - "ffmpeg" where libheif carries that plugin - or null.
+const char* heif_hevc_decoder_id();
+// The decoder plugin a file's primary image is steered to, or null where libheif keeps its own choice.
+const char* heif_primary_decoder_id(read_stream& s);
 ui::surface_ptr load_jxl(read_stream& s, load_diagnostic* diagnostic = nullptr);
 
 ui::image_ptr save_png(const ui::const_surface_ptr& surface_in, const metadata_parts& metadata);

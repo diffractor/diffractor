@@ -28,6 +28,7 @@
 extern "C"
 {
 #include <libavutil/frame.h>
+#include <libavcodec/avcodec.h>
 }
 
 static void should_format_audio_stream_names()
@@ -1153,9 +1154,9 @@ static void should_queue_audio_recovery_seek_for_the_read_thread()
 	ses->request_audio_recovery_seek(now);
 	assert_equal(0.0, ses->pos(now), "requesting recovery does not seek on the audio thread");
 
-	assert_equal(true, ses->process_pending_audio_recovery_seek(), "read thread applies recovery seek");
+	assert_equal(true, ses->process_pending_forced_seek(), "read thread applies recovery seek");
 	assert_equal(0.0, ses->pos(now), "recovery seek is visible after read-thread processing");
-	assert_equal(false, ses->process_pending_audio_recovery_seek(), "recovery request is single-shot");
+	assert_equal(false, ses->process_pending_forced_seek(), "recovery request is single-shot");
 
 	ses->close(false);
 }
@@ -1174,7 +1175,7 @@ static void should_drop_stale_audio_recovery_seek()
 	ses->request_audio_recovery_seek(now);
 	ses->seek(4.0, false);
 
-	assert_equal(false, ses->process_pending_audio_recovery_seek(), "stale recovery request is discarded");
+	assert_equal(false, ses->process_pending_forced_seek(), "stale recovery request is discarded");
 	assert_equal(4.0, ses->pos(now), "newer user seek remains current");
 
 	ses->close(false);
@@ -1395,9 +1396,439 @@ static void should_seek_to_the_same_position_after_playback_has_advanced()
 	ses->close(false);
 }
 
+// FFmpeg offers hardware surfaces only for 4:2:0, and for H.264, MPEG-2 and VC-1 only at 8 bits. A
+// stream outside that has to decode in software from the start: handed a hardware decoder, it had no
+// surface to receive and playback showed no picture at all.
+static void should_decide_which_streams_can_decode_in_hardware()
+{
+	assert_equal(true, av_hw_decode_eligible(AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P), "8-bit 4:2:0 H.264");
+	assert_equal(false, av_hw_decode_eligible(AV_CODEC_ID_H264, AV_PIX_FMT_YUV420P10LE), "not 10-bit H.264");
+	assert_equal(false, av_hw_decode_eligible(AV_CODEC_ID_H264, AV_PIX_FMT_YUV422P), "not 4:2:2 H.264");
+	assert_equal(true, av_hw_decode_eligible(AV_CODEC_ID_HEVC, AV_PIX_FMT_YUV420P10LE), "HEVC Main 10");
+	assert_equal(false, av_hw_decode_eligible(AV_CODEC_ID_HEVC, AV_PIX_FMT_YUV422P10LE), "not 4:2:2 HEVC");
+	assert_equal(false, av_hw_decode_eligible(AV_CODEC_ID_HEVC, AV_PIX_FMT_YUV444P), "not 4:4:4 HEVC");
+	assert_equal(true, av_hw_decode_eligible(AV_CODEC_ID_AV1, AV_PIX_FMT_YUV420P10LE), "10-bit AV1");
+	assert_equal(true, av_hw_decode_eligible(AV_CODEC_ID_VP9, AV_PIX_FMT_YUV420P), "VP9 profile 0");
+	assert_equal(false, av_hw_decode_eligible(AV_CODEC_ID_MPEG2VIDEO, AV_PIX_FMT_YUV422P), "not 4:2:2 MPEG-2");
+	assert_equal(false, av_hw_decode_eligible(AV_CODEC_ID_MPEG4, AV_PIX_FMT_YUV420P), "no hwaccel for MPEG-4 part 2");
+	assert_equal(true, av_hw_decode_eligible(AV_CODEC_ID_H264, AV_PIX_FMT_NONE),
+	             "an undeclared format is left for the decoder to settle");
+}
+
+// Slice threading holds no extra pictures, so cores alone bound it; frame threading holds one per
+// thread, so what a picture costs bounds it too.
+static void should_bound_video_decode_threads()
+{
+	constexpr size_t hd = 1920 * 1080 * 3 / 2;
+	constexpr size_t uhd_422_10bit = 3840 * 2160 * 4;
+	constexpr size_t eight_k_10bit = 7680 * 4320 * 3;
+
+	assert_equal(8, av_video_decode_threads(true, hd, 32), "1080p takes the full eight on a large machine");
+	assert_equal(4, av_video_decode_threads(true, hd, 4), "and no more threads than cores");
+	assert_equal(6, av_video_decode_threads(true, uhd_422_10bit, 32), "10-bit 4:2:2 4K is held by its picture budget");
+	assert_equal(2, av_video_decode_threads(true, eight_k_10bit, 32), "8K keeps two");
+	assert_equal(8, av_video_decode_threads(false, eight_k_10bit, 32), "slice threads hold no pictures");
+	assert_equal(1, av_video_decode_threads(true, hd, 0), "an unknown core count still decodes");
+}
+
+// Hardware decode is on by default, so these are the streams a camera user actually meets: 10-bit
+// H.264 and 4:2:2 HEVC. Before the eligibility check the session attached a hardware decoder FFmpeg
+// could not use and never produced a picture -- on a machine with a GPU, which is where this fails.
+// Neither stream reaches a hardware device now, so the test leaves the persisted crash guard alone.
+static void should_play_streams_the_hardware_path_cannot_decode()
+{
+	for (const auto* const name : {"h264-10bit.mp4", "hevc-422-10bit.mp4"})
+	{
+		const auto path = test_files_folder.combine("excluded1").combine_file(name);
+
+		const auto ses = make_test_session();
+		assert_equal(true, ses->open(path, files::file_type_from_name(path), 0.0, true, -1, -1, true, false,
+		                             true, true), std::format("{} opened with hardware decode allowed", name));
+
+		const platform::thread_event video_event(false, false);
+		const platform::thread_event audio_event(false, false);
+		const platform::thread_event read_event(false, false);
+
+		auto presented = false;
+		auto now = df::now();
+
+		for (auto i = 0; i < 200 && !presented; ++i)
+		{
+			ses->process_io(video_event, audio_event);
+			ses->process_video(read_event);
+			now += 0.02;
+			presented = ses->update_for_present(now);
+		}
+
+		assert_equal(true, presented, std::format("{} presents a picture", name));
+		ses->close(false);
+	}
+}
+
+// The first picture a playback decoder hands the presenter, prepared for upload as playback prepares it.
+static av_frame_ptr first_presented_picture(const df::file_path path)
+{
+	av_format_decoder decoder;
+	av_frame_ptr result;
+
+	if (!decoder.open(path, media_intent::playback)) return result;
+	decoder.init_streams(-1, -1, false, true, false);
+
+	av_packet_queue packets;
+	av_frame_queue frames;
+
+	for (auto i = 0; i < 200 && !result; ++i)
+	{
+		const auto packet = decoder.read_packet();
+		if (!packet || av_packet_is_eof(packet)) break;
+		if (av_packet_stream_index(packet) != decoder.video_stream_id()) continue;
+
+		packets.push(packet);
+		decoder.receive_frames(packets, frames);
+
+		av_frame_ptr frame;
+		if (frames.pop(frame) && !av_frame_is_eof(frame)) result = frame;
+	}
+
+	return result;
+}
+
+// A decoded picture is converted on the decode thread, so presenting it is an upload. The planes have
+// to be the ones the renderer samples, laid out as it reads them -- NV12 or P010 with the chroma
+// interleaved U then V -- or BGRA for a renderer that samples no YUV. Converting the prepared planes
+// back must give the picture a direct conversion gives, which a swapped or misplaced plane does not.
+// A device can sample NV12 and refuse P010; a 10-bit picture handed to it as planes it cannot upload
+// would never be shown, so it gets BGRA.
+static void should_prepare_decoded_pictures_for_upload()
+{
+	const auto yuv_before = ui::yuv_textures_enabled;
+	const auto p010_before = ui::p010_textures_enabled;
+	const df::scope_exit restore_yuv([yuv_before, p010_before]
+	{
+		ui::yuv_textures_enabled = yuv_before;
+		ui::p010_textures_enabled = p010_before;
+	});
+
+	const auto close_to = [](const ui::color32 a, const ui::color32 b)
+	{
+		for (auto shift = 0; shift < 24; shift += 8)
+		{
+			if (std::abs(static_cast<int>((a >> shift) & 0xff) - static_cast<int>((b >> shift) & 0xff)) > 12) return false;
+		}
+
+		return true;
+	};
+
+	for (const auto& [name, planar] : {std::pair{"anamorphic.mp4", ui::texture_format::NV12},
+	                                  std::pair{"excluded1/h264-10bit.mp4", ui::texture_format::P010}})
+	{
+		const auto path = std::string_view(name).starts_with("excluded1/")
+			                  ? test_files_folder.combine("excluded1").combine_file(std::string_view(name).substr(10))
+			                  : test_files_folder.combine_file(name);
+
+		ui::yuv_textures_enabled = false;
+		ui::p010_textures_enabled = false;
+		const auto packed = av_frame_surface(first_presented_picture(path));
+		assert_equal(true, packed && packed->format() == ui::texture_format::RGB,
+		             std::format("{} is prepared as BGRA for a renderer without YUV", name));
+
+		ui::yuv_textures_enabled = true;
+		const auto nv12_only = av_frame_surface(first_presented_picture(path));
+		const auto nv12_only_format = planar == ui::texture_format::NV12 ? planar : ui::texture_format::RGB;
+		assert_equal(true, nv12_only && nv12_only->format() == nv12_only_format,
+		             std::format("{} is prepared as {} for a device that samples NV12 but not P010", name,
+		                         to_string(nv12_only_format)));
+
+		ui::p010_textures_enabled = true;
+		const auto planes = av_frame_surface(first_presented_picture(path));
+		assert_equal(true, planes && planes->format() == planar,
+		             std::format("{} is prepared as {} for a renderer that samples it", name, to_string(planar)));
+
+		if (!packed || !planes) continue;
+
+		assert_equal(true, packed->dimensions() == planes->dimensions(), "at the picture's own size");
+
+		av_scaler scaler;
+		const auto unpacked = std::make_shared<ui::surface>();
+		assert_equal(true, scaler.convert_yuv_surface(*planes, unpacked), "the planes convert back");
+
+		const auto size = packed->dimensions();
+		auto mismatches = 0;
+		auto compared = 0;
+
+		// Compared only where the picture is flat: the two conversions upsample chroma differently, so
+		// they part at every edge, while a swapped or misplaced plane changes the colour of flat areas.
+		const auto flat = [&](const int x, const int y)
+		{
+			for (const auto& [dx, dy] : {std::pair{-2, 0}, std::pair{2, 0}, std::pair{0, -2}, std::pair{0, 2}})
+			{
+				if (!close_to(packed->get_pixel(x, y), packed->get_pixel(x + dx, y + dy))) return false;
+			}
+
+			return true;
+		};
+
+		for (auto y = 2; y < size.cy - 2; y += 3)
+		{
+			for (auto x = 2; x < size.cx - 2; x += 3)
+			{
+				if (!flat(x, y)) continue;
+
+				++compared;
+				if (!close_to(packed->get_pixel(x, y), unpacked->get_pixel(x, y))) ++mismatches;
+			}
+		}
+
+		assert_equal(true, compared > 50, std::format("{} has flat areas to compare ({})", name, compared));
+		assert_equal(0, mismatches, std::format("{} planes hold the same picture", name));
+	}
+}
+
+// FFmpeg's own AV1 decoder only drives a hardware accelerator, so before libdav1d was registered an
+// AV1 file had no software decoder at all: no thumbnail, no hover preview, no Movie frame.
+static void should_decode_av1_without_hardware()
+{
+	const auto* const preferred = avcodec_find_decoder(AV_CODEC_ID_AV1);
+	assert_equal(true, preferred && std::string_view(preferred->name) == "libdav1d",
+	             "software AV1 decodes with libdav1d");
+	assert_equal(true, avcodec_find_decoder_by_name("av1") != nullptr,
+	             "and FFmpeg's own decoder stays registered for the hardware path");
+
+	const auto path = test_files_folder.combine("excluded1").combine_file("av1.mp4");
+
+	av_format_decoder decoder;
+	assert_equal(true, decoder.open(path, media_intent::thumbnail), "AV1 file opened");
+	decoder.init_streams(-1, -1, false, true, false);
+	assert_equal(true, decoder.has_video(), "an AV1 decoder exists without the GPU");
+
+	ui::surface_ptr thumbnail;
+	assert_equal(true, decoder.extract_thumbnail(thumbnail, {64, 64}, 1, 100), "AV1 thumbnail decoded");
+	assert_equal(true, is_valid(thumbnail), "with pixels");
+}
+
+// The Streams table names what a video stream holds beyond its codec: the profile, which decides what
+// can play it, the bits a sample carries, and the HDR transfer the picture is graded for. FFmpeg built
+// with --enable-small has no profile names at all, so a missing name is a build regression here.
+static void should_describe_a_video_stream_profile_depth_and_transfer()
+{
+	struct expected_stream
+	{
+		std::string_view name;
+		std::string_view profile;
+		int bit_depth;
+		std::string_view hdr_transfer;
+	};
+
+	for (const auto& e : {expected_stream{"gizmo.mp4", "Constrained Baseline", 8, ""},
+	                      expected_stream{"excluded1/hdr-pq.mp4", "Main 10", 10, "PQ"},
+	                      expected_stream{"excluded1/hdr-hlg.mp4", "Main 10", 10, "HLG"}})
+	{
+		const auto path = e.name.starts_with("excluded1/")
+			                  ? test_files_folder.combine("excluded1").combine_file(e.name.substr(10))
+			                  : test_files_folder.combine_file(e.name);
+
+		av_format_decoder decoder;
+		assert_equal(true, decoder.open(path, media_intent::thumbnail), std::format("{} opened", e.name));
+
+		const auto info = decoder.info();
+		const auto video = std::ranges::find_if(info.streams, [](const av_stream_info& s)
+		{
+			return s.type == av_stream_type::video;
+		});
+
+		assert_equal(true, video != info.streams.end(), std::format("{} has a video stream", e.name));
+		if (video == info.streams.end()) continue;
+
+		assert_equal(e.profile, std::string_view(video->profile), std::format("{} profile", e.name));
+		assert_equal(e.bit_depth, video->bit_depth, std::format("{} bit depth", e.name));
+		assert_equal(e.hdr_transfer, std::string_view(video->hdr_transfer), std::format("{} HDR transfer", e.name));
+	}
+}
+
+// Each fixture is a flat field of HDR reference white, and each route a picture takes must show it at
+// the level its transfer sets: the thumbnail, the BGRA a renderer without YUV draws, and the P010
+// planes and cube a YUV renderer samples -- whose CPU arithmetic has to agree with the BGRA, so the
+// two backends show the same picture.
+//
+// PQ is absolute light, and its reference white is the light an SDR picture shows as white; read as
+// SDR it is a dull grey, 148. HLG is relative and is rendered for a display whose peak is SDR white,
+// on which FFmpeg's BT.2100 HLG EOTF, at the system gamma of 1.0 it uses below 1000 nits, puts the
+// fixture's 74% signal at a quarter of white's light: 144. Read as SDR it is 190, and rendered as
+// 1000-nit light rolled off into white, as PQ is, it came out at 228 - which is what blew out phone
+// video, whose HLG lies mostly above reference white.
+static void should_tone_map_hdr_video_for_an_sdr_display()
+{
+	const auto yuv_before = ui::yuv_textures_enabled;
+	const auto p010_before = ui::p010_textures_enabled;
+	const df::scope_exit restore_yuv([yuv_before, p010_before]
+	{
+		ui::yuv_textures_enabled = yuv_before;
+		ui::p010_textures_enabled = p010_before;
+	});
+
+	const auto centre = [](const ui::const_surface_ptr& s)
+	{
+		const auto px = s->get_pixel(s->dimensions().cx / 2, s->dimensions().cy / 2);
+		return std::array{static_cast<int>(px >> 16 & 0xff), static_cast<int>(px >> 8 & 0xff), static_cast<int>(px & 0xff)};
+	};
+
+	struct expected_white
+	{
+		const char* name;
+		int lowest;
+		int highest;
+		std::string_view shown;
+	};
+
+	for (const auto& e : {expected_white{"hdr-pq.mp4", 220, 255, "as white"},
+	                      expected_white{"hdr-hlg.mp4", 139, 149, "at a quarter of white's light"}})
+	{
+		const auto* const name = e.name;
+		const auto at_level = [&e](const std::array<int, 3>& rgb)
+		{
+			return std::ranges::min(rgb) >= e.lowest && std::ranges::max(rgb) <= e.highest;
+		};
+
+		const auto path = test_files_folder.combine("excluded1").combine_file(name);
+
+		av_format_decoder decoder;
+		assert_equal(true, decoder.open(path, media_intent::thumbnail), std::format("{} opened", name));
+		decoder.init_streams(-1, -1, false, true, false);
+
+		ui::surface_ptr thumbnail;
+		assert_equal(true, decoder.extract_thumbnail(thumbnail, {64, 64}, 0, 100, false) && is_valid(thumbnail),
+		             std::format("{} thumbnail decoded", name));
+		if (!is_valid(thumbnail)) continue;
+
+		const auto thumbnail_rgb = centre(thumbnail);
+		assert_equal(true, at_level(thumbnail_rgb), std::format("{} thumbnail shows reference white {} ({}, {}, {})",
+		                                                         name, e.shown, thumbnail_rgb[0], thumbnail_rgb[1],
+		                                                         thumbnail_rgb[2]));
+
+		ui::yuv_textures_enabled = false;
+		ui::p010_textures_enabled = false;
+		const auto packed = av_frame_surface(first_presented_picture(path));
+		assert_equal(true, packed && packed->format() == ui::texture_format::RGB,
+		             std::format("{} is prepared as BGRA for a renderer without YUV", name));
+
+		ui::yuv_textures_enabled = true;
+		ui::p010_textures_enabled = true;
+		const auto planes = av_frame_surface(first_presented_picture(path));
+		assert_equal(true, planes && planes->format() == ui::texture_format::P010 && planes->tone_map(),
+		             std::format("{} is prepared as P010 planes with the cube that maps them", name));
+
+		if (!packed || !planes) continue;
+
+		const auto packed_rgb = centre(packed);
+		assert_equal(true, at_level(packed_rgb), std::format("{} BGRA shows reference white {} ({}, {}, {})",
+		                                                     name, e.shown, packed_rgb[0], packed_rgb[1], packed_rgb[2]));
+
+		av_scaler scaler;
+		const auto mapped = std::make_shared<ui::surface>();
+		assert_equal(true, scaler.convert_yuv_surface(*planes, mapped), std::format("{} planes convert", name));
+
+		const auto mapped_rgb = centre(mapped);
+		auto spread = 0;
+		for (auto c = 0; c < 3; ++c) spread = std::max(spread, std::abs(mapped_rgb[c] - packed_rgb[c]));
+
+		assert_equal(true, spread <= 4, std::format("{} planes through the cube match the BGRA ({}, {}, {} against {}, {}, {})",
+		                                            name, mapped_rgb[0], mapped_rgb[1], mapped_rgb[2],
+		                                            packed_rgb[0], packed_rgb[1], packed_rgb[2]));
+	}
+}
+
+// The index thumbnail takes the first picture the decoder gives. A decoder that reorders frames holds
+// the only picture of a one-frame clip until it is drained, so stopping at the end of the stream
+// left that clip with no thumbnail at all.
+static void should_thumbnail_a_clip_whose_only_picture_comes_at_the_end()
+{
+	const auto path = test_files_folder.combine("excluded1").combine_file("single-frame.mp4");
+
+	av_format_decoder decoder;
+	assert_equal(true, decoder.open(path, media_intent::thumbnail), "one-picture clip opened");
+	decoder.init_streams(-1, -1, false, true, false);
+
+	ui::surface_ptr thumbnail;
+	assert_equal(true, decoder.extract_thumbnail(thumbnail, {64, 64}, 0, 100, false), "thumbnail decoded");
+	assert_equal(true, is_valid(thumbnail), "with pixels");
+}
+
+// A stream nothing decodes is discarded, so the demuxer never hands its packets back: a picture-only
+// decoder does not read the soundtrack, and an audio walk does not read the picture.
+static void should_not_read_streams_nothing_decodes()
+{
+	const auto path = test_files_folder.combine_file("gizmo.mp4");
+
+	av_format_decoder video_only;
+	assert_equal(true, video_only.open(path, media_intent::thumbnail), "fixture opened");
+	video_only.init_streams(-1, -1, false, true, false);
+
+	const auto info = video_only.info();
+	const auto audio = std::ranges::find_if(info.streams, [](const av_stream_info& s)
+	{
+		return s.type == av_stream_type::audio;
+	});
+	assert_equal(true, audio != info.streams.end(), "fixture carries a soundtrack");
+
+	const auto count_packets = [](const av_format_decoder& decoder, const int stream)
+	{
+		auto count = 0;
+
+		for (auto i = 0; i < 200; ++i)
+		{
+			const auto packet = decoder.read_packet();
+			if (!packet || av_packet_is_eof(packet)) break;
+			if (av_packet_stream_index(packet) == stream) ++count;
+		}
+
+		return count;
+	};
+
+	av_format_decoder with_sound;
+	assert_equal(true, with_sound.open(path, media_intent::playback), "fixture opened with its soundtrack");
+	with_sound.init_streams(-1, -1, false, false, false);
+	const auto audio_packets_decoded = count_packets(with_sound, audio->index);
+
+	av_format_decoder picture_only;
+	assert_equal(true, picture_only.open(path, media_intent::thumbnail), "fixture reopened for its picture");
+	picture_only.init_streams(-1, -1, false, true, false);
+	assert_equal(true, count_packets(picture_only, picture_only.video_stream_id()) > 0, "the picture is read");
+
+	av_format_decoder picture_only_again;
+	assert_equal(true, picture_only_again.open(path, media_intent::thumbnail), "and opened once more");
+	picture_only_again.init_streams(-1, -1, false, true, false);
+
+	// The probe has already read and buffered a packet or two of every stream before anything is
+	// discarded, so those still come back; the rest of the soundtrack does not.
+	const auto audio_packets_discarded = count_packets(picture_only_again, audio->index);
+	assert_equal(true, audio_packets_discarded * 10 < audio_packets_decoded,
+	             std::format("the soundtrack beside it is not ({} audio packets against {})", audio_packets_discarded,
+	                         audio_packets_decoded));
+
+	av_format_decoder both;
+	assert_equal(true, both.open(path, media_intent::playback), "fixture reopened");
+	both.init_streams(-1, -1, false, false, false);
+	assert_equal(true, both.has_audio() && both.has_video(), "both streams decoded");
+	assert_equal(false, both.extract_audio_peaks(64).empty(), "an audio walk still measures the soundtrack");
+
+	assert_equal(true, both.seek(0.0), "rewound after the walk");
+
+	auto picture_after_walk = false;
+
+	for (auto i = 0; i < 400 && !picture_after_walk; ++i)
+	{
+		const auto packet = both.read_packet();
+		if (!packet || av_packet_is_eof(packet)) break;
+		picture_after_walk = av_packet_stream_index(packet) == both.video_stream_id();
+	}
+
+	assert_equal(true, picture_after_walk, "and leaves the picture readable once it is done");
+}
+
 // MEDIA-004 - a scrub drag can report the same whole-second target repeatedly after the previous
-// seek has settled. That duplicate must stay coalesced while the pointer is still scrubbing, but
-// the same target remains seekable after playback has resumed.
+// seek has settled, and a trim handle moves its target a frame at a time. Near scrub targets merge
+// into the request already made -- merging retargets the presenter rather than dropping the target --
+// while the same target remains seekable after playback has resumed.
 static void should_coalesce_repeated_scrub_seeks()
 {
 	assert_equal(true, should_coalesce_seek_request(3.0, 3.0, true, false, true),
@@ -1408,10 +1839,114 @@ static void should_coalesce_repeated_scrub_seeks()
 	             "settled scrub-to-scrub duplicate seeks coalesce");
 	assert_equal(false, should_coalesce_seek_request(3.0, 3.0, false, false, false),
 	             "completed playback seeks to the same historical target remain real seeks");
-	assert_equal(false, should_coalesce_seek_request(3.0, 3.0 + 1.0 / 25.0, false, true, true),
-	             "settled frame-granular scrub targets remain real seeks");
+	assert_equal(true, should_coalesce_seek_request(3.0, 3.0 + 1.0 / 25.0, false, true, true),
+	             "a frame-granular scrub step retargets the presenter instead of restarting the decoder");
 	assert_equal(false, should_coalesce_seek_request(3.0, 3.2, false, true, true),
 	             "different scrub targets remain real seeks");
+	assert_equal(false, should_coalesce_seek_request(0.05, 0.0, true, true, true),
+	             "a target at the very start is always sought");
+}
+
+// Merging a scrub seek moves only the target, so a target behind the frame the presenter already
+// reached needs one real seek -- and only one, or a target before the first key frame would re-seek
+// on every present.
+static void should_correct_a_settled_frame_only_when_it_is_past_the_target()
+{
+	constexpr auto interval = 1.0 / 25.0;
+
+	assert_equal(true, should_correct_settled_seek(true, true, 3.0, 2.92, interval, -1.0),
+	             "a frame two frames past the target needs a real seek");
+	assert_equal(false, should_correct_settled_seek(true, true, 3.0, 2.99, interval, -1.0),
+	             "a frame within half a frame of the target is the nearest one");
+	assert_equal(false, should_correct_settled_seek(true, true, 2.80, 2.92, interval, -1.0),
+	             "a frame short of the target is still being walked forward");
+	assert_equal(false, should_correct_settled_seek(true, true, 3.0, 2.92, interval, 2.92),
+	             "a target already corrected once is not sought again");
+	assert_equal(false, should_correct_settled_seek(false, true, 3.0, 2.92, interval, -1.0),
+	             "playback keeps its own clock rather than restarting the decoder");
+	assert_equal(false, should_correct_settled_seek(true, false, 3.0, 2.92, interval, -1.0),
+	             "nothing is judged before this generation has produced a frame");
+}
+
+// A trim handle dragged with the movie stopped issues frame-sized scrub seeks, often while the
+// previous one is still decoding. The last one must land on its own frame, whichever side of the
+// earlier target it falls -- and a step forward must not restart the decoder to get there.
+static void should_land_merged_scrub_seeks_on_their_own_frame()
+{
+	const auto path = test_files_folder.combine_file("gizmo.mp4");
+
+	const auto ses = make_test_session();
+	assert_equal(true, ses->open(path, files::file_type_from_name(path), 0.0, false, -1, -1, false,
+	                             false, false, true), "session opened video only, as a Movie preview is");
+
+	const auto rate = ses->info().video_frame_rate;
+	assert_equal(true, rate > 0.0, "fixture declares a frame rate");
+	const auto half_frame = 0.5 / rate;
+
+	const platform::thread_event video_event(false, false);
+	const platform::thread_event audio_event(false, false);
+	const platform::thread_event read_event(false, false);
+
+	auto now = df::now();
+
+	// Pumps until the presented frame stops moving. Stopping as soon as it came near the target would
+	// catch a frame the presenter was only walking past on its way somewhere else.
+	const auto settle = [&]
+	{
+		auto last = -1.0;
+		auto stable = 0;
+
+		for (auto i = 0; i < 400 && stable < 25; ++i)
+		{
+			// What reading() does every pass: a correction the presenter asked for is sought first.
+			ses->process_pending_forced_seek();
+			ses->process_io(video_event, audio_event);
+			ses->process_video(read_event);
+			now += 0.02;
+			ses->update_for_present(now);
+
+			const auto t = ses->time();
+			stable = df::equiv(t, last) ? stable + 1 : 0;
+			last = t;
+		}
+
+		return ses->time();
+	};
+
+	// Two frames apart, the second issued before the first has produced a picture. Dropping the second
+	// as a duplicate of the first leaves the preview on 3.00.
+	const auto first = 3.0;
+	const auto behind = first - 2.0 / rate;
+	ses->seek(first, true);
+	ses->seek(behind, true);
+
+	const auto merged_landing = settle();
+	assert_equal(true, std::abs(merged_landing - behind) <= half_frame,
+	             std::format("a seek merged while the first decoded lands on its own frame (wanted {:.3f}, got {:.3f})",
+	                         behind, merged_landing));
+
+	const auto ahead = behind + 2.0 / rate;
+	const auto generation_before_step = ses->seek_generation();
+	ses->seek(ahead, true);
+
+	const auto forward_landing = settle();
+	assert_equal(true, std::abs(forward_landing - ahead) <= half_frame,
+	             std::format("a settled step forward lands on its frame (wanted {:.3f}, got {:.3f})", ahead,
+	                         forward_landing));
+	assert_equal(generation_before_step, ses->seek_generation(),
+	             "and takes it from frames already decoded, without restarting the decoder");
+
+	const auto back = ahead - 2.0 / rate;
+	ses->seek(back, true);
+
+	const auto backward_landing = settle();
+	assert_equal(true, std::abs(backward_landing - back) <= half_frame,
+	             std::format("a settled step back lands on its frame (wanted {:.3f}, got {:.3f})", back,
+	                         backward_landing));
+	assert_equal(generation_before_step + 1, ses->seek_generation(),
+	             "with exactly one decoder restart to reach frames already passed");
+
+	ses->close(false);
 }
 
 // MEDIA-011 - stale generation frames can be nearer to a seek target than the current queued frame,
@@ -2101,6 +2636,23 @@ void register_av_tests(view_state& state, test_registry& tests)
 	tests.add("Should seek to the same position after playback has advanced"s,
 	          should_seek_to_the_same_position_after_playback_has_advanced);
 	tests.add("Should coalesce repeated scrub seeks"s, should_coalesce_repeated_scrub_seeks);
+	tests.add("Should decide which streams can decode in hardware"s,
+	          should_decide_which_streams_can_decode_in_hardware);
+	tests.add("Should bound video decode threads"s, should_bound_video_decode_threads);
+	tests.add("Should play streams the hardware path cannot decode"s,
+	          should_play_streams_the_hardware_path_cannot_decode);
+	tests.add("Should decode AV1 without hardware"s, should_decode_av1_without_hardware);
+	tests.add("Should tone map HDR video for an SDR display"s, should_tone_map_hdr_video_for_an_sdr_display);
+	tests.add("Should describe a video stream profile depth and transfer"s,
+	          should_describe_a_video_stream_profile_depth_and_transfer);
+	tests.add("Should prepare decoded pictures for upload"s, should_prepare_decoded_pictures_for_upload);
+	tests.add("Should thumbnail a clip whose only picture comes at the end"s,
+	          should_thumbnail_a_clip_whose_only_picture_comes_at_the_end);
+	tests.add("Should not read streams nothing decodes"s, should_not_read_streams_nothing_decodes);
+	tests.add("Should correct a settled frame only when it is past the target"s,
+	          should_correct_a_settled_frame_only_when_it_is_past_the_target);
+	// A trim-handle drag with Movie stopped left the preview a frame or two off the handle.
+	tests.add("Should land merged scrub seeks on their own frame"s, should_land_merged_scrub_seeks_on_their_own_frame);
 	// MEDIA-011 - stale decoded frames cannot satisfy a newer seek generation.
 	tests.add("Should reject stale video generations while settling"s,
 	          should_reject_stale_video_generations_while_settling);

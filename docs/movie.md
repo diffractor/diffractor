@@ -70,11 +70,15 @@ and mixes them with the same weights used for audio.
 
 The movie transport provides previous clip, play/pause, next clip, elapsed time, total time and a
 whole-movie scrubber. Selecting a clip parks the preview on its first retained frame and stops movie
-playback; while the movie plays, previous and next clip instead carry playback on from that clip's
-start. Starting movie playback or clip playback stops the other.
+playback; while the movie plays, previous and next clip instead count from the clip the playhead is
+in, not the focus, and carry playback on from the start of the clip they reach. A clip is the one
+playing from its own start, so during a crossfade the incoming clip is the one counted from.
+Starting movie playback or clip playback stops the other.
 
 Video controls provide in and out points, a two-handle range scrubber, retained-region playback,
 endpoint frames, an audio-level track and Reset. The out-point preview shows the last retained frame.
+While a handle is dragged the preview follows it, and once the pointer rests the preview shows the
+frame at the handle, not one near it.
 Photo controls provide a duration and an option to follow the movie default; turning the default off
 keeps the photo's current length. The controls always show the document's values, including after
 Undo, Open or a change of focus.

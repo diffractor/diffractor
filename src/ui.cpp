@@ -27,6 +27,7 @@ std::unordered_map<void*, std::function<bool()>> ui::animations;
 bool ui::animations_enabled = true;
 // Off until a backend that can sample them says otherwise.
 bool ui::yuv_textures_enabled = false;
+bool ui::p010_textures_enabled = false;
 // Matches alpha_fade_rate at 60Hz until the first frame recomputes it.
 float ui::animation_step_factor = 0.333f;
 

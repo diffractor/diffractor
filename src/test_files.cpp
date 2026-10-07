@@ -24,6 +24,9 @@
 #include "webp/mux.h"
 #include <zlib.h>
 
+#define LIBHEIF_STATIC_BUILD 1
+#include <libheif/heif.h>
+
 static void should_check_overwrite()
 {
 	const auto src_path = df::file_path(test_files_folder, "Test.jpg");
@@ -1120,6 +1123,79 @@ static void should_extract_embedded_thumbnails_only_on_demand()
 
 		assert_equal(true, is_valid(wanted.thumbnail_image) || is_valid(wanted.thumbnail_surface),
 		             name, "on-demand scan produced a thumbnail");
+	}
+}
+
+// libheif's plugin priority would decode HEIC's HEVC with libde265. FFmpeg's decoder gives the same
+// pixels in about two thirds of the time, so HEVC images are named to it - and only HEVC images,
+// because a named decoder takes whatever codec the image holds. HEVC decoding is bit-exact by
+// specification, so the two decoders must agree. They do on 64-bit; libde265's 32-bit build does not
+// (on this thumbnail 32,462 of 589,824 samples, off by up to 132, while FFmpeg's 32-bit decode matches
+// both 64-bit ones), which is a second reason HEVC goes to FFmpeg and why only 64-bit compares them.
+static void should_decode_heic_hevc_with_ffmpeg()
+{
+	const auto* const hevc_decoder = heif_hevc_decoder_id();
+	assert_equal("ffmpeg"sv, std::string_view(hevc_decoder ? hevc_decoder : ""), "libheif carries FFmpeg's HEVC decoder");
+
+	const auto chosen = [](const std::string_view name)
+	{
+		file_read_stream stream;
+		if (!stream.open(test_files_folder.combine_file(name))) return std::string{"unreadable"};
+		const auto* const id = heif_primary_decoder_id(stream);
+		return std::string(id ? id : "");
+	};
+
+	assert_equal("ffmpeg"s, chosen("melnik.heic"), "a grid of HEVC tiles is steered to FFmpeg");
+	assert_equal(""s, chosen("hato.profile0.10bpc.yuv420.avif"), "an AV1 image keeps libheif's choice");
+
+	const auto file = platform::open_file(test_files_folder.combine_file("melnik.heic"), platform::file_open_mode::read);
+	assert_equal(true, file != nullptr, "HEIC fixture opened");
+	if (!file) return;
+
+	std::vector<uint8_t> bytes(static_cast<size_t>(file->size()));
+	assert_equal(static_cast<uint64_t>(bytes.size()), file->read(bytes.data(), bytes.size()), "HEIC fixture read");
+
+	// The embedded thumbnail is one HEVC picture, which is the unit either decoder works in.
+	const auto decode_thumbnail = [&bytes](const char* const decoder_id)
+	{
+		std::vector<uint8_t> pixels;
+		auto* const ctx = heif_context_alloc();
+		auto* const options = heif_decoding_options_alloc();
+		heif_image_handle* primary = nullptr;
+		heif_image_handle* thumbnail = nullptr;
+		heif_image* image = nullptr;
+		heif_item_id thumbnail_id = 0;
+		options->decoder_id = decoder_id;
+
+		if (heif_context_read_from_memory_without_copy(ctx, bytes.data(), bytes.size(), nullptr).code == heif_error_Ok &&
+			heif_context_get_primary_image_handle(ctx, &primary).code == heif_error_Ok &&
+			heif_image_handle_get_list_of_thumbnail_IDs(primary, &thumbnail_id, 1) == 1 &&
+			heif_image_handle_get_thumbnail(primary, thumbnail_id, &thumbnail).code == heif_error_Ok &&
+			heif_decode_image(thumbnail, &image, heif_colorspace_RGB, heif_chroma_interleaved_RGBA, options).code ==
+			heif_error_Ok)
+		{
+			int stride = 0;
+			const auto* const plane = heif_image_get_plane_readonly(image, heif_channel_interleaved, &stride);
+			const auto height = heif_image_get_height(image, heif_channel_interleaved);
+			if (plane && stride > 0 && height > 0) pixels.assign(plane, plane + static_cast<size_t>(stride) * height);
+		}
+
+		heif_image_release(image);
+		heif_image_handle_release(thumbnail);
+		heif_image_handle_release(primary);
+		heif_decoding_options_free(options);
+		heif_context_free(ctx);
+		return pixels;
+	};
+
+	const auto by_ffmpeg = decode_thumbnail("ffmpeg");
+	const auto by_libde265 = decode_thumbnail("libde265");
+
+	assert_equal(true, !by_ffmpeg.empty() && !by_libde265.empty(), "both decoders decode the HEVC picture");
+
+	if constexpr (sizeof(void*) == 8)
+	{
+		assert_equal(true, by_ffmpeg == by_libde265, "and give the same pixels");
 	}
 }
 
@@ -3252,6 +3328,7 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should reject absurd tiff dimensions"s, should_reject_absurd_tiff_dimensions);
 	tests.add("Should extract embedded thumbnails only on demand"s,
 	          should_extract_embedded_thumbnails_only_on_demand);
+	tests.add("Should decode heic hevc with ffmpeg"s, should_decode_heic_hevc_with_ffmpeg);
 
 	//
 	// JPEG

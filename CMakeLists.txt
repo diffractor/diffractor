@@ -130,6 +130,10 @@ diffractor_dependency(highway VENDORED_MODULE vendored/highway VENDORED_DIR thir
 # that already exists.
 diffractor_dependency(openmpt VENDORED_MODULE vendored/openmpt VENDORED_DIR third-party/libopenmpt OPTIONAL)
 
+# AV1. Declared before the forks for the same reason: FFmpeg's configure registers its libdav1d
+# decoder only when it can already see the library.
+diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d VENDORED_DIR third-party/dav1d OPTIONAL)
+
 # Forks. Never resolvable from the system: docs/third-party.md records the patches a distribution
 # copy would silently discard. Declared before the codecs because dng compiles against the XMP
 # toolkit, and a dependency can only be stated on a target that already exists.
@@ -142,7 +146,6 @@ diffractor_dependency(ffmpeg FORK VENDORED_MODULE vendored/FFmpeg VENDORED_DIR t
 
 diffractor_dependency(skcms VENDORED_MODULE vendored/skcms VENDORED_DIR third-party/skcms OPTIONAL)
 diffractor_dependency(de265 VENDORED_MODULE vendored/de265 VENDORED_DIR third-party/libde265 OPTIONAL)
-diffractor_dependency(dav1d VENDORED_MODULE vendored/dav1d VENDORED_DIR third-party/dav1d OPTIONAL)
 diffractor_dependency(dng VENDORED_MODULE vendored/dng VENDORED_DIR third-party/dng OPTIONAL)
 diffractor_dependency(ebml VENDORED_MODULE vendored/ebml VENDORED_DIR third-party/libebml OPTIONAL)
 diffractor_dependency(matroska VENDORED_MODULE vendored/matroska VENDORED_DIR third-party/libmatroska OPTIONAL)
@@ -425,9 +428,14 @@ if (WIN32)
     file(MAKE_DIRECTORY "${_shader_dir}")
 
     # ShaderModel 4.0 throughout; vs.hlsl is the only vertex shader.
-    set(_pixel_shaders circle_ps font_ps pano_ps rgb_bicubic_ps rgb_ps solid_ps yuv_bicubic_ps yuv_ps)
+    set(_pixel_shaders circle_ps font_ps pano_ps rgb_bicubic_ps rgb_ps solid_ps yuv_bicubic_ps yuv_ps
+            yuv_hdr_bicubic_ps yuv_hdr_ps)
     set(_vertex_shaders vs)
     set(_shader_outputs "")
+
+    # fxc reports no includes to the generator, so each shader depends on every shared header:
+    # otherwise editing one leaves the shaders built from it stale, and the binary embeds the old code.
+    file(GLOB _shader_includes CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/shaders/*.hlsli")
 
     foreach (_shader IN LISTS _pixel_shaders _vertex_shaders)
         if (_shader IN_LIST _vertex_shaders)
@@ -443,8 +451,7 @@ if (WIN32)
                 COMMAND "${FXC_EXECUTABLE}" /nologo /T ${_profile} /E main
                 /Fo "${_out}" "${CMAKE_SOURCE_DIR}/src/shaders/${_shader}.hlsl"
                 MAIN_DEPENDENCY "${CMAKE_SOURCE_DIR}/src/shaders/${_shader}.hlsl"
-                DEPENDS "${CMAKE_SOURCE_DIR}/src/shaders/common.hlsli"
-                        "${CMAKE_SOURCE_DIR}/src/shaders/pano_project.hlsli"
+                DEPENDS ${_shader_includes}
                 COMMENT "Compiling ${_shader}.hlsl (${_profile})"
                 VERBATIM)
 

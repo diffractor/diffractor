@@ -214,6 +214,13 @@ public:
 
 	ui::texture_update_result update(const av_frame_ptr& frame) override
 	{
+		// Converted on the decode thread - to BGRA, since this backend samples no YUV - so presenting
+		// it is a copy and nothing more.
+		if (const auto prepared = av_frame_surface(frame))
+		{
+			return update(prepared);
+		}
+
 		if (!_scaler) _scaler = std::make_unique<av_scaler>();
 
 		_display_valid = false; // new frame - drop the display-scaled cache

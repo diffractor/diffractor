@@ -10,7 +10,8 @@
 #
 # This has already found four divergences, each silent: zlib declined by --disable-autodetect and
 # with it thirty-odd decoders, libopenmpt never asked for, network demuxers present on one side
-# only, and the entire encoder and muxer set being compiled into a reader. See docs/linux.md.
+# only, and the entire encoder and muxer set being compiled into a reader. See the FFmpeg checklist
+# in docs/third-party.md.
 #
 # The divergences that remain are real and expected -- the hardware accelerators, Media Foundation
 # and SChannel are Windows-only by nature -- so the guard is not "no divergence" but "no divergence
@@ -109,7 +110,7 @@ def write_baseline(path: Path, lines: list[str]) -> None:
         "# Windows side, glibc's iconv on the Linux side. A decoder, demuxer, encoder or muxer here is",
         "# a defect rather than a divergence, and so is anything that is merely a choice one side made.",
         "#",
-        "# See docs/linux.md, 'FFmpeg is configured twice, and the two answers differ'.",
+        "# See docs/third-party.md, 'FFmpeg Configuration And Rebase Checklist'.",
         "",
     ]
     path.write_text("\n".join(header + lines) + "\n", encoding="utf-8")

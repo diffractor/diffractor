@@ -119,7 +119,10 @@ build is insufficient; metadata and format round-trip tests prove these patches 
 
 `third-party/FFmpeg` is the Diffractor fork. The fork's configuration controls available demuxers,
 decoders, parsers, hardware acceleration, and metadata keys. It builds no end-user programs and does
-not enable network protocols for application media access.
+not enable network protocols for application media access. It is configured for decode speed rather
+than size, which also keeps codec profile names; it decodes software AV1 through libdav1d, built
+against the vendored dav1d; D3D11VA is its only hardware acceleration; and it has no muxers or
+devices.
 
 Rebasing must preserve metadata-key normalization and the bounded metadata-probe behavior consumed by
 [av_format.cpp](../src/av_format.cpp). Architecture dispatch must use real compiled kernels or exclude
@@ -138,8 +141,9 @@ rather than restating its codec inventory in application CMake.
 - Configure an LF-only source export in a separate build directory. For a Windows cross-configure,
   use MinGW with the matching x86 or x64 target, runtime CPU detection, external x86 assembly,
   no inline assembly, Windows threads, and zlib. Disable programs, documentation, network,
-  encoders, devices, filters and general protocols/muxers; retain the `file` protocol and `avif`
-  muxer. Do not enable GPL, version-3 or nonfree components.
+  encoders, muxers, devices and libavdevice, DXVA2, filters and general protocols; retain the
+  `file` protocol. Enable libdav1d and do not pass `--enable-small`, which strips profile names
+  and trades decode speed for size. Do not enable GPL, version-3 or nonfree components.
 - Keep the `config.h` and `config.asm` dispatchers. Regenerate `config-x64.h`, `config-x86.h` and
   their assembly equivalents independently. MinGW compiler and libc probes are not MSVC probes:
   preserve the MSVC capability overrides, disable GNU inline assembly, and keep
@@ -180,7 +184,7 @@ behavior requires the corresponding format tests, not only a compile.
 | --- | --- |
 | libpng | Keep `pnglibconf.h`. Refresh the relevant SIMD subdirectories as well as the root sources; a new version string alone does not update those implementations. |
 | Expat | Keep the root `expat_config.h`. Windows builds the `rand_s` entropy unit; the Linux module selects `getrandom` and its source. Do not import `xmlwf` or upstream build files as new application sources. |
-| libheif / libde265 | Regenerate version headers from the matching upstream templates. Keep static linkage, the selected decoder backends and libde265's platform configuration; do not enable additional encoder/plugin dependencies implicitly. Update both copies of the libde265 version header. |
+| libheif / libde265 | Regenerate version headers from the matching upstream templates. Keep static linkage, the selected decoder backends and libde265's platform configuration; do not enable additional encoder/plugin dependencies implicitly. Keep libheif's FFmpeg decoder plugin: [files_heif.cpp](../src/files_heif.cpp) names it for HEVC images, which it decodes faster than libde265 and, unlike libde265's 32-bit build, bit-exactly. Update both copies of the libde265 version header. |
 | libjpeg-turbo / libjxl | Keep architecture-correct generated configuration and version headers. Use the upstream source lists to identify added or removed units; preserve libjpeg-turbo's high-bit-depth API and JPEG XL's Highway/Brotli dependencies. |
 | liblzma | Keep `config.h` and the Linux POSIX-thread override. Import the library/common subset, not the differently licensed command-line scripts and tools. |
 | libarchive / minizip-ng | Keep the checked-in configuration. minizip-ng's zlib-style compatibility API lives in `compat/`; retain it and the platform-specific crypto selection. |

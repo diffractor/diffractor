@@ -3124,21 +3124,15 @@ void movie_view::step_clip(const bool forward)
 	const auto& project = _movie_state.project;
 	if (project.is_empty()) return;
 
-	// Stepping moves the focus, so it counts from the focus. Counting from the playhead would
-	// disagree with it across a crossfade, where one instant belongs to two clips.
-	const auto current = static_cast<int>(project.current());
-	const auto next = std::clamp(current + (forward ? 1 : -1), 0, static_cast<int>(project.size()) - 1);
+	const auto timing = project.timing();
 	const auto playing = _movie_state.playing == movie_view_state::playing_t::movie;
+	const auto next = movie_step_target(timing.starts, project.current(), playing, _movie_state.playhead, forward);
 
-	select_clip(static_cast<size_t>(next), false, false);
+	select_clip(next, false, false);
 
 	// While the movie plays, stepping is the transport's skip: playback carries on from the clip's
 	// start. Parking on its first frame instead froze the picture while the sound played on.
-	if (playing)
-	{
-		const auto timing = project.timing();
-		if (static_cast<size_t>(next) < timing.starts.size()) seek(timing.starts[next]);
-	}
+	if (playing && next < timing.starts.size()) seek(timing.starts[next]);
 }
 
 // Picking a clip parks the preview on that clip's first kept frame and puts the playhead at its

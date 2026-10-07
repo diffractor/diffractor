@@ -3591,6 +3591,23 @@ void items_view::add_stream_elements(std::vector<view_element_ptr>& elements, co
 		}
 
 		auto format = st.pixel_format;
+		auto codec = st.codec;
+
+		if (st.type == av_stream_type::video)
+		{
+			// Tokens in the same terse form as the audio row's, which is the form the format and
+			// codec names already take.
+			const auto append = [](std::string& text, const std::string_view token)
+			{
+				if (token.empty()) return;
+				if (!text.empty()) text += "  ";
+				text += token;
+			};
+
+			append(codec, st.profile);
+			if (st.bit_depth > 0) append(format, std::format("{}bit", st.bit_depth));
+			if (!st.hdr_transfer.empty()) append(format, std::format("HDR {}", st.hdr_transfer));
+		}
 
 		if (st.type == av_stream_type::audio)
 		{
@@ -3616,7 +3633,7 @@ void items_view::add_stream_elements(std::vector<view_element_ptr>& elements, co
 			std::make_shared<text_element>(str::to_string(st.index)),
 			std::make_shared<text_element>(type),
 			stream,
-			std::make_shared<text_element>(st.codec),
+			std::make_shared<text_element>(codec),
 			std::make_shared<text_element>(st.fourcc),
 			std::make_shared<text_element>(format),
 			std::make_shared<text_element>(st.rotation == 0.0

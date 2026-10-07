@@ -622,6 +622,27 @@ namespace ui
 		not_equal
 	};
 
+	// The colour transform that shows an HDR picture - PQ or HLG, BT.2020 - as the BT.709 SDR picture
+	// an SDR display can show, sampled on a cube of R'G'B' signal. It is applied to what the YUV matrix
+	// produces: by the GPU as a 3D texture, and by the CPU with the same trilinear arithmetic, so both
+	// backends draw the same picture.
+	struct tone_map_lut
+	{
+		int size = 0;
+		// size^3 RGBA samples of 16 bits each. Red varies fastest, then green, then blue.
+		std::vector<uint16_t> rgba;
+
+		// A row of R'G'B' signal, three 16-bit samples a pixel, through the cube as a trilinear texture
+		// sample takes it - 0 and 65535 land on the end samples' centres - into pixels as a packed RGB
+		// surface stores them, blue in the low byte. Uses SIMD where the build has it.
+		void apply(const uint16_t* rgb48, size_t pixels, color32* out) const;
+		// The same arithmetic without SIMD, as other architectures run it; kept callable so the two can
+		// be compared.
+		void apply_baseline(const uint16_t* rgb48, size_t pixels, color32* out) const;
+	};
+
+	using tone_map_lut_ptr = std::shared_ptr<const tone_map_lut>;
+
 	class surface final : public std::enable_shared_from_this<surface>
 	{
 		sizei _dimensions;
@@ -632,6 +653,7 @@ namespace ui
 		texture_format _format = texture_format::None;
 		orientation _orientation = orientation::top_left;
 		color_space _cs = color_space::rec601_limited;
+		tone_map_lut_ptr _tone_map;
 
 	public:
 		surface() noexcept = default;
@@ -649,6 +671,7 @@ namespace ui
 			_dimensions.cy = 0;
 			_size = 0;
 			_cs = color_space::rec601_limited;
+			_tone_map.reset();
 			_format = texture_format::None;
 			_time = 0.0;
 			_orientation = orientation::top_left;
@@ -719,6 +742,17 @@ namespace ui
 			_cs = cs;
 		}
 
+		// Set only on HDR planes, whose YUV matrix produces a signal an SDR display cannot show as it is.
+		const tone_map_lut_ptr& tone_map() const noexcept
+		{
+			return _tone_map;
+		}
+
+		void tone_map(tone_map_lut_ptr lut) noexcept
+		{
+			_tone_map = std::move(lut);
+		}
+
 		uint8_t* pixels() noexcept
 		{
 			return _pixels.get();
@@ -777,6 +811,7 @@ namespace ui
 			_format = fmt;
 			_time = time;
 			_orientation = ori;
+			_tone_map.reset();
 			return _pixels.get();
 		}
 
@@ -2418,6 +2453,11 @@ namespace ui
 	// driver cannot sample NV12 or has already faulted uploading one. Asked by whoever decodes for
 	// a texture; a decode read for its luma or its bytes does not consult it.
 	extern bool yuv_textures_enabled;
+
+	// Whether that surface may be 10-bit P010 as well as NV12. A device can sample NV12 and still
+	// refuse P010, and a texture it refuses leaves the picture blank, so 10-bit frames are converted
+	// to BGRA instead. Never true without yuv_textures_enabled.
+	extern bool p010_textures_enabled;
 
 	// Exponential decay rate for alpha fades, per second. Chosen as -ln(1 - 0.333) * 60 so that a
 	// 60Hz frame reproduces exactly the fixed 0.333 per frame this replaced.

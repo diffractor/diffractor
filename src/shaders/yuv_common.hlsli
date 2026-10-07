@@ -8,12 +8,21 @@
 
 // Purpose: single body for the NV12/P010 pixel shaders. Define USE_BICUBIC before including
 // it to get the Catmull-Rom variant; the two shaders differ only in how the planes are fetched.
+// Define USE_TONE_MAP for the HDR variants, which take the picture through its tone-mapping cube.
 
 #include "common.hlsli"
 
 // Luma and chroma views onto the same NV12/P010 surface (R8/R16 and R8G8/R16G16).
 Texture2D tex_y : register(t0);
 Texture2D tex_uv : register(t1);
+
+#ifdef USE_TONE_MAP
+// The cube that maps a PQ or HLG signal to the SDR picture, sampled on R'G'B' with red along x and
+// blue along z. The CPU backend's ui::tone_map_lut::apply is the same arithmetic, so both draw alike.
+Texture3D hdr_lut : register(t2);
+// The bilinear state, which is trilinear on a 3D texture. Slot 0 may be the point state.
+SamplerState lut_sampler : register(s1);
+#endif
 
 // Affine YUV->RGB transform (3x3 matrix + bias column) supplied by the host.
 // A single matrix encodes both the colour matrix (BT.601/709/2020) and the
@@ -40,5 +49,16 @@ float4 main(PS_INPUT input) : SV_Target
 	const float2 uv = tex_uv.Sample(tex_sampler, input.uv).xy;
 
 	const float3 rgb = saturate(mul(yuv_to_rgb_matrix, float4(y, uv, 1.0f)));
+
+#ifdef USE_TONE_MAP
+	// The cube's samples sit at texel centres, so the signal is scaled onto them: 0 and 1 land on
+	// the first and last sample rather than on the cube's outer faces.
+	float lut_w, lut_h, lut_d;
+	hdr_lut.GetDimensions(lut_w, lut_h, lut_d);
+	const float3 lut_uvw = rgb * ((float3(lut_w, lut_h, lut_d) - 1.0f) / float3(lut_w, lut_h, lut_d)) +
+		0.5f / float3(lut_w, lut_h, lut_d);
+	return float4(hdr_lut.SampleLevel(lut_sampler, lut_uvw, 0.0f).rgb, 1.0f) * input.c;
+#else
 	return float4(rgb, 1.0f) * input.c;
+#endif
 }

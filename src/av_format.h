@@ -21,6 +21,7 @@ struct SwrContext;
 struct AVCodecContext;
 struct AVBufferRef;
 struct AVFrame;
+struct AVPacket;
 struct AVHWFramesContext;
 struct ID3D11Texture2D;
 
@@ -55,7 +56,59 @@ extern "C"
 {
 #include <libavutil/pixfmt.h>
 #include <libavutil/samplefmt.h>
+#include <libavcodec/codec_id.h>
 }
+
+// Whether FFmpeg can hand this stream to the platform's hardware decoder at all. It offers hardware
+// surfaces only for 4:2:0 -- 8-bit for H.264, MPEG-2 and VC-1, and 10-bit as well for HEVC, VP9 and
+// AV1 -- so 10-bit or 4:2:2 H.264 and 4:2:2 HEVC from a camera decode in software from the start,
+// with threads, instead of meeting a hardware decoder that has no surface to give them. A stream
+// whose format the probe did not settle is left for the decoder to answer.
+inline bool av_hw_decode_eligible(const AVCodecID codec, const AVPixelFormat format)
+{
+	const auto any = format == AV_PIX_FMT_NONE;
+	const auto eight_bit_420 = format == AV_PIX_FMT_YUV420P || format == AV_PIX_FMT_YUVJ420P;
+
+	switch (codec)
+	{
+	case AV_CODEC_ID_H264:
+	case AV_CODEC_ID_MPEG2VIDEO:
+	case AV_CODEC_ID_VC1:
+	case AV_CODEC_ID_WMV3:
+		return any || eight_bit_420;
+	case AV_CODEC_ID_HEVC:
+	case AV_CODEC_ID_VP9:
+	case AV_CODEC_ID_AV1:
+		return any || eight_bit_420 || format == AV_PIX_FMT_YUV420P10LE;
+	default:
+		return false;
+	}
+}
+
+// Decoded pictures frame threading may hold beyond the read-ahead queue: each thread keeps one in
+// flight, so the thread count is what bounds them.
+inline constexpr size_t av_frame_thread_bytes = 192_z * 1024 * 1024;
+
+// Threads for a software video decoder. Slice threading holds no extra pictures, so cores alone bound
+// it -- MPEG-2, DV, ProRes and DNxHD thread only this way. Frame threading is bounded by cores and by
+// what its pictures cost, so 1080p gets the full eight while 8K keeps two.
+constexpr int av_video_decode_threads(const bool frame_threading, const size_t frame_bytes, const unsigned cores)
+{
+	const auto by_cores = static_cast<int>(std::clamp(cores, 1u, 8u));
+	if (!frame_threading || frame_bytes == 0) return by_cores;
+	const auto by_memory = static_cast<int>(std::clamp<size_t>(av_frame_thread_bytes / frame_bytes, 2, 8));
+	return std::min(by_cores, by_memory);
+}
+
+// Whether this hardware device can decode this stream, answered by the platform from the driver's
+// decoder profiles, output formats and configurations at this size. Asked before a session commits:
+// FFmpeg's own AV1 decoder has no software path to fall back to, and every other decoder falls back
+// single-threaded, so a refusal is cheaper found first than discovered while decoding.
+bool av_platform_hw_decode_supported(AVBufferRef* device, AVCodecID codec, int bit_depth, int width, int height);
+
+// False once the driver has removed the device - a reset or an update - so a cached device is
+// replaced rather than handed to the next session.
+bool av_platform_hw_device_usable(AVBufferRef* device);
 
 
 using av_packet_ptr = std::shared_ptr<av_packet>;
@@ -144,6 +197,8 @@ struct av_frame_d3d
 	uintptr_t tex_index = 0;
 	ui::orientation orientation = ui::orientation::top_left;
 	ui::color_space color_space = ui::color_space::rec601_limited;
+	// Set when the surface holds an HDR signal, which the renderer maps to SDR after its YUV matrix.
+	ui::tone_map_lut_ptr tone_map;
 };
 
 av_frame_d3d av_get_d3d_info(const av_frame_ptr& frame_in);
@@ -165,6 +220,16 @@ av_hw_decode_target av_platform_hw_decode_target();
 double av_time_from_frame(const av_frame_ptr& f);
 int av_seek_gen_from_frame(const av_frame_ptr& f);
 bool av_frame_is_eof(const av_frame_ptr& f);
+int av_packet_stream_index(const av_packet_ptr& p);
+bool av_packet_is_eof(const av_packet_ptr& p);
+
+// The picture the decode thread converted for upload, or null while the frame still holds the
+// decoder's own buffers - a hardware surface the renderer shares directly.
+ui::const_surface_ptr av_frame_surface(const av_frame_ptr& f);
+
+// Asked by a renderer that cannot share the decoder's hardware surfaces, so from then on the decode
+// thread downloads and converts them rather than the thread that presents them.
+void av_request_cpu_video_frames();
 // Playing time covered by an audio frame's samples; 0 when the frame is not audio.
 double av_audio_frame_duration(const av_frame_ptr& f);
 bool av_is_frame_empty(const av_frame_ptr& f);
@@ -248,9 +313,26 @@ public:
 class av_scaler final : df::no_copy
 {
 	SwsContext* _scaler = nullptr;
-	// A download that fails fails for every later frame too, and this runs from a paint, so the
-	// report is made once rather than once a frame.
+	// The 16-bit R'G'B' an HDR picture passes through on its way to the tone-mapping cube, kept between
+	// frames: at 4K it is 50 MB, which allocated and cleared for every frame cost as much as the
+	// conversion itself.
+	std::vector<uint16_t> _hdr_signal;
+	// A download that fails fails for every later frame too, so the report is made once rather than
+	// once a frame.
 	bool _hw_download_failure_logged = false;
+
+	// Rows of three 16-bit samples a pixel for a picture of this extent, in _hdr_signal.
+	uint16_t* hdr_signal_rows(sizei extent);
+
+	// A hardware frame's pixels in system memory, with the frame's properties copied across, or null.
+	AVFrame* download(const AVFrame& frame);
+	// Converts a software frame at its own size into packed BGRA.
+	bool convert_frame(const AVFrame& frame, ui::color_space cs, const ui::surface_ptr& surface_out, double time,
+	                   ui::orientation orientation);
+	// Converts a PQ or HLG frame into BT.709 SDR BGRA at dimensions_out, through the cube the renderer
+	// samples for the same frame.
+	bool convert_hdr(const AVFrame& frame, const ui::tone_map_lut& lut, const ui::surface_ptr& surface_out,
+	                 sizei dimensions_out, double time, ui::orientation orientation, bool high_quality);
 
 public:
 	~av_scaler() override;
@@ -263,6 +345,11 @@ public:
 	// box surfaces - FFmpeg never copies it onto the codec parameters or the decoded frame.
 	bool scale_frame(const AVFrame& frame, ui::surface_ptr& surface, sizei max_dim, double time,
 	                 ui::orientation orientation, av_rational container_sar = {}, bool preserve_alpha = false);
+
+	// The picture exactly as the renderer will upload it, made on the decode thread: NV12 or P010 for a
+	// renderer that samples YUV - the planes hardware-decoded frames arrive in - and packed BGRA for
+	// anything else. Null when it cannot be made, which leaves the frame for the presenter as before.
+	ui::surface_ptr presentable_surface(const AVFrame& frame, double time, ui::orientation orientation);
 };
 
 // Decodes one still image from encoded bytes. This is the path for the formats Diffractor reads but
@@ -385,6 +472,12 @@ struct av_stream_info
 	std::string fourcc;
 	std::string language;
 	std::string pixel_format;
+	// The codec profile as FFmpeg names it - "Main 10", "High" - or empty where the stream names none.
+	std::string profile;
+	// Bits a sample of a video stream carries; zero when the stream does not say.
+	int bit_depth = 0;
+	// The HDR transfer a video stream is tagged with - "PQ" or "HLG" - or empty for SDR.
+	std::string hdr_transfer;
 	int audio_sample_rate = 0;
 	int audio_channels = 0;
 	prop::audio_sample_t audio_sample_type = prop::audio_sample_t::none;
@@ -519,6 +612,9 @@ public:
 
 private:
 	mutable std::unique_ptr<av_scaler> _scaler;
+	// Used only by the video decode thread to prepare pictures for upload. A scaler holds conversion
+	// state, and _scaler is also reached from the read thread when a frame is captured.
+	std::unique_ptr<av_scaler> _presentation_scaler;
 
 	AVCodecContext* _video_context = nullptr;
 	AVCodecContext* _audio_context = nullptr;
@@ -564,16 +660,44 @@ private:
 	// video survives; subtracting each stream's own start_time silently removed it.
 	int64_t _time_origin = 0;
 
+	// The cancel token of an audio walk in progress, for its duration only, so a read blocked on a slow
+	// volume gives up once its caller has moved on. A picture extraction never sets it: its caller
+	// always gets the first frame it can, cancelled or not. Closing the application stops every read.
+	const df::cancel_token* _io_abandon = nullptr;
+
+	bool io_should_stop() const;
+	static int read_io(void* opaque, uint8_t* buf, int buf_size);
+	static int64_t seek_io(void* opaque, int64_t offset, int whence);
+	static int interrupt_io(void* opaque);
+
+	// Sets a stream's AVDiscard for a scope, and puts the previous one back.
+	class stream_discard_scope final : df::no_copy
+	{
+		AVStream* _stream = nullptr;
+		int _previous = 0;
+
+	public:
+		stream_discard_scope(AVStream* stream, int discard);
+		~stream_discard_scope() override;
+	};
+
+	stream_discard_scope discard_video_while_reading_audio() const;
+
 	void update_orientation(const AVFrame* frame);
 	ui::orientation calc_orientation() const;
 
-	bool decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const av_packet_ptr& packet, sizei max_dim);
+	// A null packet drains the decoder, which is how the last pictures of a stream come out.
+	bool decode_frame(ui::surface_ptr& dest_surface, AVCodecContext* ctx, const AVPacket* packet, sizei max_dim);
 
 	// Pulls every frame the decoder currently has ready onto the output queue,
 	// timestamping each from the stream's time base. Shared by the normal decode
 	// path and the end-of-stream drain so both stay in step.
 	void receive_available_frames(AVCodecContext* ctx, av_pts_correction& pts, av_rational base, int64_t start,
 	                              int seek_gen, av_frame_queue& frames);
+
+	// Converts a decoded picture into the surface the renderer uploads, on the decode thread, so that
+	// presenting it does no conversion. A hardware frame the renderer can share is left as it is.
+	void prepare_for_presentation(av_frame& frame);
 
 	// Decode forward from the current (freshly seeked) position to the frame
 	// nearest wanted_time, scaling that frame into dest_surface. Shared by thumbnail
@@ -588,7 +712,6 @@ private:
 
 	friend class av_player;
 	friend class av_session;
-	friend class av_converter;
 
 public:
 	bool has_audio() const
