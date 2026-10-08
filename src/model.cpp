@@ -483,6 +483,11 @@ struct teardown_signal
 	}
 };
 
+// Runs where the first guard waits for the display's media to let go, which pumps messages. Whatever
+// the user does in there - closing the view that asked for the guard, say - happens before its caller
+// has carried on.
+std::function<void()> test_during_detach_file_handles;
+
 detach_file_handles::detach_file_handles(view_state& s) : _state(s)
 {
 	df::gauge_enter(df::file_handles_detached);
@@ -555,6 +560,8 @@ detach_file_handles::detach_file_handles(view_state& s) : _state(s)
 
 		d->stop_slideshow();
 	}
+
+	if (test_during_detach_file_handles) test_during_detach_file_handles();
 
 	s.clear_hover_codec();
 }

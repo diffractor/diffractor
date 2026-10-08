@@ -29,6 +29,7 @@
 #include "ui_map_common.h"
 
 extern std::function<void(df::folder_path folder, int attempt)> test_after_validate_folder_snapshot;
+extern std::function<void(const df::index_file_item& anchor)> test_after_duplicate_anchor;
 
 static void should_create_database_schema()
 {
@@ -403,6 +404,32 @@ static void should_store_item_properties()
 
 	const auto reloaded_crc = platform::file_crc32(file_path);
 	assert_equal(reloaded_crc, item.crc32c, "platform::file_crc32 crc32");
+}
+
+// A rescan carries the position the index holds into the database row. A position saved only to the
+// row was written back over by the next rescan of the file, so the next session resumed from wherever
+// the index had been loaded.
+static void should_hold_a_saved_playback_position_in_the_index()
+{
+	const auto root = _temps.next_folder("saved-playback-position");
+	const auto path = root.combine_file("played.jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), path, false, false);
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	df::index_roots roots;
+	roots.folders.emplace(root);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+	assert_equal(true, index.find_item(path).metadata.load() != nullptr, "the file was scanned");
+
+	index.save_media_position(path, 42.0);
+
+	const auto md = index.find_item(path).metadata.load();
+	assert_equal(true, md != nullptr && static_cast<int>(md->media_position) == 42,
+	             "the index holds the saved position, so a rescan carries it rather than the old one");
 }
 
 // A database written before db_metadata_version records place text that cannot be told apart from
@@ -1397,6 +1424,63 @@ static void should_not_restore_deleted_cached_collection_folders()
 
 	assert_equal(1, count_search_results(index, "@photo"),
 	             "cached descendants are restored only below folders whose enumeration failed");
+}
+
+// The startup query validates the folder on screen before the database cache reaches it, so the cache
+// merges into a node that already holds each file's modified time. A row scanned before the file last
+// changed holds hashes of bytes that are gone: adopting them reported an edited picture as identical to
+// an untouched copy, and the row kept them for every launch after.
+static void should_not_adopt_cached_hashes_older_than_the_file()
+{
+	const auto root = _temps.next_folder("merge-after-validation");
+	const auto changed = root.combine_file("changed.jpg");
+	const auto unchanged = root.combine_file("unchanged.jpg");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), changed, false, false);
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), unchanged, false, false);
+
+	const auto db_path = _temps.next_path();
+	null_async_strategy as;
+	location_cache locations;
+
+	{
+		index_state index(as, locations);
+		database db(index);
+		db.open(db_path.folder(), db_path.file_name_without_extension());
+
+		// One row scanned long before the file's modified time and one scanned after it.
+		std::deque<item_db_write> rows;
+		const auto add_row = [&rows](const df::file_path path, const df::date_t scanned, const uint32_t crc)
+		{
+			item_db_write row;
+			row.path = path;
+			row.md = std::make_shared<prop::item_metadata>();
+			row.crc32c = crc;
+			row.metadata_scanned = scanned;
+			rows.emplace_back(std::move(row));
+		};
+		add_row(changed, df::date_t(2000, 1, 1, 0, 0, 0), 0x1111u);
+		add_row(unchanged, df::date_t(2100, 1, 1, 0, 0, 0), 0x2222u);
+		db.perform_writes(std::move(rows));
+
+		// The query for the folder on screen gets there first; the cache load arrives after it.
+		index.validate_folder(root, true, platform::now());
+		db.load_index_values();
+
+		assert_equal(0u, index.find_item(changed).crc32c.load(),
+		             "a row scanned before the file changed lends it no checksum");
+		assert_equal(0x2222u, index.find_item(unchanged).crc32c.load(),
+		             "a row scanned since the file changed keeps its checksum");
+
+		db.perform_writes();
+		db.close();
+	}
+
+	index_state reloaded(as, locations);
+	database db(reloaded);
+	db.open(db_path.folder(), db_path.file_name_without_extension());
+
+	assert_equal(0u, reloaded.find_item(changed).crc32c.load(), "the stale checksum is cleared from the row");
+	assert_equal(0x2222u, reloaded.find_item(unchanged).crc32c.load(), "the current checksum is kept");
 }
 
 static void should_drop_deleted_declared_root_cache()
@@ -2608,6 +2692,39 @@ static void should_continue_predictions_after_terminal_phash_publication()
 	assert_equal(true, async.run_next(async_queue::work), "final phash publication ran");
 	assert_equal(1_z, async.pending_worker_count(async_queue::index_predictions_single),
 	             "the final terminal publication, including decline, queues one continuation");
+}
+
+// The perceptual walk holds no index lock, so a rescan of an edited picture can clear a record's hash
+// between choosing the anchor and comparing against it. Loading the anchor's hash a second time read
+// that null and crashed; the walk compares against the hash it chose the anchor for.
+static void should_compare_against_the_anchor_hash_it_chose()
+{
+	const auto root = _temps.next_folder("phash-anchor-cleared");
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), root.combine_file("original.jpg"), false, false);
+	platform::copy_file(test_files_folder.combine_file("Small.jpg"), root.combine_file("resized.jpg"), false, false);
+
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	df::index_roots roots;
+	roots.folders.emplace(root);
+	index.index_roots(roots);
+	index.index_folders(test_token);
+	index.scan_uncached(test_token);
+
+	auto anchors = 0;
+	const df::scope_exit clear_hook([] { test_after_duplicate_anchor = {}; });
+	test_after_duplicate_anchor = [&anchors](const df::index_file_item& anchor)
+	{
+		// Once, as one rescan would: the anchor is cleared after it was chosen and before it is used.
+		if (anchors++ == 0) anchor.phash = nullptr;
+	};
+
+	index.update_predictions();
+
+	assert_equal(true, anchors > 0, "the perceptual stage chose an anchor");
+	assert_equal(2u, index.find_item(root.combine_file("resized.jpg")).duplicates.load().count,
+	             "the pair is compared against the hash its anchor was chosen with");
 }
 
 static void should_mark_oversized_capture_time_as_crowded()
@@ -4668,6 +4785,9 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should store thumbnails"s, should_store_thumbnails);
 	tests.add("Should store cover art"s, should_store_cover_art);
 	tests.add("Should store item properties"s, should_store_item_properties);
+	// Concurrency review #11 - a rescan wrote the position loaded at startup over a saved one.
+	tests.add("Should hold a saved playback position in the index"s,
+	          should_hold_a_saved_playback_position_in_the_index);
 	tests.add("Should invalidate cached metadata from an older build"s,
 	          should_invalidate_cached_metadata_written_by_an_older_build);
 	tests.add("Should keep answering while upgrading to the date pack"s,
@@ -4717,6 +4837,8 @@ void register_index_tests(view_state& state, test_registry& tests)
 	tests.add("Should discard stale CRC result"s, should_discard_stale_crc_result);
 	tests.add("Should continue predictions after terminal phash publication"s,
 	          should_continue_predictions_after_terminal_phash_publication);
+	// Concurrency review #2 - a rescan clearing the anchor's hash mid-walk crashed the comparison.
+	tests.add("Should compare against the anchor hash it chose"s, should_compare_against_the_anchor_hash_it_chose);
 	tests.add("Should mark oversized capture time as crowded"s,
 	          should_mark_oversized_capture_time_as_crowded);
 	tests.add("Should not report presence against crowd declined members"s,
@@ -4738,6 +4860,9 @@ void register_index_tests(view_state& state, test_registry& tests)
 	          should_restore_cached_offline_collection_descendant_membership);
 	tests.add("Should not restore deleted cached collection folders"s,
 	          should_not_restore_deleted_cached_collection_folders);
+	// Concurrency review #9 - the startup query validated a folder before the cache merged into it.
+	tests.add("Should not adopt cached hashes older than the file"s,
+	          should_not_adopt_cached_hashes_older_than_the_file);
 	tests.add("Should drop deleted declared root cache"s,
 	          should_drop_deleted_declared_root_cache);
 	tests.add("Should report incomplete collection discovery"s,

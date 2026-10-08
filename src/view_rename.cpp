@@ -105,7 +105,11 @@ void rename_view::run()
 	const auto renames = _renames;
 	const auto review_status = _status;
 	_analysis_valid = false;
+	// Releasing the displayed file's handles can pump messages, and a Close handled in there leaves
+	// this view. A run started after that would rename files with nothing on screen to show it.
+	const auto generation_before_detach = processing_generation();
 	const auto detach = std::make_shared<detach_file_handles>(_state);
+	if (processing_generation() != generation_before_detach) return;
 	begin_processing(renames.size());
 	const auto processing_generation = this->processing_generation();
 	const auto cancel_source = processing_cancel_source();

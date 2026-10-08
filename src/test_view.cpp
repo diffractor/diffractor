@@ -25,9 +25,11 @@
 #include "view_items.h"
 #include "view_edit.h"
 #include "view_list.h"
+#include "view_locate.h"
 #include "view_media.h"
 #include "view_movie.h"
 #include "view_selector.h"
+#include "view_sync.h"
 #include "view_tags.h"
 
 static void assert_zoom_near(const double expected, const double actual, const std::string_view message)
@@ -2483,6 +2485,81 @@ static void should_reject_stale_edit_load_preview_and_analysis_results()
 	             "analysis captured before a crop gesture is rejected");
 }
 
+// The preview decode treats the size Edit asks for as a ceiling. It can return a pixel short of it,
+// or the native size of a picture smaller than the view. Judging the preview by its own extent threw
+// those away on every repaint and left Edit on "Loading" for good: under that rule this test fails at
+// 101 x 300, where Test.jpg is asked for 101 x 67 and decodes at 100 x 67, and at 1100 x 800, where
+// it is asked for 1100 x 734 and is not enlarged.
+static void should_draw_edit_preview_decoded_short_of_its_request()
+{
+	files ff;
+	const auto loaded = ff.load(test_files_folder.combine_file("Test.jpg"), false);
+	assert_equal(true, edit_load_has_source_pixels(loaded), "the fixture loads");
+
+	ui::const_surface_ptr last_preview;
+	sizei last_request;
+
+	for (const auto extent : {sizei(101, 300), sizei(1100, 800), sizei(512, 512)})
+	{
+		const auto label = std::format("{} x {}", extent.cx, extent.cy);
+		const auto request = ui::scale_dimensions(loaded.dimensions(), extent);
+		const auto preview = loaded.to_surface(request);
+
+		assert_equal(true, is_valid(preview), label, "the preview decodes");
+		assert_equal(true, edit_preview_is_current(preview, request, request), label,
+		             "a preview is current for the request it answered, whatever its extent");
+
+		if (is_valid(last_preview))
+		{
+			assert_equal(false, edit_preview_is_current(last_preview, last_request, request), label,
+			             "a preview answered for an earlier size is not current");
+		}
+
+		last_preview = preview;
+		last_request = request;
+	}
+
+	assert_equal(false, edit_preview_is_current(nullptr, {640, 480}, {640, 480}), "an absent preview is never current");
+}
+
+// A file whose header reads but whose pixels do not decode left Edit on Loading for good, with the
+// pixel controls live over a picture that never came. Edit now reports it as the load failure it is;
+// keeping the header-only load as the state after the failure fails the "no editable pixels" check.
+static void should_report_edit_preview_that_cannot_decode_as_a_load_failure()
+{
+	// Half a PNG, read the way files::load reads one: the header parses, the image data is cut off.
+	const auto png = df::blob_from_file(test_files_folder.combine_file("engine.png"));
+	file_load_result truncated;
+	truncated.i = load_image_file({png.data(), png.size() / 2});
+	truncated.success = is_valid(truncated.i);
+	assert_equal(true, edit_load_has_source_pixels(truncated), "a header-only load is offered as editable");
+
+	const auto request = ui::scale_dimensions(truncated.dimensions(), sizei(640, 480));
+	const auto unreadable = edit_preview_failure(truncated.to_surface(request), truncated, request);
+	assert_equal(true, unreadable == file_load_result::failure::unreadable, "an undecodable preview is unreadable");
+
+	const auto failed = edit_load_without_preview(truncated, unreadable);
+	assert_equal(false, edit_load_has_source_pixels(failed), "an undecodable file has no editable pixels");
+	assert_equal_strict(std::string(tt.image_display_failed.sv()), std::string(edit_load_status_text(failed, false)),
+	                    "an undecodable file says it failed rather than loading");
+
+	files ff;
+	const auto loaded = ff.load(test_files_folder.combine_file("Test.jpg"), false);
+	const auto fitted = ui::scale_dimensions(loaded.dimensions(), sizei(640, 480));
+	assert_equal(true, edit_preview_failure(loaded.to_surface(fitted), loaded, fitted) ==
+	             file_load_result::failure::none, "a decoded preview is not a failure");
+
+	const auto restore_budget = df::max_decode_bytes;
+	const df::scope_exit restore([restore_budget] { df::max_decode_bytes = restore_budget; });
+	df::max_decode_bytes = 64 * 1024;
+
+	const auto refused = edit_preview_failure(loaded.to_surface(fitted), loaded, fitted);
+	assert_equal(true, refused == file_load_result::failure::too_large, "a budget refusal is too large");
+	assert_equal_strict(std::string(tt.image_too_large.sv()),
+	                    std::string(edit_load_status_text(edit_load_without_preview(loaded, refused), false)),
+	                    "a budget refusal says the image is too large");
+}
+
 static void should_apply_pending_edit_crop_after_async_load()
 {
 	file_load_result loaded;
@@ -3032,6 +3109,118 @@ static void should_keep_the_processing_row_clear_of_the_view_chrome()
 	assert_equal(true, view->active_device_bottom() <= extent.cy, "and is still inside the view");
 
 	view->end_processing();
+}
+
+// A run that begin_processing replaces is cancelled through the source its worker holds. Swapping in a
+// new source alone left an Analyze restarted by Refresh scanning on to an answer nobody would publish.
+static void should_cancel_the_run_a_new_one_replaces()
+{
+	null_state_strategy ss;
+	null_async_strategy as;
+	const location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	const auto host = std::make_shared<detached_test_host>();
+	const auto view = std::make_shared<processing_test_view>(s, host);
+
+	view->begin_processing(1);
+	const auto first_source = view->processing_cancel_source();
+	const df::cancel_token first(*first_source);
+
+	view->begin_processing(1);
+	const auto second_source = view->processing_cancel_source();
+	const df::cancel_token second(*second_source);
+
+	assert_equal(true, first.is_cancelled(), "the replaced run is cancelled");
+	assert_equal(false, second.is_cancelled(), "the run that replaced it is not");
+
+	view->end_processing();
+}
+
+// A place search answers on the location queue. One still in flight when the user panned the map
+// landed afterwards and selected its first match, moving the coordinate back to a place the user had
+// left - which Add Location then wrote to the selection.
+static void should_not_let_a_late_place_search_override_the_map()
+{
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	view_state s(ss, as, index, make_test_player());
+
+	const auto host = std::make_shared<detached_test_host>();
+	const auto view = std::make_shared<locate_view>(s, host);
+	const auto panel = view->controls(ui::no_control_frame());
+	const auto search = view->place_search_for_tests();
+	assert_equal(true, search != nullptr, "the panel has a place search");
+
+	auto answered = false;
+	search->search("Paris", [&answered](const ui::auto_complete_results&) { answered = true; });
+	assert_equal(false, answered, "the answer waits for the UI queue");
+
+	view->on_map_panned(gps_coordinate(10.0, 20.0));
+	as.drain_ui();
+
+	assert_equal(false, answered, "an answer overtaken by a pan is discarded");
+	assert_equal(10, static_cast<int>(view->location()->latitude), "the coordinate stays where the map was panned");
+	assert_equal(20, static_cast<int>(view->location()->longitude), "in both axes");
+}
+
+// Refresh re-plans, and in Sync it reran Analyze even while a Run was copying. That replaced the run's
+// processing state, so the copy either carried on unseen behind new rows or, once a replaced run was
+// cancelled, stopped partway without saying what it had done. A Run in progress is left alone.
+static void should_leave_a_running_sync_alone_on_refresh()
+{
+	const auto root = _temps.next_folder("refresh-during-sync");
+	const auto local = root.combine("local");
+	const auto remote = root.combine("remote");
+	platform::create_folder(local);
+	platform::create_folder(remote);
+	write_test_file(local.combine_file("copy.txt"), "copy");
+
+	null_state_strategy ss;
+	deferred_async_strategy as;
+	location_cache locations;
+	index_state index(as, locations);
+	df::index_roots roots;
+	roots.folders.emplace(local);
+	index.index_roots(roots);
+	view_state s(ss, as, index, make_test_player());
+
+	const auto saved = setting.sync;
+	const df::scope_exit restore([saved] { setting.sync = saved; });
+	setting.sync.sync_collection = true;
+	setting.sync.remote_path = std::string(remote.text());
+	setting.sync.sync_local_remote = true;
+	setting.sync.sync_remote_local = false;
+	setting.sync.sync_delete_local = false;
+	setting.sync.sync_delete_remote = false;
+
+	const auto view = std::make_shared<sync_view>(s, nullptr);
+	view->analyze();
+	while (as.run_next(async_queue::work))
+	{
+	}
+	as.drain_ui();
+	assert_equal(true, view->can_run(), "the analysis found a file to copy");
+
+	view->run();
+	assert_equal(true, view->progress().active, "the run is under way");
+	const auto queued_by_run = as.pending_worker_count(async_queue::work);
+
+	view->reload();
+
+	assert_equal(queued_by_run, as.pending_worker_count(async_queue::work), "Refresh queued no analysis over the run");
+	assert_equal(true, view->progress().active, "the run is still the one in progress");
+
+	while (as.run_next(async_queue::work))
+	{
+	}
+	as.drain_ui();
+
+	assert_equal(true, remote.combine_file("copy.txt").exists(), "Refresh did not stop the copy");
+	assert_equal(false, view->progress().active, "the run reports its end");
 }
 
 static void should_answer_a_null_frame_without_side_effects()
@@ -4079,6 +4268,12 @@ void register_view_tests(view_state& state, test_registry& tests)
 	// VIEW-005/007 - async Edit replies retire when display, preview size, or edit generation changes.
 	tests.add("Should reject stale Edit load preview and analysis results"s,
 	          should_reject_stale_edit_load_preview_and_analysis_results);
+	// Edit preview stuck on Loading - the decode fits within its request rather than matching it.
+	tests.add("Should draw Edit preview decoded short of its request"s,
+	          should_draw_edit_preview_decoded_short_of_its_request);
+	// Edit stuck on Loading - a file whose header loads but whose pixels do not decode.
+	tests.add("Should report Edit preview that cannot decode as a load failure"s,
+	          should_report_edit_preview_that_cannot_decode_as_a_load_failure);
 	// G14b follow-up - a drawn crop must survive until the async bitmap load can apply it.
 	tests.add("Should apply pending Edit crop after async load"s,
 	          should_apply_pending_edit_crop_after_async_load);
@@ -4197,6 +4392,13 @@ void register_view_tests(view_state& state, test_registry& tests)
 	tests.add("Should separate hit test occlusion from exclusion"s, should_separate_occlusion_from_exclusion);
 	tests.add("Should keep the processing row clear of the view chrome"s,
 	          should_keep_the_processing_row_clear_of_the_view_chrome);
+	// Concurrency review #1 - Refresh restarted Analyze without stopping the scan it replaced.
+	tests.add("Should cancel the run a new one replaces"s, should_cancel_the_run_a_new_one_replaces);
+	// Concurrency review #27 - a late place search moved the Locate coordinate back after a pan.
+	tests.add("Should not let a late place search override the map"s,
+	          should_not_let_a_late_place_search_override_the_map);
+	// Concurrency fix review - Refresh during a Sync run reran Analyze over the run.
+	tests.add("Should leave a running sync alone on refresh"s, should_leave_a_running_sync_alone_on_refresh);
 	tests.add("Should answer a null frame without side effects"s, should_answer_a_null_frame_without_side_effects);
 	// G13 UI-001 - checkbox composites forward hit testing to the rendered child only while active.
 	tests.add("Should forward checkbox hits to visible checked child"s,

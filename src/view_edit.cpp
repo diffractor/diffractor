@@ -1283,12 +1283,8 @@ void edit_view::refresh()
 
 void edit_view::layout(ui::measure_context& mc, const sizei extent)
 {
-	if (_extent != extent)
-	{
-		_preview_source.reset();
-		_preview_request_dimensions = {};
-		_invalid = true;
-	}
+	// No reset on a new extent: queue_preview_decode asks again only if the wanted size changed, and
+	// the picture on screen stays until its replacement arrives.
 	_extent = extent;
 	queue_preview_decode();
 
@@ -1385,6 +1381,28 @@ bool should_accept_edit_analysis(const size_t current_display_generation, const 
 		current_edit_generation == result_edit_generation;
 }
 
+bool edit_preview_is_current(const ui::const_surface_ptr& preview, const sizei answered_request, const sizei wanted)
+{
+	return is_valid(preview) && answered_request == wanted;
+}
+
+file_load_result::failure edit_preview_failure(const ui::const_surface_ptr& preview, const file_load_result& loaded,
+                                               const sizei request)
+{
+	if (is_valid(preview)) return file_load_result::failure::none;
+	return files::exceeds_decode_budget(loaded.i, request)
+		       ? file_load_result::failure::too_large
+		       : file_load_result::failure::unreadable;
+}
+
+file_load_result edit_load_without_preview(const file_load_result& loaded, const file_load_result::failure failure)
+{
+	file_load_result result;
+	result.reason = failure;
+	result.source_dimensions = loaded.dimensions();
+	return result;
+}
+
 std::optional<quadd> edit_pending_crop_for_loaded_photo(std::optional<rectd> pending_crop,
                                                         const file_load_result& loaded, const bool show_rotated)
 {
@@ -1456,6 +1474,7 @@ void edit_view::complete_source_load(const source_load_request& request, file_lo
 		_preview_source.reset();
 		_dialog_preview_source.reset();
 		_preview_request_dimensions = {};
+		_preview_failed_request = {};
 		++_preview_generation;
 		_invalid = true;
 
@@ -1512,8 +1531,9 @@ void edit_view::queue_preview_decode()
 
 	const auto preview_dimensions = ui::scale_dimensions(_loaded.dimensions(), _extent);
 	if (preview_dimensions.is_empty()) return;
-	if (is_valid(_preview_source) && _preview_source->dimensions() == preview_dimensions) return;
+	if (edit_preview_is_current(_preview_source, _preview_source_request, preview_dimensions)) return;
 	if (_preview_request_dimensions == preview_dimensions) return;
+	if (_preview_failed_request == preview_dimensions) return;
 
 	preview_decode_request request{_loaded, preview_dimensions, _display_generation, ++_preview_generation};
 	const auto decision = decide_edit_request_coalescing(_preview_decode_in_flight);
@@ -1535,14 +1555,19 @@ void edit_view::start_preview_decode(preview_decode_request request)
 	                   [weak, request, &s = _state]
 	                   {
 		                   const auto source = request.loaded.to_surface(request.dimensions);
-		                   s.queue_ui([weak, request, source]
+		                   const auto failure = edit_preview_failure(source, request.loaded, request.dimensions);
+		                   s.queue_ui([weak, request, source, failure]
 		                   {
-			                   if (const auto self = weak.lock()) self->complete_preview_decode(request, source);
+			                   if (const auto self = weak.lock())
+			                   {
+				                   self->complete_preview_decode(request, source, failure);
+			                   }
 		                   });
 	                   });
 }
 
-void edit_view::complete_preview_decode(const preview_decode_request& request, ui::const_surface_ptr source)
+void edit_view::complete_preview_decode(const preview_decode_request& request, ui::const_surface_ptr source,
+                                        const file_load_result::failure failure)
 {
 	_preview_decode_in_flight = false;
 
@@ -1550,10 +1575,32 @@ void edit_view::complete_preview_decode(const preview_decode_request& request, u
 	                                      request.preview_generation, _preview_request_dimensions, request.dimensions))
 	{
 		_preview_request_dimensions = {};
-		if (is_valid(source) && source->dimensions() == request.dimensions)
+		if (is_valid(source))
 		{
 			_preview_source = source;
+			_preview_source_request = request.dimensions;
 			_invalid = true;
+			_host->frame()->invalidate();
+		}
+		else if (is_valid(_preview_source))
+		{
+			// An earlier size is on screen and stays there. Asking again for this one would fail the
+			// same way on every repaint.
+			_preview_failed_request = request.dimensions;
+		}
+		else
+		{
+			// Nothing of this file has been shown, and its load read only the header, so it cannot be
+			// edited: say why, as the media view does, and withdraw the pixel controls with it.
+			_loaded = edit_load_without_preview(_loaded, failure);
+			_invalid = true;
+
+			if (_edit_controls->_dlg)
+			{
+				_edit_controls->populate();
+				_edit_controls->_dlg->layout();
+			}
+			_state.invalidate_view(view_invalid::command_state | view_invalid::view_redraw | view_invalid::controller);
 			_host->frame()->invalidate();
 		}
 	}
@@ -2696,6 +2743,7 @@ void edit_view::display_changed()
 	_preview_source.reset();
 	_dialog_preview_source.reset();
 	_preview_request_dimensions = {};
+	_preview_failed_request = {};
 	_texture.reset();
 	_invalid = true;
 	clear_crop_interaction_bounds();
@@ -2731,24 +2779,6 @@ void edit_view::display_changed()
 	update_media_elements();
 
 	_edit_state.reset(safe_metadata(item), _loaded.dimensions(), _loaded.orientation());
-
-	if (is_photo())
-	{
-		const auto loaded = _loaded;
-		const auto preview_dimensions = ui::scale_dimensions(loaded.dimensions(), 192);
-		const auto weak = weak_from_this();
-		_state.queue_async(async_queue::render, [weak, loaded, preview_dimensions, display_generation, &s = _state]
-		{
-			const auto source = loaded.to_surface(preview_dimensions);
-			s.queue_ui([weak, source, display_generation]
-			{
-				if (const auto self = weak.lock(); self && self->_display_generation == display_generation)
-				{
-					self->_dialog_preview_source = source;
-				}
-			});
-		});
-	}
 
 	if (_edit_controls->_dlg)
 	{
@@ -2803,10 +2833,24 @@ void edit_view::render(ui::draw_context& dc, view_controller_ptr controller)
 		if (_invalid || !_texture)
 		{
 			const auto preview_dimensions = ui::scale_dimensions(_loaded.dimensions(), _extent);
-			const auto has_current_preview = is_valid(_preview_source) && _preview_source->dimensions() == preview_dimensions;
+			const auto has_current_preview = edit_preview_is_current(_preview_source, _preview_source_request,
+			                                                         preview_dimensions);
 			if (!has_current_preview)
 			{
 				queue_preview_decode();
+
+				// With no texture, the last good preview stands in: it shows the whole picture at
+				// another size, which is better than Loading while the current one is decoded - or
+				// for good, if this size cannot be.
+				if (!(_texture && _texture->is_valid()) && is_valid(_preview_source))
+				{
+					if (const auto t = dc.create_texture();
+						t && t->update(_preview_source) != ui::texture_update_result::failed)
+					{
+						_texture = t;
+					}
+				}
+
 				const auto decision = decide_edit_preview_render(_texture && _texture->is_valid(), false, true);
 				if (!decision.draw_texture)
 				{

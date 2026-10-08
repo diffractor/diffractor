@@ -565,8 +565,8 @@ public:
 	platform::task_queue work_task_queue;
 	platform::threads _threads;
 
-	// UI-thread owned. Both the database-open and the folder-discovery completions ask to bring the
-	// index workers up, and either can win, so the bring-up is claimed once.
+	// UI-thread owned. The database-open completion and every collection walk ask to bring the index
+	// workers up, and any of them can win, so the bring-up is claimed once.
 	bool _index_workers_started = false;
 
 	// These workers are created on first use rather than at startup, so a session that never opens the
@@ -809,6 +809,7 @@ public:
 	bool can_exit() override;
 	bool pre_init() override;
 	void start_workers();
+	void start_index_workers();
 	bool claim_worker_start(std::atomic_bool& started);
 	void ensure_worker(std::atomic_bool& started, platform::task_queue& q, std::string_view name);
 	void update_font_size() const;

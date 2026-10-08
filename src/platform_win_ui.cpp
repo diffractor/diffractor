@@ -5232,7 +5232,16 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 				result = n;
 			}
 		}
-		else
+
+		// A ready waitable timer sits ahead of both the input queue and the idle event in the wait set,
+		// so frame preparation that takes as long as the timer period wins every wait, and a modal wait
+		// could then neither take Cancel nor receive the worker completion that ends it. So after any
+		// wake that leaves the loop running, whichever handle caused it, input is drained as
+		// ui_message_loop drains it, and the UI queue is drained if anything asked for that. Only if
+		// asked: the handler waiting here is part way through its own work, and draining on every
+		// frame tick would apply invalidations underneath it that used to wait for a queued task. The
+		// event is auto-reset, so taking it here is the same as winning the wait with it.
+		if (!signal_set)
 		{
 			while (!df::is_closing && PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
 			{
@@ -5241,6 +5250,11 @@ uint32_t win32_app::ui_wait_for_signal(const std::vector<std::reference_wrapper<
 
 				TranslateMessage(&msg);
 				DispatchMessage(&msg);
+			}
+
+			if (!df::is_closing && WaitForSingleObject(static_cast<HANDLE>(_idle_event._h), 0) == WAIT_OBJECT_0)
+			{
+				idle();
 			}
 		}
 	}

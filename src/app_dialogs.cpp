@@ -1484,29 +1484,51 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 	const auto title = tt.index_maintenance_title;
 	bool is_reset = false;
 
+	// Filled in by the UI hop that reports the database work, never by the database thread itself, and
+	// `complete` says that hop has run. A busy wait can end before the work does, so without it the
+	// UI read an answer the worker was still writing.
 	struct database_result
 	{
 		bool has_errors = false;
 		std::string error;
+		bool complete = false;
 	};
+
+	// The dialog crosses to the database thread only as a lifetime token. Holding it there let a late
+	// answer close whatever the dialog showed next - the confirmation, read as approval - and let that
+	// thread drop the dialog's last reference.
+	const std::weak_ptr<dialog> weak_dlg = dlg;
 
 	const auto check_result = std::make_shared<database_result>();
 	// The busy window says which operation is running; "Processing..." said nothing.
 	dlg->show_status(icon_index::star, title);
-	s._async.queue_database([&s, dlg, check_result](const database& db)
+	s._async.queue_database([&s, weak_dlg, check_result](const database& db)
 	{
+		auto has_errors = false;
+		std::string error;
+
 		try
 		{
-			check_result->has_errors = db.has_errors();
+			has_errors = db.has_errors();
 		}
 		catch (const std::exception& e)
 		{
-			check_result->error = str::utf8_cast(e.what());
+			error = str::utf8_cast(e.what());
 		}
 
-		s.queue_ui([dlg] { dlg->close(false); });
+		s.queue_ui([weak_dlg, check_result, has_errors, error = std::move(error)]
+		{
+			check_result->has_errors = has_errors;
+			check_result->error = error;
+			check_result->complete = true;
+			if (const auto d = weak_dlg.lock()) d->close(false);
+		});
 	});
 	dlg->wait_for_close();
+
+	// The check only reads, so Escape during it stops maintenance here. Nothing has been asked yet,
+	// and the check's late answer finds no dialog to act on.
+	if (!check_result->complete) return;
 
 	if (!check_result->error.empty())
 	{
@@ -1537,21 +1559,37 @@ static void index_maintenance(const ui::control_frame_ptr& parent, const view_st
 	{
 		dlg->show_status(icon_index::star, is_reset ? tt.resetting : tt.defragmenting);
 		const auto maintenance_result = std::make_shared<database_result>();
+		const auto finished = std::make_shared<platform::thread_event>(true, false);
 
-		s._async.queue_database([&s, dlg, maintenance_result, is_reset](database& db)
+		s._async.queue_database([&s, maintenance_result, finished, is_reset](database& db)
 		{
+			std::string error;
+
 			try
 			{
 				db.maintenance(is_reset);
 			}
 			catch (const std::exception& e)
 			{
-				maintenance_result->error = str::utf8_cast(e.what());
+				error = str::utf8_cast(e.what());
 			}
 
-			s.queue_ui([dlg] { dlg->close(false); });
+			s.queue_ui([maintenance_result, finished, error = std::move(error)]
+			{
+				maintenance_result->error = error;
+				maintenance_result->complete = true;
+				finished->set();
+			});
 		});
-		dlg->wait_for_close();
+
+		// The database is being rewritten and cannot be stopped part way, so this waits for the work
+		// rather than for the window: Escape leaves the busy window up until the work is done. A
+		// dialog that could not create its window answers every wait at once, so waiting on it in a
+		// loop would spin the UI thread on a completion only a pumping wait can deliver.
+		platform::wait_for({*finished, platform::event_exit}, 0, false);
+
+		// Only an application closing underneath the wait leaves the result unreported.
+		if (!maintenance_result->complete) return;
 
 		if (maintenance_result->error.empty())
 		{

@@ -23,6 +23,9 @@ class sync_view final :
 	std::string _title;
 	sync_analysis_result _analysis;
 	bool _analysis_valid = false;
+	// The processing generation a Run began. Refresh re-plans, and a Run still under way is executing
+	// the plan already reviewed, so it is left alone rather than cancelled partway.
+	size_t _run_generation = 0;
 
 	void invalidate_analysis();
 

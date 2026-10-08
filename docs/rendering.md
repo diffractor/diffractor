@@ -69,6 +69,13 @@ Texture upload occurs lazily on the UI thread because the draw context owns devi
 and scaling remain on workers. Publication checks item identity and generation before installing a
 surface or texture.
 
+The hardware backend recycles textures rather than creating one per upload. A released texture of the
+plain kind - one level, sampled and nothing else - is kept with its views in a per-device pool of an
+eighth of the texture budget and handed to the next texture of the same size and format, which
+overwrites it in full. Sizes must match exactly, because a texture larger than its picture is sampled
+past the picture at its edges. A texture is not handed out while a scene that a redraw can replay
+still draws it, the oldest entries make room for new ones, and the pool goes with its device.
+
 FFmpeg still-image fallback constrains stream creation during probing so every probe decoder it opens
 inherits the application pixel ceiling. General AV container probing still supports formats that
 create streams while reading packets; those streams are checked again before explicit decoder setup,
@@ -197,8 +204,8 @@ initialized backend selected. Logical application state remains independent from
 ## Where this lives
 
 - [platform_win_d3d11.cpp](../src/platform_win_d3d11.cpp): device and adapter selection, image
-  budgets, hardware drawing, swap-chain resources, texture upload, glyph atlases, shared video
-  textures, and the decode device made on the renderer's adapter.
+  budgets, hardware drawing, swap-chain resources, texture upload and recycling, glyph atlases,
+  shared video textures, and the decode device made on the renderer's adapter.
 - [platform_win_ui.cpp](../src/platform_win_ui.cpp): each window's backend choice, swap chain,
   presentation and its hidden-window standby, and the switch to software on device loss.
 - [platform_win_software.cpp](../src/platform_win_software.cpp): CPU backend and Windows present

@@ -342,6 +342,7 @@ void sync_view::run()
 	const auto total = count_sync_actions(analysis_result);
 	begin_processing(total);
 	const auto processing_generation = this->processing_generation();
+	_run_generation = processing_generation;
 	const auto cancel_source = processing_cancel_source();
 	auto token = df::cancel_token(*cancel_source);
 	_status = std::string(tt.processing.sv());
@@ -381,9 +382,11 @@ void sync_view::analyze()
 	auto token = df::cancel_token(*cancel_source);
 	_status = std::string(tt.analyzing.sv());
 
+	// The token points into cancel_source without owning it, and the next Analyze replaces the view's
+	// copy while this one may still be scanning, so the worker holds the source for as long as the token.
 	_state.queue_async(async_queue::work, [&s = _state, sync_source, remote_path,
 		                   local_remote, remote_local, delete_local, delete_remote, t = shared_from_this(), token,
-		                   processing_generation]
+		                   cancel_source, processing_generation]
 	                   {
 		                   sync_analysis_result analysis_result;
 		                   try
@@ -451,5 +454,8 @@ void sync_view::refresh()
 
 void sync_view::reload()
 {
+	// Refresh re-plans, which restarts an Analyze in progress. A Run in progress is left alone:
+	// analyzing again would cancel it partway through without reporting what it had done.
+	if (progress().active && is_processing_generation(_run_generation)) return;
 	analyze();
 }

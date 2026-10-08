@@ -267,6 +267,8 @@ public:
 
 draw_context_device_ptr d3d11_create_context(const factories_ptr& f, const ComPtr<IDXGISwapChain>& swap_chain,
                                              int base_font_size);
+// A texture on the factories' Direct3D device, as every hardware draw context makes them.
+ui::texture_ptr d3d11_create_texture(const factories_ptr& f);
 draw_context_device_ptr create_software_draw_context(const factories_ptr& f, HWND hwnd, bool layered,
                                                      int base_font_size);
 df::blob load_resource(int id, LPCWSTR lpType);

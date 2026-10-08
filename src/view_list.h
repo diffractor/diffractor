@@ -244,6 +244,10 @@ public:
 
 	void begin_processing(const size_t total)
 	{
+		// A run still going belongs to whatever this one replaces - an Analyze restarted by Refresh,
+		// say. Its worker reads the source it was given, so bumping that is what stops it; swapping
+		// in a new source alone let it scan on to an answer nobody would publish.
+		if (_processing_cancel) ++(*_processing_cancel);
 		++_processing_generation;
 		_processing_cancel = std::make_shared<std::atomic_int>();
 		_progress = {true, 0, static_cast<int64_t>(total)};

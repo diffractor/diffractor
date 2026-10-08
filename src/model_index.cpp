@@ -2162,6 +2162,35 @@ inline bool index_state::is_collection_search(const df::search_t& search) const
 
 void index_state::save_media_position(const df::file_path id, const double media_position)
 {
+	// The index copy is what a rescan carries forward and what a new item element resumes from.
+	// Saving only the row left that copy at the position loaded at startup, and the next rescan of the
+	// file wrote it back over the one just saved. Published like any metadata: cloned and finished
+	// outside the lock, then swapped in only over the snapshot it was cloned from.
+	for (auto attempt = 0; attempt < 3; ++attempt)
+	{
+		prop::item_metadata_ptr current;
+		_items.update_file(id, [&current](const df::index_folder_item_ptr&, const df::index_file_item& file)
+		{
+			current = file.metadata.load();
+			return false;
+		});
+
+		if (!current || df::equiv(current->media_position, media_position)) break;
+
+		auto updated = std::make_shared<prop::item_metadata>(*current);
+		updated->media_position = media_position;
+
+		auto published = false;
+		_items.update_file(id, [&](const df::index_folder_item_ptr&, const df::index_file_item& file)
+		{
+			auto expected = current;
+			published = file.metadata.compare_exchange_strong(expected, updated);
+			return published;
+		});
+
+		if (published) break;
+	}
+
 	item_db_write write;
 	write.path = id;
 	write.media_position = media_position;
@@ -3781,6 +3810,10 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 
 	if (found_in_index && !found_in_index->files.empty())
 	{
+		// Rows whose hashes describe bytes the file no longer holds. Cleared from the database as well
+		// as kept off the node, or every later launch would load them back.
+		std::vector<df::file_path> stale_hashes;
+
 		_items.update_folder(folder_path, [&](const df::index_folder_item_ptr& current_folder)
 		{
 			df::assert_true(std::is_sorted(current_folder->files.begin(), current_folder->files.end()));
@@ -3807,10 +3840,38 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 				else
 				{
 					// merge: in both
-					old_first->metadata = file_first->metadata;
-					old_first->metadata_scanned = file_first->metadata_scanned;
-					old_first->crc32c = file_first->crc32c;
-					old_first->phash = file_first->phash;
+					//
+					// A node that is already here was built by a validation that ran ahead of the cache -
+					// usually the startup query for the folder on screen - so it carries the file's
+					// modified time. The row is judged against it the way validate_folder judges a node
+					// loaded from the database: a row scanned before the file last changed describes
+					// bytes that are gone. Adopting its hashes kept an edited file's old checksum for
+					// every session after, since nothing on the node then read as changed, and paired
+					// it with an untouched copy as identical.
+					const auto live_modified = old_first->file_modified.load();
+					const auto row_describes_file = !live_modified.is_valid() ||
+						!(file_first->metadata_scanned < live_modified);
+
+					// What this session has already scanned is newer than anything the row recorded.
+					const auto live_is_newer = old_first->metadata.load() != nullptr &&
+						!(old_first->metadata_scanned.load() < file_first->metadata_scanned);
+
+					if (!live_is_newer)
+					{
+						old_first->metadata = file_first->metadata;
+						old_first->metadata_scanned = file_first->metadata_scanned;
+					}
+
+					if (row_describes_file)
+					{
+						if (old_first->crc32c.load() == 0) old_first->crc32c = file_first->crc32c;
+						if (!old_first->phash.load()) old_first->phash = file_first->phash;
+					}
+					else if (file_first->crc32c != 0 || file_first->phash)
+					{
+						stale_hashes.emplace_back(folder_path.combine_file(old_first->name));
+					}
+
 					old_first->calc_search_presence();
 					++file_first;
 					++old_first;
@@ -3822,6 +3883,22 @@ void index_state::merge_folder(const df::folder_path folder_path, const db_items
 			current_folder->reset_search_presence();
 			return true;
 		});
+
+		if (!stale_hashes.empty())
+		{
+			std::vector<item_db_write> writes;
+			writes.reserve(stale_hashes.size());
+
+			for (const auto& path : stale_hashes)
+			{
+				item_db_write write;
+				write.path = path;
+				write.clear_hashes = true;
+				writes.emplace_back(std::move(write));
+			}
+
+			enqueue_db_writes(std::move(writes));
+		}
 	}
 	else
 	{

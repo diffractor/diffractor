@@ -17,6 +17,12 @@
 
 class view_controls_host;
 using view_controls_host_ptr = std::shared_ptr<view_controls_host>;
+class locate_auto_complete_strategy;
+
+namespace ui
+{
+	class complete_strategy_t;
+}
 
 class locate_view final :
 	public map_view,
@@ -29,6 +35,9 @@ class locate_view final :
 	// Monotonic request id used to discard stale reverse-geocode results when the
 	// user pans the map quickly and multiple background requests are in flight.
 	uint64_t _geocode_request_id = 0;
+	// The place search behind the panel's search box, owned by that box. An explicit choice on the
+	// map supersedes whatever it still has in flight.
+	std::weak_ptr<locate_auto_complete_strategy> _place_search;
 	// Composed by the location worker: the qualified place name already carrying its Near or
 	// Remote form, and the locations.md 2.7 bearing descriptor for anything not `at` a place.
 	std::string _place_label;
@@ -98,12 +107,17 @@ public:
 	const std::shared_ptr<selected_location_t>& location() const { return _location; }
 	void update_location(const location_t& loc);
 
+	// The place search behind the panel, while the panel exists.
+	std::shared_ptr<ui::complete_strategy_t> place_search_for_tests() const;
+
 private:
 	void rebuild_markers();
 	void select_default_location();
 	// Forget the resolved place so a stale name is never shown against a new coordinate, and
 	// never written by a Run that happens between the move and the lookup that follows it.
 	void clear_resolved_place();
+	// An answer the place search still owes would select its first match over this choice.
+	void supersede_place_search() const;
 	// Queue an async reverse-geocode lookup for the given GPS position. Tags the
 	// request with a monotonic id so stale results from earlier requests are
 	// discarded when the user pans rapidly or makes an explicit selection.

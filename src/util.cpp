@@ -396,10 +396,10 @@ void df::log_perf_summary()
 		                            format_count(load(g.view_binds)), format_count(load(g.sampler_binds)),
 		                            format_count(load(g.cbuffer_uploads))));
 		append_perf_row(report, "GPU", "Resources created", "-", "-", "-", "-",
-		                std::format("views={}; targets={}; textures={}; buffers={}; vram={}MB; peak={}MB",
+		                std::format("views={}; targets={}; textures={}; reused={}; buffers={}; vram={}MB; peak={}MB",
 		                            format_count(load(g.views_created)), format_count(load(g.targets_created)),
-		                            format_count(load(g.textures_created)), format_count(load(g.buffers_created)),
-		                            load(g.vram_mb), load(g.vram_peak_mb)));
+		                            format_count(load(g.textures_created)), format_count(load(g.textures_reused)),
+		                            format_count(load(g.buffers_created)), load(g.vram_mb), load(g.vram_peak_mb)));
 	}
 
 	for (size_t i = 0; i < queue_count; ++i)

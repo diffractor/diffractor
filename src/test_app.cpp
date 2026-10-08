@@ -32,6 +32,8 @@
 #include "view_tags.h"
 #include "view_items.h"
 
+extern std::function<void()> test_during_detach_file_handles;
+
 // Rolling a release back is ordinary, and the settings store is shared with the build rolled back
 // to. An order it cannot name falls through its switches to a default, so the user silently loses
 // the order they chose - which is exactly the user this release's migration just moved onto one.
@@ -2832,6 +2834,40 @@ static void should_refuse_a_rename_whose_source_changed_since_review()
 	             "the status names the stale review");
 }
 
+// Releasing the displayed file's handles pumps messages, so a Close can be handled while Run is still
+// setting out. Run then went ahead with nothing on screen to show it, renaming files after the user had
+// left the view.
+static void should_not_run_a_rename_closed_while_releasing_handles()
+{
+	const auto root = _temps.next_folder("rename-closed-during-detach");
+	const auto source = root.combine_file("alpha.jpg");
+	platform::copy_file(df::file_path(test_files_folder, "Test.jpg"), source, false, false);
+
+	browsing_fixture f(root);
+	const auto item = f.find("alpha.jpg");
+	assert_equal(true, item != nullptr, "the source is listed");
+	f.state.select(f.view, item, false, false, false);
+	f.state.update_selection();
+
+	const auto saved = setting.rename;
+	const df::scope_exit restore([saved] { setting.rename = saved; });
+	setting.rename.name_template = "renamed";
+	setting.rename.start_seq = "1";
+	setting.rename.collision = collision_policy::block_run;
+
+	const auto view = std::make_shared<rename_view>(f.state, nullptr);
+	view->activate({100, 100});
+	assert_equal(true, view->can_run(), "the rename can run");
+
+	const df::scope_exit clear_hook([] { test_during_detach_file_handles = {}; });
+	test_during_detach_file_handles = [&view] { view->deactivate(); };
+	view->run();
+
+	assert_equal(true, source.exists(), "the source keeps its name");
+	assert_equal(false, root.combine_file("renamed.jpg").exists(), "nothing is renamed once the view has closed");
+	assert_equal(false, view->progress().active, "and no run is left showing progress");
+}
+
 // Every task view ends a run the same way: what it did, then why some rows did nothing. Rename used to
 // drop the counts whenever there was a reason, and Tags kept "Processing" when there was neither.
 static void should_conclude_a_run_with_what_it_did_and_why()
@@ -4491,6 +4527,43 @@ static void should_release_stale_destination_completion_callbacks_on_the_ui_thre
 	assert_equal(true, released_on_ui, "the stale callback capture is released on the UI thread");
 }
 
+// What command_status now holds its dialog and controls through. The worker that runs an operation
+// can drop the last reference to its status, and a dialog destroyed there destroys windows and moves
+// focus from the wrong thread, so a release off the UI thread is handed back to the UI queue.
+static void should_hand_the_last_ui_owned_reference_back_to_the_ui_thread()
+{
+	struct release_probe
+	{
+		bool& released;
+		bool& released_on_ui;
+		~release_probe()
+		{
+			released = true;
+			released_on_ui = ui::is_ui_thread();
+		}
+	};
+
+	deferred_async_strategy as;
+	bool released = false;
+	bool released_on_ui = false;
+	auto owned = ui_owned(as, std::make_shared<release_probe>(released, released_on_ui));
+
+	// Moved in and dropped there, so the worker holds the only reference when it lets go.
+	std::thread worker([held = std::move(owned)]() mutable
+	{
+		const auto last = std::move(held);
+	});
+	worker.join();
+
+	assert_equal(false, released, "the worker did not run the destructor");
+	assert_equal(1_z, as.pending_ui_count(), "the last reference was handed to the UI queue");
+
+	as.drain_ui();
+
+	assert_equal(true, released, "the reference is released once the UI queue runs");
+	assert_equal(true, released_on_ui, "and the destructor runs on the UI thread");
+}
+
 static void should_keep_sidebar_rebuild_packets_current()
 {
 	null_state_strategy ss;
@@ -4568,6 +4641,9 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should run a rename onto vacated names"s, should_run_a_rename_onto_vacated_names);
 	tests.add("Should refuse a rename whose source changed since review"s,
 	          should_refuse_a_rename_whose_source_changed_since_review);
+	// Concurrency review #26 - a Close handled while handles were released did not stop the run.
+	tests.add("Should not run a rename closed while releasing handles"s,
+	          should_not_run_a_rename_closed_while_releasing_handles);
 	tests.add("Should conclude a run with what it did and why"s, should_conclude_a_run_with_what_it_did_and_why);
 	tests.add("Should not convert over a destination changed since review"s,
 	          should_not_convert_over_a_destination_changed_since_review);
@@ -4709,6 +4785,9 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should skip stale destination completion work"s, should_skip_stale_destination_completion_work);
 	tests.add("Should release stale destination completion callbacks on the UI thread"s,
 	          should_release_stale_destination_completion_callbacks_on_the_ui_thread);
+	// Concurrency review #19 - operation dialogs could be destroyed by the worker holding their status.
+	tests.add("Should hand the last ui-owned reference back to the UI thread"s,
+	          should_hand_the_last_ui_owned_reference_back_to_the_ui_thread);
 	// APP-008 - sidebar structural rebuild packets carry settings snapshots and request identity.
 	tests.add("Should keep sidebar rebuild packets current"s, should_keep_sidebar_rebuild_packets_current);
 	// APP-011 - cancelling a globe drag consumes its release.

@@ -145,6 +145,14 @@ public:
 		max_predictions = 15u;
 	}
 
+	// A coordinate chosen on the map, or a new item to locate, supersedes any search still on the
+	// location queue the same way a keystroke does. Its answer would otherwise select its first match
+	// and move the coordinate back to a place the user had moved away from.
+	void supersede_pending_search()
+	{
+		++_search_generation;
+	}
+
 	std::string no_results_message() override
 	{
 		return std::string(tt.type_to_search);
@@ -271,6 +279,16 @@ void locate_view::clear_resolved_place()
 	_bearing.clear();
 }
 
+void locate_view::supersede_place_search() const
+{
+	if (const auto search = _place_search.lock()) search->supersede_pending_search();
+}
+
+std::shared_ptr<ui::complete_strategy_t> locate_view::place_search_for_tests() const
+{
+	return _place_search.lock();
+}
+
 void locate_view::update_location(const location_t& loc)
 {
 	if (!loc.position.is_valid())
@@ -382,6 +400,8 @@ void locate_view::deactivate()
 {
 	_populate_controls = nullptr;
 	_status.clear();
+	// A search still answering belongs to the session being left.
+	supersede_place_search();
 	// Reset selected location so the next activation re-evaluates from the
 	// newly selected items rather than reusing stale data.
 	*_location = selected_location_t{};
@@ -449,6 +469,7 @@ void locate_view::select_default_location()
 	if (!initial_loc.is_valid()) initial_loc = setting.default_location;
 	if (!initial_loc.is_valid()) initial_loc = gps_coordinate(48.8566, 2.3522);
 
+	supersede_place_search();
 	clear_resolved_place();
 	_location->latitude = initial_loc.latitude();
 	_location->longitude = initial_loc.longitude();
@@ -472,6 +493,7 @@ void locate_view::on_map_panned(const gps_coordinate& new_center)
 	}
 
 	// Update coordinates immediately so the UI reflects the new position
+	supersede_place_search();
 	clear_resolved_place();
 	_location->latitude = new_center.latitude();
 	_location->longitude = new_center.longitude();
@@ -543,6 +565,7 @@ void locate_view::on_marker_clicked(const gps_coordinate& coordinate, const int 
 {
 	if (!coordinate.is_valid()) return;
 
+	supersede_place_search();
 	clear_resolved_place();
 	_location->latitude = coordinate.latitude();
 	_location->longitude = coordinate.longitude();
@@ -690,6 +713,7 @@ view_controls_host_ptr locate_view::controls(const ui::control_frame_ptr& owner)
 
 	auto strategy = std::make_shared<locate_auto_complete_strategy>(
 		_state, frame, sel_changed);
+	_place_search = strategy;
 	const auto search = std::make_shared<ui::search_control>(frame, _location->search_text, strategy);
 	search->flex.align_self = flex_align::stretch;
 

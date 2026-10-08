@@ -6,8 +6,9 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Windows visual styles and theming. Handles DWM composition,
-// visual style detection, and Windows appearance settings.
+// Purpose: Shared Windows graphics types: the DirectWrite, DXGI, Direct3D and WIC factories the draw
+// backends use, font renderers and text layouts, the glyph cache key, and the pool that keeps released
+// Direct3D textures for reuse.
 
 #pragma once
 
@@ -233,6 +234,67 @@ private:
 	std::vector<uint32_t> _utf16_positions;
 };
 
+// The views a Direct3D texture is sampled through: the whole picture, or the luma plane of NV12 and
+// P010 with the chroma plane beside it. Shared rather than copied, so use_count says how many scenes
+// still draw the texture - which is how the texture pool tells a texture nothing will draw again from
+// one that a redraw could still replay.
+struct texture_views
+{
+	ComPtr<ID3D11ShaderResourceView> y;
+	ComPtr<ID3D11ShaderResourceView> uv;
+};
+
+using texture_views_ptr = std::shared_ptr<const texture_views>;
+
+// Released textures of the plain kind - one level, sampled and nothing else - kept for the next texture
+// of the same size and format. A scrolling listing makes and drops thumbnails by the hundred, and
+// overwriting a texture that already exists costs a fraction of making one: CreateTexture2D, and the
+// views after it, on the UI thread. Exact sizes only, because a texture larger than its picture is
+// sampled past the picture at its edges. Bounded by bytes, oldest first, and touched only on the UI
+// thread.
+class d3d11_texture_pool final : df::no_copy
+{
+public:
+	struct entry
+	{
+		sizei dims;
+		ui::texture_format format = ui::texture_format::None;
+		ComPtr<ID3D11Texture2D> texture;
+		// Null for a texture that was never drawn; it is given views when it next is.
+		texture_views_ptr views;
+	};
+
+	explicit d3d11_texture_pool(const size_t budget_bytes) : _budget(budget_bytes)
+	{
+	}
+
+	// Keeps the texture unless it would take more than an eighth of the budget, as a full-size photograph
+	// would; the oldest entries make room for it.
+	void give(entry e);
+
+	// The oldest entry of this size and format that no scene still draws, or one with no texture.
+	entry take(sizei dims, ui::texture_format format);
+
+	void clear();
+
+	size_t size() const
+	{
+		return _entries.size();
+	}
+
+	size_t bytes() const
+	{
+		return _bytes;
+	}
+
+	static size_t texture_bytes(sizei dims, ui::texture_format format);
+
+private:
+	std::vector<entry> _entries; // oldest first
+	size_t _budget = 0;
+	size_t _bytes = 0;
+};
+
 struct factories
 {
 	// Once a device exists, the factory that owns its adapter: swap chains must come from it.
@@ -253,6 +315,10 @@ struct factories
 	ComPtr<ID3D11Device> d3d_device;
 	ComPtr<ID3D11DeviceContext> d3d_context;
 	ComPtr<IDXGIDevice> dxgi_device;
+
+	// Textures released on d3d_device, waiting to be used again. Null while there is no device: the
+	// pool goes with the device it belongs to.
+	std::unique_ptr<d3d11_texture_pool> texture_pool;
 
 	ComPtr<IDWriteFontCollection> font_collection;
 

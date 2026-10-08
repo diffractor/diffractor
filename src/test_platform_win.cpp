@@ -8,9 +8,9 @@
 
 // Purpose: Tests for Windows platform integration. These are the only tests whose subject is the
 // operating system itself -- extended path syntax, DXGI device loss, adapter classification and the
-// texture budget taken from it, the adapter the decode device is made on, the crash-guard recovery
-// session, the system font stack, the registry settings store, the shell drag data object and the
-// common-control paint contract the flicker-free control buffering depends on.
+// texture budget taken from it, the adapter the decode device is made on, texture recycling, the
+// crash-guard recovery session, the system font stack, the registry settings store, the shell drag
+// data object and the common-control paint contract the flicker-free control buffering depends on.
 // Keeping them here is what lets every other test file stay free of system headers.
 
 #include "pch.h"
@@ -245,6 +245,171 @@ static void should_create_the_decode_device_on_the_render_adapter()
 
 	assert_equal(true, same_adapter(video->luid, adapter_of(device)), "on the adapter the renderer draws with");
 	assert_equal(true, av_platform_hw_device_usable(device), "and FFmpeg can decode on it");
+}
+
+// WARP is in every Windows since 8 and needs no GPU, so the texture tests run the same everywhere.
+static ComPtr<ID3D11Device> create_warp_device(ComPtr<ID3D11DeviceContext>& context)
+{
+	ComPtr<ID3D11Device> device;
+
+	if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr,
+	                             0, D3D11_SDK_VERSION, &device, nullptr, &context)))
+	{
+		return {};
+	}
+
+	return device;
+}
+
+static ComPtr<ID3D11Texture2D> create_plain_texture(ID3D11Device* device, const sizei dims)
+{
+	D3D11_TEXTURE2D_DESC desc = {};
+	desc.Width = dims.cx;
+	desc.Height = dims.cy;
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+	ComPtr<ID3D11Texture2D> texture;
+	device->CreateTexture2D(&desc, nullptr, &texture);
+	return texture;
+}
+
+// Thumbnails come and go by the hundred as a listing scrolls, and each was a CreateTexture2D on the UI
+// thread. A released texture is handed to the next one of its exact size and format - but never while
+// a scene a redraw can replay still draws it, or that redraw would show the new picture in its place.
+static void should_recycle_a_texture_only_when_nothing_draws_it()
+{
+	ComPtr<ID3D11DeviceContext> context;
+	const auto device = create_warp_device(context);
+	assert_equal(true, device != nullptr, "a WARP device");
+	if (!device) return;
+
+	constexpr sizei thumb = {64, 48};
+	constexpr auto argb = ui::texture_format::ARGB;
+	const auto thumb_bytes = d3d11_texture_pool::texture_bytes(thumb, argb);
+	d3d11_texture_pool pool(thumb_bytes * 8);
+
+	const auto released = create_plain_texture(device.Get(), thumb);
+	pool.give({thumb, argb, released, {}});
+	assert_equal(true, pool.take({64, 50}, argb).texture == nullptr, "a different size is not handed out");
+	assert_equal(true, pool.take(thumb, ui::texture_format::RGB).texture == nullptr, "nor a different format");
+	assert_equal(true, pool.take(thumb, argb).texture == released, "the same size and format is");
+	assert_equal(0_z, pool.size(), "and leaves the pool");
+
+	auto drawn = std::make_shared<const texture_views>();
+	pool.give({thumb, argb, released, drawn});
+	assert_equal(true, pool.take(thumb, argb).texture == nullptr, "not while a scene still draws it");
+	drawn.reset();
+	assert_equal(true, pool.take(thumb, argb).texture == released, "but once nothing does");
+
+	std::vector<ComPtr<ID3D11Texture2D>> made;
+
+	for (auto i = 0; i < 9; ++i)
+	{
+		made.emplace_back(create_plain_texture(device.Get(), thumb));
+		pool.give({thumb, argb, made.back(), {}});
+	}
+
+	assert_equal(8_z, pool.size(), "the budget holds eight");
+	assert_equal(true, pool.bytes() <= thumb_bytes * 8, "and never more than it");
+	assert_equal(true, pool.take(thumb, argb).texture == made[1], "the oldest went to make room");
+
+	const auto photograph = create_plain_texture(device.Get(), {128, 128});
+	const auto before = pool.size();
+	pool.give({{128, 128}, argb, photograph, {}});
+	assert_equal(before, pool.size(), "a texture over an eighth of the budget is not kept");
+
+	pool.clear();
+	assert_equal(0_z, pool.size(), "a cleared pool holds nothing");
+	assert_equal(0_z, pool.bytes(), "and costs nothing");
+}
+
+static bool texture_holds(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* texture,
+                          const uint32_t bgra)
+{
+	D3D11_TEXTURE2D_DESC desc = {};
+	texture->GetDesc(&desc);
+	desc.Usage = D3D11_USAGE_STAGING;
+	desc.BindFlags = 0;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+
+	ComPtr<ID3D11Texture2D> staging;
+	if (FAILED(device->CreateTexture2D(&desc, nullptr, &staging))) return false;
+
+	context->CopyResource(staging.Get(), texture);
+
+	D3D11_MAPPED_SUBRESOURCE mapped = {};
+	if (FAILED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return false;
+
+	auto holds = true;
+
+	for (UINT y = 0; y < desc.Height && holds; ++y)
+	{
+		const auto* const row = reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(mapped.pData) +
+			static_cast<size_t>(mapped.RowPitch) * y);
+		holds = std::all_of(row, row + desc.Width, [bgra](const uint32_t px) { return px == bgra; });
+	}
+
+	context->Unmap(staging.Get(), 0);
+	return holds;
+}
+
+// A recycled texture still holds the last picture until it is overwritten, so the reuse is only right if
+// the new picture lands in it in full. Read back from the texture the second picture was given, which is
+// the one the first picture released.
+static void should_overwrite_a_recycled_texture_with_the_new_picture()
+{
+	ComPtr<ID3D11DeviceContext> context;
+	const auto device = create_warp_device(context);
+	assert_equal(true, device != nullptr, "a WARP device");
+	if (!device) return;
+
+	const auto f = std::make_shared<factories>();
+	f->d3d_device = device;
+	f->d3d_context = context;
+	f->texture_pool = std::make_unique<d3d11_texture_pool>(1024 * 1024);
+
+	constexpr sizei dims = {64, 48};
+	constexpr auto stride = static_cast<size_t>(dims.cx) * 4;
+	constexpr auto bytes = stride * dims.cy;
+	constexpr uint32_t red = 0xFFFF0000u;
+	constexpr uint32_t green = 0xFF00FF00u;
+	const std::vector<uint32_t> first_picture(static_cast<size_t>(dims.cx) * dims.cy, red);
+	const std::vector<uint32_t> second_picture(static_cast<size_t>(dims.cx) * dims.cy, green);
+	const auto created_before = df::gpu_perf.textures_created.load();
+	const auto reused_before = df::gpu_perf.textures_reused.load();
+
+	{
+		const auto first = d3d11_create_texture(f);
+		assert_equal(true, first->update(dims, ui::texture_format::ARGB, ui::orientation::top_left,
+		                                 reinterpret_cast<const uint8_t*>(first_picture.data()), stride, bytes) ==
+		             ui::texture_update_result::tex_created, "the first picture makes a texture");
+	}
+
+	assert_equal(1_z, f->texture_pool->size(), "which is kept when it is released");
+	auto kept = f->texture_pool->take(dims, ui::texture_format::ARGB);
+	const auto first_texture = kept.texture;
+	f->texture_pool->give(std::move(kept));
+
+	{
+		const auto second = d3d11_create_texture(f);
+		assert_equal(true, second->update(dims, ui::texture_format::ARGB, ui::orientation::top_left,
+		                                  reinterpret_cast<const uint8_t*>(second_picture.data()), stride, bytes) ==
+		             ui::texture_update_result::tex_created, "a texture taken from the pool is new to its caller");
+		assert_equal(0_z, f->texture_pool->size(), "the second picture took it");
+	}
+
+	assert_equal(1ull, df::gpu_perf.textures_created.load() - created_before, "one texture was made");
+	assert_equal(1ull, df::gpu_perf.textures_reused.load() - reused_before, "and one reused");
+
+	const auto returned = f->texture_pool->take(dims, ui::texture_format::ARGB);
+	assert_equal(true, returned.texture == first_texture, "the second picture was drawn into the first texture");
+	assert_equal(true, returned.texture && texture_holds(device.Get(), context.Get(), returned.texture.Get(), green),
+	             "and holds the new picture, not the old one");
 }
 
 static void should_suppress_gpu_for_recovery_session()
@@ -900,6 +1065,9 @@ void register_platform_tests(view_state& state, test_registry& tests)
 	tests.add("Should count shared memory for an integrated GPU"s, should_count_shared_memory_for_an_integrated_gpu);
 	tests.add("Should create the decode device on the render adapter"s,
 	          should_create_the_decode_device_on_the_render_adapter);
+	tests.add("Should recycle a texture only when nothing draws it"s, should_recycle_a_texture_only_when_nothing_draws_it);
+	tests.add("Should overwrite a recycled texture with the new picture"s,
+	          should_overwrite_a_recycled_texture_with_the_new_picture);
 	tests.add("Should suppress GPU for one recovery session"s, should_suppress_gpu_for_recovery_session);
 	tests.add("Issue #219: Should fall back for missing glyphs"s, should_fall_back_for_missing_glyphs);
 	tests.add("Issue #232/#189: Should cache font faces per face and size"s,

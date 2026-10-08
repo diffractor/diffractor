@@ -7,8 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Direct3D 11 rendering backend. Chooses the device and decides whether the GPU is worth
-// drawing with, and implements GPU-accelerated texture rendering, shader management, and hardware
-// video decoding support.
+// drawing with, and implements GPU-accelerated texture rendering and texture recycling, shader
+// management, and hardware video decoding support.
 
 #include "pch.h"
 
@@ -484,6 +484,10 @@ bool factories::init(const bool use_gpu)
 		}
 
 		publish_image_budgets(feature_level, gpu_bytes);
+
+		// An eighth of what one displayed image may cost: at the ceiling, the hundred or so thumbnails
+		// a screen of the listing holds.
+		texture_pool = std::make_unique<d3d11_texture_pool>(static_cast<size_t>(df::max_texture_bytes / 8));
 	}
 
 	if (SUCCEEDED(hr))
@@ -520,7 +524,9 @@ void factories::downgrade_to_software()
 
 	// Drop every reference to the lost device. Draw contexts must already have been
 	// destroyed by the caller; anything still holding a device child simply keeps a dead
-	// object alive until it is released.
+	// object alive until it is released. The pool's textures are children of that device.
+	texture_pool.reset();
+
 	if (d3d_context)
 	{
 		d3d_context->ClearState();
@@ -552,6 +558,7 @@ void factories::destroy()
 	dxgi.Reset();
 	dwrite.Reset();
 	wic.Reset();
+	texture_pool.reset();
 	d3d_device.Reset();
 	d3d_context.Reset();
 	dxgi_device.Reset();
@@ -749,29 +756,31 @@ class d3d11_draw_context_impl;
 // A texture together with the shader-resource views it is sampled through. A view holds a
 // reference to its own resource, so whatever carries a binding keeps that texture alive. That is
 // what lets an atom refer to a texture without a raw pointer that could go stale, and why there
-// is no separate view cache or keep-alive list anywhere in this backend.
+// is no separate view cache or keep-alive list anywhere in this backend. The views are shared,
+// so the texture pool can see from their use count whether any scene still draws the texture.
 struct texture_binding
 {
-	ComPtr<ID3D11ShaderResourceView> y;
-	ComPtr<ID3D11ShaderResourceView> uv; // chroma plane; null for everything but NV12/P010
+	texture_views_ptr views;
 	// The 3D cube an HDR picture's planes are drawn through; null for SDR. Held here, with the planes
-	// it maps, so every atom drawing the picture keeps the cube alive too.
+	// it maps, so every atom drawing the picture keeps the cube alive too. Not shared with the views:
+	// it describes the picture, not the texture, so a recycled texture does not carry it on.
 	ComPtr<ID3D11ShaderResourceView> tone_map;
 
 	// Identity for atom merging and redundant-bind filtering. Two textures cannot share a view,
 	// and the binding holds the view, so this stays meaningful for as long as it is used.
-	ID3D11ShaderResourceView* id() const { return y.Get(); }
-	explicit operator bool() const { return y != nullptr; }
+	ID3D11ShaderResourceView* id() const { return views ? views->y.Get() : nullptr; }
+	// The chroma plane; null for everything but NV12/P010.
+	ID3D11ShaderResourceView* chroma() const { return views ? views->uv.Get() : nullptr; }
+	explicit operator bool() const { return id() != nullptr; }
 };
 
 // Answers an empty binding on failure, which leaves the caller to retry.
 static texture_binding make_texture_binding(ID3D11Device* device, ID3D11Texture2D* t,
                                             const ui::texture_format fmt)
 {
-	texture_binding result;
+	if (!device || !t) return {};
 
-	if (!device || !t) return result;
-
+	texture_views views;
 	D3D11_SHADER_RESOURCE_VIEW_DESC srv = {};
 	srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
 	// Only the planar branch below uses this desc. A packed texture takes the null-desc branch and
@@ -785,7 +794,7 @@ static texture_binding make_texture_binding(ID3D11Device* device, ID3D11Texture2
 		const auto is_p010 = fmt == ui::texture_format::P010;
 		srv.Format = is_p010 ? DXGI_FORMAT_R16_UNORM : DXGI_FORMAT_R8_UNORM;
 
-		if (FAILED(device->CreateShaderResourceView(t, &srv, &result.y)))
+		if (FAILED(device->CreateShaderResourceView(t, &srv, &views.y)))
 		{
 			return {};
 		}
@@ -794,18 +803,84 @@ static texture_binding make_texture_binding(ID3D11Device* device, ID3D11Texture2
 		// failure discards both.
 		srv.Format = is_p010 ? DXGI_FORMAT_R16G16_UNORM : DXGI_FORMAT_R8G8_UNORM;
 
-		if (FAILED(device->CreateShaderResourceView(t, &srv, &result.uv)))
+		if (FAILED(device->CreateShaderResourceView(t, &srv, &views.uv)))
 		{
 			return {};
 		}
 	}
-	else if (FAILED(device->CreateShaderResourceView(t, nullptr, &result.y)))
+	else if (FAILED(device->CreateShaderResourceView(t, nullptr, &views.y)))
 	{
 		return {};
 	}
 
-	df::bump(df::gpu_perf.views_created, result.uv ? 2 : 1);
+	df::bump(df::gpu_perf.views_created, views.uv ? 2 : 1);
+
+	texture_binding result;
+	result.views = std::make_shared<const texture_views>(std::move(views));
 	return result;
+}
+
+size_t d3d11_texture_pool::texture_bytes(const sizei dims, const ui::texture_format format)
+{
+	if (dims.cx <= 0 || dims.cy <= 0) return 0;
+
+	const auto pixels = static_cast<size_t>(dims.cx) * static_cast<size_t>(dims.cy);
+
+	switch (format)
+	{
+	case ui::texture_format::RGB:
+	case ui::texture_format::ARGB: return pixels * 4;
+	case ui::texture_format::NV12: return pixels * 3 / 2;
+	case ui::texture_format::P010: return pixels * 3;
+	case ui::texture_format::None:
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+void d3d11_texture_pool::give(entry e)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	const auto bytes = texture_bytes(e.dims, e.format);
+	if (!e.texture || bytes == 0 || bytes > _budget / 8) return;
+
+	while (!_entries.empty() && _bytes + bytes > _budget)
+	{
+		_bytes -= texture_bytes(_entries.front().dims, _entries.front().format);
+		_entries.erase(_entries.begin());
+	}
+
+	_bytes += bytes;
+	_entries.emplace_back(std::move(e));
+}
+
+d3d11_texture_pool::entry d3d11_texture_pool::take(const sizei dims, const ui::texture_format format)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	for (auto i = _entries.begin(); i != _entries.end(); ++i)
+	{
+		// A view held anywhere but here belongs to a scene a redraw can replay. Overwriting the texture
+		// under it would show the new picture where the old one was drawn, until the next paint.
+		if (i->dims == dims && i->format == format && (!i->views || i->views.use_count() == 1))
+		{
+			auto result = std::move(*i);
+			_entries.erase(i);
+			_bytes -= texture_bytes(dims, format);
+			return result;
+		}
+	}
+
+	return {};
+}
+
+void d3d11_texture_pool::clear()
+{
+	_entries.clear();
+	_bytes = 0;
 }
 
 
@@ -1002,7 +1077,32 @@ public:
 
 	~d3d11_texture() override
 	{
+		release_texture();
 		free_scaler();
+	}
+
+	// Lets go of the texture: to the pool when it is the plain kind another texture of its shape can
+	// be overwritten into, otherwise to nothing. Its views go with it, so a texture taken back out
+	// costs neither a CreateTexture2D nor its views. Off the UI thread - the last reference to a
+	// listing can fall there - it is simply released, because the pool belongs to the UI thread.
+	void release_texture()
+	{
+		if (_texture && _poolable && _f && _f->texture_pool && ui::is_ui_thread())
+		{
+			auto views = _binding_source == _texture.Get() && _binding_format == _format
+				             ? _binding.views
+				             : texture_views_ptr{};
+
+			// Dropped first: a reference kept here would read as a scene still drawing the texture.
+			_binding = {};
+			_f->texture_pool->give({_dimensions, _format, std::move(_texture), std::move(views)});
+		}
+
+		_texture.Reset();
+		_binding = {};
+		_binding_source = nullptr;
+		_binding_format = ui::texture_format::None;
+		_poolable = false;
 	}
 
 
@@ -1047,6 +1147,9 @@ private:
 	ui::texture_format _binding_format = ui::texture_format::None;
 	ComPtr<ID3D11ShaderResourceView> _tone_map_view;
 	ui::tone_map_lut_ptr _tone_map_source;
+	// The texture is the plain kind - one level, sampled only, exactly _dimensions in _format - that
+	// the pool can hand to another texture. Video bridge and mipped textures are made otherwise.
+	bool _poolable = false;
 };
 
 class d3d11_vertices;
@@ -1974,7 +2077,7 @@ struct context_state final
 			// YUV atom does not stay bound - a stale binding keeps the video texture referenced and
 			// forces the runtime to unbind it on the next copy.
 			bound_view = view;
-			ID3D11ShaderResourceView* views_to_bind[] = {view, a.tex.uv.Get(), a.tex.tone_map.Get()};
+			ID3D11ShaderResourceView* views_to_bind[] = {view, a.tex.chroma(), a.tex.tone_map.Get()};
 			context->PSSetShaderResources(0, 3, views_to_bind);
 			df::bump(df::gpu_perf.view_binds);
 		}
@@ -3078,7 +3181,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 				_shared_texture_device = video_device;
 				_shared_texture_refused_format = ui::texture_format::None;
 				_shared_texture_refused_device.Reset();
-				_texture.Reset(); // force the render-side SRV texture to be recreated below
+				release_texture(); // force the render-side SRV texture to be recreated below
 
 				// The decoder's surface pool is one texture array allocated in full when the stream
 				// opens, and it is the largest single allocation playback makes. Reported here
@@ -3192,6 +3295,8 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 					{
 						context->CopyResource(texture2.Get(), _shared_texture_render.Get());
 
+						// Made from the decoder's surface rather than as a plain texture, so never pooled.
+						release_texture();
 						_texture = texture2;
 						_dimensions = _shared_texture_dimensions;
 						_src_extent = src_extent;
@@ -3204,7 +3309,7 @@ ui::texture_update_result d3d11_texture::update(const av_frame_ptr& frame_in)
 					// this format refuses it on every frame, and a texture with no view draws nothing.
 					if (result == ui::texture_update_result::failed || !binding())
 					{
-						_texture.Reset();
+						release_texture();
 						result = ui::texture_update_result::failed;
 						bridge_refused = true;
 					}
@@ -3454,29 +3559,64 @@ ui::texture_update_result d3d11_texture::update(const sizei dims, const ui::text
 
 	if (!_texture || _format != fmt || dims != _dimensions)
 	{
-		ComPtr<ID3D11Texture2D> t;
-		const auto hr = try_create_tex(device, desc, p_source, &t);
+		// The texture of the old shape is of no more use here, but may be to another texture.
+		release_texture();
 
-		if (SUCCEEDED(hr))
+		// Overwriting a released texture of this shape costs a fraction of making one. Only with
+		// pixels to overwrite it with: a texture made without them would show the last picture.
+		if (p_source && _f->texture_pool)
 		{
-			_texture = t;
-			_dimensions = {cx, cy};
-			_format = fmt;
-			df::bump(df::gpu_perf.textures_created);
-			result = SUCCEEDED(hr) ? ui::texture_update_result::tex_created : ui::texture_update_result::failed;
-		}
-		else
-		{
-			if (hr == E_FAIL)
+			auto reused = _f->texture_pool->take(dims, fmt);
+
+			if (reused.texture &&
+				SUCCEEDED(try_update_tex(context, reused.texture.Get(), dims, fmt, pixels, stride, buffer_size)))
 			{
-				df::log(__FUNCTION__, std::format("CreateTexture2D {} ({} x {}) ****** crashed ******",
-				                                  to_string(fmt), cx, cy));
+				_texture = std::move(reused.texture);
+				_dimensions = dims;
+				_format = fmt;
+				_poolable = true;
+
+				if (reused.views)
+				{
+					_binding.views = std::move(reused.views);
+					_binding.tone_map = _tone_map_view;
+					_binding_source = _texture.Get();
+					_binding_format = fmt;
+				}
+
+				df::bump(df::gpu_perf.textures_reused);
+				// Created as far as the caller can tell: a scene drawn before this holds the old binding.
+				result = ui::texture_update_result::tex_created;
+			}
+		}
+
+		if (!_texture)
+		{
+			ComPtr<ID3D11Texture2D> t;
+			const auto hr = try_create_tex(device, desc, p_source, &t);
+
+			if (SUCCEEDED(hr))
+			{
+				_texture = t;
+				_dimensions = {cx, cy};
+				_format = fmt;
+				_poolable = true;
+				df::bump(df::gpu_perf.textures_created);
+				result = ui::texture_update_result::tex_created;
 			}
 			else
 			{
-				df::log(__FUNCTION__,
-				        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy,
-				                    static_cast<uint32_t>(hr)));
+				if (hr == E_FAIL)
+				{
+					df::log(__FUNCTION__, std::format("CreateTexture2D {} ({} x {}) ****** crashed ******",
+					                                  to_string(fmt), cx, cy));
+				}
+				else
+				{
+					df::log(__FUNCTION__,
+					        std::format("CreateTexture2D {} ({} x {}) failed: {:x}", to_string(fmt), cx, cy,
+					                    static_cast<uint32_t>(hr)));
+				}
 			}
 		}
 	}
@@ -3615,6 +3755,8 @@ ui::texture_update_result d3d11_texture::update_mipped(const ui::const_surface_p
 
 	context->UpdateSubresource(t.Get(), 0, nullptr, s->pixels(), static_cast<UINT>(s->stride()), 0);
 
+	// A chain of levels that renders into itself is not the plain kind the pool keeps.
+	release_texture();
 	_texture = std::move(t);
 	_format = ui::texture_format::ARGB;
 	_dimensions = dims;
@@ -3628,13 +3770,13 @@ ui::texture_update_result d3d11_texture::update_mipped(const ui::const_surface_p
 	{
 		// A published texture with no view is one nothing can generate mips for, and the next caller
 		// would sample level zero through an anisotropic sampler and alias without saying why.
-		_texture.Reset();
+		release_texture();
 		_format = ui::texture_format::None;
 		_dimensions = {};
 		return ui::texture_update_result::failed;
 	}
 
-	context->GenerateMips(b.y.Get());
+	context->GenerateMips(b.id());
 
 	return ui::texture_update_result::tex_created;
 }
@@ -4379,11 +4521,16 @@ int d3d11_draw_context_impl::text_line_height(const ui::style::font_face font)
 	return line_height(font);
 }
 
+ui::texture_ptr d3d11_create_texture(const factories_ptr& f)
+{
+	df::assert_true(ui::is_ui_thread());
+	return std::make_shared<d3d11_texture>(f);
+}
+
 ui::texture_ptr d3d11_draw_context_impl::create_texture()
 {
 	df::scope_rendering_func rf(__FUNCTION__);
-	df::assert_true(ui::is_ui_thread());
-	return std::make_shared<d3d11_texture>(_f);
+	return d3d11_create_texture(_f);
 }
 
 ui::vertices_ptr d3d11_draw_context_impl::create_vertices()

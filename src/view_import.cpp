@@ -421,15 +421,20 @@ void import_view::run()
 	const auto total = count_imports(analysis_result);
 	begin_processing(total);
 	const auto processing_generation = this->processing_generation();
+	_run_generation = processing_generation;
 	const auto cancel_source = processing_cancel_source();
 	_status = std::string(tt.processing.sv());
-	const auto detach = std::make_shared<detach_file_handles>(_state);
+	// Both made before the handles are released, which can pump messages: a Cancel - or a Close the
+	// user confirms - handled in there has to reach this run. Made afterwards, each took the cancelled
+	// count as its starting point and the copy went ahead regardless.
 	auto token = df::cancel_token(*cancel_source);
 	const auto view = shared_from_this();
 	const auto results = make_run_status(view, processing_generation, cancel_source, completion_status);
+	const auto detach = std::make_shared<detach_file_handles>(_state);
 
 	_state.queue_async(async_queue::work,
-	                   [&s = _state, results, view, analysis_result, options, token, detach, processing_generation]
+	                   [&s = _state, results, view, analysis_result, options, token, cancel_source, detach,
+		                   processing_generation]
 	                   {
 		                   result_scope rr(results);
 		                   const auto copy_result = import_copy(s.item_index, results, analysis_result, options,
@@ -439,7 +444,10 @@ void import_view::run()
 			                   db.writes_item_imports(copy_result.imports);
 		                   });
 
-		                   s.queue_ui([&s, view, folder = copy_result.folder, detach, processing_generation, token]
+		                   // The token reads cancel_source without owning it, and this hop can outlive the
+		                   // run status that otherwise keeps the source alive.
+		                   s.queue_ui([&s, view, folder = copy_result.folder, detach, processing_generation, token,
+			                   cancel_source]
 		                   {
 			                   // Navigation is the run's own conclusion, so a run the user cancelled or
 			                   // replaced must not take the view somewhere when its worker finally
@@ -482,8 +490,11 @@ void import_view::analyze()
 	auto token = df::cancel_token(*cancel_source);
 	_status = std::string(tt.analyzing.sv());
 
+	// The token points into cancel_source without owning it, and the next Analyze replaces the view's
+	// copy while this one may still be scanning, so the workers hold the source for as long as the token.
 	_state._async.queue_database(
-		[&s = _state, import_root, view = shared_from_this(), options, token, processing_generation](const database& db)
+		[&s = _state, import_root, view = shared_from_this(), options, token, cancel_source, processing_generation](
+		const database& db)
 		{
 			item_import_set previous_imported;
 			try
@@ -505,7 +516,7 @@ void import_view::analyze()
 			}
 
 			s.queue_async(async_queue::work,
-			              [&s, import_root, previous_imported, view, options, token, processing_generation]
+			              [&s, import_root, previous_imported, view, options, token, cancel_source, processing_generation]
 			              {
 				              import_analysis_result analysis_result;
 				              try
@@ -559,5 +570,8 @@ void import_view::refresh()
 
 void import_view::reload()
 {
+	// Refresh re-plans, which restarts an Analyze in progress. A Run in progress is left alone:
+	// analyzing again would cancel it partway through without reporting what it had done.
+	if (progress().active && is_processing_generation(_run_generation)) return;
 	analyze();
 }

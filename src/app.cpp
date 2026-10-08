@@ -51,7 +51,7 @@
 
 const std::string_view s_app_name = "Diffractor";
 const std::string_view s_app_version = "127.3";
-const std::string_view g_app_build = "1310";
+const std::string_view g_app_build = "1311";
 static constexpr auto s_search = "search";
 
 extern void start_worker(platform::task_queue& q, std::string_view name);

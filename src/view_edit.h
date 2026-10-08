@@ -53,6 +53,16 @@ bool should_accept_edit_preview_result(size_t current_display_generation, size_t
                                        sizei current_request_dimensions, sizei result_dimensions);
 bool should_accept_edit_analysis(size_t current_display_generation, size_t result_display_generation,
                                  size_t current_edit_generation, size_t result_edit_generation);
+// Whether the preview in hand answers the size the view now wants. The decode treats its request as
+// a ceiling - it can land a pixel short on one axis, or at the native size of a picture smaller than
+// the view - so a preview is judged by the request it answered, never by its own extent.
+bool edit_preview_is_current(const ui::const_surface_ptr& preview, sizei answered_request, sizei wanted);
+// Loading a JPEG, PNG or WebP reads only its header, so the preview is the first full decode. One that
+// produced nothing is named as a failed load would be: too large when the decode budget refused it.
+file_load_result::failure edit_preview_failure(const ui::const_surface_ptr& preview, const file_load_result& loaded,
+                                               sizei request);
+// The load state once the first preview has failed: no pixels to edit, and the reason the status names.
+file_load_result edit_load_without_preview(const file_load_result& loaded, file_load_result::failure failure);
 std::optional<quadd> edit_pending_crop_for_loaded_photo(std::optional<rectd> pending_crop,
                                                         const file_load_result& loaded, bool show_rotated);
 bool edit_pixel_controls_visible(bool is_bitmap, bool can_edit_pixels);
@@ -159,6 +169,8 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	file_type_ref _mt = nullptr;
 	file_load_result _loaded;
 	ui::const_surface_ptr _preview_source;
+	// The request _preview_source answered; meaningful only while it is set.
+	sizei _preview_source_request;
 	ui::const_surface_ptr _dialog_preview_source;
 	// Shed on device loss from the const broadcast; render rebuilds whenever it is absent, so
 	// clearing it is the whole recovery.
@@ -170,6 +182,8 @@ class edit_view final : public view_base, public std::enable_shared_from_this<ed
 	size_t _display_generation = 0;
 	size_t _preview_generation = 0;
 	sizei _preview_request_dimensions;
+	// A size whose decode produced nothing while an earlier size stays on screen; not asked for again.
+	sizei _preview_failed_request;
 	bool _source_load_in_flight = false;
 	std::optional<source_load_request> _pending_source_load_request;
 	bool _preview_decode_in_flight = false;
@@ -208,7 +222,8 @@ public:
 	void complete_source_load(const source_load_request& request, file_load_result loaded);
 	void queue_preview_decode();
 	void start_preview_decode(preview_decode_request request);
-	void complete_preview_decode(const preview_decode_request& request, ui::const_surface_ptr source);
+	void complete_preview_decode(const preview_decode_request& request, ui::const_surface_ptr source,
+	                             file_load_result::failure failure);
 	void clear_crop_interaction_bounds();
 	void draw_loading_status(ui::draw_context& dc, std::string_view status) const;
 	void changed();

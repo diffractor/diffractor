@@ -625,7 +625,11 @@ void batch_tool_view::run_convert()
 	const auto webp_quality = setting.convert.webp_quality;
 	const auto webp_lossless = setting.convert.webp_lossless;
 	const auto write_folder = df::folder_path(setting.write_folder);
+	// Releasing the displayed file's handles can pump messages, and a Close handled in there leaves
+	// this view. A run started after that would write files with nothing on screen to show it.
+	const auto generation_before_detach = processing_generation();
 	const auto detach = std::make_shared<detach_file_handles>(_state);
+	if (processing_generation() != generation_before_detach) return;
 	begin_processing(requests.size());
 	const auto generation = processing_generation();
 	const auto cancel_source = processing_cancel_source();
@@ -745,7 +749,10 @@ void batch_tool_view::run_metadata()
 	const auto title = std::string(tt.command_edit_metadata.sv());
 	const auto edits = metadata_changes();
 	record_feature_use(features::batch_edit);
+	// See run_convert: a Close handled while the handles are released leaves this view.
+	const auto generation_before_detach = processing_generation();
 	const auto detach = std::make_shared<detach_file_handles>(_state);
+	if (processing_generation() != generation_before_detach) return;
 	begin_processing(items.size());
 	const auto generation = processing_generation();
 	const auto cancel_source = processing_cancel_source();
@@ -828,7 +835,10 @@ void batch_tool_view::run_dates()
 	const auto title = std::string(tt.command_adjust_date.sv());
 	const auto new_start = _new_start;
 	const auto original_start = _original_start;
+	// See run_convert: a Close handled while the handles are released leaves this view.
+	const auto generation_before_detach = processing_generation();
 	const auto detach = std::make_shared<detach_file_handles>(_state);
+	if (processing_generation() != generation_before_detach) return;
 	begin_processing(requests.size());
 	const auto generation = processing_generation();
 	const auto cancel_source = processing_cancel_source();

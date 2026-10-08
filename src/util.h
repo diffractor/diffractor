@@ -455,6 +455,9 @@ namespace df
 		std::atomic_uint64_t views_created = 0;
 		std::atomic_uint64_t targets_created = 0;
 		std::atomic_uint64_t textures_created = 0;
+		// Textures overwritten from the pool instead of created, with their views. Scrolling a listing
+		// should raise this far more than textures_created.
+		std::atomic_uint64_t textures_reused = 0;
 		std::atomic_uint64_t buffers_created = 0;
 
 		// Gauge, sampled periodically: what the adapter reports this process is using locally.

@@ -39,6 +39,10 @@ constexpr size_t max_phash_requests_per_pass = 256;
 // read answers empty, and a file refused for its size was recorded as one that failed to decode.
 constexpr uint64_t max_phash_file_bytes = df::max_blob_size;
 
+// Runs once an anchor has been chosen and before its hash is compared, where a concurrent rescan can
+// clear the record's hash.
+std::function<void(const df::index_file_item& anchor)> test_after_duplicate_anchor;
+
 
 static auto next_dup_group = 1000u;
 
@@ -408,8 +412,8 @@ void index_state::update_predictions()
 				evidence_complete = false;
 				++wanted_count;
 
-				// Hashing needs the file and this walk holds the index lock, so the work is only
-				// noted here. The pass that follows the hashes will see them and compare.
+				// Hashing reads the file, which this walk of the index must not wait on, so the work is
+				// only noted here. The pass that follows the hashes will see them and compare.
 				if (phash_wanted.size() < max_phash_requests_per_pass)
 				{
 					phash_wanted.emplace_back(df::file_path(files[member].path, files[member].file->name),
@@ -426,9 +430,14 @@ void index_state::update_predictions()
 			// value a real member can take.
 			auto anchor = files.size();
 
+			// The set the anchor was chosen for. This walk holds no index lock, and a rescan of an
+			// edited picture clears its hash at any moment, so loading the record again here could
+			// answer null for the anchor this loop has just seen hashed.
+			df::picture_hashes_ptr anchor_hashes;
+
 			for (const auto member : shaped)
 			{
-				const auto held = files[member].file->phash.load();
+				auto held = files[member].file->phash.load();
 				if (!held || !held->is_usable()) continue;
 
 				if (anchor == files.size() ||
@@ -436,12 +445,14 @@ void index_state::update_predictions()
 					df::file_path(files[anchor].path, files[anchor].file->name))
 				{
 					anchor = member;
+					anchor_hashes = std::move(held);
 				}
 			}
 
 			if (anchor == files.size()) continue;
 
-			const auto anchor_hashes = files[anchor].file->phash.load();
+			if (test_after_duplicate_anchor) test_after_duplicate_anchor(*files[anchor].file);
+
 			const auto anchor_hash = anchor_hashes->stored();
 
 			// Collected rather than applied, because how many match decides whether any of them are
