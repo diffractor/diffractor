@@ -1457,26 +1457,6 @@ ui::pixel_difference_result files::pixel_difference(const ui::const_image_ptr& e
 // unscaled surface; NV12 results are flagged via is_yuv because the GPU sampler
 // resizes those at draw time. When orientation_override is empty the orientation
 // recovered from the embedded EXIF block is used.
-// An analysis decode is never drawn, so nothing scales it back up afterwards and it may be as small
-// as the analysis asked for. calc_scale_down_factor keeps BOTH axes at or above the target because a
-// sampler will enlarge the result; that rule fully decodes any 4:3 photograph whose short edge is
-// under the bound, which for face detection is most of a collection. Measured: a face vector moves
-// by under 0.02 across a twelve-fold range of decode sizes, so the long edge is the honest test.
-static int analysis_scale_down_factor(const sizei dims, const sizei target)
-{
-	const auto want = std::max(target.cx, target.cy);
-	const auto have = std::max(dims.cx, dims.cy);
-
-	if (want <= 0 || have <= 0) return 1;
-
-	for (const auto factor : {8, 4, 2})
-	{
-		if (have / factor >= want) return factor;
-	}
-
-	return 1;
-}
-
 ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_extent, const bool can_use_yuv,
                                    const std::optional<ui::orientation> orientation_override, bool& is_yuv,
                                    const df::cancel_token& token, const decode_intent intent)
@@ -1501,9 +1481,7 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 		// than what the file stores. Charging the full size would refuse a large stitch even as a
 		// thumbnail, which is the one request that was always affordable.
 		const auto source_dimensions = _jpeg_decoder.dimensions();
-		const auto scale_hint = intent == decode_intent::analysis
-			                            ? analysis_scale_down_factor(source_dimensions, target_extent)
-			                            : ui::calc_scale_down_factor(source_dimensions, target_extent);
+		const auto scale_hint = ui::calc_scale_down_factor(source_dimensions, target_extent);
 		const auto scaled_output_bytes = (static_cast<int64_t>(source_dimensions.cx) * source_dimensions.cy * 4) /
 			(static_cast<int64_t>(scale_hint) * scale_hint);
 
@@ -1541,10 +1519,9 @@ ui::surface_ptr files::decode_jpeg(const df::cspan data, const sizei target_exte
 
 		// libjpeg also accepts any numerator over eight, which would land closer to the target than the
 		// power-of-two ladder. Measured against it and rejected: the odd-denominator scaled IDCTs are
-		// visibly softer, which moved a face vector on a degraded photograph below its threshold, and
-		// the path with the most to gain is the planar one - which cannot take it, because read_nv12
-		// relies on the output block size being a power of two for calc_stride's rounding to cover the
-		// samples libjpeg writes per row.
+		// visibly softer, and the path with the most to gain is the planar one - which cannot take it,
+		// because read_nv12 relies on the output block size being a power of two for calc_stride's
+		// rounding to cover the samples libjpeg writes per row.
 		if (!_jpeg_decoder.start_decompress(scale_hint, use_yuv, intent == decode_intent::display))
 			return {};
 

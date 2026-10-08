@@ -217,18 +217,6 @@ Use the `.autotools` source release and import `common/`, `libopenmpt/`, `soundd
 and `src/`. Retain the static `svn_version.h` shim. Do not import player plugins or test programs
 into the library build. Its FFmpeg demuxer must remain present on both platforms.
 
-## Face Libraries
-
-None are vendored in this release. libfacedetection, ncnn and the MobileFaceNet weights live on the
-`face-search` branch with the feature that uses them.
-
-The weights are the reason this is more than a scheduling decision. Their immediate source is GPLv3,
-but the weights' own redistribution grant is unresolved: the graph identifies an InsightFace-derived
-MobileFaceNet model, and neither source records a separate commercial redistribution grant. Shipping
-the embedded pair therefore requires that grant to be established, or the files to be replaced by a
-model with compatible terms, before the feature can be released. See [faces](faces.md) for what the
-release does keep.
-
 ## Assets
 
 The Fluent UI icon font and generated code-point table are one versioned asset. Updating the font

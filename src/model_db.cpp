@@ -883,10 +883,6 @@ bool database::prepare_database(const bool can_replace)
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash180 INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_properties ADD COLUMN phash270 INTEGER;", nullptr, nullptr, nullptr);
 	sqlite3_exec(_db, "ALTER TABLE item_thumbnails ADD COLUMN cover_art BLOB NULL;", nullptr, nullptr, nullptr);
-	// Legacy face-search builds created these tables. Current builds do not use them, so dropping
-	// them here reclaims upgraded database space without changing any source-owned data.
-	sqlite3_exec(_db, "DROP TABLE IF EXISTS face_assignments;", nullptr, nullptr, nullptr);
-	sqlite3_exec(_db, "DROP TABLE IF EXISTS face_groups;", nullptr, nullptr, nullptr);
 
 	// Those upgrades report nothing when they fail, so the schema they were meant to reach is
 	// checked rather than assumed.
@@ -1171,8 +1167,6 @@ void database::clean(const std::vector<df::file_path>& indexed_items) const
 	db_exec(
 		_db,
 		"DELETE FROM item_thumbnails WHERE NOT EXISTS (SELECT 1 FROM item_properties WHERE item_properties.name = item_thumbnails.name AND item_properties.folder = item_thumbnails.folder);"s);
-
-	// Faces are derived from a file, so a row for a file that is gone is worth nothing.
 }
 
 void metadata_unpacker::unpack(const prop::item_metadata_ptr& md)

@@ -409,12 +409,6 @@ namespace ui
 	// machine that would otherwise exercise just one of the two.
 	bool area_downscale_baseline(const const_surface_ptr& src, surface_ptr& dst, sizei dst_extent);
 
-	// Area-average reduction of one 8-bit plane into a caller-owned buffer. An NV12 surface's first
-	// plane already is the luminance the face detector and the perceptual hash read, so this is what
-	// lets a planar decode reach them with no colour work and no intermediate surface.
-	bool area_downscale_luma(const uint8_t* src, size_t src_stride, sizei src_extent,
-	                         uint8_t* dst, size_t dst_stride, sizei dst_extent);
-
 	// Separable bilinear resize of a packed 32 bit surface, allocating dst. For the cases
 	// area_downscale refuses - an enlargement, or one axis growing while the other shrinks. A pure
 	// reduction belongs to area_downscale, which is both cheaper and correct for it.

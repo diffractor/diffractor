@@ -573,47 +573,6 @@ static void should_area_downscale_packed_and_planar_surfaces()
 		assert_equal(true, chroma_correct, "nv12 chroma keeps u and v apart");
 	}
 
-	// The luma-plane entry point is what lets a planar decode reach the face detector with no colour
-	// work, so it must agree with the surface path on the same pixels.
-	{
-		ui::surface nv12;
-		nv12.alloc(64, 32, ui::texture_format::NV12);
-
-		const auto stride = nv12.stride();
-		auto seed = 0x9e3779b9u;
-
-		for (auto y = 0; y < 32; ++y)
-		{
-			auto* const row = nv12.pixels() + stride * y;
-
-			for (auto x = 0; x < 64; ++x)
-			{
-				seed = seed * 1664525u + 1013904223u;
-				row[x] = static_cast<uint8_t>(seed >> 24);
-			}
-		}
-
-		const auto nv12_view = ui::const_surface_ptr(&nv12, [](const ui::surface*)
-		{
-		});
-
-		ui::surface_ptr dst;
-		assert_equal(true, ui::area_downscale(nv12_view, dst, {16, 8}), "reduce the nv12 reference");
-
-		std::vector<uint8_t> plane(16 * 8);
-		assert_equal(true, ui::area_downscale_luma(nv12.pixels(), stride, {64, 32}, plane.data(), 16, {16, 8}),
-		             "reduce the luma plane on its own");
-
-		auto identical = true;
-
-		for (auto y = 0; y < 8; ++y)
-		{
-			identical = identical && memcmp(dst->pixels() + dst->stride() * y, plane.data() + y * 16, 16) == 0;
-		}
-
-		assert_equal(true, identical, "the luma plane agrees with the surface path");
-	}
-
 	// Same size on one axis is still a reduction; the identity run must not be rejected or shifted.
 	{
 		const auto src = make_source(40, 10, ui::texture_format::RGB);

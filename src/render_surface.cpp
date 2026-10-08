@@ -492,18 +492,6 @@ bool ui::area_downscale_baseline(const const_surface_ptr& src, surface_ptr& dst,
 	return area_downscale_impl(src, dst, dst_extent, false);
 }
 
-bool ui::area_downscale_luma(const uint8_t* const src, const size_t src_stride, const sizei src_extent,
-                             uint8_t* const dst, const size_t dst_stride, const sizei dst_extent)
-{
-	if (!src || !dst || src_extent.cx < 1 || src_extent.cy < 1 || !is_reduction(src_extent, dst_extent))
-	{
-		return false;
-	}
-
-	area_downscale_plane_impl<1>(src, src_stride, src_extent, dst, dst_stride, dst_extent, platform::has_avx2());
-	return true;
-}
-
 namespace
 {
 	struct lerp_axis

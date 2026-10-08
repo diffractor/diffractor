@@ -478,10 +478,7 @@ public:
 enum class decode_intent : uint8_t
 {
 	display,
-	thumbnail,
-	// Read by code and never drawn, so it takes the planar path on its own terms rather than through
-	// the display's YUV switch.
-	analysis
+	thumbnail
 };
 
 struct file_load_result

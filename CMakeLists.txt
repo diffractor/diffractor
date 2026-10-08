@@ -209,7 +209,6 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/metadata_exif.cpp
         src/model.cpp
         src/model_db.cpp
-        src/model_faces.cpp
         src/model_index.cpp
         src/model_index_duplicates.cpp
         src/model_index_summary.cpp
@@ -287,7 +286,6 @@ endif ()
 set(DIFFRACTOR_TEST_SOURCES
         src/test_app.cpp
         src/test_av.cpp
-        src/test_faces.cpp
         src/test_files.cpp
         src/test_fixtures.cpp
         src/test_index.cpp

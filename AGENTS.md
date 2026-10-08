@@ -19,7 +19,6 @@ open the listed source, and run the listed check. Do not read unrelated document
 | Query parsing, results, address box, autocomplete | [design](docs/design.md#navigation-and-search) | [model_search.cpp](src/model_search.cpp), [model_tokenizer.h](src/model_tokenizer.h), [app_search.h](src/app_search.h), [model_index_summary.cpp](src/model_index_summary.cpp) | `/test:*search*` |
 | Indexing, the database, thumbnails, hydration | [implementation](docs/implementation.md#index-search-and-database) | [model_index.cpp](src/model_index.cpp), [model_db.cpp](src/model_db.cpp), [model_postings.h](src/model_postings.h) | `/test:*index*`, `/test:*thumbnail*` |
 | Collection membership, duplicates, presence | [collections](docs/collections.md) | [model_index.cpp](src/model_index.cpp), [model_index_duplicates.cpp](src/model_index_duplicates.cpp), [app_settings.cpp](src/app_settings.cpp), [model_related.h](src/model_related.h) | `/test:*duplicate*`, `/test:*presence*` |
-| Faces: the face vector, alignment, resemblance grouping, sample faces (headless foundation only) | [faces](docs/faces.md) | [model_faces.cpp](src/model_faces.cpp), [model_faces.h](src/model_faces.h) | `/test:*face*` |
 | Zoom, pan, the navigator, panorama projection | [zoom](docs/zoom.md) | [model_zoom.h](src/model_zoom.h), [view_media.h](src/view_media.h), [ui_panorama.h](src/ui_panorama.h) | `/test:*zoom*`, `/test:*panorama*` |
 | Places, distance, map, visits, tiles | [locations](docs/locations.md) | [model_locations.cpp](src/model_locations.cpp), [model_visits.cpp](src/model_visits.cpp), [ui_map_common.h](src/ui_map_common.h), [ui_globe.h](src/ui_globe.h), [model_tile_cache.cpp](src/model_tile_cache.cpp) | `/test:*location*`, `/test:*visit*`, `/test:*globe*` |
 | Reading or writing a media file, staging, sidecars, rollback | [file I/O](docs/file-io.md) | [files_core.cpp](src/files_core.cpp), [app_util.cpp](src/app_util.cpp) | `/test:*sidecar*`, `/test:*collision*` |
@@ -48,7 +47,6 @@ GitHub issues and releases own work, status, discussion, follow-up, and release 
 | [crash investigation](docs/crash.md) | Crash report contents, symbol store and debugger setup, dump symbolization, attributing a fault to a cause |
 | [testing](docs/testing.md) | The test taxonomy: which subject file owns which test, what the runner enforces, fixtures, and headless test boundaries |
 | [collections](docs/collections.md) | The collection: membership, what it earns, and its edge |
-| [faces](docs/faces.md) | The face foundation: alignment, the face vector, resemblance grouping, the sample face that identifies a group, and the face token. Headless; the feature is on the `face-search` branch |
 | [locations](docs/locations.md) | Places, location search, distance, map-driven queries, visits |
 | [metadata](docs/metadata.md) | Property-to-tag mapping across XMP, EXIF, IPTC, and container tags |
 | [file I/O](docs/file-io.md) | Read and write paths: decode ladder, staging, patching, sidecars, backups, rollback, failure contract |
