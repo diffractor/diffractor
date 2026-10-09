@@ -207,9 +207,17 @@ namespace
 }
 
 #ifndef WINSTORE
+// The desktop build asks to be started again after a crash or a hang, but not after an update or a
+// restart of Windows.
+constexpr DWORD restart_flags = RESTART_NO_PATCH | RESTART_NO_REBOOT;
+#else
+// The Store build restarts only after an update. RegisterApplicationRestart re-launches the executable
+// directly after a crash or a hang, which for a packaged build would start the process without its
+// package identity. An update is different: the Store closes an open app to replace it, and this
+// registration is how Microsoft documents a packaged app asking to be started again afterwards.
+constexpr DWORD restart_flags = RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_REBOOT;
+#endif
 
-// Restart is desktop-only: RegisterApplicationRestart re-launches the executable directly,
-// which for a packaged build would start the process without its package identity.
 static void register_restart(const std::string_view restart_cmd_line)
 {
 	const auto pRegisterApplicationRestart = resolve_kernel32<register_application_restart_t>(
@@ -228,11 +236,9 @@ static void register_restart(const std::string_view restart_cmd_line)
 
 	static WCHAR wsCommandLine[RESTART_MAX_CMD_LINE];
 	wcscpy_s(wsCommandLine, restart_cmd_line_w.c_str());
-	const auto hr = pRegisterApplicationRestart(wsCommandLine, RESTART_NO_PATCH | RESTART_NO_REBOOT);
+	const auto hr = pRegisterApplicationRestart(wsCommandLine, restart_flags);
 	df::assert_true(SUCCEEDED(hr));
 }
-
-#endif // !WINSTORE
 
 void unregister_restart()
 {
@@ -278,9 +284,8 @@ static DWORD WINAPI recover_callback(PVOID pContext)
 
 void setup_restart(const std::string_view restart_cmd_line)
 {
-#ifndef WINSTORE
 	register_restart(restart_cmd_line);
-#endif
+
 	// The recovery callback runs in both builds: it is what persists the crashed-file skip list
 	// and the session recovery state when Windows terminates a hung or crashing process.
 	const auto pRegisterApplicationRecoveryCallback = resolve_kernel32<register_application_recovery_callback_t>(

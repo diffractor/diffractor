@@ -642,6 +642,16 @@ platform::mapi_send_result platform::classify_mapi_send_result(uint32_t)
 	return mapi_send_result::failed;
 }
 
+bool platform::can_share_files()
+{
+	return false;
+}
+
+bool platform::share_files(const std::vector<df::file_path>&, std::string_view)
+{
+	return false;
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Process and thread services.
 ///////////////////////////////////////////////////////////////////////////////////////////////////

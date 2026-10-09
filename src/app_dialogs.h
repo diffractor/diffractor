@@ -8,7 +8,7 @@
 
 // Purpose: The dialogs commands open that are features in their own right - advanced search, the
 // update offer, the keyboard reference, About, settings, collection settings and maintenance, sidebar
-// customisation and email. app_commands.cpp registers the commands that open them.
+// customisation and sharing. app_commands.cpp registers the commands that open them.
 
 #pragma once
 
@@ -23,7 +23,7 @@ void about_invoke(view_state& s, const ui::control_frame_ptr& parent, commands_m
 void settings_invoke(view_state& s, const ui::control_frame_ptr& parent);
 void index_settings_invoke(view_state& s, const ui::control_frame_ptr& parent, settings_t::index_t collection_settings);
 void customise_invoke(view_state& s, const ui::control_frame_ptr& parent);
-void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view);
+void share_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view);
 
 // A command that acts on the selection first asks whether it can. When it cannot it says why, under
 // the command's own title, rather than doing nothing. Defined in app_commands.cpp.

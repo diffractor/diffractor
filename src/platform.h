@@ -1194,6 +1194,15 @@ namespace platform
 	mapi_send_result classify_mapi_send_result(uint32_t result_code);
 	mapi_send_result mapi_send(std::string_view to, std::string_view subject, std::string_view text,
 	                           const attachments_t& attachments);
+
+	// Whether the system share sheet can offer files to other apps. Where it cannot, the command
+	// falls back to an email draft rather than offering a sheet that will not open.
+	bool can_share_files();
+
+	// Opens the system share sheet for the files, anchored to the application window. UI thread
+	// only. The receiving app reads the files after this returns, so they must stay where they are.
+	bool share_files(const std::vector<df::file_path>& files, std::string_view title);
+
 	void sync_app_window_enabled();
 	uint32_t tick_count();
 	uint32_t caret_blink_time();

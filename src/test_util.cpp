@@ -1021,6 +1021,36 @@ static void should_parse_command_line()
 	command_line_t cl9;
 	cl9.parse("-run-tests");
 	assert_equal(true, cl9.console_test, "run-tests alias");
+
+	// AutoPlay passes the inserted volume with "**", the address box's spelling for its subfolders.
+	const auto recursive_text = std::string(test_files_folder.text()) + df::preferred_path_sep + "**";
+	command_line_t cl_recursive;
+	cl_recursive.parse(std::format("\"{}\"", recursive_text));
+	assert_equal(true, cl_recursive.folder_path.is_recursive(), "a trailing ** opens the subfolders too");
+	assert_equal(test_files_folder.text(), cl_recursive.folder_path.folder().text(), "of the named folder");
+
+	command_line_t cl_recursive_root;
+	cl_recursive_root.parse(std::format("\"{}**\" -no-gpu", root_path));
+	assert_equal(true, cl_recursive_root.folder_path.is_recursive(), "a drive root with ** is recursive");
+	assert_equal(true, cl_recursive_root.no_gpu, "and the rest of the line still parses");
+
+	command_line_t cl_missing_recursive;
+	cl_missing_recursive.parse(std::format("\"{}\"", std::string(spaced.text()) + "-missing" + df::preferred_path_sep + "**"));
+	assert_equal(true, cl_missing_recursive.folder_path.is_empty(), "a folder that does not exist opens nothing");
+
+	command_line_t cl_stars_only;
+	cl_stars_only.parse("** -no-gpu");
+	assert_equal(true, cl_stars_only.folder_path.is_empty(), "stars alone name no folder");
+	assert_equal(true, cl_stars_only.no_gpu, "and do not stop the rest of the line");
+
+	if constexpr (df::windows_path_semantics)
+	{
+		command_line_t cl_bare_drive;
+		cl_bare_drive.parse(root_path.substr(0, 2) + "**");
+		assert_equal(true, cl_bare_drive.folder_path.is_recursive(), "a drive named without its separator");
+		assert_equal(std::string_view(root_path), cl_bare_drive.folder_path.folder().text().sv(),
+		             "is that drive's root");
+	}
 }
 
 static void should_trim_strings()

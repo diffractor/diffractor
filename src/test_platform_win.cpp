@@ -914,6 +914,82 @@ static void should_delegate_ordinary_edit_context_menus()
 	             "a real misspelling shows exactly the custom spelling menu");
 }
 
+static void should_offer_the_maximize_caption_button_only_on_a_resizable_frame()
+{
+	constexpr uint32_t frame = WS_OVERLAPPEDWINDOW;
+	constexpr uint32_t maximized = frame | WS_MAXIMIZE;
+	constexpr uint32_t full_screen = frame & ~(WS_CAPTION | WS_THICKFRAME);
+	constexpr uint32_t dialog = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
+
+	assert_equal(true, platform::presents_maximize_caption_button(df::os_release::windows_11, frame),
+	             "a resizable Windows 11 frame offers snap layouts over its maximize button");
+	assert_equal(true, platform::presents_maximize_caption_button(df::os_release::windows_later, frame),
+	             "a later release keeps them");
+	assert_equal(false, platform::presents_maximize_caption_button(df::os_release::windows_10, frame),
+	             "Windows 10 has no snap layouts, so the button stays a toolbar button");
+	assert_equal(false, platform::presents_maximize_caption_button(df::os_release::unknown, frame),
+	             "a release that could not be read is not assumed to have them");
+	assert_equal(false, platform::presents_maximize_caption_button(df::os_release::windows_11, full_screen),
+	             "Fullscreen strips the resizing frame");
+	assert_equal(false, platform::presents_maximize_caption_button(df::os_release::windows_11, dialog),
+	             "a dialog has no maximize box");
+
+	// The flyout would open over the restore button and take the click meant for it.
+	assert_equal(false, platform::presents_maximize_caption_button(df::os_release::windows_11, maximized),
+	             "a maximized frame's restore button stays a toolbar button");
+	assert_equal(true, platform::can_present_maximize_caption_button(df::os_release::windows_11, maximized),
+	             "a maximized frame still keeps the top of its frame clear for when it is restored");
+	assert_equal(false, platform::can_present_maximize_caption_button(df::os_release::windows_10, frame),
+	             "Windows 10 frames keep their frame as it was");
+}
+
+static void should_invoke_the_maximize_caption_button_only_on_a_release_over_its_press()
+{
+	platform::caption_button_tracker t;
+
+	assert_equal(true, t.hover(7), "resting on the button lights it");
+	assert_equal(false, t.hover(7), "moving within it changes nothing");
+	assert_equal(0, t.release(7), "a release without a press invokes nothing");
+
+	assert_equal(true, t.press(7), "pressing shows it pressed");
+	assert_equal(7, t.release(7), "a release over the pressed button invokes it");
+	assert_equal(0, t.pressed_id, "the press ends with the release");
+	assert_equal(0, t.hover_id, "invoking forgets the hover, because the frame moves under the pointer");
+
+	t.press(7);
+	assert_equal(true, t.leave(), "leaving puts the light out");
+	assert_equal(0, t.release(7), "a press abandoned by leaving invokes nothing");
+
+	t.press(7);
+	assert_equal(true, t.hover(0), "resting off the button redraws it");
+	assert_equal(0, t.release(7), "a press abandoned by resting elsewhere invokes nothing");
+
+	t.press(7);
+	assert_equal(0, t.release(8), "a release over another button invokes nothing");
+}
+
+static void should_answer_hit_tests_on_the_maximize_toolbar_button_as_the_caption_button()
+{
+	const auto probe = platform::probe_toolbar_caption_button();
+
+	assert_equal(HTCLIENT, probe.other_hit, "an ordinary toolbar button stays a toolbar button");
+	assert_equal(HTCLIENT, probe.maximized_hit, "a maximized frame's restore button stays a toolbar button");
+	assert_equal(HTCLIENT, probe.frameless_hit, "a frame without its resizing border presents no caption button");
+
+	if (probe.offered)
+	{
+		assert_equal(HTMAXBUTTON, probe.maximize_hit, "the maximize button answers as the window's caption button");
+		assert_equal(probe.maximize_id, probe.hovered_id, "resting on it lights it");
+		assert_equal(1, probe.invocations, "a press and release over it invokes the command once");
+		assert_equal(0, probe.hover_after_leave, "leaving it puts the light out");
+	}
+	else
+	{
+		assert_equal(HTCLIENT, probe.maximize_hit, "without snap layouts it stays a toolbar button");
+		assert_equal(0, probe.invocations, "a hit test invokes nothing");
+	}
+}
+
 static void should_read_coherent_number_format_snapshots()
 {
 	platform::set_number_format_probe_snapshots({
@@ -1098,6 +1174,13 @@ void register_platform_tests(view_state& state, test_registry& tests)
 	// PLAT-012 - native edit context-menu routing.
 	tests.add("Should delegate ordinary common controls edit context menus"s,
 	          should_delegate_ordinary_edit_context_menus);
+	// Windows 11 snap layouts appear over the button a window reports as its maximize caption button.
+	tests.add("Should offer the maximize caption button only on a resizable frame"s,
+	          should_offer_the_maximize_caption_button_only_on_a_resizable_frame);
+	tests.add("Should invoke the maximize caption button only on a release over its press"s,
+	          should_invoke_the_maximize_caption_button_only_on_a_release_over_its_press);
+	tests.add("Should answer hit tests on the maximize toolbar button as the caption button"s,
+	          should_answer_hit_tests_on_the_maximize_toolbar_button_as_the_caption_button);
 	// PLAT-018 - coherent locale-format snapshots.
 	tests.add("Should read coherent number format snapshots"s, should_read_coherent_number_format_snapshots);
 	tests.add("Should bound the software buffer as the client grows"s,

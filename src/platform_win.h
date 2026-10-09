@@ -66,6 +66,9 @@ constexpr float scene_clear_shade = 0.222f;
 HWND app_wnd();
 bool is_device_loss_error(HRESULT hr);
 
+// The release the running system reports. Reads no files, so the UI thread may ask.
+df::os_release windows_release();
+
 // The Microsoft Basic Render Driver: WARP presented as a hardware adapter, which is what Windows
 // offers when no GPU driver is working. Drawn through, every frame is a full-window CPU redraw.
 bool is_software_adapter(uint32_t vendor_id, uint32_t device_id, uint32_t flags);
@@ -191,6 +194,50 @@ namespace platform
 	};
 
 	edit_context_menu_route probe_edit_context_menu_route(bool spelling_error_under_pointer, bool custom_menu_created);
+
+	// Windows 11 offers snap layouts over a window's maximize button, and only over a button the
+	// window reports as one. Only a resizable frame with a maximize box has one to report: Fullscreen
+	// strips the resizing frame, and dialogs have no maximize box.
+	bool can_present_maximize_caption_button(df::os_release release, uint32_t root_style);
+
+	// Whether a toolbar reports its maximize button as that caption button now. Not while the frame is
+	// maximized: Windows then opens the flyout at a standard caption's depth, over the middle of the
+	// taller restore button the top bar draws, and the flyout takes the click meant for the button.
+	bool presents_maximize_caption_button(df::os_release release, uint32_t root_style);
+
+	// The hover and press of a toolbar button reported as the maximize caption button. Windows sends
+	// that button non-client mouse messages, which the toolbar control never tracks. Ids are toolbar
+	// command ids; zero is none.
+	struct caption_button_tracker
+	{
+		int hover_id = 0;
+		int pressed_id = 0;
+
+		// Each answers whether what the toolbar draws changed.
+		bool hover(int id);
+		bool press(int id);
+		bool leave();
+
+		// The id to invoke: a release over the button its press began on, otherwise zero.
+		int release(int id);
+	};
+
+	struct caption_button_probe
+	{
+		bool offered = false;
+		int maximize_id = 0;
+		int maximize_hit = HTNOWHERE;
+		int other_hit = HTNOWHERE;
+		int maximized_hit = HTNOWHERE;
+		int frameless_hit = HTNOWHERE;
+		int hovered_id = 0;
+		int hover_after_leave = 0;
+		int invocations = 0;
+	};
+
+	// Builds a toolbar holding an ordinary button and a maximize button in a hidden frame, and sends
+	// it the messages Windows sends while the pointer rests on, presses and leaves the maximize button.
+	caption_button_probe probe_toolbar_caption_button();
 
 	struct number_format_probe_snapshot
 	{

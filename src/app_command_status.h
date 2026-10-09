@@ -259,11 +259,13 @@ private:
 		if (!_closed && pending.has_progress)
 		{
 			_progress->message(pending.progress_message, pending.progress_pos, pending.progress_total);
+			_async.work_progress(this, pending.progress_pos, pending.progress_total);
 		}
 
 		if (pending.completion != completion_type::none)
 		{
 			_completed = true;
+			_async.work_finished(this);
 			if (pending.completion == completion_type::abort) _error_message = std::move(pending.completion_message);
 			if (pending.completion == completion_type::complete) _message = std::move(pending.completion_message);
 			show_results_or_close();

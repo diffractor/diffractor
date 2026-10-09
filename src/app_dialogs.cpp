@@ -8,7 +8,7 @@
 
 // Purpose: The dialogs commands open that are features in their own right - advanced search, the
 // update offer, the keyboard reference, About, settings, collection settings and maintenance, sidebar
-// customisation and email. app_commands.cpp registers the commands that open them.
+// customisation and sharing. app_commands.cpp registers the commands that open them.
 
 #include "pch.h"
 
@@ -1773,10 +1773,84 @@ void customise_invoke(view_state& s, const ui::control_frame_ptr& parent)
 	}
 };
 
-void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
+// The share sheet needs a title. One file is named; several are counted.
+static std::string share_sheet_title(const std::vector<df::file_path>& paths)
 {
-	const auto title = tt.command_share_email;
-	constexpr auto icon = icon_index::mail;
+	return paths.size() == 1
+		       ? paths.front().name().str()
+		       : format_plural_text(tt.title_item_count_fmt, static_cast<int64_t>(paths.size()));
+}
+
+// MAPI shows the mail client's own modal UI, so the draft is created on the UI thread despite
+// blocking it. The progress dialog stays up meanwhile, saying what it is waiting for.
+static void email_outgoing_files(view_state& s, const item_results_ptr& results,
+                                 const std::vector<df::file_path>& file_paths, const outgoing_options& outgoing)
+{
+	s.queue_async(async_queue::work, [&s, results, file_paths, outgoing]
+	{
+		const auto staging = outgoing_staging_folder();
+		const auto prepared = prepare_outgoing_files(file_paths, outgoing, staging, *results);
+
+		// A cancel that lands after the last file is still a decision not to send.
+		if (!prepared.success || results->is_canceled())
+		{
+			results->complete(results->is_canceled()
+				                  ? std::string_view{}
+				                  : prepared.error.empty()
+				                  ? tt.email_failed.sv()
+				                  : std::string_view{prepared.error});
+			return;
+		}
+
+		platform::attachments_t attachments;
+
+		for (const auto& path : prepared.paths)
+		{
+			attachments.emplace_back(path.name().str(), path);
+		}
+
+		results->message(tt.email_connecting_to_mapi);
+
+		s.queue_ui([&s, attachments, results, staging, wrote_copies = outgoing.writes_copies()]
+		{
+			results->message(tt.email_sending);
+
+			// The second hop exists so the message above paints before MAPI blocks.
+			s.queue_ui([&s, attachments, results, staging, wrote_copies]
+			{
+				const auto send_result = platform::mapi_send({}, {}, {}, attachments);
+
+				if (send_result == platform::mapi_send_result::sent)
+				{
+					results->complete();
+				}
+				else if (send_result == platform::mapi_send_result::canceled)
+				{
+					results->complete(tt.email_canceled);
+				}
+				else
+				{
+					results->complete(tt.email_failed);
+				}
+
+				// The draft holds its own copies of the attachments by now.
+				if (wrote_copies)
+				{
+					s.queue_async(async_queue::work, [staging] { clear_outgoing_staging(staging); });
+				}
+			});
+		});
+	});
+
+	results->wait_for_complete();
+}
+
+void share_invoke(view_state& s, const ui::control_frame_ptr& parent, const view_host_base_ptr& view)
+{
+	// Where the system has no share sheet, the command makes an email draft instead.
+	const auto use_sheet = platform::can_share_files();
+	const auto title = use_sheet ? tt.command_share.sv() : tt.command_share_email.sv();
+	const auto icon = use_sheet ? icon_index::share : icon_index::mail;
 	auto dlg = make_dlg(parent);
 
 	pause_media pause(s);
@@ -1785,27 +1859,32 @@ void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view
 	{
 		const auto& items = s.selected_items();
 
-		// Edit a copy so Cancel discards and OK commits, matching every other options dialog.
-		auto email_settings = setting.email;
+		// Share and Email each keep their own choices. Edit a copy so Cancel discards and OK
+		// commits, matching every other options dialog.
+		settings_t::outgoing_choices_t& saved_choices = use_sheet ? setting.share : setting.email;
+		auto choices = saved_choices;
 		std::string validation_error;
 
 		for (;;)
 		{
 			std::vector<view_element_ptr> controls;
 			auto title_control = std::make_shared<ui::title_control2>(
-				dlg->_frame, icon_index::mail, title, format_plural_text(tt.email_info_fmt, items),
+				dlg->_frame, icon, title,
+				format_plural_text(use_sheet ? tt.share_info_fmt : tt.email_info_fmt, items),
 				std::vector<ui::const_surface_ptr>{}, items.size());
 			title_control->selection_async(items.thumbs(), items.size(), s._async);
 			controls.emplace_back(set_margin(title_control));
 			controls.emplace_back(std::make_shared<divider_element>());
-			controls.emplace_back(set_margin(std::make_shared<text_element>(tt.email_small_help)));
-			controls.emplace_back(std::make_shared<ui::check_control>(dlg->_frame, tt.email_zip, email_settings.zip));
+			controls.emplace_back(set_margin(std::make_shared<text_element>(
+				use_sheet ? tt.share_small_help : tt.email_small_help)));
+			controls.emplace_back(std::make_shared<ui::check_control>(
+				dlg->_frame, use_sheet ? tt.share_zip : tt.email_zip, choices.zip));
 			controls.emplace_back(
-				std::make_shared<ui::check_control>(dlg->_frame, tt.email_convert_to_jpeg, email_settings.convert));
+				std::make_shared<ui::check_control>(dlg->_frame, tt.email_convert_to_jpeg, choices.convert));
 
 			auto limit = std::make_shared<ui::check_control>(dlg->_frame, tt.email_limit_dimensions,
-			                                                 email_settings.limit);
-			limit->child(std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, email_settings.max_side));
+			                                                 choices.limit);
+			limit->child(std::make_shared<ui::num_control>(dlg->_frame, std::string_view{}, choices.max_side));
 			controls.emplace_back(limit);
 
 			if (!validation_error.empty())
@@ -1819,13 +1898,14 @@ void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view
 			}
 
 			controls.emplace_back(std::make_shared<divider_element>());
-			controls.emplace_back(std::make_shared<ui::ok_cancel_control>(dlg->_frame, tt.button_send));
+			controls.emplace_back(std::make_shared<ui::ok_cancel_control>(
+				dlg->_frame, use_sheet ? tt.button_share : tt.button_send));
 
 			if (ui::close_result::ok != dlg->show_modal(controls)) return;
 
-			// A limit below one pixel would scale every attachment to nothing. The dialog
-			// reopens with the choices intact rather than discarding them.
-			if (email_settings.limit && email_settings.max_side < 1)
+			// A limit below one pixel would scale every photo to nothing. The dialog reopens with the
+			// choices intact rather than discarding them.
+			if (choices.limit && choices.max_side < 1)
 			{
 				validation_error = tt.dimension_must_be_positive;
 				continue;
@@ -1834,175 +1914,62 @@ void email_invoke(view_state& s, const ui::control_frame_ptr& parent, const view
 			break;
 		}
 
-		setting.email = email_settings;
+		saved_choices = choices;
+		record_feature_use(use_sheet ? features::share : features::email);
 
+		outgoing_options outgoing;
+		outgoing.zip = choices.zip;
+		outgoing.convert_to_jpeg = choices.convert;
+		outgoing.max_side = choices.limit ? choices.max_side : 0;
+
+		const auto file_paths = items.file_paths(false);
+
+		if (!use_sheet)
 		{
-			const auto zip = email_settings.zip;
-			const auto scale = email_settings.limit ? email_settings.max_side : 0;
-			const auto convert_to_jpeg = email_settings.convert;
-			const auto file_paths = items.file_paths(false);
+			email_outgoing_files(s, std::make_shared<command_status>(s._async, dlg, icon, title, file_paths.size(),
+			                                                         tt.email_preparing),
+			                     file_paths, outgoing);
+			return;
+		}
 
-			record_feature_use(features::email);
+		const auto prepared = std::make_shared<outgoing_files>();
 
+		if (outgoing.writes_copies())
+		{
 			const auto results = std::make_shared<command_status>(s._async, dlg, icon, title, file_paths.size(),
-			                                                      tt.email_preparing);
+			                                                      tt.share_preparing);
 
-			s.queue_async(async_queue::work, [&s, results, file_paths, zip, scale, convert_to_jpeg]
+			s.queue_async(async_queue::work, [results, file_paths, outgoing, prepared]
 			{
-				files _codecs;
-				platform::attachments_t attachments;
-				df::file_paths temp_file_paths;
-				df::zip_file zip_file;
-				df::file_path zip_path;
-				bool is_valid = true;
-				std::string error_message;
+				// Ends the run even if preparation throws, so the dialog waiting on it closes.
+				result_scope rr(results);
 
-				if (zip)
-				{
-					zip_path = platform::temp_file("zip");
-					temp_file_paths.emplace_back(zip_path);
-					is_valid = zip_file.create(zip_path);
+				// Written before the completion is published; the UI thread reads it only once that
+				// completion has been drained.
+				*prepared = prepare_outgoing_files(file_paths, outgoing, outgoing_staging_folder(), *results);
 
-					if (!is_valid)
-					{
-						error_message = std::string(tt.email_failed);
-					}
-				}
+				// A cancel that lands after the last file is still a decision not to share.
+				if (results->is_canceled()) prepared->success = false;
 
-				auto pos = 0;
-
-				for (const auto& path : file_paths)
-				{
-					if (!is_valid || results->is_canceled()) break;
-
-					auto format = str_format(tt.email_processing_fmt.sv(), path.name());
-					results->message(format, pos++, file_paths.size());
-					results->start_item(path.name());
-
-					auto file_name = path.name();
-					const auto is_jpeg = files::is_jpeg(path.name());
-					auto attachment_path = path;
-					auto attachment_status = item_status::success;
-
-					if (scale || (convert_to_jpeg && !is_jpeg))
-					{
-						const auto ft = files::file_type_from_name(path);
-
-						if (ft->has_trait(file_traits::bitmap))
-						{
-							image_edits edits;
-							const auto ext = !is_jpeg && convert_to_jpeg ? ".jpg" : path.extension();
-							const auto edited_path = platform::temp_file(ext);
-
-							if (scale)
-							{
-								edits.scale(scale);
-							}
-
-							const auto update_result = _codecs.update(path, edited_path, {}, edits,
-							                                          make_file_encode_params(), false, {});
-
-							if (update_result.success())
-							{
-								attachment_path = edited_path;
-								file_name = path.extension(ext).name();
-							}
-							else
-							{
-								is_valid = false;
-								attachment_status = item_status::fail;
-								error_message = update_result.format_error();
-							}
-
-							temp_file_paths.emplace_back(edited_path);
-						}
-					}
-
-					if (is_valid && zip)
-					{
-						is_valid = zip_file.add(attachment_path, file_name);
-
-						if (!is_valid)
-						{
-							attachment_status = item_status::fail;
-							error_message = std::string(tt.email_failed);
-						}
-					}
-					else if (is_valid)
-					{
-						attachments.emplace_back(file_name, attachment_path);
-					}
-
-					results->end_item(path.name(), attachment_status);
-				}
-
-				const auto was_canceled = results->is_canceled();
-				if (was_canceled) is_valid = false;
-
-				if (zip && is_valid)
-				{
-					if (zip_file.close())
-					{
-						attachments.emplace_back("items.zip", zip_path);
-					}
-					else
-					{
-						is_valid = false;
-						error_message = std::string(tt.email_failed);
-					}
-				}
-
-				if (is_valid)
-				{
-					results->message(tt.email_connecting_to_mapi);
-
-					s.queue_ui([&s, attachments, results, temp_file_paths]
-					{
-						results->message(tt.email_sending);
-
-						// MAPI shows the mail client's own modal UI, so it must run on the UI thread despite
-						// blocking it. The second hop exists so the message above paints before that happens.
-						s.queue_ui([attachments, results, temp_file_paths]
-						{
-							const auto send_result = platform::mapi_send({}, {}, {}, attachments);
-							if (send_result == platform::mapi_send_result::sent)
-							{
-								results->complete();
-							}
-							else if (send_result == platform::mapi_send_result::canceled)
-							{
-								results->complete(tt.email_canceled);
-							}
-							else
-							{
-								results->complete(tt.email_failed);
-							}
-
-							for (const auto& path : temp_file_paths)
-							{
-								platform::delete_file(path);
-							}
-						});
-					});
-				}
-				else
-				{
-					if (zip) zip_file.close();
-
-					for (const auto& path : temp_file_paths)
-					{
-						platform::delete_file(path);
-					}
-
-					results->complete(was_canceled
-						                  ? std::string_view{}
-						                  : error_message.empty()
-						                  ? tt.email_failed.sv()
-						                  : error_message);
-				}
+				rr.complete(prepared->success || results->is_canceled()
+					            ? std::string_view{}
+					            : prepared->error.empty()
+					            ? tt.share_failed.sv()
+					            : std::string_view{prepared->error});
 			});
 
 			results->wait_for_complete();
+		}
+		else
+		{
+			prepared->paths = file_paths;
+			prepared->success = true;
+		}
+
+		// Every dialog has closed by now, so the sheet opens over the app rather than over one of them.
+		if (prepared->success && !platform::share_files(prepared->paths, share_sheet_title(prepared->paths)))
+		{
+			dlg->show_message(icon_index::error, title, tt.share_failed);
 		}
 	}
 }

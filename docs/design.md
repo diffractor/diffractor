@@ -171,7 +171,11 @@ state and withholds pixel operations rather than editing a placeholder.
 Metadata and Tags operate on the complete visibly selected set. Optional metadata fields change only
 when selected for the run. Date adjustment applies one shift while preserving relative offsets;
 items without a known date receive the chosen start. Rotation changes selected originals and is
-always reviewed for multiple items. Convert/Resize creates output and retains sources.
+always reviewed for multiple items. Convert/Resize creates output and retains sources. Share hands
+the complete visibly selected set to an app chosen in the system share sheet, or to an email draft
+where the system has none. Files its options leave unchanged go as themselves; converted, resized,
+or zipped copies are staged in a temporary folder and kept until the next share, because the
+receiving app may read them later. Sources are never changed.
 
 Collisions use Replace, Skip, Auto-rename, or Block Run. Two plan rows claiming one destination are
 a collision. Delete distinguishes recoverable Recycle from confirmed Permanent delete. A location
@@ -208,9 +212,10 @@ Surfaces distinguish loading, searching, empty folder, no results, filtered resu
 scope, indexing, offline, download required, unsupported, and decode failed. Each state names its
 scope and next action; blank content is not an error message.
 
-Long work shows operation, current item, completed/total counts, and Cancel. Results and actionable
-errors remain afterward. Progressive results apply only to the requesting scope and generation.
-Visible state converges after source changes without unrelated input. [Implementation](implementation.md#view-invalidation)
+Long work shows operation, current item, completed/total counts, and Cancel. The taskbar button shows
+the same progress, and flashes when work ends while another application is in front. Results and
+actionable errors remain afterward. Progressive results apply only to the requesting scope and
+generation. Visible state converges after source changes without unrelated input. [Implementation](implementation.md#view-invalidation)
 owns the invalidation ordering.
 
 Animation carries no meaning and completes immediately in software rendering or when the system
@@ -238,5 +243,5 @@ disable control. Aggregate feature-use diagnostics contain no stable user ID or 
   [view_rename.cpp](../src/view_rename.cpp), and [view_batch.cpp](../src/view_batch.cpp): guided
   operations.
 - [app_util.cpp](../src/app_util.cpp) and [platform.h](../src/platform.h): file effects, collisions,
-  and recycle capability.
+  shared copies, and the recycle and share capabilities.
 - [app_settings.cpp](../src/app_settings.cpp): durable preferences and diagnostics settings.

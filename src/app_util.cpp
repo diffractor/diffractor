@@ -7,7 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Utility functions for file operations including import, sync, and batch
-// processing. Handles file renaming, metadata updates, and folder synchronization.
+// processing. Handles file renaming, metadata updates, folder synchronization, and the copies
+// prepared for sharing.
 
 #include "pch.h"
 #include "util_strings.h"
@@ -18,6 +19,7 @@
 #include "app_util.h"
 #include "model_index.h"
 #include "util_crash_files_db.h"
+#include "util_zip.h"
 
 // Process-level state, declared in app_command_line.h and app.h. It is used across the model and
 // file layers, so it does not belong to the application frame that used to define it.
@@ -1229,19 +1231,29 @@ std::vector<import_source> calc_import_sources(std::optional<import_source> sele
 	}
 
 	auto drives = platform::scan_drives();
-	constexpr int drive_max = 5;
+	constexpr size_t drive_max = 5;
 
-	if (drives.size() > drive_max)
+	for (const auto& d : import_source_drives(drives, drive_max))
 	{
-		drives.resize(drive_max);
+		const auto text = std::format("{} {} {}", d.name, d.vol_name, d.used);
+		result.emplace_back(text, df::folder_path(d.name));
 	}
+
+	return result;
+}
+
+platform::drives import_source_drives(const platform::drives& drives, const size_t max)
+{
+	platform::drives result;
 
 	for (const auto& d : drives)
 	{
-		if (d.type == platform::drive_type::removable)
+		if (result.size() >= max) break;
+
+		// A card-reader slot with no card in it reports no capacity.
+		if (d.type == platform::drive_type::removable && d.capacity.is_valid())
 		{
-			const auto text = std::format("{} {} {}", d.name, d.vol_name, d.used);
-			result.emplace_back(text, df::folder_path(d.name));
+			result.emplace_back(d);
 		}
 	}
 
@@ -1262,6 +1274,11 @@ std::string relative_combine(const std::string& relative, const str::cached name
 	return result;
 }
 
+// FAT32 keeps a modified time to two seconds and exFAT to ten milliseconds, so a file copied onto a USB
+// drive reads back a little older or newer than the file it came from. Compared exactly, that copy looks
+// changed again and is copied again on every Sync. Times are FILETIME ticks of 100 ns.
+constexpr uint64_t sync_same_time_ticks = 2 * 10'000'000ull;
+
 sync_action calc_sync_action(const bool local_exists, const bool remote_exists,
                              const uint64_t local_modified, const uint64_t remote_modified,
                              const uint64_t local_size, const uint64_t remote_size,
@@ -1270,9 +1287,14 @@ sync_action calc_sync_action(const bool local_exists, const bool remote_exists,
 {
 	if (local_exists && remote_exists)
 	{
-		if (local_modified > remote_modified && sync_local_remote) return sync_action::copy_remote;
-		if (remote_modified > local_modified && sync_remote_local) return sync_action::copy_local;
-		if (local_modified == remote_modified && local_size != remote_size)
+		const auto difference = local_modified > remote_modified
+			                        ? local_modified - remote_modified
+			                        : remote_modified - local_modified;
+		const auto same_time = difference <= sync_same_time_ticks;
+
+		if (!same_time && local_modified > remote_modified && sync_local_remote) return sync_action::copy_remote;
+		if (!same_time && remote_modified > local_modified && sync_remote_local) return sync_action::copy_local;
+		if (same_time && local_size != remote_size)
 		{
 			if (sync_local_remote && !sync_remote_local) return sync_action::copy_remote;
 			if (sync_remote_local && !sync_local_remote) return sync_action::copy_local;
@@ -1851,6 +1873,148 @@ df::file_path next_free_destination(const df::file_path destination)
 	}
 
 	return destination;
+}
+
+df::folder_path outgoing_staging_folder()
+{
+	return platform::temp_folder().combine("diffractor-share");
+}
+
+void clear_outgoing_staging(const df::folder_path staging)
+{
+	// Flat by construction: nothing but staged copies is written here. A copy a recipient still
+	// holds open fails to delete, and the names given to the next share step around it.
+	for (const auto& f : platform::iterate_file_items(staging, true).files)
+	{
+		platform::delete_file(df::file_path(f.folder, f.name));
+	}
+}
+
+static df::file_path free_staging_path(const df::file_path path)
+{
+	return path.exists() ? next_free_destination(path) : path;
+}
+
+// A limit, never an enlargement. The scale edit fits a photo to the box whichever way that goes, so
+// one already inside it is left alone. A photo whose size cannot be read is limited anyway.
+static bool exceeds_max_side(files& codecs, const df::file_path path, const int max_side)
+{
+	const auto dimensions = codecs.scan_file(path, false, files::file_type_from_name(path)).dimensions();
+	return dimensions.is_empty() || std::max(dimensions.cx, dimensions.cy) > max_side;
+}
+
+outgoing_files prepare_outgoing_files(const std::vector<df::file_path>& sources, const outgoing_options& options,
+                                      const df::folder_path staging, df::status_i& status)
+{
+	outgoing_files result;
+
+	if (options.writes_copies())
+	{
+		clear_outgoing_staging(staging);
+
+		if (!staging.exists())
+		{
+			const auto created = platform::create_folder(staging);
+
+			if (created.failed())
+			{
+				result.error = created.format_error();
+				return result;
+			}
+		}
+	}
+
+	files codecs;
+	df::zip_file zip;
+	df::file_path zip_path;
+	std::vector<df::file_path> zipped_copies;
+
+	// Entry names are what the recipient extracts, so two files named alike must not share one.
+	std::unordered_set<std::string> entry_names;
+	const auto free_entry_name = [&entry_names](const df::file_path path)
+	{
+		auto name = path.name().str();
+
+		for (auto suffix = 2; !entry_names.insert(str::to_lower(name)).second; ++suffix)
+		{
+			name = std::format("{} ({}){}", path.file_name_without_extension(), suffix, path.extension());
+		}
+
+		return name;
+	};
+
+	if (options.zip)
+	{
+		zip_path = free_staging_path(df::file_path(staging, "items.zip"));
+		if (!zip.create(zip_path)) return result;
+	}
+
+	const auto total = static_cast<int64_t>(sources.size());
+	int64_t pos = 0;
+
+	for (const auto& source : sources)
+	{
+		if (status.is_canceled()) return result;
+
+		status.message(str_format(tt.email_processing_fmt.sv(), source.name()), pos++, total);
+		status.start_item(source.name());
+
+		auto outgoing = source;
+		const auto is_bitmap = files::file_type_from_name(source)->has_trait(file_traits::bitmap);
+		const auto convert = is_bitmap && options.convert_to_jpeg && !files::is_jpeg(source.name());
+		const auto shrink = is_bitmap && options.max_side > 0 && exceeds_max_side(codecs, source, options.max_side);
+
+		if (convert || shrink)
+		{
+			const auto copy = free_staging_path(
+				df::file_path(staging, source.extension(convert ? ".jpg"sv : source.extension()).name()));
+
+			image_edits edits;
+			if (shrink) edits.scale(options.max_side);
+
+			const auto written = codecs.update(source, copy, {}, edits, make_file_encode_params(), false, {});
+
+			if (written.failed())
+			{
+				status.end_item(source.name(), item_status::fail);
+				result.error = written.format_error();
+				return result;
+			}
+
+			outgoing = copy;
+			if (options.zip) zipped_copies.emplace_back(copy);
+		}
+
+		if (options.zip)
+		{
+			if (!zip.add(outgoing, free_entry_name(outgoing)))
+			{
+				status.end_item(source.name(), item_status::fail);
+				return result;
+			}
+		}
+		else
+		{
+			result.paths.emplace_back(outgoing);
+		}
+
+		status.end_item(source.name(), item_status::success);
+	}
+
+	if (options.zip)
+	{
+		if (!zip.close()) return result;
+		result.paths.emplace_back(zip_path);
+
+		// The archive carries them now.
+		for (const auto& copy : zipped_copies)
+		{
+			platform::delete_file(copy);
+		}
+	}
+
+	result.success = true;
+	return result;
 }
 
 std::vector<convert_source> snapshot_convert_sources(const df::item_set& items)

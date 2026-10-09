@@ -688,6 +688,7 @@ public:
 	commands_map _commands;
 	ui::command_ptr _hover_command;
 	recti _hover_command_bounds;
+	work_progress_reports _work_reports;
 
 	std::atomic<view_invalid> _invalids = view_invalid::none;
 
@@ -779,6 +780,8 @@ public:
 	void web_service_cache(std::string key, std::function<void(const std::string&)> f) override;
 	void web_service_cache(std::string key, std::string value) override;
 	void queue_media_preview(std::function<void(media_preview_state&)> f, bool must_run) override;
+	void work_progress(const void* source, int64_t done, int64_t total) override;
+	void work_finished(const void* source) override;
 	static icon_index repeat_toggle_icon();
 	bool update_toolbar_text(commands cc, const std::string& text);
 	void update_button_state(bool resize);

@@ -1506,7 +1506,7 @@ static void open_with_invoke(view_state& s, const ui::control_frame_ptr& parent,
 			commands[commands::tool_burn],
 			commands[commands::tool_convert],
 			commands[commands::tool_desktop_background],
-			commands[commands::tool_email],
+			commands[commands::tool_share],
 			commands[commands::print],
 			commands[commands::tool_rotate_anticlockwise],
 			commands[commands::tool_rotate_clockwise],
@@ -1905,6 +1905,9 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::view_minimize, [this] { _pa->sys_command(ui::sys_command_type::MINIMIZE); });
 	add_command_invoke(commands::view_maximize, [this] { _pa->sys_command(ui::sys_command_type::MAXIMIZE); });
 	add_command_invoke(commands::view_restore, [this] { _pa->sys_command(ui::sys_command_type::RESTORE); });
+	// Either one is, to Windows, the window's maximize button. The platform decides when it offers snap layouts on it.
+	find_or_create_command_info(commands::view_maximize)->caption_maximize = true;
+	find_or_create_command_info(commands::view_restore)->caption_maximize = true;
 	add_command_invoke(commands::view_close, [this] { _view->exit(); });
 	add_command_invoke(commands::edit_item_save, [this]
 	{
@@ -2081,7 +2084,7 @@ void app_frame::initialise_commands()
 	add_command_invoke(commands::options_sidebar, [this] { customise_invoke(_state, _app_frame); });
 	add_command_invoke(commands::select_invert, [this] { _state.select_inverse(_view_frame); });
 	add_command_invoke(commands::select_nothing, [this] { _state.select_nothing(_view_frame); });
-	add_command_invoke(commands::tool_email, [this] { email_invoke(_state, _app_frame, _view_frame); });
+	add_command_invoke(commands::tool_share, [this] { share_invoke(_state, _app_frame, _view_frame); });
 	add_command_invoke(commands::option_show_rotated, [this]
 	{
 		setting_invoke(_state, setting.show_rotated, !setting.show_rotated);
@@ -2412,7 +2415,7 @@ void app_frame::initialise_commands()
 			nullptr,
 			find_command(commands::search_related),
 			find_command(commands::tool_desktop_background),
-			find_command(commands::tool_email),
+			find_command(commands::tool_share),
 			find_command(commands::tool_burn),
 			find_command(commands::print),
 		};

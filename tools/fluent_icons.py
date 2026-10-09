@@ -80,6 +80,7 @@ ICONS: dict[str, tuple[str, bool]] = {
     "map_pin": ("map_pin", False),
     "world": ("globe", False),
     "mail": ("mail", False),
+    "share": ("share", False),
     "navigation": ("line_horizontal_3", False),
     "next": ("arrow_right", False),
     "next_image": ("image_arrow_forward", False),

@@ -56,6 +56,7 @@ enum class icon_index
 	map_pin = 0xEC1A, // ic_fluent_map_pin_20_regular
 	world = 0xE99B, // ic_fluent_globe_20_regular
 	mail = 0xEBBC, // ic_fluent_mail_20_regular
+	share = 0xF023, // ic_fluent_share_20_regular
 	navigation = 0xEB58, // ic_fluent_line_horizontal_3_20_regular
 	next = 0xE141, // ic_fluent_arrow_right_20_regular
 	next_image = 0xEA5C, // ic_fluent_image_arrow_forward_20_regular

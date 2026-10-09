@@ -2855,6 +2855,24 @@ msgstr "Příprava importu souborů..."
 msgid "Preparing files for email..."
 msgstr "Příprava souborů pro e-mail..."
 
+msgid "Share"
+msgstr "Sdílet"
+
+msgid "Preparing files to share..."
+msgstr "Příprava souborů ke sdílení..."
+
+msgid "Windows lists the apps that can receive the files. Originals are unchanged."
+msgstr "Windows nabídne aplikace, které mohou soubory přijmout. Originály zůstanou beze změny."
+
+msgid "Send the files as one zip file"
+msgstr "Odeslat soubory jako jeden soubor ZIP"
+
+msgid "&Share"
+msgstr "&Sdílet"
+
+msgid "The files could not be shared."
+msgstr "Soubory se nepodařilo sdílet."
+
 msgid "Preparing to synchronize files..."
 msgstr "Příprava synchronizace souborů..."
 
@@ -3397,6 +3415,12 @@ msgid_plural "A desktop email draft will be opened with {count} selected items a
 msgstr[0] "V e-mailovém klientovi se otevře koncept s přílohou {first-name}."
 msgstr[1] "V e-mailovém klientovi se otevře koncept s {count} vybranými položkami v příloze."
 msgstr[2] "V e-mailovém klientovi se otevře koncept s {count} vybranými položkami v příloze."
+
+msgid "{first-name} will be offered to the app you choose."
+msgid_plural "{count} selected items will be offered to the app you choose."
+msgstr[0] "Položka {first-name} bude nabídnuta aplikaci, kterou zvolíte."
+msgstr[1] "{count} vybrané položky budou nabídnuty aplikaci, kterou zvolíte."
+msgstr[2] "{count} vybraných položek bude nabídnuto aplikaci, kterou zvolíte."
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural ""

@@ -2203,6 +2203,18 @@ public:
 	create_app_frame(const platform::setting_file_ptr& store, const ui::frame_host_weak_ptr& host) override;
 
 	void enable_screen_saver(bool enable) override;
+
+	void show_progress(int64_t done, int64_t total) override;
+	void end_progress() override;
+
+private:
+	ITaskbarList3* taskbar();
+
+	ComPtr<ITaskbarList3> _taskbar;
+	bool _taskbar_unavailable = false;
+	TBPFLAG _taskbar_state = TBPF_NOPROGRESS;
+	int64_t _taskbar_done = -1;
+	int64_t _taskbar_total = -1;
 };
 
 class control_host_impl final :
@@ -3855,9 +3867,16 @@ void control_host_impl::handle_composition_changed()
 
 	if (enabled)
 	{
-		// The window needs a frame to show a shadow, so give it the smallest
-		// amount of frame possible 
-		const MARGINS empty_margins = {0, 0, _is_full_screen ? 0 : 1, 0};
+		// The window needs a frame to show a shadow, so give it the smallest amount of frame
+		// possible. Where the frame can present a maximize caption button that pixel goes along the
+		// bottom: DWM reads any frame along the top as a title bar of its own, and then never asks
+		// where the maximize button is, so snap layouts never appear over it. This is set once per
+		// frame style rather than on every maximize and restore, so it does not follow either.
+		static const auto release = windows_release();
+		const auto shadow = _is_full_screen ? 0 : 1;
+		const auto shadow_at_bottom = platform::can_present_maximize_caption_button(
+			release, static_cast<uint32_t>(GetWindowLong(m_hWnd, GWL_STYLE)));
+		const MARGINS empty_margins = {0, 0, shadow_at_bottom ? 0 : shadow, shadow_at_bottom ? shadow : 0};
 		DwmExtendFrameIntoClientArea(m_hWnd, &empty_margins);
 		constexpr auto at = DWMNCRP_ENABLED;
 		DwmSetWindowAttribute(m_hWnd, DWMWA_NCRENDERING_POLICY, &at, sizeof(DWORD));
@@ -5285,6 +5304,86 @@ void win32_app::full_screen(const bool full)
 {
 	_frame->full_screen(full);
 	_last_mouse_move = 0;
+}
+
+// The taskbar belongs to the shell, which may not be running. Without it there is nowhere to show
+// progress, and the work goes on as before.
+ITaskbarList3* win32_app::taskbar()
+{
+	if (!_taskbar && !_taskbar_unavailable)
+	{
+		ComPtr<ITaskbarList3> list;
+
+		if (SUCCEEDED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&list))) &&
+			SUCCEEDED(list->HrInit()))
+		{
+			_taskbar = list;
+		}
+		else
+		{
+			_taskbar_unavailable = true;
+		}
+	}
+
+	return _taskbar.Get();
+}
+
+// Reports arrive with every status refresh, and each change crosses to the shell's process, so only
+// what has changed is sent.
+void win32_app::show_progress(const int64_t done, const int64_t total)
+{
+	df::assert_true(ui::is_ui_thread());
+
+	auto* const list = taskbar();
+	if (!list || !_frame || !_frame->m_hWnd) return;
+
+	const auto hwnd = _frame->m_hWnd;
+	const auto state = total > 0 ? TBPF_NORMAL : TBPF_INDETERMINATE;
+
+	if (state != _taskbar_state)
+	{
+		list->SetProgressState(hwnd, state);
+		_taskbar_state = state;
+		_taskbar_done = -1;
+	}
+
+	if (state == TBPF_NORMAL)
+	{
+		const auto clamped = std::clamp<int64_t>(done, 0, total);
+
+		if (clamped != _taskbar_done || total != _taskbar_total)
+		{
+			list->SetProgressValue(hwnd, static_cast<ULONGLONG>(clamped), static_cast<ULONGLONG>(total));
+			_taskbar_done = clamped;
+			_taskbar_total = total;
+		}
+	}
+}
+
+void win32_app::end_progress()
+{
+	df::assert_true(ui::is_ui_thread());
+
+	if (_taskbar_state == TBPF_NOPROGRESS) return;
+
+	_taskbar_state = TBPF_NOPROGRESS;
+	_taskbar_done = -1;
+	_taskbar_total = -1;
+
+	if (!_frame || !_frame->m_hWnd) return;
+
+	const auto hwnd = _frame->m_hWnd;
+	if (_taskbar) _taskbar->SetProgressState(hwnd, TBPF_NOPROGRESS);
+
+	// A dialog of this application in front counts as this application being in front.
+	DWORD foreground_process = 0;
+	GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
+
+	if (foreground_process != GetCurrentProcessId())
+	{
+		FLASHWINFO flash = {sizeof(flash), hwnd, FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0};
+		FlashWindowEx(&flash);
+	}
 }
 
 void win32_app::frame_delay(const int delay)

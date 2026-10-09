@@ -211,6 +211,8 @@ struct app_text_t
 	text_t command_file_properties = "Open properties";
 	text_t command_share_email = "Email";
 	text_t email_preparing = "Preparing files for email...";
+	text_t command_share = "Share";
+	text_t share_preparing = "Preparing files to share...";
 	text_t command_desktop_background = "Desktop background";
 	text_t command_select_nothing = "Select none";
 	text_t command_options = "General options";
@@ -957,6 +959,11 @@ struct app_text_t
 	text_t email_sending = "Sending email using MAPI...";
 	text_t email_canceled = "Email draft was canceled.";
 	text_t email_failed = "Failed to send email using MAPI.";
+	text_t share_small_help =
+		"Windows lists the apps that can receive the files. Originals are unchanged.";
+	text_t share_zip = "Send the files as one zip file";
+	text_t button_share = "&Share";
+	text_t share_failed = "The files could not be shared.";
 	text_t keyboard_or = "OR";
 	text_t keyboard_alt = "alt";
 	text_t keyboard_control = "ctrl";
@@ -1556,6 +1563,10 @@ struct app_text_t
 	plural_text email_info_fmt = {
 		"A desktop email draft will be opened with {first-name} attached.",
 		"A desktop email draft will be opened with {count} selected items attached."
+	};
+	plural_text share_info_fmt = {
+		"{first-name} will be offered to the app you choose.",
+		"{count} selected items will be offered to the app you choose."
 	};
 	plural_text would_overwrite_fmt = {
 		"{first-name} already exists. Do you want to replace it?",

@@ -8,7 +8,9 @@
 
 // Purpose: View state coordination and navigation. view_state owns the scope and query, results,
 // grouping, filtering, selection and history, and the current display - whose type, with its media
-// playback, is in model_display.h - plus the durable states the Movie and Edit views keep.
+// playback, is in model_display.h - plus the durable states the Movie and Edit views keep. Also the
+// strategies view_state reaches the application through, including how long-running work reports
+// its progress for the taskbar button.
 
 #pragma once
 
@@ -171,6 +173,52 @@ public:
 
 	virtual void web_service_cache(std::string key, std::function<void(const std::string&)> f) = 0;
 	virtual void web_service_cache(std::string key, std::string value) = 0;
+
+	// Long-running work reports how far it has got so it also shows outside its own dialog or view,
+	// on the application's taskbar button. Each source reports under its own key until it finishes;
+	// a total of zero means the amount is not known yet. UI thread only.
+	virtual void work_progress(const void* source, int64_t done, int64_t total)
+	{
+	}
+
+	virtual void work_finished(const void* source)
+	{
+	}
+};
+
+// The work the taskbar button shows. A task view and a progress dialog can both be running, so each
+// reports under its own key and the button follows whichever reported last. UI thread only.
+class work_progress_reports
+{
+public:
+	struct report
+	{
+		const void* source = nullptr;
+		int64_t done = 0;
+		int64_t total = 0;
+	};
+
+	void update(const void* source, const int64_t done, const int64_t total)
+	{
+		std::erase_if(_reports, [source](const report& r) { return r.source == source; });
+		_reports.push_back({source, done, total});
+	}
+
+	// Answers whether the source was running, so a source that reports its end again and again
+	// changes nothing after the first time.
+	bool finish(const void* source)
+	{
+		return std::erase_if(_reports, [source](const report& r) { return r.source == source; }) > 0;
+	}
+
+	std::optional<report> latest() const
+	{
+		if (_reports.empty()) return std::nullopt;
+		return _reports.back();
+	}
+
+private:
+	std::vector<report> _reports;
 };
 
 // Carries a UI-owned object across a worker hop. A worker must never run these destructors: they

@@ -1798,7 +1798,7 @@ static df::machine_arch native_machine_arch()
 	}
 }
 
-static df::os_release windows_release()
+df::os_release windows_release()
 {
 #pragma warning(push)
 #pragma warning(disable:4996)

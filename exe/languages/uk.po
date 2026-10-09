@@ -2758,6 +2758,24 @@ msgstr "Підготовка до імпорту файлів..."
 msgid "Preparing files for email..."
 msgstr "Підготовка файлів для надсилання електронною поштою..."
 
+msgid "Share"
+msgstr "Поділитися"
+
+msgid "Preparing files to share..."
+msgstr "Підготовка файлів до надсилання..."
+
+msgid "Windows lists the apps that can receive the files. Originals are unchanged."
+msgstr "Windows покаже програми, які можуть отримати файли. Оригінали залишаться без змін."
+
+msgid "Send the files as one zip file"
+msgstr "Надіслати файли одним ZIP-архівом"
+
+msgid "&Share"
+msgstr "&Поділитися"
+
+msgid "The files could not be shared."
+msgstr "Не вдалося поділитися файлами."
+
 msgid "Preparing to synchronize files..."
 msgstr "Підготовка до синхронізації файлів..."
 
@@ -3307,6 +3325,13 @@ msgstr[0] "У поштовому клієнті буде відкрито чер
 msgstr[1] "У поштовому клієнті буде відкрито чернетку з {count} вибраними елементами у вкладенні."
 msgstr[2] "У поштовому клієнті буде відкрито чернетку з {count} вибраними елементами у вкладенні."
 msgstr[3] "У поштовому клієнті буде відкрито чернетку з {count} вибраними елементами у вкладенні."
+
+msgid "{first-name} will be offered to the app you choose."
+msgid_plural "{count} selected items will be offered to the app you choose."
+msgstr[0] "Елемент {first-name} буде передано вибраній вами програмі."
+msgstr[1] "{count} вибрані елементи буде передано вибраній вами програмі."
+msgstr[2] "{count} вибраних елементів буде передано вибраній вами програмі."
+msgstr[3] "{count} вибраних елементів буде передано вибраній вами програмі."
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural "{first-name} and {other} other items already exist. Do you want to replace them?"

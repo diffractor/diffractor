@@ -1916,6 +1916,9 @@ namespace ui
 		bool checkable = false;
 		// Paints the toolbar button with the accent fill so it reads as the one thing asking to be pressed.
 		bool highlight = false;
+		// Maximizes or restores the window. A toolbar button for it is the frame's maximize caption
+		// button, the one Windows 11 offers snap layouts over.
+		bool caption_maximize = false;
 
 		bool text_can_change = false;
 		bool icon_can_change = false;
@@ -2436,6 +2439,13 @@ namespace ui
 		virtual void monitor_folders(const std::vector<df::folder_path>& vector) = 0;
 		virtual void enable_screen_saver(bool cond) = 0;
 		virtual void set_font_base_size(int i) = 0;
+
+		// How far long-running work has got, shown on the application's taskbar button so it can be
+		// followed from another window. A total of zero means the amount is not known yet.
+		virtual void show_progress(int64_t done, int64_t total) = 0;
+		// Clears it. Work that ends while another application is in front flashes the button until
+		// this one is brought forward, so the end is noticed.
+		virtual void end_progress() = 0;
 	};
 
 	// False when the CPU software renderer is active, or the system asks for no client-area

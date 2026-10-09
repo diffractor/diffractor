@@ -692,7 +692,7 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_edit]->enable = is_media_or_items_view && _state.can_edit_media();
 	_commands[commands::tool_edit_description]->enable = can_save_metadata;
 	_commands[commands::tool_edit_metadata]->enable = can_save_metadata;
-	_commands[commands::tool_email]->enable = can_process_local_files;
+	_commands[commands::tool_share]->enable = can_process_local_files;
 	// Ejecting a drive does not depend on what is being browsed, so it answers from every view.
 	_commands[commands::tool_eject]->enable = true;
 	_commands[commands::tool_file_properties]->enable = has_selection;
@@ -790,7 +790,7 @@ void app_frame::update_button_state(const bool resize)
 		                     commands::tool_rotate_anticlockwise, commands::tool_rotate_clockwise
 	                     });
 	set_disabled_reasons(photos_only_result, {commands::tool_convert});
-	set_disabled_reasons(local_files_result, {commands::print, commands::tool_email});
+	set_disabled_reasons(local_files_result, {commands::print, commands::tool_share});
 	set_disabled_reasons(local_items_result, {
 		                     commands::tool_copy_to_folder, commands::tool_delete, commands::tool_move_to_folder,
 		                     commands::tool_rename, commands::edit_copy, commands::edit_copy_item_path,
@@ -1012,7 +1012,7 @@ std::vector<command_accelerator> default_keyboard_accelerators()
 		{commands::tool_import, {keys::F9}},
 		{commands::browse_recursive, {keys::F9, control}},
 		{commands::tool_sync, {keys::F9, shift | control}},
-		{commands::tool_email, {keys::F10}},
+		{commands::tool_share, {keys::F10}},
 		{commands::option_scale_up, {keys::F11, shift | control}},
 		{commands::view_fullscreen, {keys::F11}},
 		{commands::view_fullscreen, {keys::SPACE, shift | control}},
@@ -1208,7 +1208,15 @@ void app_frame::update_command_text()
 	def_command(commands::select_all, command_group::selection, icon_index::none, tt.command_select_all);
 	def_command(commands::select_invert, command_group::selection, icon_index::none, tt.command_select_invert);
 	def_command(commands::select_nothing, command_group::selection, icon_index::none, tt.command_select_nothing);
-	def_command(commands::tool_email, command_group::tools, icon_index::mail, tt.command_share_email);
+	// Named for what it will do on this system: the share sheet, or an email draft where there is none.
+	if (platform::can_share_files())
+	{
+		def_command(commands::tool_share, command_group::tools, icon_index::share, tt.command_share);
+	}
+	else
+	{
+		def_command(commands::tool_share, command_group::tools, icon_index::mail, tt.command_share_email);
+	}
 	def_command(commands::option_show_rotated, command_group::options, icon_index::orientation, tt.item_oriented);
 	def_command(commands::verbose_metadata, command_group::options, icon_index::verbose_metadata,
 	            tt.show_verbose_metadata);

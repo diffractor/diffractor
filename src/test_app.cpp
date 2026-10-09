@@ -17,6 +17,7 @@
 #include "test_fixtures.h"
 #include "test_runner.h"
 #include "util_crash_files_db.h"
+#include "util_zip.h"
 #include "app_command_line.h"
 #include "app_util.h"
 #include "app_settings.h"
@@ -501,6 +502,83 @@ static void should_not_plan_a_convert_output_over_a_source()
 	assert_equal(sources[0].path.str(), plan[0].source.path.str(), "the row planned first is the one from elsewhere");
 	assert_equal("photo (2).jpg", plan[0].destination.name(), "and it is moved off the other row's source");
 	assert_equal("photo.jpg", plan[1].destination.name(), "a row may still convert itself in place");
+}
+
+// A recipient sees a shared copy under its staged name, so two photos named alike in different
+// folders must not land on one name, and a file the options leave alone goes as itself. Breaking
+// the free-name step fails the "(2)" row; skipping the clear fails the stale row.
+static void should_prepare_shared_copies_under_their_own_names()
+{
+	const auto root = _temps.next_folder("share");
+	const auto staging = root.combine("staging");
+	const auto one = root.combine("one");
+	const auto two = root.combine("two");
+	platform::create_folder(staging);
+	platform::create_folder(one);
+	platform::create_folder(two);
+
+	const auto png = test_files_folder.combine("excluded1").combine_file("gamma.png");
+	const auto jpeg = root.combine_file("Progressive.jpg");
+	const std::vector sources = {one.combine_file("photo.png"), two.combine_file("photo.png"), jpeg};
+	platform::copy_file(png, sources[0], false, false);
+	platform::copy_file(png, sources[1], false, false);
+	platform::copy_file(test_files_folder.combine("excluded1").combine_file("Progressive.jpg"), jpeg, false, false);
+	const auto source_bytes = df::blob_from_file(sources[0]);
+
+	const auto stale = staging.combine_file("stale.jpg");
+	df::blob_save_to_file(df::blob{1}, stale);
+
+	null_item_results_ui status;
+	outgoing_options convert;
+	convert.convert_to_jpeg = true;
+
+	const auto converted = prepare_outgoing_files(sources, convert, staging, status);
+	assert_equal(true, converted.success, "the conversion is prepared");
+	assert_equal(3_z, converted.paths.size(), "one outgoing file per source");
+	assert_equal(staging.combine_file("photo.jpg").str(), converted.paths[0].str(), "the copy keeps its name");
+	assert_equal(staging.combine_file("photo (2).jpg").str(), converted.paths[1].str(),
+	             "a second photo of that name does not overwrite the first");
+	assert_equal(jpeg.str(), converted.paths[2].str(), "a JPEG with nothing to convert goes as itself");
+	assert_equal(false, stale.exists(), "what the previous share staged is cleared");
+	assert_equal(true, df::blob_from_file(sources[0]) == source_bytes, "the source is unchanged");
+
+	const auto copy_bytes = df::blob_from_file(converted.paths[1]);
+	assert_equal(true, copy_bytes.size() > 2 && copy_bytes[0] == 0xFF && copy_bytes[1] == 0xD8,
+	             "the copy is a JPEG");
+
+	outgoing_options zip;
+	zip.zip = true;
+	const auto zipped = prepare_outgoing_files(sources, zip, staging, status);
+	assert_equal(true, zipped.success, "the archive is prepared");
+	assert_equal(1_z, zipped.paths.size(), "the files go as one archive");
+	assert_equal("items.zip", zipped.paths.front().name(), "named for what it holds");
+	const auto entries = df::zip_file::list(zipped.paths.front());
+	assert_equal(3_z, entries.size(), "holding every source");
+	assert_equal("photo.png", entries[0].filename, "an entry keeps its name");
+	assert_equal("photo (2).png", entries[1].filename, "a second file of that name does not replace it on extraction");
+	assert_equal(false, converted.paths[0].exists(), "the earlier share's copies are cleared");
+
+	const auto unchanged = prepare_outgoing_files(sources, {}, staging, status);
+	assert_equal(true, unchanged.success, "nothing to prepare still succeeds");
+	assert_equal(sources.size(), unchanged.paths.size(), "every source goes");
+	assert_equal(sources[1].str(), unchanged.paths[1].str(), "as itself");
+	assert_equal(true, zipped.paths.front().exists(), "and nothing staged is cleared when nothing is written");
+
+	// The fixture is 256 pixels square. A limit above that must not enlarge it, which is what the
+	// scale edit does unless the size is checked first.
+	outgoing_options limit;
+	limit.max_side = 1024;
+	const auto inside = prepare_outgoing_files({jpeg}, limit, staging, status);
+	assert_equal(jpeg.str(), inside.paths.front().str(), "a photo already inside the limit goes as itself");
+
+	limit.max_side = 128;
+	const auto limited = prepare_outgoing_files({jpeg}, limit, staging, status);
+	assert_equal(staging.combine_file("Progressive.jpg").str(), limited.paths.front().str(),
+	             "a photo beyond the limit goes as a copy");
+	files codecs;
+	const auto limited_size = codecs.scan_file(limited.paths.front(), false,
+	                                           files::file_type_from_name(limited.paths.front())).dimensions();
+	assert_equal(128, std::max(limited_size.cx, limited_size.cy), "its longest side is the limit");
 }
 
 static void should_adjust_item_dates_from_snapshot()
@@ -1321,6 +1399,38 @@ static void should_prepare_import_from_the_selection_snapshot()
 	             "the prepared source is the selection captured before discovery");
 }
 
+static void should_offer_every_removable_drive_with_media_for_import()
+{
+	const auto drive = [](const std::string_view name, const platform::drive_type type, const uint64_t capacity)
+	{
+		platform::drive_t d;
+		d.type = type;
+		d.name = name;
+		d.capacity = df::file_size(capacity);
+		return d;
+	};
+
+	constexpr uint64_t card = 64'000'000'000ull;
+	constexpr auto removable = platform::drive_type::removable;
+	constexpr auto fixed = platform::drive_type::fixed;
+
+	// Two fixed drives and a four-slot card reader with one card, in its last slot.
+	const platform::drives drives = {
+		drive("C:\\", fixed, card), drive("D:\\", fixed, card), drive("E:\\", removable, 0),
+		drive("F:\\", removable, 0), drive("G:\\", removable, 0), drive("H:\\", removable, card),
+	};
+
+	const auto offered = import_source_drives(drives, 5);
+	assert_equal(1_z, offered.size(), "only the slot holding a card is offered");
+	assert_equal("H:\\"sv, offered.front().name, "a card past the fifth drive letter is still offered");
+
+	platform::drives many;
+	for (const auto letter : "IJKLMNO"sv) many.emplace_back(drive(std::format("{}:\\", letter), removable, card));
+	const auto limited = import_source_drives(many, 5);
+	assert_equal(5_z, limited.size(), "the list is still bounded");
+	assert_equal("I:\\"sv, limited.front().name, "in drive order");
+}
+
 static void should_reject_missing_sync_folder()
 {
 	df::index_roots roots;
@@ -1418,24 +1528,64 @@ static void should_ignore_unclaimed_remote_files()
 
 static void should_select_sync_actions()
 {
-	assert_equal(true, calc_sync_action(true, false, 10, 0, 100, 0, false, false, true, false) ==
+	// Modified times are FILETIME ticks; a second is ten million of them.
+	constexpr uint64_t s = 10'000'000ull;
+
+	assert_equal(true, calc_sync_action(true, false, 10 * s, 0, 100, 0, false, false, true, false) ==
 	             sync_action::delete_local, "delete local is independent");
-	assert_equal(true, calc_sync_action(false, true, 0, 10, 0, 100, false, false, false, true) ==
+	assert_equal(true, calc_sync_action(false, true, 0, 10 * s, 0, 100, false, false, false, true) ==
 	             sync_action::delete_remote, "delete remote is independent");
-	assert_equal(true, calc_sync_action(true, false, 10, 0, 100, 0, true, false, true, false) ==
+	assert_equal(true, calc_sync_action(true, false, 10 * s, 0, 100, 0, true, false, true, false) ==
 	             sync_action::copy_remote, "copy local to remote takes precedence over delete local");
-	assert_equal(true, calc_sync_action(false, true, 0, 10, 0, 100, false, true, false, true) ==
+	assert_equal(true, calc_sync_action(false, true, 0, 10 * s, 0, 100, false, true, false, true) ==
 	             sync_action::copy_local, "copy remote to local takes precedence over delete remote");
-	assert_equal(true, calc_sync_action(true, true, 20, 10, 100, 100, true, true, true, true) ==
+	assert_equal(true, calc_sync_action(true, true, 20 * s, 10 * s, 100, 100, true, true, true, true) ==
 	             sync_action::copy_remote, "newer local file copies to remote");
-	assert_equal(true, calc_sync_action(true, true, 10, 20, 100, 100, true, true, true, true) ==
+	assert_equal(true, calc_sync_action(true, true, 10 * s, 20 * s, 100, 100, true, true, true, true) ==
 	             sync_action::copy_local, "newer remote file copies to local");
-	assert_equal(true, calc_sync_action(true, true, 10, 10, 100, 100, true, true, true, true) ==
+	assert_equal(true, calc_sync_action(true, true, 10 * s, 10 * s, 100, 100, true, true, true, true) ==
 	             sync_action::none, "matching timestamps need no action");
-	assert_equal(true, calc_sync_action(true, true, 10, 10, 101, 100, true, false, false, false) ==
+	assert_equal(true, calc_sync_action(true, true, 10 * s, 10 * s, 101, 100, true, false, false, false) ==
 	             sync_action::copy_remote, "one-way sync copies unequal sizes with matching timestamps");
-	assert_equal(true, calc_sync_action(true, true, 10, 10, 100, 101, false, true, false, false) ==
+	assert_equal(true, calc_sync_action(true, true, 10 * s, 10 * s, 100, 101, false, true, false, false) ==
 	             sync_action::copy_local, "reverse one-way sync copies unequal sizes with matching timestamps");
+
+	// FAT32 rounds a copy's modified time to two seconds and exFAT to ten milliseconds, in either direction.
+	assert_equal(true, calc_sync_action(true, true, 10 * s + s / 2, 10 * s, 100, 100, true, true, false, false) ==
+	             sync_action::none, "a copy whose time the drive rounded down is not copied again");
+	assert_equal(true, calc_sync_action(true, true, 10 * s, 10 * s + 2 * s, 100, 100, true, true, false, false) ==
+	             sync_action::none, "a copy whose time the drive rounded up by two seconds is not copied back");
+	assert_equal(true, calc_sync_action(true, true, 13 * s, 10 * s, 100, 100, true, true, false, false) ==
+	             sync_action::copy_remote, "three seconds newer is a change");
+	assert_equal(true, calc_sync_action(true, true, 10 * s + s, 10 * s, 101, 100, true, false, false, false) ==
+	             sync_action::copy_remote, "a size change within the rounding still copies one way");
+	assert_equal(true, calc_sync_action(true, true, 10 * s + s, 10 * s, 101, 100, true, true, false, false) ==
+	             sync_action::none, "a size change within the rounding has no direction when both are enabled");
+}
+
+static void should_show_the_latest_running_work_on_the_taskbar()
+{
+	work_progress_reports reports;
+	const int view = 0;
+	const int dialog = 0;
+
+	assert_equal(false, reports.latest().has_value(), "nothing running shows nothing");
+	assert_equal(false, reports.finish(&view), "ending work that never ran changes nothing");
+
+	reports.update(&view, 2, 10);
+	reports.update(&dialog, 0, 0);
+	assert_equal(true, reports.latest()->source == &dialog, "the button follows whichever reported last");
+
+	reports.update(&view, 3, 10);
+	assert_equal(true, reports.latest()->source == &view, "and goes back to the view when it reports again");
+	assert_equal(3, static_cast<int>(reports.latest()->done), "with its latest position");
+
+	assert_equal(true, reports.finish(&view), "the view's run ends");
+	assert_equal(true, reports.latest()->source == &dialog, "the dialog still running takes the button back");
+	assert_equal(false, reports.finish(&view), "a view reporting its end again changes nothing");
+
+	assert_equal(true, reports.finish(&dialog), "the dialog ends");
+	assert_equal(false, reports.latest().has_value(), "nothing left running clears the button");
 }
 
 static void should_offer_every_matching_tool()
@@ -4672,6 +4822,7 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should format rename"s, should_format_rename);
 	tests.add("Should plan unique convert outputs"s, should_plan_unique_convert_outputs);
 	tests.add("Should not plan a convert output over a source"s, should_not_plan_a_convert_output_over_a_source);
+	tests.add("Should prepare shared copies under their own names"s, should_prepare_shared_copies_under_their_own_names);
 	tests.add("Should adjust item dates from snapshot"s, should_adjust_item_dates_from_snapshot);
 	tests.add("Should round trip the environment mask"s, should_round_trip_the_environment_mask);
 #ifdef _WIN32
@@ -4696,11 +4847,14 @@ void register_app_tests(view_state& state, test_registry& tests)
 	          should_restore_destination_sidecar_after_partial_overwrite_failure);
 	tests.add("Should prepare Import from the selection snapshot"s,
 	          should_prepare_import_from_the_selection_snapshot);
+	tests.add("Should offer every removable drive with media for Import"s,
+	          should_offer_every_removable_drive_with_media_for_import);
 	tests.add("Should reject missing sync folder"s, should_reject_missing_sync_folder);
 	tests.add("Should reject overlapping sync folders"s, should_reject_overlapping_sync_folders);
 	tests.add("Should reject ambiguous sync roots"s, should_reject_ambiguous_sync_roots);
 	tests.add("Should ignore unclaimed remote sync files"s, should_ignore_unclaimed_remote_files);
 	tests.add("Should select sync actions"s, should_select_sync_actions);
+	tests.add("Should show the latest running work on the taskbar"s, should_show_the_latest_running_work_on_the_taskbar);
 	tests.add("Should revalidate sync rows"s, should_revalidate_sync_rows);
 	tests.add("Should revalidate sync deletes"s, should_revalidate_sync_deletes);
 	tests.add("Should apply Sync full-path exclusions to remote counterparts"s,

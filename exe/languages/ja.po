@@ -2758,6 +2758,24 @@ msgstr "ファイルのインポートを準備中..."
 msgid "Preparing files for email..."
 msgstr "メール送信用にファイルを準備中..."
 
+msgid "Share"
+msgstr "共有"
+
+msgid "Preparing files to share..."
+msgstr "共有するファイルを準備中..."
+
+msgid "Windows lists the apps that can receive the files. Originals are unchanged."
+msgstr "ファイルを受け取れるアプリが Windows に表示されます。元のファイルは変更されません。"
+
+msgid "Send the files as one zip file"
+msgstr "ファイルを 1 つの ZIP ファイルにまとめて送信する"
+
+msgid "&Share"
+msgstr "共有(&S)"
+
+msgid "The files could not be shared."
+msgstr "ファイルを共有できませんでした。"
+
 msgid "Preparing to synchronize files..."
 msgstr "ファイル同期の準備中..."
 
@@ -3253,6 +3271,11 @@ msgid "A desktop email draft will be opened with {first-name} attached."
 msgid_plural "A desktop email draft will be opened with {count} selected items attached."
 msgstr[0] "{first-name} を添付した下書きがデスクトップのメールクライアントで開きます。"
 msgstr[1] "選択した {count} 個のアイテムを添付した下書きがデスクトップのメールクライアントで開きます。"
+
+msgid "{first-name} will be offered to the app you choose."
+msgid_plural "{count} selected items will be offered to the app you choose."
+msgstr[0] "{first-name} を選んだアプリに渡します。"
+msgstr[1] "選択した {count} 個のアイテムを選んだアプリに渡します。"
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural "{first-name} and {other} other items already exist. Do you want to replace them?"

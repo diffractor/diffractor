@@ -7,7 +7,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Utility functions for file operations. Includes rename templating, import/sync
-// analysis, collection management, and file operation helpers.
+// analysis, collection management, preparation of files to share, and file operation helpers.
 
 #pragma once
 
@@ -240,6 +240,10 @@ test_import_sidecar_write_override;
 std::optional<import_source> calc_import_selected_source(const view_state& s);
 std::vector<import_source> calc_import_sources(std::optional<import_source> selected_source);
 
+// The removable drives Import offers as sources: those holding media, in drive order, at most max. The
+// limit applies after the filter, so fixed drives and empty card-reader slots cannot use it up.
+platform::drives import_source_drives(const platform::drives& drives, size_t max);
+
 size_t count_imports(const std::vector<import_analysis_item>& items);
 size_t count_imports(const import_analysis_result& items);
 
@@ -376,6 +380,37 @@ df::file_path next_free_destination(df::file_path destination);
 
 // Review statement for a plan: names the policy and the number of rows it resolved.
 std::string format_collision_summary(collision_policy policy, int count);
+
+// What leaves the app when files are shared or emailed. A file the options leave alone goes as
+// itself; one that is resized, converted or zipped goes as a copy in the staging folder, named as
+// the recipient will see it.
+struct outgoing_options
+{
+	bool zip = false;
+	bool convert_to_jpeg = false;
+	// The longest side a photo may keep. Zero leaves dimensions alone.
+	int max_side = 0;
+
+	bool writes_copies() const { return zip || convert_to_jpeg || max_side > 0; }
+};
+
+struct outgoing_files
+{
+	std::vector<df::file_path> paths;
+	bool success = false;
+	// Empty when the failure has no more specific description than the caller's own.
+	std::string error;
+};
+
+// One share's copies at a time. The recipient reads them after the share returns, so they are
+// cleared when the next share starts rather than when this one ends.
+df::folder_path outgoing_staging_folder();
+void clear_outgoing_staging(df::folder_path staging);
+
+// Worker only: decodes, encodes and writes. Stops at the first failure or cancel, and never
+// modifies a source.
+outgoing_files prepare_outgoing_files(const std::vector<df::file_path>& sources, const outgoing_options& options,
+                                      df::folder_path staging, df::status_i& status);
 
 df::date_t adjusted_item_date(df::date_t created, df::date_t new_start, df::date_t original_start);
 std::string_view adjust_date_source_name(const prop::item_metadata_const_ptr& md);

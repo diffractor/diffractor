@@ -113,6 +113,7 @@ static constexpr auto s_set_disk = "set_disk";
 static constexpr auto s_ignore_previous = "ignore_previous";
 static constexpr auto s_hidden = "hidden";
 static constexpr auto s_email = "email";
+static constexpr auto s_share = "share";
 static constexpr auto s_rename = "rename";
 static constexpr auto s_collision = "collision_policy";
 static constexpr auto s_template = "template";
@@ -409,6 +410,12 @@ settings_t::settings_t()
 	email.convert = true;
 	email.limit = true;
 	email.max_side = 1024;
+
+	// Nothing changed unless asked; the size is what a ticked limit starts from.
+	share.zip = false;
+	share.convert = false;
+	share.limit = false;
+	share.max_side = 1024;
 
 	convert.to_jpeg = true;
 	convert.to_png = false;
@@ -918,6 +925,11 @@ void settings_t::read()
 	store.read(s_email, s_limit, email.limit);
 	store.read(s_email, s_max, email.max_side);
 
+	store.read(s_share, s_zip, share.zip);
+	store.read(s_share, s_convert, share.convert);
+	store.read(s_share, s_limit, share.limit);
+	store.read(s_share, s_max, share.max_side);
+
 	store.read(s_index, s_pictures, collection.pictures);
 	store.read(s_index, s_video, collection.video);
 	store.read(s_index, s_music, collection.music);
@@ -1091,6 +1103,11 @@ void settings_t::write() const
 	store.write(s_email, s_convert, email.convert);
 	store.write(s_email, s_limit, email.limit);
 	store.write(s_email, s_max, email.max_side);
+
+	store.write(s_share, s_zip, share.zip);
+	store.write(s_share, s_convert, share.convert);
+	store.write(s_share, s_limit, share.limit);
+	store.write(s_share, s_max, share.max_side);
 
 	store.write(s_index, s_pictures, collection.pictures);
 	store.write(s_index, s_video, collection.video);

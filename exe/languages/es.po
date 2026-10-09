@@ -2762,6 +2762,24 @@ msgstr "Preparando la importación de archivos..."
 msgid "Preparing files for email..."
 msgstr "Preparando archivos para enviarlos por correo electrónico..."
 
+msgid "Share"
+msgstr "Compartir"
+
+msgid "Preparing files to share..."
+msgstr "Preparando archivos para compartir..."
+
+msgid "Windows lists the apps that can receive the files. Originals are unchanged."
+msgstr "Windows muestra las aplicaciones que pueden recibir los archivos. Los originales no se modificarán."
+
+msgid "Send the files as one zip file"
+msgstr "Enviar los archivos en un solo archivo zip"
+
+msgid "&Share"
+msgstr "&Compartir"
+
+msgid "The files could not be shared."
+msgstr "No se pudieron compartir los archivos."
+
 msgid "Preparing to synchronize files..."
 msgstr "Preparando la sincronización de archivos..."
 
@@ -3257,6 +3275,11 @@ msgid "A desktop email draft will be opened with {first-name} attached."
 msgid_plural "A desktop email draft will be opened with {count} selected items attached."
 msgstr[0] "Se abrirá un borrador en el cliente de correo de escritorio con {first-name} adjunto."
 msgstr[1] "Se abrirá un borrador en el cliente de correo de escritorio con {count} elementos seleccionados adjuntos."
+
+msgid "{first-name} will be offered to the app you choose."
+msgid_plural "{count} selected items will be offered to the app you choose."
+msgstr[0] "{first-name} se ofrecerá a la aplicación que elija."
+msgstr[1] "Los {count} elementos seleccionados se ofrecerán a la aplicación que elija."
 
 msgid "{first-name} already exists. Do you want to replace it?"
 msgid_plural "{first-name} and {other} other items already exist. Do you want to replace them?"

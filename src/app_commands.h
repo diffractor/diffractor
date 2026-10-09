@@ -170,7 +170,6 @@ enum class commands
 	tool_edit_description,
 	tool_edit_metadata,
 	tool_eject,
-	tool_email,
 	tool_file_properties,
 	tool_import,
 	tool_locate,
@@ -197,6 +196,8 @@ enum class commands
 	tool_run,
 	tool_save_current_video_frame,
 	tool_scan,
+	// Share where the system has a share sheet, an email draft where it does not.
+	tool_share,
 	tool_sync,
 	tool_tag,
 	verbose_metadata,

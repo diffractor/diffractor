@@ -86,6 +86,10 @@ namespace features
 	constexpr uint64_t view_tags = 1ull << 56;
 	constexpr uint64_t view_movie = 1ull << 57;
 
+	// The tool bits above ran out at the view bits, so later tools continue here. Email keeps its bit
+	// for the draft that Share falls back to where the system has no share sheet.
+	constexpr uint64_t share = 1ull << 58;
+
 	constexpr uint64_t view_bit(const view_type v)
 	{
 		switch (v)
@@ -345,17 +349,25 @@ public:
 		bool maximize = false;
 	} desktop_background;
 
-	struct email_t
+	// What Share and Email each let the user change about the files that leave the app. Each keeps
+	// its own: an email draft wants small attachments, while a share usually goes somewhere that
+	// wants the original.
+	struct outgoing_choices_t
 	{
-		std::string to;
-		std::string subject;
-		std::string message;
-
 		bool zip = false;
 		bool limit = false;
 		bool convert = false;
 		int max_side = 0;
+	};
+
+	struct email_t : outgoing_choices_t
+	{
+		std::string to;
+		std::string subject;
+		std::string message;
 	} email;
+
+	outgoing_choices_t share;
 
 	struct convert_t
 	{

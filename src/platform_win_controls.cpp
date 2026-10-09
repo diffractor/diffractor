@@ -8,7 +8,8 @@
 
 // Purpose: The native Windows controls a dialog or panel hosts - the edit box with its spelling and
 // auto-complete, push, check and radio buttons, the slider, the date and time picker, and the owner-
-// drawn toolbar - and the factories control_host_impl in platform_win_ui.cpp builds them with.
+// drawn toolbar, which reports the window's maximize button to Windows as the caption button snap
+// layouts appear over - and the factories control_host_impl in platform_win_ui.cpp builds them with.
 
 #include "pch.h"
 #include "platform_win.h"
@@ -87,7 +88,7 @@ static void erase_toolbar_separators(const HWND tb, const HDC dc, const COLORREF
 
 static void draw_toolbar_button(const ui::command_ptr& command, const owner_context_ptr& ctx,
                                 const LPNMTBCUSTOMDRAW lpTBCustomDraw, const COLORREF bg_clr, const COLORREF text_clr,
-                                const COLORREF selected_clr)
+                                const COLORREF selected_clr, const bool caption_hover, const bool caption_pressed)
 {
 	const win_rect button_rect = lpTBCustomDraw->nmcd.rc;
 	auto* const tb = lpTBCustomDraw->nmcd.hdr.hwndFrom;
@@ -110,10 +111,12 @@ static void draw_toolbar_button(const ui::command_ptr& command, const owner_cont
 	}
 
 	const uint32_t item_state = lpTBCustomDraw->nmcd.uItemState;
-	const bool is_hotlight = (item_state & ODS_HOTLIGHT) != 0;
+	// A maximize caption button gets non-client mouse messages, so the control never lights or
+	// presses it; the toolbar tracks both and says so here.
+	const bool is_hotlight = (item_state & ODS_HOTLIGHT) != 0 || caption_hover;
 	const bool is_focus = is_hotlight && GetFocus() == tb;
 	const bool is_checked = (button_info.fsState & TBSTATE_CHECKED) != 0;
-	const bool is_pressed = (button_info.fsState & TBSTATE_PRESSED) != 0;
+	const bool is_pressed = (button_info.fsState & TBSTATE_PRESSED) != 0 || caption_pressed;
 	const bool is_disabled = (button_info.fsState & TBSTATE_ENABLED) == 0;
 
 	const auto is_highlight = command && command->highlight && !is_disabled;
@@ -1880,6 +1883,55 @@ platform::edit_context_menu_route platform::probe_edit_context_menu_route(const 
 		       : edit_context_menu_route::native_edit_procedure;
 }
 
+bool platform::can_present_maximize_caption_button(const df::os_release release, const uint32_t root_style)
+{
+	const auto has_snap_layouts = release == df::os_release::windows_11 || release == df::os_release::windows_later;
+	constexpr uint32_t resizable_with_maximize = WS_THICKFRAME | WS_MAXIMIZEBOX;
+	return has_snap_layouts && (root_style & resizable_with_maximize) == resizable_with_maximize;
+}
+
+bool platform::presents_maximize_caption_button(const df::os_release release, const uint32_t root_style)
+{
+	return can_present_maximize_caption_button(release, root_style) && (root_style & WS_MAXIMIZE) == 0;
+}
+
+bool platform::caption_button_tracker::hover(const int id)
+{
+	if (hover_id == id) return false;
+	hover_id = id;
+
+	// A press belongs to the button it began on; resting anywhere else abandons it.
+	if (pressed_id != id) pressed_id = 0;
+	return true;
+}
+
+bool platform::caption_button_tracker::press(const int id)
+{
+	const auto changed = hover_id != id || pressed_id != id;
+	hover_id = id;
+	pressed_id = id;
+	return changed;
+}
+
+bool platform::caption_button_tracker::leave()
+{
+	const auto changed = hover_id != 0 || pressed_id != 0;
+	hover_id = 0;
+	pressed_id = 0;
+	return changed;
+}
+
+int platform::caption_button_tracker::release(const int id)
+{
+	const auto invoke_id = pressed_id != 0 && pressed_id == id ? id : 0;
+	pressed_id = 0;
+
+	// Maximizing or restoring moves the frame under the pointer, so the next move finds the button
+	// again rather than this keeping one that may no longer be there.
+	if (invoke_id != 0) hover_id = 0;
+	return invoke_id;
+}
+
 class toolbar_impl final :
 	public control_base_impl<toolbar_impl, ui::toolbar, win_base>,
 	public control_base2,
@@ -1926,6 +1978,13 @@ public:
 	ui::toolbar_styles _styles;
 	native_control_host* _parent;
 	owner_context_ptr _ctx;
+
+	// Windows 11 offers snap layouts over a window's maximize button, and only over a button the
+	// window reports as one, so the toolbar reports its maximize button as that caption button
+	// whenever presents_maximize_caption_button allows. Windows then sends it non-client mouse
+	// messages, which the control never tracks, so its hover and press are kept here.
+	platform::caption_button_tracker _caption;
+	bool _caption_leave_tracked = false;
 
 	HIMAGELIST create_image_list() const
 	{
@@ -2013,6 +2072,7 @@ public:
 			return;
 		}
 
+		attach_caption_button();
 		_ctx->set_window_font(m_hWnd, ui::style::font_face::dialog);
 		SetButtonStructSize();
 		attach_image_list();
@@ -2041,6 +2101,141 @@ public:
 	{
 		df::assert_true(IsWindow(m_hWnd));
 		::SendMessage(m_hWnd, TB_AUTOSIZE, 0, 0L);
+	}
+
+	// The subclass holds a weak reference: a panel can drop its toolbar object before the window
+	// goes, and the window can go before the object.
+	void attach_caption_button()
+	{
+		auto* const self = new std::weak_ptr<toolbar_impl>(weak_from_this());
+
+		if (!SetWindowSubclass(m_hWnd, caption_button_proc, 0, std::bit_cast<DWORD_PTR>(self)))
+		{
+			delete self;
+		}
+	}
+
+	static LRESULT CALLBACK caption_button_proc(const HWND h, const UINT msg, const WPARAM wparam,
+	                                            const LPARAM lparam, const UINT_PTR id, const DWORD_PTR ref)
+	{
+		auto* const weak = std::bit_cast<std::weak_ptr<toolbar_impl>*>(ref);
+
+		if (msg == WM_NCDESTROY)
+		{
+			const auto result = DefSubclassProc(h, msg, wparam, lparam);
+			RemoveWindowSubclass(h, caption_button_proc, id);
+			delete weak;
+			return result;
+		}
+
+		if (const auto self = weak->lock())
+		{
+			switch (msg)
+			{
+			case WM_NCHITTEST:
+				if (self->caption_button_at(lparam) != 0) return HTMAXBUTTON;
+				break;
+
+			case WM_NCMOUSEMOVE:
+				// Windows' own handling still follows; it does not draw this button.
+				self->caption_hover(wparam == HTMAXBUTTON ? self->caption_button_at(lparam) : 0);
+				break;
+
+			case WM_NCMOUSELEAVE:
+				self->caption_leave();
+				break;
+
+			// Passed on, these would run Windows' tracking of a caption button it does not draw.
+			case WM_NCLBUTTONDOWN:
+			case WM_NCLBUTTONDBLCLK:
+				if (wparam == HTMAXBUTTON)
+				{
+					self->caption_press(self->caption_button_at(lparam));
+					return 0;
+				}
+				break;
+
+			case WM_NCLBUTTONUP:
+				if (wparam == HTMAXBUTTON)
+				{
+					self->caption_release(self->caption_button_at(lparam));
+					return 0;
+				}
+				break;
+
+			default:
+				break;
+			}
+		}
+
+		return DefSubclassProc(h, msg, wparam, lparam);
+	}
+
+	// The command id of the enabled caption maximize button under a screen point while the frame
+	// presents one, or zero.
+	int caption_button_at(const LPARAM screen_point) const
+	{
+		static const auto release = windows_release();
+		const auto root = GetAncestor(m_hWnd, GA_ROOT);
+
+		if (!root || !platform::presents_maximize_caption_button(
+			release, static_cast<uint32_t>(GetWindowLong(root, GWL_STYLE))))
+		{
+			return 0;
+		}
+
+		POINT loc{GET_X_LPARAM(screen_point), GET_Y_LPARAM(screen_point)};
+		ScreenToClient(m_hWnd, &loc);
+
+		const auto index = static_cast<int>(::SendMessage(m_hWnd, TB_HITTEST, 0, std::bit_cast<LPARAM>(&loc)));
+		if (index < 0) return 0;
+
+		TBBUTTON button = {};
+		if (!GetButton(index, &button)) return 0;
+		if ((button.fsState & TBSTATE_ENABLED) == 0 || (button.fsState & TBSTATE_HIDDEN) != 0) return 0;
+
+		const auto found = _commands.find(button.idCommand);
+		return found != _commands.end() && found->second && found->second->caption_maximize ? button.idCommand : 0;
+	}
+
+	void caption_hover(const int id)
+	{
+		// Without this Windows never reports the pointer leaving, and the button would stay lit.
+		if (id != 0 && !_caption_leave_tracked)
+		{
+			TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE | TME_NONCLIENT, m_hWnd, HOVER_DEFAULT};
+			_caption_leave_tracked = TrackMouseEvent(&tme) != FALSE;
+		}
+
+		if (_caption.hover(id)) InvalidateRect(m_hWnd, nullptr, FALSE);
+	}
+
+	void caption_leave()
+	{
+		_caption_leave_tracked = false;
+		if (_caption.leave()) InvalidateRect(m_hWnd, nullptr, FALSE);
+	}
+
+	void caption_press(const int id)
+	{
+		if (_caption.press(id)) InvalidateRect(m_hWnd, nullptr, FALSE);
+	}
+
+	void caption_release(const int id)
+	{
+		const auto invoke_id = _caption.release(id);
+		InvalidateRect(m_hWnd, nullptr, FALSE);
+		if (invoke_id != 0) invoke_command(invoke_id);
+	}
+
+	// A click and a caption button release reach the command the same way.
+	void invoke_command(const int id) const
+	{
+		const auto found = _commands.find(id);
+		if (found == _commands.end()) return;
+
+		const auto command = found->second;
+		if (command && command->invoke) command->invoke();
 	}
 
 	BOOL SetButtonSize(const int cx, const int cy) const
@@ -2260,12 +2455,7 @@ public:
 
 	void on_command(const ui::frame_host_weak_ptr& host, const int id, const int code) override
 	{
-		const auto found_toolbar = _commands.find(id);
-
-		if (found_toolbar != _commands.end() && found_toolbar->second->invoke)
-		{
-			found_toolbar->second->invoke();
-		}
+		invoke_command(id);
 	}
 
 	LRESULT on_notify(const ui::frame_host_weak_ptr& host, const ui::color_style& colors, const int id,
@@ -2292,8 +2482,9 @@ public:
 
 				if (found != _commands.end())
 				{
+					const auto id = static_cast<int>(tb_cd->nmcd.dwItemSpec);
 					draw_toolbar_button(found->second, _ctx, tb_cd, colors.background, colors.foreground,
-					                    colors.selected);
+					                    colors.selected, _caption.hover_id == id, _caption.pressed_id == id);
 				}
 
 				return CDRF_SKIPDEFAULT;
@@ -2431,6 +2622,81 @@ native_control<ui::toolbar> create_native_toolbar(native_control_host& host, con
 	auto result = std::make_shared<toolbar_impl>(&host, ctx);
 	result->create(parent, styles, buttons, toolbar_id);
 	return {result, result};
+}
+
+platform::caption_button_probe platform::probe_toolbar_caption_button()
+{
+	class quiet_host final : public native_control_host
+	{
+	public:
+		int show_menu(HMENU, uint32_t, int, int, LPCRECT) override { return 0; }
+		void show_menu(recti, const std::vector<ui::command_ptr>&) override {}
+		void hover_command_bounds(recti) override {}
+	};
+
+	caption_button_probe result;
+
+	const auto frame = CreateWindowEx(0, L"STATIC", nullptr, WS_OVERLAPPEDWINDOW, 0, 0, 400, 200, nullptr, nullptr,
+	                                  get_resource_instance, nullptr);
+	if (!frame) return result;
+
+	const df::scope_exit destroy_frame([frame] { DestroyWindow(frame); });
+	result.offered = presents_maximize_caption_button(windows_release(),
+	                                                  static_cast<uint32_t>(GetWindowLong(frame, GWL_STYLE)));
+
+	const auto other = std::make_shared<ui::command>();
+	const auto maximize = std::make_shared<ui::command>();
+	maximize->caption_maximize = true;
+	maximize->invoke = [&result] { ++result.invocations; };
+
+	quiet_host host;
+	ui::toolbar_styles styles;
+	styles.button_extent = {40, 40};
+
+	constexpr int toolbar_id = 100;
+	const auto toolbar = std::make_shared<toolbar_impl>(&host, std::make_shared<owner_context>(1.0));
+	toolbar->create(frame, styles, {other, maximize}, toolbar_id);
+	if (!toolbar->m_hWnd) return result;
+
+	const auto tb = toolbar->m_hWnd;
+	SetWindowPos(tb, nullptr, 0, 0, 200, 40, SWP_NOZORDER | SWP_NOACTIVATE);
+	result.maximize_id = toolbar_id + 2;
+
+	const auto screen_center = [tb](const int id)
+	{
+		win_rect bounds;
+		::SendMessage(tb, TB_GETRECT, id, std::bit_cast<LPARAM>(static_cast<LPRECT>(bounds)));
+		POINT loc{(bounds.left + bounds.right) / 2, (bounds.top + bounds.bottom) / 2};
+		ClientToScreen(tb, &loc);
+		return MAKELPARAM(loc.x, loc.y);
+	};
+
+	const auto on_maximize = screen_center(result.maximize_id);
+	result.maximize_hit = static_cast<int>(::SendMessage(tb, WM_NCHITTEST, 0, on_maximize));
+	result.other_hit = static_cast<int>(::SendMessage(tb, WM_NCHITTEST, 0, screen_center(toolbar_id + 1)));
+
+	if (result.maximize_hit == HTMAXBUTTON)
+	{
+		::SendMessage(tb, WM_NCMOUSEMOVE, HTMAXBUTTON, on_maximize);
+		result.hovered_id = toolbar->_caption.hover_id;
+		::SendMessage(tb, WM_NCLBUTTONDOWN, HTMAXBUTTON, on_maximize);
+		::SendMessage(tb, WM_NCLBUTTONUP, HTMAXBUTTON, on_maximize);
+		::SendMessage(tb, WM_NCMOUSEMOVE, HTMAXBUTTON, on_maximize);
+		::SendMessage(tb, WM_NCMOUSELEAVE, 0, 0);
+		result.hover_after_leave = toolbar->_caption.hover_id;
+	}
+
+	// What maximizing does to the frame's style.
+	const auto style = GetWindowLong(frame, GWL_STYLE);
+	SetWindowLong(frame, GWL_STYLE, style | WS_MAXIMIZE);
+	result.maximized_hit = static_cast<int>(::SendMessage(tb, WM_NCHITTEST, 0, screen_center(result.maximize_id)));
+
+	// What Fullscreen does to it.
+	SetWindowLong(frame, GWL_STYLE, style & ~(WS_CAPTION | WS_THICKFRAME));
+	result.frameless_hit = static_cast<int>(::SendMessage(tb, WM_NCHITTEST, 0, screen_center(result.maximize_id)));
+
+	toolbar->destroy();
+	return result;
 }
 
 native_control<ui::button> create_native_button(const HWND parent, const int id, const owner_context_ptr& ctx,

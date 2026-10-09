@@ -455,6 +455,24 @@ void command_line_t::parse(const std::string_view command_line_text)
 			else if (switch_value(op, "screenshot-output:", value)) screenshot_output = value;
 #endif
 		}
+		else if (part.ends_with("**"))
+		{
+			// A trailing "**" asks for the folder with its subfolders, as it does in the address box.
+			// AutoPlay opens an inserted card that way, and may name a drive without its separator.
+			auto text = std::string(part);
+			if (df::windows_path_semantics && text.size() == 4 && text[1] == ':') text.insert(2, 1, df::preferred_path_sep);
+
+			if (df::is_path(text))
+			{
+				const df::item_selector selector(text);
+
+				if (selector.is_recursive() && !selector.has_wildcard() && platform::exists(selector.folder()))
+				{
+					folder_path = selector;
+					selection = {};
+				}
+			}
+		}
 		else if (df::is_path(part))
 		{
 			const auto folder = df::folder_path(part);
@@ -1526,6 +1544,12 @@ void app_frame::complete_pending_events()
 			if (pop_invalid_flag(_invalids, view_invalid::status))
 			{
 				_view_frame->frame()->invalidate();
+
+				// The task view on screen reports under one key, so switching to a view that is not
+				// running ends what the previous one showed.
+				const auto progress = _view->progress();
+				if (progress.active) work_progress(&_view, progress.position, progress.total);
+				else work_finished(&_view);
 			}
 
 			if (pop_invalid_flag(_invalids, view_invalid::animations))
@@ -2819,6 +2843,28 @@ void app_frame::web_service_cache(std::string key, std::string value)
 	{
 		db.web_service_cache(key, value);
 	});
+}
+
+void app_frame::work_progress(const void* source, const int64_t done, const int64_t total)
+{
+	df::assert_true(ui::is_ui_thread());
+	_work_reports.update(source, done, total);
+	_pa->show_progress(done, total);
+}
+
+void app_frame::work_finished(const void* source)
+{
+	df::assert_true(ui::is_ui_thread());
+	if (!_work_reports.finish(source)) return;
+
+	if (const auto latest = _work_reports.latest())
+	{
+		_pa->show_progress(latest->done, latest->total);
+	}
+	else
+	{
+		_pa->end_progress();
+	}
 }
 
 

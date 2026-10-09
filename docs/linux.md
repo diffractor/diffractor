@@ -42,7 +42,8 @@ The current Linux platform has no implementation for:
 - font discovery, shaping, fallback, and glyph rasterization;
 - a GPU backend or a native present target for the portable software rasterizer;
 - audio output and hardware video presentation;
-- Windows Shell features such as associations, properties, Explorer thumbnails, and device eject;
+- Windows Shell features such as associations, properties, Explorer thumbnails, device eject, the
+  share sheet, and taskbar progress;
 - update, installer, Store, and desktop packaging workflows.
 
 Portable code must express the intended operation rather than mirror a Win32 API shape. A Linux
