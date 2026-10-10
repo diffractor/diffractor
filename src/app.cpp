@@ -1590,7 +1590,7 @@ void app_frame::complete_pending_events()
 			{
 				if (df::file_handles_detached == 0 && df::command_active == 0)
 				{
-					_view->refresh();
+					_view->refresh_from_source();
 				}
 				else
 				{
@@ -1909,6 +1909,8 @@ bool app_frame::key_down(const char32_t key, const ui::key_state keys)
 
 			if (_state.escape(_view_frame)) return true;
 		}
+
+		if (_view_has_focus && _view->key_down(key, keys)) return true;
 
 		if (!_view_controls_have_focus && _state.is_items_or_media_view())
 		{

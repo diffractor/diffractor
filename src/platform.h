@@ -409,6 +409,10 @@ namespace platform
 	// Returns false when any path is on a location that bypasses the Recycle Bin
 	// (for example a UNC network path), causing a permanent, unrecoverable delete.
 	bool can_recycle(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders);
+	// True when reaching the folder may wait on a network: a UNC path or a mapped network drive. Answered
+	// from the path and the volume type alone, without touching the location, so a caller can tell
+	// whether a presence check is affordable on a thread others are queued behind.
+	bool is_network_location(df::folder_path folder);
 	// Copies or moves through the shell. Collisions are auto-renamed unless replace_existing is set,
 	// which the caller may only do having named the colliding files and had the overwrite confirmed.
 	file_op_result move_or_copy(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders,

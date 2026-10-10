@@ -595,7 +595,9 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 	movie_load_result result;
 
 	rapidjson::Document doc;
-	doc.Parse(json.data(), json.size());
+	// Iterative: a project is untrusted input, and the recursive parser follows nesting on the stack,
+	// so a file of nested brackets well inside the size cap would end the process.
+	doc.Parse<rapidjson::kParseIterativeFlag>(json.data(), json.size());
 
 	if (doc.HasParseError() || !doc.IsObject()) return result;
 
@@ -1101,6 +1103,7 @@ void movie_project::push_undo()
 
 	_modified = true;
 	++_revision;
+	++_edit_revision;
 }
 
 void movie_project::mark_clean()
@@ -1392,17 +1395,24 @@ void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s
 	_undo.clear();
 	mark_clean();
 	++_revision;
+	++_edit_revision;
 	select_only(0);
 }
 
-void movie_project::mark_saved(const df::file_path path, const uint64_t revision)
+void movie_project::mark_saved(const df::file_path path, const uint64_t edit_revision)
 {
 	_path = path;
 
 	// A save that was overtaken by an edit wrote a state the history no longer points at, so no undo
-	// depth stands for the file any more and only another save can settle the document.
-	if (_revision == revision) mark_clean();
-	else _clean_depth.reset();
+	// depth stands for the file any more and only another save can settle the document. That holds
+	// even when the overtaking step was an Undo back to an earlier clean point: the file on disk now
+	// holds the state the user undid.
+	if (_edit_revision == edit_revision) mark_clean();
+	else
+	{
+		_clean_depth.reset();
+		_modified = true;
+	}
 }
 
 void movie_project::mark_seeded()
@@ -1425,6 +1435,7 @@ void movie_project::undo()
 	_anchor = entry.anchor;
 	_modified = !_clean_depth || *_clean_depth != _undo.size();
 	++_revision;
+	++_edit_revision;
 
 	// The stored selection came from a list that may have been longer than this one.
 	std::erase_if(_selected, [this](const size_t i) { return i >= _clips.size(); });

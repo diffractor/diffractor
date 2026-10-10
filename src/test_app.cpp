@@ -138,6 +138,15 @@ static void should_persist_to_ini_file()
 	             "INI file settings");
 	assert_equal(test_string, read_string, "string value", "INI file settings");
 
+	for (const auto value : {"\"folder with spaces\" \"photo.jpg\""sv, "'quoted tag'"sv})
+	{
+		settings->write("test_section", "literal_value", value);
+		const auto reopened = platform::create_ini_file_settings(settings_folder);
+		std::string read_literal;
+		assert_equal(true, reopened->read("test_section", "literal_value", read_literal), "literal value is stored");
+		assert_equal(value, read_literal, "settings preserve literal quotes");
+	}
+
 	// Test binary data (base64 encoded)
 	const std::vector<uint8_t> test_binary = {0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD};
 	settings->write("test_section", "binary_value", df::cspan{test_binary.data(), test_binary.size()});
@@ -151,6 +160,63 @@ static void should_persist_to_ini_file()
 		assert_equal(static_cast<uint32_t>(test_binary[i]), static_cast<uint32_t>(read_buffer[i]), "binary byte",
 		             "INI file settings");
 	}
+}
+
+// Builds before 1.27.3 wrote the recent lists unquoted and the INI reader stripped a quote pair from
+// each end, so an upgraded profile can hold an entry made of several paths glued by stray quotes.
+// The value below is the shape a real profile was found holding.
+static void should_drop_damaged_recent_entries()
+{
+	const auto root = df::windows_path_semantics ? "C:\\Users\\someone\\"s : "/home/someone/"s;
+	const auto damaged = std::format(R"({0}Pictures"' "{0}Videos" "{0}Music" "{0}OneDrive - Work\Desktop" '"{0}Downloads)",
+	                                 root);
+
+	assert_equal(true, recent_state::is_damaged_entry(std::format(R"({0}Pictures"' "{0}Videos)", root)),
+	             "a quote wedged inside a path is damage");
+	for (const auto& healthy : {root + "Pictures", std::format(R"({}photos "new york")", root),
+	                            "\"" + root + "My Photos\" beach", "Bob's \"party\""s, "@photo beach"s,
+	                            std::format(R"({}Photos loc:"Boulder City")", root),
+	                            std::format(R"({}Photos -"draft")", root),
+	                            std::format(R"({}Bob's photos tag:"summer")", root)})
+	{
+		assert_equal(false, recent_state::is_damaged_entry(healthy), "a real entry is kept", healthy);
+	}
+
+	{
+		// A folder-scoped search with a quoted term is ordinary recent text and must survive a restart.
+		const auto search = std::format(R"({}Photos loc:"Boulder City")", root);
+		const auto search_folder = _temps.folder().combine("ini-recent-search");
+		platform::create_folder(search_folder);
+		const auto store = platform::create_ini_file_settings(search_folder);
+		recent_state saved;
+		saved.add(search);
+		saved.write("", "recent_searches", store);
+		recent_state loaded;
+		loaded.read("", "recent_searches", platform::create_ini_file_settings(search_folder));
+		assert_equal(1_z, loaded.items().size(), "the quoted search is reloaded");
+		assert_equal(search, loaded.items().front(), "and reloaded exactly");
+	}
+
+	const auto settings_folder = _temps.folder().combine("ini-recent");
+	platform::create_folder(settings_folder);
+	const auto settings = platform::create_ini_file_settings(settings_folder);
+	settings->write("", "recent_searches", damaged + " " + root + "Kept");
+
+	assert_equal(true, recent_state::is_damaged_entry(std::format(R"('"{}Downloads)", root)),
+	             "stray quotes leading a path are damage");
+
+	recent_state recents;
+	recents.read("", "recent_searches", settings);
+	const std::vector<std::string> expected{
+		root + "Videos", root + "Music", root + R"(OneDrive - Work\Desktop)", root + "Kept"
+	};
+	assert_equal(str::combine(expected, "|", false), str::combine(recents.items(), "|", false),
+	             "exactly the readable entries load, in order");
+
+	recents.write("", "recent_searches", settings);
+	recent_state reread;
+	reread.read("", "recent_searches", settings);
+	assert_equal(true, recents.items() == reread.items(), "the cleaned list round-trips");
 }
 
 #ifndef _WIN32
@@ -2924,6 +2990,10 @@ static void should_run_a_rename_onto_vacated_names()
 	assert_equal(true, view->showing_results(), "the rows show the run, not the plan");
 	assert_equal(false, view->status().empty() || view->status() == tt.processing.sv(),
 	             "the status states the run's outcome");
+	const auto completion_status = std::string(view->status());
+	view->refresh_from_source();
+	assert_equal(completion_status, std::string(view->status()), "the file notification retains the real run summary");
+	assert_equal(true, view->showing_results(), "completed rows survive their own file notifications");
 
 	assert_equal(false, root.combine_file("Item 001.jpg").exists(), "the vacated name is gone");
 	for (const auto& name : {"Item 002.jpg"s, "Item 003.jpg"s, "Item 004.jpg"s})
@@ -3016,6 +3086,33 @@ static void should_not_run_a_rename_closed_while_releasing_handles()
 	assert_equal(true, source.exists(), "the source keeps its name");
 	assert_equal(false, root.combine_file("renamed.jpg").exists(), "nothing is renamed once the view has closed");
 	assert_equal(false, view->progress().active, "and no run is left showing progress");
+}
+
+static void should_keep_completed_run_results_on_source_refresh()
+{
+	browsing_fixture fixture;
+	const std::vector<std::shared_ptr<list_view>> views{
+		std::make_shared<rename_view>(fixture.state, nullptr),
+		std::make_shared<batch_tool_view>(fixture.state, nullptr)
+	};
+
+	for (const auto& view : views)
+	{
+		view->show_results({{"completed.jpg", item_status::success}});
+		const auto status = std::string(view->status());
+		view->refresh_from_source();
+		assert_equal(true, view->showing_results(), "source changes retain completed results");
+		assert_equal(status, std::string(view->status()), "source changes preserve the completion summary");
+		// F5 reaches the view as reload() and then the same invalidation a file notification raises.
+		view->reload();
+		view->refresh_from_source();
+		assert_equal(false, view->showing_results(), "an explicit Refresh re-plans after a completed run");
+		view->show_results({{"completed.jpg", item_status::success}});
+		view->refresh_from_source();
+		assert_equal(true, view->showing_results(), "a Refresh is honoured once, not remembered");
+		view->refresh();
+		assert_equal(false, view->showing_results(), "explicit refresh leaves results for a fresh review");
+	}
 }
 
 // Every task view ends a run the same way: what it did, then why some rows did nothing. Rename used to
@@ -3739,6 +3836,23 @@ static void should_keep_shuffle_exclusive_with_sorting()
 	assert_equal(true, f.state.effective_group_order() == group_by::file_type, "a plain search groups as chosen");
 }
 
+static void should_honor_no_indexing_for_collection_updates()
+{
+	const auto saved = command_line.no_indexing;
+	const df::scope_exit restore([saved] { command_line.no_indexing = saved; });
+	const auto app = std::make_shared<app_frame>(nullptr);
+
+	command_line.no_indexing = true;
+	app->update_index();
+	assert_equal(0_z, app->index_task_queue.dequeue_all().size(), "no-indexing suppresses collection refresh");
+	app->rebuild_index();
+	assert_equal(0_z, app->index_task_queue.dequeue_all().size(), "no-indexing does not queue cache invalidation");
+
+	command_line.no_indexing = false;
+	app->update_index();
+	assert_equal(1_z, app->index_task_queue.dequeue_all().size(), "normal startup still queues collection refresh");
+}
+
 static void should_bind_every_advertised_command()
 {
 	const auto app = std::make_shared<app_frame>(nullptr);
@@ -3816,6 +3930,52 @@ static void should_invoke_link_commands_and_selection_shortcuts()
 	{
 		assert_equal(true, item->is_selected(), "Ctrl+A selects every visible item");
 	}
+}
+
+static void should_route_focused_view_keyboard_commands()
+{
+	struct keyboard_view final : view_base
+	{
+		int key_count = 0;
+		bool editing_text = false;
+
+		void activate(sizei) override {}
+		void deactivate() override {}
+		void refresh() override {}
+
+		bool key_down(const char32_t key, const ui::key_state keys) override
+		{
+			++key_count;
+			return key == 'Z' && keys.control;
+		}
+
+		ui::focus_mode focus_mode() const override
+		{
+			return editing_text ? ui::focus_mode::text_edit : ui::focus_mode::view;
+		}
+	};
+
+	const auto app = std::make_shared<app_frame>(nullptr);
+	app->initialise_commands();
+	const auto view = std::make_shared<keyboard_view>();
+	app->_view = view;
+	app->_view_has_focus = true;
+	ui::key_state control;
+	control.control = true;
+
+	assert_equal(true, app->key_down('Z', control), "a focused timeline receives its undo shortcut");
+	assert_equal(1, view->key_count, "the view receives the key once");
+	assert_equal(true, app->key_down('A', control), "an unhandled view key reaches global accelerators");
+	assert_equal(2, view->key_count, "the focused view has first refusal");
+
+	app->_view_has_focus = false;
+	assert_equal(false, app->key_down('Z', control), "an unfocused view cannot consume keys");
+	assert_equal(2, view->key_count, "native control focus does not dispatch to the view");
+
+	app->_view_has_focus = true;
+	view->editing_text = true;
+	assert_equal(false, app->key_down('A', control), "text editing does not fall through to global selection");
+	assert_equal(3, view->key_count, "text editing receives the key once");
 }
 
 // Two commands claiming one key means the second is unreachable, and nothing in the running app
@@ -4386,6 +4546,8 @@ static void should_offer_recent_searches_for_an_empty_address()
 
 	s.recent_searches.add("@photo beach");
 	s.recent_searches.add(std::string(test_files_folder.text()));
+	const auto folder_query = std::string(test_files_folder.text()) + " Test";
+	s.recent_searches.add(folder_query);
 
 	const auto completes = make_search_auto_complete(s, [](std::string) {});
 	completes->initialise([](const ui::auto_complete_results&) {});
@@ -4405,6 +4567,8 @@ static void should_offer_recent_searches_for_an_empty_address()
 
 	assert_equal(true, offered("@photo beach"), "a recent query is offered");
 	assert_equal(true, offered(test_files_folder.text()), "a recent folder is offered");
+	assert_equal(true, offered(folder_query), "a recent folder-scoped query keeps its separate search term");
+	assert_equal(false, offered(df::quote_path_term(folder_query)), "a recent query is not quoted as one folder");
 
 	// An empty address has nothing typed, so nothing may be presented as the typed query.
 	for (const auto& r : results)
@@ -4765,7 +4929,10 @@ void register_app_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should bind every advertised command"s, should_bind_every_advertised_command);
 	tests.add("Should invoke link commands and selection shortcuts"s, should_invoke_link_commands_and_selection_shortcuts);
+	tests.add("Should route focused view keyboard commands"s, should_route_focused_view_keyboard_commands);
+	tests.add("Should honor no-indexing for collection updates"s, should_honor_no_indexing_for_collection_updates);
 	tests.add("INI file settings should persist values"s, should_persist_to_ini_file);
+	tests.add("Should drop damaged recent entries"s, should_drop_damaged_recent_entries);
 #ifndef _WIN32
 	// PLAT-010 - Linux INI writes published values before the file was durably replaced.
 	tests.add("Should commit Linux INI file settings after durable save"s,
@@ -4795,6 +4962,7 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should not run a rename closed while releasing handles"s,
 	          should_not_run_a_rename_closed_while_releasing_handles);
 	tests.add("Should conclude a run with what it did and why"s, should_conclude_a_run_with_what_it_did_and_why);
+	tests.add("Should keep completed run results on source refresh"s, should_keep_completed_run_results_on_source_refresh);
 	tests.add("Should not convert over a destination changed since review"s,
 	          should_not_convert_over_a_destination_changed_since_review);
 	tests.add("Should refuse Convert destination claimed during staged publication"s,

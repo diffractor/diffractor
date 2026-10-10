@@ -97,6 +97,15 @@ inline movie_frame_cache_completion_decision decide_movie_frame_cache_completion
 	return {true, true, has_queued_request};
 }
 
+// The frame cache's byte count after a decoded frame is stored under a key. A frame already held
+// under that key is replaced, so its bytes leave with it: two requests for one frame can both be in
+// flight, and counting the second without releasing the first leaked the difference until the count
+// sat permanently over budget and every insert evicted everything else.
+inline size_t movie_cache_bytes_after_store(const size_t bytes, const size_t replaced_bytes, const size_t stored_bytes)
+{
+	return bytes - std::min(bytes, replaced_bytes) + stored_bytes;
+}
+
 struct movie_peak_completion_decision
 {
 	bool accept = false;
@@ -230,6 +239,35 @@ inline bool should_accept_movie_preview_pcm_loaded(const int current_generation,
 	return current_generation == request_generation;
 }
 
+// Movie draws and composes stored pixels directly. A source's orientation -- Exif on a photo, rotation
+// metadata on a phone video -- is therefore applied where the frame is made, so the strip, the preview
+// and the render all receive the picture upright and cannot disagree about which way is up.
+inline sizei upright_movie_extent(const sizei stored, const ui::orientation orientation)
+{
+	return ui::flips_xy(orientation) ? sizei{stored.cy, stored.cx} : stored;
+}
+
+inline ui::const_surface_ptr upright_movie_frame(const ui::const_surface_ptr& surface)
+{
+	if (!is_valid(surface)) return surface;
+
+	const auto orientation = surface->orientation();
+	if (orientation == ui::orientation::top_left || orientation == ui::orientation::none) return surface;
+
+	auto turned = surface->transform(to_simple_transform(orientation));
+	if (!is_valid(turned)) return surface;
+
+	turned->orientation(ui::orientation::top_left);
+	return turned;
+}
+
+// The destination quad that draws a texture upright inside `target`, which is laid out for the
+// upright extent. Session textures carry the source orientation rather than turned pixels.
+inline quadd upright_movie_destination(const recti target, const ui::orientation orientation)
+{
+	return orientation == ui::orientation::none ? quadd(target) : quadd(target).transform(to_simple_transform(orientation));
+}
+
 class movie_view_controls final : public view_controls_host
 {
 public:
@@ -263,7 +301,16 @@ public:
 	void options_changed() override;
 
 	// Refreshes the text and the visibility that depend on the document rather than on a control.
-	void update_for_document();
+	// True when a control was shown or hidden or a text changed, which only a relayout of the panel can
+	// carry out: a native control keeps its window where it was until the panel positions it again.
+	bool update_for_document();
+
+private:
+	std::string _shown_output_text;
+	std::string _shown_clip_text;
+	std::string _shown_info_text;
+
+public:
 
 	// The controls bind to movie_view_state, but a native control shows what it was last given, so
 	// a value the document changed -- an undo, an opened project, another clip in focus -- has to be

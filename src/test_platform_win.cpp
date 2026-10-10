@@ -24,6 +24,15 @@ extern "C" {
 #include "libavutil/hwcontext_d3d11va.h"
 }
 
+// The recent-folder list must not wait on a share that has dropped, so a network location is
+// recognised from its spelling and volume type without being reached.
+static void should_recognise_network_locations()
+{
+	assert_equal(true, platform::is_network_location(df::folder_path(R"(\\server\share\photos)")),
+	             "a UNC share is a network location");
+	assert_equal(false, platform::is_network_location(test_files_folder), "the local test folder is not");
+}
+
 static void should_convert_extended_file_system_paths()
 {
 	const auto long_unc = std::string("\\\\server\\share\\") + std::string(MAX_PATH, 'x');
@@ -1132,6 +1141,7 @@ static void should_refuse_an_impossible_movie()
 void register_platform_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should convert extended file system paths"s, should_convert_extended_file_system_paths);
+	tests.add("Should recognise network locations"s, should_recognise_network_locations);
 	tests.add("Should convert utf8 to ansi"s, should_convert_utf8_to_ansi);
 	tests.add("Should restore a window onto a display that still exists"s, should_restore_a_window_onto_a_display);
 	tests.add("Should classify DXGI device loss"s, should_classify_dxgi_device_loss);

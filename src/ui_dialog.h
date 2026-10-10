@@ -2395,7 +2395,10 @@ namespace ui
 	class selection_thumbnails_control final : public view_element,
 	                                         public std::enable_shared_from_this<selection_thumbnails_control>
 	{
-		control_frame_ptr _parent;
+		// Weak, because the frame's own child controls hold this strip in their callbacks. A strong
+		// reference closes a cycle whose last link is released while the frame is clearing those
+		// children, destroying the frame inside its own teardown.
+		control_frame_weak_ptr _parent;
 		std::vector<const_surface_ptr> _surfaces;
 		mutable std::vector<texture_ptr> _textures;
 		mutable std::vector<sizei> _surface_extents;
@@ -2465,8 +2468,12 @@ namespace ui
 					if (!self || self->_surface_generation != generation) return;
 
 					self->selection(surfaces, selection_count);
-					self->_parent->layout();
-					self->_parent->invalidate();
+
+					if (const auto parent = self->_parent.lock())
+					{
+						parent->layout();
+						parent->invalidate();
+					}
 				});
 			});
 		}

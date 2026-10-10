@@ -2171,8 +2171,8 @@ av_media_info av_format_decoder::info() const
 			if (str::icmp(tag->key, "id3v2_priv.XMP") == 0 || str::icmp(tag->key, "xmp") == 0)
 			{
 				const auto packet = unescape_xmp(tag->value);
-				auto xmp_kv = metadata_xmp::to_info(packet);
-				const auto parsed = !xmp_kv.empty();
+				bool parsed = false;
+				auto xmp_kv = metadata_xmp::to_info(packet, parsed);
 
 				// The packet is the block's real content, so it stays reachable whether or not the
 				// toolkit could make a tree from it.
@@ -2191,17 +2191,21 @@ av_media_info av_format_decoder::info() const
 
 		result.metadata.emplace_back(metadata_standard::ffmpeg, kv);
 
+		auto video_properties_set = false;
 		for (uint32_t i = 0; i < ctx->nb_streams; ++i)
 		{
-			const auto* const codec = ctx->streams[i]->codecpar;
+			const auto* const stream = ctx->streams[i];
+			const auto* const codec = stream->codecpar;
 
 			if (!codec)
 			{
 				continue;
 			}
 
-			if (codec->codec_type == AVMEDIA_TYPE_VIDEO)
+			if (codec->codec_type == AVMEDIA_TYPE_VIDEO &&
+				(stream->disposition & AV_DISPOSITION_ATTACHED_PIC) == 0 && !video_properties_set)
 			{
+				video_properties_set = true;
 				if (const auto name = decoder_name(codec); !str::is_empty(name)) result.video_codec = name;
 				if (const auto fmt = pixel_format_name(codec->format); !str::is_empty(fmt)) result.pixel_format = fmt;
 			}

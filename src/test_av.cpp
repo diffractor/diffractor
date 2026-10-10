@@ -460,6 +460,14 @@ static void should_scan_av_metadata_with_a_bounded_probe()
 		const auto inspected = ff.scan_file(path, false, ft, {}, {}, scan_intent::inspect);
 		const auto indexed = ff.scan_file(path, false, ft, {}, {}, scan_intent::index);
 
+		av_format_decoder decoder;
+		assert_equal(true, decoder.open(path, media_intent::metadata), name, "open media for its displayed summary");
+		const auto displayed = decoder.info();
+		assert_equal(inspected.video_codec.sv(), displayed.video_codec.sv(), name,
+		             "attached artwork cannot replace the main video codec");
+		assert_equal(inspected.pixel_format.sv(), displayed.pixel_format.sv(), name,
+		             "displayed pixel format belongs to the same video stream as the index");
+
 		assert_equal(true, indexed.success, name, "index scan succeeded");
 		assert_equal(inspected.width, indexed.width, name, "width");
 		assert_equal(inspected.height, indexed.height, name, "height");

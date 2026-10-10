@@ -229,7 +229,7 @@ public:
 		// that costs another walk of the group of pictures for a picture nobody can tell apart.
 		if (!decoder->extract_frame_at(surface, {max_dim, max_dim}, time, frame_step_seconds / 2)) return {};
 
-		return surface;
+		return upright_movie_frame(surface);
 	}
 
 	void close()
@@ -396,7 +396,9 @@ private:
 			}
 			else
 			{
-				_bytes += surface->size();
+				const auto existing = _cache.find(req.key);
+				const auto replaced = existing != _cache.end() && existing->second ? existing->second->size() : 0_z;
+				_bytes = movie_cache_bytes_after_store(_bytes, replaced, surface->size());
 				_cache.insert_or_assign(req.key, std::move(surface));
 				touch(req.key);
 
@@ -528,7 +530,7 @@ private:
 		if (is_photo)
 		{
 			const auto loaded = files{}.load(key.path, true);
-			return loaded.success ? loaded.to_surface(max_dim) : nullptr;
+			return loaded.success ? upright_movie_frame(loaded.to_surface(max_dim)) : nullptr;
 		}
 
 		av_format_decoder decoder;
@@ -544,7 +546,9 @@ private:
 		ui::surface_ptr surface;
 		const auto wanted = std::clamp(key.time_ms / 1000.0, 0.0, duration);
 
-		return decoder.extract_thumbnail(surface, max_dim, wanted, duration, true, 0.0) ? surface : nullptr;
+		return decoder.extract_thumbnail(surface, max_dim, wanted, duration, true, 0.0)
+			       ? upright_movie_frame(surface)
+			       : nullptr;
 	}
 
 	view_state& _state;
@@ -1249,8 +1253,9 @@ private:
 			if (const auto tex = _view->clip_texture(dc))
 			{
 				const auto fitted = ui::scale_dimensions(clip->extent, target.extent(), false);
-				dc.draw_texture(tex, recti(fitted).offset(target.center() - recti(fitted).center()),
-				                dc.colors.alpha);
+				const auto destination = recti(fitted).offset(target.center() - recti(fitted).center());
+				dc.draw_texture(tex, upright_movie_destination(destination, tex->_orientation),
+				                recti({}, tex->dimensions()), dc.colors.alpha, ui::texture_sampler::bilinear);
 				return;
 			}
 		}
@@ -1754,9 +1759,23 @@ void movie_view_controls::create_controls()
 	update_for_document();
 }
 
-void movie_view_controls::update_for_document()
+bool movie_view_controls::update_for_document()
 {
-	if (_controls.empty()) return;
+	if (_controls.empty()) return false;
+
+	std::vector<bool> visible_before;
+	visible_before.reserve(_controls.size());
+	for (const auto& c : _controls) visible_before.emplace_back(c->is_visible());
+
+	// Text that gains or loses lines changes the panel's height as surely as a control appearing does.
+	auto text_changed = false;
+	const auto show_text = [&text_changed](const std::shared_ptr<text_element>& element, std::string& shown,
+	                                       const std::string& text)
+	{
+		if (shown != text) text_changed = true;
+		shown = text;
+		element->text(text);
+	};
 
 	const auto& project = _movie_state.project;
 	const auto* const clip = project.current_clip();
@@ -1776,7 +1795,7 @@ void movie_view_controls::update_for_document()
 		output_text += prop::format_size(df::file_size(bytes));
 	}
 
-	_output_text->text(output_text);
+	show_text(_output_text, _shown_output_text, output_text);
 
 	// What the view is holding that the user did not ask for and cannot see anywhere else: elements
 	// an imported project carried that Movie dropped, and clips whose source has gone. Both are
@@ -1796,7 +1815,7 @@ void movie_view_controls::update_for_document()
 		info += format_plural_text(tt.movie_missing_fmt, missing);
 	}
 
-	_info->text(info);
+	show_text(_info, _shown_info_text, info);
 
 	// One number sets the crossfade and the fades at the movie's ends. Hiding it under Cut left the
 	// fade length unreachable, so it is shown whenever either use is switched on and named for the
@@ -1831,7 +1850,7 @@ void movie_view_controls::update_for_document()
 			text += prop::format_dimensions(clip->extent);
 		}
 
-		_clip_text->text(text);
+		show_text(_clip_text, _shown_clip_text, text);
 
 		// A handle the user is holding owns its value: writing the document back over it while the
 		// pointer is down would drag the trim out from under them on every refresh.
@@ -1844,6 +1863,13 @@ void movie_view_controls::update_for_document()
 			_trim->_limit = is_photo ? 0.0 : (clip->source_duration > 0 ? clip->source_duration : clip->end);
 		}
 	}
+
+	for (size_t i = 0; i < _controls.size(); ++i)
+	{
+		if (_controls[i]->is_visible() != visible_before[i]) return true;
+	}
+
+	return text_changed;
 }
 
 void movie_view_controls::layout_controls(ui::measure_context& mc)
@@ -2184,9 +2210,15 @@ void movie_view::render(ui::draw_context& dc, view_controller_ptr controller)
 
 						if (preview.texture->is_valid())
 						{
-							const auto extent = clip.extent.cx > 0 ? clip.extent : preview.texture->dimensions();
+							const auto extent = clip.extent.cx > 0
+								                    ? clip.extent
+								                    : upright_movie_extent(preview.texture->dimensions(),
+								                                           preview.texture->_orientation);
 							const auto target = calc_preview_target(extent);
-							dc.draw_texture(preview.texture, target, dc.colors.alpha * weight);
+							dc.draw_texture(preview.texture,
+							                upright_movie_destination(target, preview.texture->_orientation),
+							                recti({}, preview.texture->dimensions()), dc.colors.alpha * weight,
+							                ui::texture_sampler::bilinear);
 							return target;
 						}
 					}
@@ -3244,7 +3276,10 @@ void movie_view::changed(const bool relayout)
 {
 	if (_controls)
 	{
-		_controls->update_for_document();
+		// Moving focus between a photo and a video swaps the clip controls. The panel is a window of
+		// its own that no view relayout reaches, so a control shown or hidden here is positioned now,
+		// or a hidden checkbox stays drawn over the trim control that replaced it.
+		if (_controls->update_for_document()) _controls->frame()->layout();
 		_controls->populate();
 	}
 
@@ -3434,7 +3469,7 @@ void movie_view::probe_clips()
 			{
 				const auto loaded = files{}.load(path, true);
 				probe.found = loaded.success;
-				probe.extent = loaded.dimensions();
+				probe.extent = upright_movie_extent(loaded.dimensions(), loaded.orientation());
 			}
 			else
 			{
@@ -3446,7 +3481,7 @@ void movie_view::probe_clips()
 
 					const auto info = decoder.info();
 					probe.found = info.has_video;
-					probe.extent = info.display_dimensions;
+					probe.extent = upright_movie_extent(info.display_dimensions, info.display_orientation);
 					probe.duration = std::max(0.0, info.end - info.start);
 					probe.frame_rate = info.video_frame_rate;
 				}
@@ -3626,7 +3661,7 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 
 	_project_io_active = true;
 	const auto generation = ++_project_io_generation;
-	const auto revision = _movie_state.project.revision();
+	const auto revision = _movie_state.project.edit_revision();
 	_state.invalidate_view(view_invalid::command_state);
 
 	_state.queue_async(async_queue::load, [weak, path, is_wlmp, generation, revision, &s = _state]
@@ -3688,7 +3723,7 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 				current->changed();
 			};
 
-			if (revision != self->_movie_state.project.revision())
+			if (revision != self->_movie_state.project.edit_revision())
 			{
 				if (self->confirm_save_or_discard(apply)) apply();
 				return;
@@ -3751,7 +3786,7 @@ void movie_view::save_project(std::function<void(bool)> complete)
 		return;
 	}
 
-	const auto revision = _movie_state.project.revision();
+	const auto revision = _movie_state.project.edit_revision();
 	auto json = write_otio(_movie_state.project.clips(), _movie_state.project.settings(), path.folder());
 	const auto generation = ++_project_io_generation;
 	const auto weak = weak_from_this();
@@ -3759,7 +3794,9 @@ void movie_view::save_project(std::function<void(bool)> complete)
 	_project_io_active = true;
 	_state.invalidate_view(view_invalid::command_state);
 
-	_state.queue_async(async_queue::work,
+	// Not the work queue: a render holds that one thread for its whole length, and a save queued
+	// behind it would leave Save, Open and leaving Movie disabled until the render ended.
+	_state.queue_async(async_queue::load,
 	                   [weak, path, revision, generation, json = std::move(json), &s = _state]() mutable
 	{
 		std::string error;
@@ -3991,7 +4028,7 @@ namespace
 			// Half a frame of slack: refining past that costs another walk of the group of pictures
 			// for a picture that is the same one.
 			return state.decoder->extract_frame_at(surface, max_dim, source_time, 0.5 / _frame_rate, _abandon)
-			       ? surface
+			       ? upright_movie_frame(surface)
 			       : ui::const_surface_ptr{};
 		}
 
@@ -4057,7 +4094,7 @@ namespace
 				// every output frame it covers.
 				if (max_dim.cx <= 0) return;
 				const auto loaded = files{}.load(clip.path, false);
-				if (loaded.success) state.photo = loaded.to_surface(max_dim);
+				if (loaded.success) state.photo = upright_movie_frame(loaded.to_surface(max_dim));
 				return;
 			}
 
@@ -4268,7 +4305,11 @@ namespace
 				const auto& clip = request.clips[source.index];
 				if (clip.is_missing) return false;
 
-				const auto surface = sources.frame(slot, clip, source.source_time, request.output.extent);
+				// Square, on the output's longer side: the limit applies to the stored frame, and a quarter-
+				// turned source is stored the other way round, so an output-shaped limit would decode it at
+				// a fraction of the size it is drawn and stretch it back up.
+				const auto decode_side = std::max(request.output.extent.cx, request.output.extent.cy);
+				const auto surface = sources.frame(slot, clip, source.source_time, {decode_side, decode_side});
 				if (!is_valid(surface)) return false;
 
 				const auto target = fit_into(surface->dimensions(), request.output.extent);

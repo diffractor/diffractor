@@ -55,7 +55,7 @@ public:
 	{
 		const auto section_w = str::utf8_to_utf16(section);
 		const auto name_w = str::utf8_to_utf16(name);
-		const auto value_w = str::utf8_to_utf16(v);
+		const auto value_w = str::utf8_to_utf16(std::format("\"{}\"", v));
 
 		return WritePrivateProfileStringW(
 			section_w.c_str(),

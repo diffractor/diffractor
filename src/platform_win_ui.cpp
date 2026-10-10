@@ -1558,6 +1558,10 @@ public:
 
 	LRESULT on_window_destroy(const uint32_t /*uMsg*/, const WPARAM /*wParam*/, const LPARAM /*lParam*/)
 	{
+		// The host's on_window_destroy releases its own reference to this frame, which can be the last.
+		// Holding one here keeps this object alive until the handler has finished with its members.
+		const auto keep_alive = weak_from_this().lock();
+
 		if (_timer_id) KillTimer(m_hWnd, _timer_id);
 
 		if (_style.can_drop)
@@ -2361,9 +2365,14 @@ public:
 
 	void clear()
 	{
+		// A child's callback may hold the last reference to this host. The children are released from
+		// a local, with the host kept alive, so the map being cleared is never destroyed under itself.
+		const auto keep_alive = weak_from_this().lock();
+		auto children = std::move(_children);
 		_children.clear();
 		_menu_commands.clear();
 		_modal_result = ui::close_result::ok;
+		children.clear();
 	}
 
 	int alloc_ids(const int count = 1) const
@@ -2472,6 +2481,10 @@ public:
 
 	LRESULT on_window_destroy(const uint32_t uMsg, const WPARAM wParam, const LPARAM lParam)
 	{
+		// The host's on_window_destroy releases its own reference to this frame, which can be the last.
+		// Holding one here keeps this object alive until the handler has finished with its members.
+		const auto keep_alive = weak_from_this().lock();
+
 		if (_timer_id) KillTimer(m_hWnd, _timer_id);
 		if (_is_app_frame) WTSUnRegisterSessionNotification(m_hWnd);
 		const auto h = _host.lock();

@@ -430,6 +430,16 @@ static void should_preserve_and_auto_quote_search_input()
 	             "path without spaces left unquoted");
 	assert_equal("\"" + my_photos + "\"", base.parse_from_input("\"" + my_photos + "\"").text(),
 	             "already-quoted path not double-quoted");
+
+	const auto folder_query = std::string(test_files_folder.text()) + " Test";
+	const auto scoped = base.parse_from_input(folder_query);
+	assert_equal(1_z, scoped.selectors().size(), "folder query has one selector");
+	assert_equal(1_z, scoped.terms().size(), "the filename term is separate from the folder");
+	assert_equal(folder_query, scoped.text(), "the whole query is not quoted as one folder");
+	const auto resubmitted = base.parse_from_input(scoped.text());
+	assert_equal(scoped.format_terms(), resubmitted.format_terms(), "resubmission preserves the query");
+	assert_equal(scoped.selectors().front().folder().text(), resubmitted.selectors().front().folder().text(),
+	             "resubmission preserves the folder");
 }
 
 // Issue #157 - scope-aware search auto-completion. The active (last) token of a query

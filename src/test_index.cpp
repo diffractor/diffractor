@@ -1527,6 +1527,19 @@ static void should_report_incomplete_collection_discovery()
 	index.queue_update_presence(df::item_set({outside}));
 	assert_equal(static_cast<int>(item_presence::unknown), static_cast<int>(outside->presence()),
 	             "incomplete discovery does not publish an absence");
+
+	platform::copy_file(test_files_folder.combine_file("Test.jpg"), root.combine_file("photo.jpg"), false, false);
+	index_state paused(as, locations);
+	paused.cache_load_complete();
+	paused.index_roots(roots);
+	paused.index_folders(test_token, false);
+	assert_equal(true, paused.is_init_complete(), "skipped collection discovery releases on-demand workers");
+	assert_equal(0_z, paused.all_indexed_items().size(), "disabled discovery does not enumerate collection files");
+	paused.queue_update_presence(df::item_set({outside}));
+	assert_equal(static_cast<int>(item_presence::unknown), static_cast<int>(outside->presence()),
+	             "skipped discovery does not claim fresh absence evidence");
+	paused.index_folders(test_token);
+	assert_equal(1_z, paused.all_indexed_items().size(), "normal discovery still enumerates the collection");
 }
 
 static void should_invalidate_metadata_when_sidecar_identity_changes()

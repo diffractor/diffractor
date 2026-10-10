@@ -2403,6 +2403,28 @@ ui::image_ptr save_surface(const ui::image_format& format, const ui::const_surfa
 	return {};
 }
 
+// A re-encode copies the source's Exif into the new file. An orientation reset otherwise reaches only
+// the XMP, which PNG and WebP do not mirror into the Exif they write, so the copied tag would turn the
+// upright pixels a second time. The pixel dimensions move with them.
+static metadata_parts upright_save_metadata(const metadata_parts& source, const sizei dimensions)
+{
+	metadata_parts result;
+	result.xmp = source.xmp.clone();
+	result.iptc = source.iptc.clone();
+	result.icc = source.icc.clone();
+	result.photoshop_resources = source.photoshop_resources.clone();
+
+	df::blob exif;
+	if (!is_exif_signature(source.exif)) exif.assign(exif_signature.begin(), exif_signature.end());
+	exif.insert(exif.end(), source.exif.begin(), source.exif.end());
+
+	result.exif = metadata_exif::fix_dims({exif.data(), exif.size()}, dimensions.cx, dimensions.cy);
+
+	// An Exif block libexif cannot load is kept as it was rather than dropped.
+	if (result.exif.empty()) result.exif = source.exif.clone();
+	return result;
+}
+
 
 platform::file_op_result files::update_impl(const df::file_path path_src, const df::file_path path_dst,
                                             const metadata_edits& metadata_edits, const image_edits& photo_edits,
@@ -2633,8 +2655,18 @@ platform::file_op_result files::update_impl(const df::file_path path_src, const 
 						if (jpeg_to_jpeg) encode_params.jpeg_source = loaded.i->data();
 
 						metadata_parts save_meta;
+						const auto& source_meta = scan_result.save_metadata(save_meta);
+						metadata_parts upright_meta;
+						const auto reset_orientation = metadata_edits.orientation.has_value() &&
+							*metadata_edits.orientation == ui::orientation::top_left && !source_meta.exif.empty();
+						if (reset_orientation)
+						{
+							upright_meta = upright_save_metadata(source_meta, temp_surface->dimensions());
+						}
+
 						const auto saved = save_surface(extension_to_format(path_temp.extension()), temp_surface,
-						                                scan_result.save_metadata(save_meta), encode_params);
+						                                reset_orientation ? upright_meta : source_meta,
+						                                encode_params);
 
 						if (is_empty(saved))
 						{
@@ -3356,8 +3388,8 @@ av_media_info file_scan_result::to_info() const
 
 	if (!metadata.xmp.empty())
 	{
-		auto kv = metadata_xmp::to_info(metadata.xmp);
-		const auto parsed = !kv.empty();
+		bool parsed = false;
+		auto kv = metadata_xmp::to_info(metadata.xmp, parsed);
 
 		// The packet is the block's real content, so it stays reachable whether or not the toolkit
 		// could make a tree from it.

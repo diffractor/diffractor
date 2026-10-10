@@ -127,7 +127,9 @@ df::search_t df::search_t::parse_from_input(const std::string_view text) const
 	}
 
 	auto result = parse(text);
-	result.raw_text(raw);
+	const auto has_query_parts = result.has_selector() &&
+		(result.selectors().size() > 1 || !result.terms().empty());
+	result.raw_text(has_query_parts ? std::string(text) : raw);
 	return result;
 }
 

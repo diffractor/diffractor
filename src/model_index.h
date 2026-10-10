@@ -1196,7 +1196,7 @@ public:
 	bool needs_scan(const df::item_element_ptr&) const;
 	bool is_in_collection(df::folder_path folder) const;
 
-	void index_folders(df::cancel_token token);
+	void index_folders(df::cancel_token token, bool scan_collection = true);
 	void index_roots(df::index_roots roots);
 	void scan_uncached(const df::cancel_token& token);
 	std::vector<folder_scan_item> scan_items(const df::index_roots& roots, bool recursive, bool scan_if_offline,

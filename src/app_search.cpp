@@ -205,7 +205,14 @@ public:
 				                          // paths may be presented (and normalized) as folders.
 				                          for (const auto& recent : *recents)
 				                          {
-					                          if (df::is_path(recent))
+					                          // Only a folder that is there is presented as a folder; one that has gone
+					                          // stays a recent query. A network location is not checked: confirming
+					                          // it could wait out a dropped share with every prediction queued behind.
+					                          const auto folder_is_offered = df::is_path(recent) &&
+						                          (platform::is_network_location(df::folder_path(recent)) ||
+							                          df::folder_path(recent).exists());
+
+					                          if (folder_is_offered)
 					                          {
 						                          found.emplace_back(
 							                          std::make_shared<folder_match>(*this, df::folder_path(recent)));

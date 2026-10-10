@@ -213,7 +213,11 @@ public:
 	const movie_settings& settings() const { return _settings; }
 	df::file_path path() const { return _path; }
 	bool is_modified() const { return _modified; }
+	// Advances on every change to the document, including the probe filling in what it measured.
 	uint64_t revision() const { return _revision; }
+	// Advances only on what the user did -- an edit, an undo, a replacement. Save and Open ask whether
+	// the user changed the timeline while they ran, and a probe landing meanwhile is not an answer.
+	uint64_t edit_revision() const { return _edit_revision; }
 	size_t size() const { return _clips.size(); }
 	bool is_empty() const { return _clips.empty(); }
 	bool is_ready_to_render() const;
@@ -265,7 +269,7 @@ public:
 	void trim(size_t at, double start, double end);
 
 	void reset(std::vector<movie_clip> clips, const movie_settings& s, df::file_path path);
-	void mark_saved(df::file_path path, uint64_t revision);
+	void mark_saved(df::file_path path, uint64_t edit_revision);
 
 	// A timeline just built from a selection has no state before itself, so there is nothing to
 	// undo back to and nothing yet for the user to have changed.
@@ -303,6 +307,7 @@ private:
 	size_t _anchor = 0;
 	bool _modified = false;
 	uint64_t _revision = 0;
+	uint64_t _edit_revision = 0;
 	// The undo depth at which the timeline is the one last saved, seeded or opened. Empty once that
 	// state can no longer be reached: its snapshot fell off the bounded stack, or an edit made after
 	// undoing past it replaced the history that led back to it.

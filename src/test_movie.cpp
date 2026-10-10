@@ -242,7 +242,7 @@ static void should_edit_the_movie_timeline()
 
 	project.undo();
 	assert_equal("first.mp4", project.clips()[0].path.name().sv(), "undo restores the order");
-	const auto stale_revision = project.revision();
+	const auto stale_revision = project.edit_revision();
 	project.trim(0, 1, 4);
 	project.undo();
 	project.mark_saved(movie_test_path("movie.otio"), stale_revision);
@@ -413,6 +413,19 @@ static void should_select_and_move_movie_clips()
 // A project file is untrusted input. Its durations used to be read straight into the settings, and
 // a hold of 1e308 seconds reached the frame count as a number no integer can hold - the conversion
 // that walks it is undefined, which is not a thing a document should be able to ask for.
+// A project file is untrusted. Nesting followed on the stack overflowed it, which no handler can catch.
+static void should_refuse_a_deeply_nested_movie_project()
+{
+	constexpr size_t depth = 500'000;
+	std::string json = R"({"OTIO_SCHEMA":"Timeline.1","tracks":)";
+	json.append(depth, '[');
+	json.append(depth, ']');
+	json += "}";
+
+	const auto loaded = read_otio(json, movie_test_path("x.otio").folder());
+	assert_equal(true, loaded.clips.empty(), "a nested project loads no clips and the process survives");
+}
+
 static void should_bound_movie_project_durations()
 {
 	const auto url = str::replace(movie_test_path("a.mp4").pack(), "\\", "/");
@@ -803,7 +816,7 @@ static void should_decide_what_entering_movie_does()
 	// A saved timeline is the work the user kept, so the selection that made it returns to it - and
 	// it is on disk, so another selection can replace it without losing anything.
 	project.trim(0, 1, 5);
-	project.mark_saved(movie_test_path("holiday.otio"), project.revision());
+	project.mark_saved(movie_test_path("holiday.otio"), project.edit_revision());
 	assert_equal(true, decide_movie_entry(project, first, first) == movie_entry::resume,
 	             "the selection that made a saved timeline returns to it, trims and all");
 	assert_equal(true, decide_movie_entry(project, second, first) == movie_entry::seed,
@@ -872,7 +885,7 @@ static void should_undo_back_to_an_unmodified_timeline()
 	project.mark_seeded();
 
 	project.trim(0, 1, 9);
-	project.mark_saved(movie_test_path("movie.otio"), project.revision());
+	project.mark_saved(movie_test_path("movie.otio"), project.edit_revision());
 	assert_equal(false, project.is_modified(), "a save settles the timeline");
 
 	project.trim(0, 2, 8);
@@ -893,11 +906,23 @@ static void should_undo_back_to_an_unmodified_timeline()
 	movie_project overtaken;
 	overtaken.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30)});
 	overtaken.mark_seeded();
-	const auto stale = overtaken.revision();
+	const auto stale = overtaken.edit_revision();
 	overtaken.trim(0, 1, 9);
 	overtaken.mark_saved(movie_test_path("movie.otio"), stale);
 	overtaken.undo();
 	assert_equal(true, overtaken.is_modified(), "an overtaken save leaves the timeline needing another");
+
+	// An Undo that lands while a save runs can return to the earlier clean point, but the file on disk
+	// then holds the state that was undone, so the timeline still differs from it.
+	movie_project undone;
+	undone.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30)});
+	undone.mark_seeded();
+	undone.trim(0, 1, 9);
+	const auto saving = undone.edit_revision();
+	undone.undo();
+	assert_equal(false, undone.is_modified(), "undo reaches the seeded state");
+	undone.mark_saved(movie_test_path("movie.otio"), saving);
+	assert_equal(true, undone.is_modified(), "a save overtaken by undo leaves the timeline unsaved");
 
 	// The bounded stack can drop the clean snapshot itself.
 	movie_project deep;
@@ -911,6 +936,38 @@ static void should_undo_back_to_an_unmodified_timeline()
 
 	while (deep.can_undo()) deep.undo();
 	assert_equal(true, deep.is_modified(), "a clean state that fell off the stack is not claimed after undo");
+}
+
+// The probe fills in what it measured through replace_quietly, which the user did not do. A save or
+// an open that a probe result overtook used to treat it as an edit: the save left the timeline
+// modified and Close -> Save asked again, and Open -> Discard asked a second time.
+static void should_not_treat_a_probe_result_as_an_edit_during_save()
+{
+	movie_project project;
+	auto clip = make_video("a.mp4", 10, {1920, 1080}, 30);
+	project.insert_many(0, {clip});
+	project.mark_seeded();
+	project.trim(0, 0, 5);
+	assert_equal(true, project.is_modified(), "the user edited the timeline");
+
+	const auto saving = project.edit_revision();
+	const auto revision_before = project.revision();
+
+	clip = project.clips()[0];
+	clip.is_probed = true;
+	clip.is_missing = false;
+	clip.extent = {1920, 1080};
+	project.replace_quietly(0, clip);
+
+	assert_equal(true, project.revision() != revision_before, "the probe changes the document");
+	assert_equal(saving, project.edit_revision(), "but is not an edit the user made");
+
+	project.mark_saved(movie_test_path("movie.otio"), saving);
+	assert_equal(false, project.is_modified(), "a save the probe landed during still settles the timeline");
+
+	const auto opening = project.edit_revision();
+	project.trim(0, 1, 4);
+	assert_equal(true, opening != project.edit_revision(), "a real edit during an open still counts");
 }
 
 // One Add or one drop of several files is one action, so one undo takes all of it back.
@@ -1076,6 +1133,8 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	          should_tell_a_seeded_timeline_from_an_edited_one);
 	tests.add("Should not count a movie no-op as an edit"s, should_not_count_a_no_op_as_an_edit);
 	tests.add("Should undo back to an unmodified movie timeline"s, should_undo_back_to_an_unmodified_timeline);
+	tests.add("Should not treat a movie probe result as an edit during save"s,
+	          should_not_treat_a_probe_result_as_an_edit_during_save);
 	tests.add("Should add several movie clips as one edit"s, should_add_several_clips_as_one_edit);
 	tests.add("Should tell an unprobed movie clip from a lost one"s,
 	          should_tell_an_unprobed_clip_from_a_lost_one);
@@ -1093,6 +1152,7 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	tests.add("Should round trip a movie project"s, should_round_trip_a_movie_project);
 	tests.add("Should round trip percent signs in clip paths"s, should_round_trip_percent_signs_in_clip_paths);
 	tests.add("Should bound movie project durations"s, should_bound_movie_project_durations);
+	tests.add("Should refuse a deeply nested movie project"s, should_refuse_a_deeply_nested_movie_project);
 	tests.add("Should read a movie project it did not write"s, should_read_a_movie_project_it_did_not_write);
 	tests.add("Should import a movie maker project"s, should_import_a_movie_maker_project);
 }

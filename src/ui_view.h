@@ -565,6 +565,11 @@ public:
 	virtual void deactivate() = 0;
 	virtual void refresh() = 0;
 
+	virtual void refresh_from_source()
+	{
+		refresh();
+	}
+
 	virtual void reload()
 	{
 	};

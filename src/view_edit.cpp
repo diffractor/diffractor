@@ -1904,8 +1904,8 @@ void edit_view::save(const df::file_path src_path, const df::file_path dst_path,
 	dlg->show_status(icon_index::save, str_format(tt.saving_file_name.sv(), dst_path.name()));
 
 	auto detach = std::make_shared<detach_file_handles>(_state);
-	const metadata_edits me;
 	const auto has_pixel_changes = _edit_state.has_pixel_changes();
+	const auto me = edit_view_state::save_metadata_edits(has_pixel_changes, _loaded.orientation());
 	const auto pe = has_pixel_changes ? _edit_state._edits : image_edits{};
 	const auto dimensions = _loaded.dimensions();
 	const auto photo_metadata = _mt->has_trait(file_traits::photo_metadata);

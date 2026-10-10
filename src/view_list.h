@@ -109,6 +109,7 @@ protected:
 	bool _rows_clickable = false;
 	progress_state _progress;
 	bool _showing_results = false;
+	bool _refresh_requested = false;
 	size_t _processing_generation = 0;
 	std::shared_ptr<std::atomic_int> _processing_cancel;
 
@@ -240,6 +241,19 @@ public:
 	std::string_view status() override
 	{
 		return _status;
+	}
+
+	// A completed run keeps its results through the file notifications its own writes raise. Refresh
+	// is the user asking to re-plan, so it is honoured even then; both arrive as the same invalidation,
+	// which is why the request is remembered here rather than read from the flag.
+	void reload() override
+	{
+		_refresh_requested = true;
+	}
+
+	void refresh_from_source() override
+	{
+		if (std::exchange(_refresh_requested, false) || !showing_results()) refresh();
 	}
 
 	void begin_processing(const size_t total)

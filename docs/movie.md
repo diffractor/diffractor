@@ -32,10 +32,12 @@ timeline is replaced or lost.
 
 Only a change is an edit. Undoing back to the state last built, opened or saved leaves nothing to
 ask about, and a handle pressed and released in place, or a setting chosen again, changes nothing.
+The probe filling in a clip's measured length and size is not an edit either.
 
 Project Open, Save and Relink perform file access on workers. Save writes a sibling temporary file
 and replaces the destination only after the complete project has been written. Edits made while a
-save is running remain marked as unsaved.
+save is running, including an Undo, remain marked as unsaved. Saving does not wait for a running
+render.
 
 ## 3. View and timeline
 
@@ -65,8 +67,10 @@ relink are undoable. One Add, drop or Relink is one undo step regardless of how 
 ## 4. Preview and clip controls
 
 The preview and renderer use the same timeline timing and composition decision. Frames are fitted,
-never stretched or cropped, and unused canvas area is black. A crossfade holds both contributing clips
-and mixes them with the same weights used for audio.
+never stretched or cropped, and unused canvas area is black. Every source is used upright: a photo's
+Exif orientation and a video's rotation are applied where its frame is made, so the strip, preview,
+output dimensions and rendered file agree. A crossfade holds both contributing clips and mixes them
+with the same weights used for audio.
 
 The movie transport provides previous clip, play/pause, next clip, elapsed time, total time and a
 whole-movie scrubber. Selecting a clip parks the preview on its first retained frame and stops movie
@@ -133,8 +137,10 @@ has been probed, exists, has a positive retained duration and has decodable dime
 
 Output is derived without asking for codec settings:
 
-- Dimensions come from the largest displayed video, or the largest photo for a photo-only movie.
-- Dimensions are fitted within 3840 x 2160 and rounded down to even values.
+- Dimensions come from the largest displayed video, or the largest photo for a photo-only movie,
+  each measured upright.
+- Dimensions are fitted within 3840 x 2160, so a portrait movie is at most 2160 pixels tall, and
+  rounded down to even values.
 - Frame rate is the highest video rate, limited to 60 fps; photo-only movies use 30 fps.
 - Audio is 48 kHz stereo, and video bitrate follows output size and rate. An audio track is written
   whenever the timeline holds a video, whether or not any of those videos carries sound.
@@ -186,5 +192,5 @@ is in [platform.h](../src/platform.h), with Windows implementation in
 [platform_win_encode.cpp](../src/platform_win_encode.cpp) and the unavailable-platform answer in
 [platform_linux_desktop.cpp](../src/platform_linux_desktop.cpp).
 
-Tests are in [test_movie.cpp](../src/test_movie.cpp), [test_av.cpp](../src/test_av.cpp) and
-[test_platform_win.cpp](../src/test_platform_win.cpp).
+Tests are in [test_movie.cpp](../src/test_movie.cpp), [test_view.cpp](../src/test_view.cpp),
+[test_av.cpp](../src/test_av.cpp) and [test_platform_win.cpp](../src/test_platform_win.cpp).

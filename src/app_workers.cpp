@@ -13,6 +13,7 @@
 #include "pch.h"
 
 #include "app_text.h"
+#include "app_command_line.h"
 
 #include "model_location.h"
 #include "model_db.h"
@@ -160,19 +161,21 @@ void app_frame::start_index_workers()
 	{
 		_index_workers_started = true;
 
-		auto token = df::cancel_token(index_version);
-
-		index_task_queue.enqueue([this, token]
+		if (!command_line.no_indexing)
 		{
-			_state.item_index.scan_uncached(token);
+			const auto token = df::cancel_token(index_version);
+			index_task_queue.enqueue([this, token]
+			{
+				_state.item_index.scan_uncached(token);
 
-			invalidate_view(view_invalid::sidebar |
-				view_invalid::command_state |
-				view_invalid::item_scan |
-				view_invalid::presence |
-				view_invalid::refresh_items |
-				view_invalid::index_summary);
-		});
+				invalidate_view(view_invalid::sidebar |
+					view_invalid::command_state |
+					view_invalid::item_scan |
+					view_invalid::presence |
+					view_invalid::refresh_items |
+					view_invalid::index_summary);
+			});
+		}
 
 		_threads.start_if_running([&q = crc_task_queue] { start_worker(q, "crc"); });
 		_threads.start_if_running([&q = scan_folder_task_queue] { start_worker(q, "scan_folder"); });
@@ -205,6 +208,8 @@ void app_frame::rebuild_index()
 
 void app_frame::queue_index_update(const bool forget_cached_metadata)
 {
+	if (command_line.no_indexing) return;
+
 	auto token = df::cancel_token(index_version);
 
 	// Copied here, on the thread that owns the settings, and read from the copy on the worker. The
@@ -956,7 +961,7 @@ void app_frame::start_workers()
 	// created by the entry point that first queues to it, so a session that never searches, never
 	// reaches the network, never opens the map and never plays media runs without those threads.
 
-	index_task_queue.enqueue([this, collection = setting.collection]
+	index_task_queue.enqueue([this, collection = setting.collection, scan_collection = !command_line.no_indexing]
 	{
 		wait_for_index_cache(_state.item_index);
 
@@ -965,7 +970,7 @@ void app_frame::start_workers()
 		_state.item_index.index_roots(index_folders(collection));
 
 		const auto token = df::cancel_token(index_version);
-		_state.item_index.index_folders(token);
+		_state.item_index.index_folders(token, scan_collection);
 		queue_ui([this] { start_index_workers(); });
 		invalidate_view(view_invalid::sidebar | view_invalid::command_state | view_invalid::presence |
 			view_invalid::index_summary);

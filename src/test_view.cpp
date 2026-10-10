@@ -1,4 +1,4 @@
-// This file is part of the Diffractor photo and video organizer
+﻿// This file is part of the Diffractor photo and video organizer
 // Copyright 2026  Zac Walker
 //
 // This program is free software; you can redistribute it and / or modify it
@@ -158,6 +158,64 @@ static void should_bound_movie_probe_retries_for_moving_sources()
 	             "an exhausted retry entry is erased once the source is recorded missing");
 	assert_equal(true, should_clear_movie_probe_retries_after_document_replace(true),
 	             "a replaced Movie document starts with a fresh probe retry budget");
+}
+
+// Two requests for one frame can both complete. Counting the second store without releasing the
+// first leaked bytes until the cache sat permanently over budget, evicted every frame it stored, and
+// the strip and preview decoded the same photo in a loop, holding a core at full load.
+static void should_count_movie_cache_bytes_once_per_frame()
+{
+	constexpr size_t frame = 4'000'000;
+	auto bytes = movie_cache_bytes_after_store(0, 0, frame);
+	assert_equal(frame, bytes, "a new frame adds its bytes");
+
+	bytes = movie_cache_bytes_after_store(bytes, frame, frame);
+	assert_equal(frame, bytes, "storing the same frame again replaces it rather than adding to it");
+
+	bytes = movie_cache_bytes_after_store(bytes, frame, frame / 2);
+	assert_equal(frame / 2, bytes, "a smaller replacement releases the difference");
+
+	assert_equal(10_z, movie_cache_bytes_after_store(5, 20, 10), "a stale replaced size cannot underflow");
+}
+
+// Movie drew and rendered the stored pixels of an Exif-rotated photo or a portrait phone video, so
+// those clips came out sideways in the strip, the preview and the rendered file.
+static void should_turn_movie_frames_upright()
+{
+	assert_equal(true, sizei{1200, 1800} == upright_movie_extent({1800, 1200}, ui::orientation::right_top),
+	             "a quarter-turned source is measured upright");
+	assert_equal(true, sizei{1800, 1200} == upright_movie_extent({1800, 1200}, ui::orientation::bottom_right),
+	             "a half-turned source keeps its shape");
+
+	const auto source = std::make_shared<ui::surface>();
+	source->alloc(3, 2, ui::texture_format::RGB, ui::orientation::right_top);
+	for (auto y = 0; y < 2; ++y)
+	{
+		for (auto x = 0; x < 3; ++x) source->set_pixel(x, y, ui::rgba(10 + x + y * 3, 0, 0));
+	}
+
+	const auto turned = upright_movie_frame(source);
+	assert_equal(true, sizei{2, 3} == turned->dimensions(), "the frame is turned upright");
+	assert_equal(static_cast<int>(ui::orientation::top_left), static_cast<int>(turned->orientation()),
+	             "and no longer asks to be turned again");
+
+	// Orientation 6 stores the visual top as column 0 and the visual right as row 0, so each displayed
+	// corner is a known stored pixel - an expectation that does not borrow the transform under test.
+	assert_equal(source->get_pixel(0, 1), turned->get_pixel(0, 0), "top left is the stored bottom of column 0");
+	assert_equal(source->get_pixel(0, 0), turned->get_pixel(1, 0), "top right is the stored top of column 0");
+	assert_equal(source->get_pixel(2, 1), turned->get_pixel(0, 2), "bottom left is the stored bottom of column 2");
+	assert_equal(source->get_pixel(2, 0), turned->get_pixel(1, 2), "bottom right is the stored top of column 2");
+
+	const auto upright = std::make_shared<ui::surface>();
+	upright->alloc(3, 2, ui::texture_format::RGB, ui::orientation::top_left);
+	assert_equal(true, upright_movie_frame(upright) == ui::const_surface_ptr(upright),
+	             "an upright frame is used as it is");
+
+	const auto target = recti(0, 0, 20, 30);
+	assert_equal(true, upright_movie_destination(target, ui::orientation::top_left) == quadd(target),
+	             "an upright texture draws into its target unchanged");
+	assert_equal(false, upright_movie_destination(target, ui::orientation::right_top) == quadd(target),
+	             "a turned texture is drawn through a turned quad");
 }
 
 static void should_retire_movie_source_caches_only_after_successful_replacement()
@@ -2805,6 +2863,26 @@ static void should_discard_async_selection_strip_after_clear()
 	assert_equal(false, strip->is_visible(), "cleared strips reject stale async thumbnails");
 }
 
+// The frame's own child controls hold the strip in their callbacks, so a strip that owned its frame
+// closed a cycle that destroyed the frame while it was clearing those children: exiting after the
+// Import view had been open ended in heap corruption.
+static void should_not_keep_selection_strip_frame_alive()
+{
+	deferred_async_strategy as;
+	auto frame = std::make_shared<ui::null_control_frame>();
+	const std::weak_ptr<ui::null_control_frame> weak_frame = frame;
+	const auto strip = std::make_shared<ui::selection_thumbnails_control>(frame);
+	const std::vector<ui::const_image_ptr> images{make_valid_test_image()};
+
+	strip->selection_async(images, images.size(), as);
+	frame.reset();
+	assert_equal(true, weak_frame.expired(), "the strip does not own the frame it is shown in");
+
+	assert_equal(true, as.run_next(async_queue::render), "strip decode runs");
+	as.drain_ui();
+	assert_equal(true, strip->is_visible(), "a strip whose frame has gone still publishes its thumbnails");
+}
+
 static void should_preview_rotation_with_inverse_destination_transform()
 {
 	assert_equal(static_cast<int>(simple_transform::rot_270),
@@ -4262,6 +4340,8 @@ void register_view_tests(view_state& state, test_registry& tests)
 	// VIEW-016 - source caches are retired only for successful project/source replacement.
 	tests.add("Should retire Movie source caches only after successful replacement"s,
 	          should_retire_movie_source_caches_only_after_successful_replacement);
+	tests.add("Should turn Movie frames upright"s, should_turn_movie_frames_upright);
+	tests.add("Should count Movie cache bytes once per frame"s, should_count_movie_cache_bytes_once_per_frame);
 	// VIEW-005/006 - Edit load and preview replies are detached source state, not placeholder pixels.
 	tests.add("Should keep Edit view load failure separate from placeholder pixels"s,
 	          should_keep_edit_load_failure_separate_from_placeholder_pixels);
@@ -4355,6 +4435,7 @@ void register_view_tests(view_state& state, test_registry& tests)
 	          should_publish_async_selection_thumbnail_strip);
 	tests.add("Should discard async selection strip after clear"s,
 	          should_discard_async_selection_strip_after_clear);
+	tests.add("Should not keep selection strip frame alive"s, should_not_keep_selection_strip_frame_alive);
 	tests.add("Should preview rotation with inverse destination transform"s,
 	          should_preview_rotation_with_inverse_destination_transform);
 	tests.add("Should stage neighbour stand ins"s, should_stage_neighbour_stand_ins);

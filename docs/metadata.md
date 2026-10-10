@@ -79,7 +79,9 @@ payload padding, and unrelated resources do not change the effective IPTC payloa
 or extend both and carries Diffractor's editable rating, label, tags, description, and location
 values.
 
-Orientation affects presentation and is therefore not treated as display-neutral metadata. Embedded
+Orientation affects presentation and is therefore not treated as display-neutral metadata. A pixel
+edit draws the stored orientation into the pixels it writes, so saving one resets the orientation to
+upright rather than leaving the tag to turn the saved image a second time. Embedded
 thumbnails and ICC profiles are parsed with the image and invalidated when their source metadata
 changes.
 

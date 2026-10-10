@@ -452,6 +452,50 @@ static void should_not_treat_initial_orientation_as_an_edit()
 	assert_equal(true, current_edits != original_edits, "user rotation changes baseline");
 }
 
+// Edit draws the stored orientation into the pixels it writes, so a saved edit of an EXIF-rotated
+// JPEG kept Orientation=6 over pixels already upright and opened turned a second time.
+static void should_save_oriented_edit_upright()
+{
+	assert_equal(false, edit_view_state::save_metadata_edits(false, ui::orientation::right_top).orientation.
+	             has_value(), "no pixel edit leaves the orientation alone");
+	assert_equal(false, edit_view_state::save_metadata_edits(true, ui::orientation::top_left).orientation.
+	             has_value(), "an upright photo needs no orientation change");
+
+	files ff;
+	const auto load_path = test_files_folder.combine_file("exif-rotated.jpg");
+	const auto save_path = _temps.next_path(".jpg");
+	const auto loaded = ff.load(load_path, false);
+	assert_equal(true, loaded.success, "exif-rotated.jpg loads");
+	assert_equal(static_cast<int>(ui::orientation::right_top), static_cast<int>(loaded.orientation()),
+	             "the fixture is stored turned");
+
+	// The same edit state the view builds: the stored orientation as the baseline crop, then a colour
+	// change, which forces a re-encode rather than a lossless transform.
+	image_edits edits;
+	edits.crop_bounds(edit_view_state::initial_crop(loaded.dimensions(), loaded.orientation()));
+	edits.brightness(0.25);
+
+	const auto md_edits = edit_view_state::save_metadata_edits(true, loaded.orientation());
+	assert_equal(true, ff.update(load_path, save_path, md_edits, edits, {}, false, {}).success(), "edit saves");
+
+	const auto saved = ff.load(save_path, false);
+	assert_equal(loaded.dimensions().cy, saved.dimensions().cx, "the saved pixels are upright");
+	assert_equal(loaded.dimensions().cx, saved.dimensions().cy, "the saved pixels are upright");
+	assert_equal(static_cast<int>(ui::orientation::top_left), static_cast<int>(saved.orientation()),
+	             "the saved photo is not turned again when shown");
+	assert_equal(static_cast<int>(ui::orientation::top_left),
+	             static_cast<int>(extract_properties(save_path, metadata_type::EXIF)->orientation),
+	             "the saved Exif orientation is upright");
+
+	// PNG and WebP write the source Exif they are handed, so the reset has to reach it there too.
+	const auto png_path = _temps.next_path(".png");
+	assert_equal(true, ff.update(load_path, png_path, md_edits, edits, {}, false, {}).success(), "edit saves as PNG");
+	const auto png = ff.load(png_path, false);
+	assert_equal(loaded.dimensions().cy, png.dimensions().cx, "the PNG pixels are upright");
+	assert_equal(static_cast<int>(ui::orientation::top_left), static_cast<int>(png.orientation()),
+	             "a PNG saved from the edit is not turned again when shown");
+}
+
 static void should_update_rating(const std::string_view name)
 {
 	files ff;
@@ -1956,6 +2000,7 @@ void register_media_edit_tests(view_state& state, test_registry& tests)
 	tests.add("Should build straightened edit preview without black corners"s,
 	          should_build_straightened_edit_preview_without_black_corners);
 	tests.add("Should not treat initial orientation as an edit"s, should_not_treat_initial_orientation_as_an_edit);
+	tests.add("Should save oriented edit upright"s, should_save_oriented_edit_upright);
 	tests.add("Should round-trip small ICC"s, should_roundtrip_small_icc);
 	tests.add("Should round-trip large ICC"s, should_roundtrip_large_icc);
 	tests.add("Should round-trip largest XMP"s, should_roundtrip_largest_xmp);

@@ -374,6 +374,7 @@ void rename_view::refresh()
 	// The worker reports against the reviewed rows, so re-analysing under it would repoint the run
 	// at a different set of names.
 	if (progress().active) return;
+	_showing_results = false;
 
 	const auto& items = _state.selected_items();
 	const auto sources = snapshot_rename_sources(items);

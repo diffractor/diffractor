@@ -277,8 +277,8 @@ void display_state_t::load_xmp_sidecar()
 		const auto packet = df::blob_from_file(sidecar);
 		if (packet.empty()) return;
 
-		auto kv = metadata_xmp::to_info(packet);
-		const auto parsed = !kv.empty();
+		bool parsed = false;
+		auto kv = metadata_xmp::to_info(packet, parsed);
 
 		// The packet is the block's real content, so it stays reachable whether or not the toolkit
 		// could make a tree from it.

@@ -1316,7 +1316,14 @@ static std::string xmp_shape(const XMP_OptionBits options, const int array_count
 
 metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 {
+	bool parsed = false;
+	return to_info(xmp, parsed);
+}
+
+metadata_kv_list metadata_xmp::to_info(const df::cspan xmp, bool& parsed)
+{
 	metadata_kv_list result;
+	parsed = false;
 
 	try
 	{
@@ -1331,6 +1338,11 @@ metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 			data = data + xmp_sig_len;
 			size = size - xmp_sig_len;
 		}
+
+		// The toolkit accepts a packet cut off part way without complaint and returns nothing, which
+		// is indistinguishable from a complete packet that holds nothing - except that only the
+		// complete one closes its RDF.
+		const auto is_complete_packet = std::string_view(data, size).find("</rdf:RDF>") != std::string_view::npos;
 
 		meta.ParseFromBuffer(data, static_cast<uint32_t>(size));
 
@@ -1379,6 +1391,8 @@ metadata_kv_list metadata_xmp::to_info(const df::cspan xmp)
 				row.value = row.value.substr(0, inline_value_limit) + "\xE2\x80\xA6";
 			}
 		}
+
+		parsed = !result.empty() || is_complete_packet;
 	}
 	catch (const std::exception& e)
 	{

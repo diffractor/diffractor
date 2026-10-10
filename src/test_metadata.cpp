@@ -282,6 +282,25 @@ static void should_read_xmp_disc_number()
 	}
 }
 
+// Rotating a photo writes a well-formed packet with nothing left in it, and the panel called that
+// "not understood". Only a packet the toolkit cannot read is unparsed.
+static void should_report_empty_xmp_packet_as_parsed()
+{
+	const std::string empty_packet =
+		R"(<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">)"
+		R"(<rdf:Description rdf:about=""/></rdf:RDF></x:xmpmeta>)";
+	bool parsed = false;
+	const auto empty_rows = metadata_xmp::to_info(df::cspan{std::bit_cast<const uint8_t*>(empty_packet.data()),
+	                                                        empty_packet.size()}, parsed);
+	assert_equal(true, empty_rows.empty(), "an empty packet has no rows");
+	assert_equal(true, parsed, "an empty packet is understood");
+
+	const std::string broken_packet = R"(<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description)";
+	metadata_xmp::to_info(df::cspan{std::bit_cast<const uint8_t*>(broken_packet.data()), broken_packet.size()},
+	                      parsed);
+	assert_equal(false, parsed, "a malformed packet is not understood");
+}
+
 // The flag records what the file says about itself, not what its shape suggests: a 2:1 crop of a
 // landscape is not a panorama, and a photo sphere that has been cropped square still is one.
 static void should_read_the_declared_panorama_projection()
@@ -3161,6 +3180,7 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should parse Xmp"s, should_parse_xmp);
 	tests.add("Should apply Xmp GPS as a pair"s, should_apply_xmp_gps_as_a_pair);
 	tests.add("Should read Xmp disc number"s, should_read_xmp_disc_number);
+	tests.add("Should report empty Xmp packet as parsed"s, should_report_empty_xmp_packet_as_parsed);
 	tests.add("Should clear tags from an empty Xmp subject"s, should_clear_tags_from_an_empty_xmp_subject);
 	tests.add("Should read the declared panorama projection"s, should_read_the_declared_panorama_projection);
 	tests.add("Should present exif metadata by ifd"s, should_present_exif_block_by_ifd);

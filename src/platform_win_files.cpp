@@ -3642,24 +3642,34 @@ platform::file_op_result platform::delete_items(const std::vector<df::file_path>
 
 // Files deleted from network locations bypass the Recycle Bin, including when
 // the share is exposed through a mapped drive letter.
-static bool fs_path_can_recycle(std::wstring_view w)
+static bool fs_path_is_network(std::wstring_view w)
 {
-	if (w.starts_with(L"\\\\?\\UNC\\")) return false; // extended-length UNC prefix
+	if (w.starts_with(L"\\\\?\\UNC\\")) return true; // extended-length UNC prefix
 	if (w.starts_with(L"\\\\?\\")) w.remove_prefix(4); // strip extended-length prefix
 
 	// A UNC path begins with two path separators (\\server\share).
 	if (w.size() >= 2 && (w[0] == L'\\' || w[0] == L'/') && (w[1] == L'\\' || w[1] == L'/'))
 	{
-		return false;
+		return true;
 	}
 
 	if (w.size() >= 3 && w[1] == L':' && (w[2] == L'\\' || w[2] == L'/'))
 	{
 		const wchar_t root[]{w[0], L':', L'\\', L'\0'};
-		if (GetDriveTypeW(root) == DRIVE_REMOTE) return false;
+		if (GetDriveTypeW(root) == DRIVE_REMOTE) return true;
 	}
 
-	return true;
+	return false;
+}
+
+static bool fs_path_can_recycle(const std::wstring_view w)
+{
+	return !fs_path_is_network(w);
+}
+
+bool platform::is_network_location(const df::folder_path folder)
+{
+	return fs_path_is_network(to_file_system_path(folder));
 }
 
 bool platform::can_recycle(const std::vector<df::file_path>& files, const std::vector<df::folder_path>& folders)

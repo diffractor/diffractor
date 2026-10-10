@@ -137,6 +137,13 @@ bool platform::can_recycle(const std::vector<df::file_path>&, const std::vector<
 	return false;
 }
 
+// No mount-type query here is free of the wait it would be avoiding - statfs on a hung network
+// mount blocks too - so every location is treated as one whose presence can be checked.
+bool platform::is_network_location(const df::folder_path)
+{
+	return false;
+}
+
 namespace
 {
 	// The shell appends " (2)", " (3)" and so on to a colliding name. Matching that keeps a

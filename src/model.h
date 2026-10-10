@@ -450,12 +450,28 @@ public:
 		return l.compare(r);
 	}
 
+	// Builds before 1.27.3 wrote these lists to the INI unquoted, and the reader strips one quote pair
+	// from each end of a value, so a list that began and ended with quoted entries came back with the
+	// two quote characters fused between paths, as "' or '". Search syntax such as loc:"Boulder City"
+	// legitimately puts a double quote next to text, but never directly beside a single quote.
+	static bool is_damaged_entry(const std::string_view entry)
+	{
+		const auto first_text = entry.find_first_not_of("\"'");
+		if (first_text == std::string_view::npos || !df::is_path(entry.substr(first_text))) return false;
+
+		return entry.find("\"'") != std::string_view::npos || entry.find("'\"") != std::string_view::npos;
+	}
+
 	void read(const std::string_view section, const std::string_view key,
 	          const platform::setting_file_ptr& properties)
 	{
 		std::string str;
 		properties->read(section, key, str);
-		add_items(str::split(str, true));
+
+		for (const auto& item : str::split(str, true))
+		{
+			if (!is_damaged_entry(item)) _items.emplace_back(item);
+		}
 	}
 
 	void write(const std::string_view section, const std::string_view key,
@@ -1963,6 +1979,21 @@ public:
 	static quadd initial_crop(const sizei dimensions, const ui::orientation orientation)
 	{
 		return quadd(dimensions).transform(to_simple_transform_inv(orientation));
+	}
+
+	// initial_crop draws the stored orientation into the pixels, so a written pixel edit is already
+	// upright. Leaving the orientation tag behind would turn the saved photo a second time.
+	static metadata_edits save_metadata_edits(const bool has_pixel_changes, const ui::orientation stored_orientation)
+	{
+		metadata_edits result;
+
+		if (has_pixel_changes && stored_orientation != ui::orientation::top_left &&
+			stored_orientation != ui::orientation::none)
+		{
+			result.orientation = ui::orientation::top_left;
+		}
+
+		return result;
 	}
 
 	// A crop quad's positions are stored pixels and its corner order carries the orientation, which is
