@@ -117,13 +117,88 @@ static void should_reject_stale_movie_cache_completions_before_state_changes()
 	assert_equal(true, current_last_frame.clear_in_flight, "a current final answer still clears the latch");
 	assert_equal(false, current_last_frame.dispatch_next, "but has no queue to dispatch");
 
-	const auto stale_peak = decide_movie_peak_completion(4, 3);
+	const auto stale_peak = decide_movie_peak_completion(4, 3, true, true);
 	assert_equal(false, stale_peak.accept, "a stale peak answer is rejected");
-	assert_equal(false, stale_peak.clear_pending_path, "before it erases the new generation's pending path");
+	assert_equal(false, stale_peak.clear_pending, "before it releases the new generation's pending scan");
 
-	const auto current_peak = decide_movie_peak_completion(4, 4);
+	const auto current_peak = decide_movie_peak_completion(4, 4, true, true);
 	assert_equal(true, current_peak.accept, "a current peak answer is accepted");
-	assert_equal(true, current_peak.clear_pending_path, "and releases its own pending path");
+	assert_equal(true, current_peak.clear_pending, "releases its own pending scan");
+	assert_equal(true, current_peak.store, "and is kept");
+
+	// The level track is drawn for one clip, so moving focus cancels the scan for the last. What a
+	// cancelled scan measured is part of a file, and kept it would read as a file with no sound.
+	const auto cancelled_peak = decide_movie_peak_completion(4, 4, true, false);
+	assert_equal(true, cancelled_peak.clear_pending, "a cancelled scan releases the request it answered");
+	assert_equal(false, cancelled_peak.store, "but what it measured is not kept");
+
+	const auto superseded_peak = decide_movie_peak_completion(4, 4, false, true);
+	assert_equal(false, superseded_peak.clear_pending, "a scan finishing after another was asked for leaves that one");
+	assert_equal(true, superseded_peak.store, "and is kept, having read the whole file");
+}
+
+// A paused preview was left on the frame the movie had played on to: the session had once been sent to
+// the clip's in point, and that was still remembered, so parking there again sent nothing.
+static void should_seek_a_movie_preview_back_to_where_it_was()
+{
+	std::optional<double> sought = 2.0;
+
+	assert_equal(false, decide_movie_preview_seek(2.0, 2.0, 0.01, sought), "a session where it is wanted stays");
+	assert_equal(false, sought.has_value(), "and where it was sent is forgotten once it is there");
+	assert_equal(true, decide_movie_preview_seek(7.0, 2.0, 0.01, sought),
+	             "parked back at the in point after playing on, it is sent there again");
+	assert_equal(false, decide_movie_preview_seek(7.0, 2.0, 0.01, sought), "once, while it is on its way");
+	assert_equal(true, decide_movie_preview_seek(7.0, 4.0, 0.01, sought), "a new destination is sought at once");
+	assert_equal(false, decide_movie_preview_seek(4.3, 4.0, 0.5, sought),
+	             "and while playing, a session a little off its mark walks there rather than seeking");
+}
+
+// The out point is the first instant not kept, so the frame shown for it is the last one before it --
+// one of the clip's own frames. A fixed 40 ms step back showed one two frames early at 60 fps.
+static void should_show_the_movie_frame_at_a_trim_handle()
+{
+	movie_clip clip;
+	clip.frame_rate = 60;
+	const auto nearest_frame = [](const double time) { return static_cast<int>(std::lround(time * 60)); };
+
+	assert_equal(119, nearest_frame(movie_last_kept_frame_time(clip, 0, 2.0)),
+	             "an out point on a frame's start shows the frame before it");
+	assert_equal(120, nearest_frame(movie_last_kept_frame_time(clip, 0, 2.005)),
+	             "one inside a frame shows that frame, which the movie keeps part of");
+	assert_equal(1.995, movie_last_kept_frame_time(clip, 1.995, 2.0), "and never one before the in point");
+	assert_near(1.0 / 120, movie_frame_period(clip) / 2, 1e-12, "it is decoded to the nearest frame of the clip's own");
+
+	clip.frame_rate = 0;
+	assert_near(0.04, movie_frame_period(clip), 1e-12, "a clip not yet measured uses the preview's step");
+}
+
+// Dragging the out handle to the start of a long clip leaves both handles on one pixel. The in handle
+// won every tie, and against an in point of zero it cannot move, so the trim could not be dragged out.
+static void should_let_either_movie_trim_handle_be_taken()
+{
+	assert_equal(0, pick_movie_trim_handle(2, 5, false, 1, 9, 10), "the nearer handle is taken");
+	assert_equal(1, pick_movie_trim_handle(5, 2, true, 1, 9, 10), "whichever it is");
+	assert_equal(1, pick_movie_trim_handle(3, 3, true, 0, 0.1, 600),
+	             "trimmed to the start, the out handle is the one that can move");
+	assert_equal(0, pick_movie_trim_handle(3, 3, false, 599.9, 600, 600), "trimmed to the end, the in handle is");
+	assert_equal(0, pick_movie_trim_handle(3, 3, true, 300, 300.1, 600), "between, the side of the pointer decides");
+	assert_equal(1, pick_movie_trim_handle(3, 3, false, 300, 300.1, 600), "either way");
+}
+
+// Play, Pause and Play again before the file had opened adopted the first session and then overwrote it
+// without closing it; a clip whose file failed to open left the player "playing" for ever.
+static void should_adopt_only_the_movie_clip_session_asked_for()
+{
+	assert_equal(true, decide_movie_clip_session(true, true, true) == movie_clip_session_answer::adopt,
+	             "the session for the latest Play is adopted");
+	assert_equal(true, decide_movie_clip_session(true, false, true) == movie_clip_session_answer::close,
+	             "one a later Play replaced is closed, not adopted");
+	assert_equal(true, decide_movie_clip_session(true, true, false) == movie_clip_session_answer::close,
+	             "as is one the player stopped wanting");
+	assert_equal(true, decide_movie_clip_session(false, true, true) == movie_clip_session_answer::stop_playing,
+	             "a latest Play that could not open stops the player");
+	assert_equal(true, decide_movie_clip_session(false, false, true) == movie_clip_session_answer::ignore,
+	             "but a failure nobody is waiting on changes nothing");
 }
 
 static void should_bound_movie_probe_retries_for_moving_sources()
@@ -4474,6 +4549,11 @@ void register_view_tests(view_state& state, test_registry& tests)
 	          should_retire_movie_source_caches_only_after_successful_replacement);
 	tests.add("Should turn Movie frames upright"s, should_turn_movie_frames_upright);
 	tests.add("Should count Movie cache bytes once per frame"s, should_count_movie_cache_bytes_once_per_frame);
+	tests.add("Should seek a Movie preview back to where it was"s, should_seek_a_movie_preview_back_to_where_it_was);
+	tests.add("Should show the Movie frame at a trim handle"s, should_show_the_movie_frame_at_a_trim_handle);
+	tests.add("Should let either Movie trim handle be taken"s, should_let_either_movie_trim_handle_be_taken);
+	tests.add("Should adopt only the Movie clip session asked for"s,
+	          should_adopt_only_the_movie_clip_session_asked_for);
 	// VIEW-005/006 - Edit load and preview replies are detached source state, not placeholder pixels.
 	tests.add("Should keep Edit view load failure separate from placeholder pixels"s,
 	          should_keep_edit_load_failure_separate_from_placeholder_pixels);

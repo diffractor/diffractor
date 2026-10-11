@@ -16,6 +16,7 @@
 #include "model.h"
 #include "model_movie.h"
 #include "test_runner.h"
+#include "util_json.h"
 #include "view_movie.h"
 
 static df::folder_path movie_test_folder()
@@ -1100,6 +1101,17 @@ static void should_decide_what_entering_movie_does()
 	assert_equal(true, project.is_modified(), "that empty timeline is still unsaved work");
 	assert_equal(true, decide_movie_entry(project, second, first) == movie_entry::resume,
 	             "so entering again must not reseed over it silently");
+
+	// An empty timeline that was opened or saved is a document like any other: the selection it answers
+	// to, or none, returns to it, where it used to be rebuilt from the selection and lose its file.
+	movie_project saved_empty;
+	saved_empty.reset({}, {}, movie_test_path("empty.otio"));
+	assert_equal(true, decide_movie_entry(saved_empty, none, first) == movie_entry::resume,
+	             "an opened empty project is returned to when nothing is selected");
+	assert_equal(true, decide_movie_entry(saved_empty, first, first) == movie_entry::resume,
+	             "and when the selection is the one it answers to");
+	assert_equal(true, decide_movie_entry(saved_empty, second, first) == movie_entry::seed,
+	             "while another selection builds a new timeline, as it would over any saved one");
 }
 
 // The panel's native controls report every notification they raise, including the echo of a value
@@ -1366,6 +1378,443 @@ static void should_let_cancel_and_publication_decide_each_other()
 	}
 }
 
+static std::string movie_test_url(const std::string_view name)
+{
+	return str::replace(movie_test_path(name).pack(), "\\", "/");
+}
+
+// The source range of each clip a written project lays on its track, as (start, duration) seconds.
+static std::vector<std::pair<double, double>> otio_clip_ranges(const std::string_view json)
+{
+	std::vector<std::pair<double, double>> result;
+
+	df::util::json::json_doc doc;
+	doc.Parse(json.data(), json.size());
+	if (doc.HasParseError() || !doc.IsObject()) return result;
+
+	const auto seconds = [](const auto& time) { return time["value"].GetDouble() / time["rate"].GetDouble(); };
+
+	for (const auto& child : doc["tracks"]["children"][0]["children"].GetArray())
+	{
+		if (!str::starts(child["OTIO_SCHEMA"].GetString(), "Clip")) continue;
+		const auto& range = child["source_range"];
+		result.emplace_back(seconds(range["start_time"]), seconds(range["duration"]));
+	}
+
+	return result;
+}
+
+// Two four-second clips joined by one dissolve, under the document metadata given.
+static std::string dissolve_project(const std::string_view metadata, const double in_offset, const double out_offset,
+                                    const double second_start)
+{
+	return std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"metadata": {{ {} }},
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{
+					"start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 4 }} }},
+					"media_reference": {{ "target_url": "{}" }} }},
+				{{ "OTIO_SCHEMA": "Transition.1", "transition_type": "SMPTE_Dissolve",
+					"in_offset": {{ "rate": 1, "value": {} }}, "out_offset": {{ "rate": 1, "value": {} }} }},
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{
+					"start_time": {{ "rate": 1, "value": {} }}, "duration": {{ "rate": 1, "value": 4 }} }},
+					"media_reference": {{ "target_url": "{}" }} }}
+			]
+		}}] }}
+	}})", metadata, movie_test_url("a.mp4"), in_offset, out_offset, second_start, movie_test_url("b.mp4"));
+}
+
+// OpenTimelineIO puts a transition across a cut and draws it from the media past each clip's range,
+// so a track lasts as long as its clips' ranges added together. Movie overlaps its clips instead.
+// Written as whole retained ranges, another tool played every crossfade over footage the user had
+// trimmed away, and the movie a transition longer at every join.
+static void should_write_transitions_as_otio_reads_them()
+{
+	auto first = make_video("a.mp4", 10, {1920, 1080}, 30);
+	first.start = 1;
+	const std::vector clips{first, make_photo("b.jpg", 5, {4000, 3000}), make_video("c.mp4", 8, {1920, 1080}, 30)};
+
+	movie_settings settings;
+	settings.transition = movie_transition::crossfade;
+	settings.transition_seconds = 1.0;
+
+	const auto json = write_otio(clips, settings, movie_test_folder());
+	const auto ranges = otio_clip_ranges(json);
+
+	assert_equal(3_z, ranges.size(), "every clip is on the track");
+
+	auto track_seconds = 0.0;
+	for (const auto& range : ranges) track_seconds += range.second;
+
+	assert_near(calc_movie_timing(clips, settings).duration, track_seconds, 1e-9,
+	            "the track another tool lays out lasts as long as the movie");
+	assert_near(1.0, ranges[0].first, 1e-9, "the first clip starts at its in point");
+	assert_near(8.5, ranges[0].second, 1e-9, "and stops half a crossfade before its out point");
+	assert_near(0.5, ranges[1].first, 1e-9, "a clip after a crossfade starts half of it in");
+	assert_near(4.0, ranges[1].second, 1e-9, "and one between two gives up half of each");
+	assert_near(7.5, ranges[2].second, 1e-9, "the last clip runs to its out point");
+
+	const auto read = read_otio(json, movie_test_folder());
+	assert_equal(3_z, read.clips.size(), "the project reads back");
+	assert_equal(0, read.ignored_elements, "with its crossfades understood as Movie's own");
+
+	for (size_t i = 0; i < clips.size(); ++i)
+	{
+		assert_near(clips[i].start, read.clips[i].start, 1e-9, "each clip keeps its in point");
+		assert_near(clips[i].end, read.clips[i].end, 1e-9, "and its out point");
+	}
+
+	// Saved before the file said which convention its ranges follow, a project holds whole retained
+	// ranges, and reads as it was written.
+	const auto legacy = read_otio(
+		dissolve_project(R"("diffractor": { "transition": "crossfade", "transition_seconds": 1.0 })", 0.5, 0.5, 2),
+		movie_test_folder());
+	assert_equal(2_z, legacy.clips.size(), "an older project reads");
+	assert_equal(4.0, legacy.clips[0].end, "with its ranges as written");
+	assert_equal(2.0, legacy.clips[1].start, "on both sides of the crossfade");
+
+	// Another tool's dissolve reaches past the cut into both clips, unevenly if it likes. Adopted, it
+	// widens each clip by what it reaches into, so the movie is as long as that tool's track.
+	const auto foreign = read_otio(dissolve_project({}, 0.25, 0.75, 2), movie_test_folder());
+	assert_equal(true, foreign.settings.transition == movie_transition::crossfade, "a dissolve at every cut is adopted");
+	assert_near(1.0, foreign.settings.transition_seconds, 1e-9, "at its whole length");
+	assert_near(4.75, foreign.clips[0].end, 1e-9, "the outgoing clip runs on past the cut");
+	assert_near(1.75, foreign.clips[1].start, 1e-9, "and the incoming one starts before it");
+	assert_near(8.0, calc_movie_timing(foreign.clips, foreign.settings).duration, 1e-9,
+	            "and the movie is as long as the track");
+	assert_equal(0, foreign.ignored_elements, "nothing is left out");
+
+	// A clip the reader cannot use takes nothing else with it: each transition beside it still widens
+	// the clip on its own side, and not the clip beyond.
+	const auto broken_middle = std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"metadata": {{ "diffractor": {{ "version": 2, "transition": "crossfade", "transition_seconds": 1.0 }} }},
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 3.5 }} }},
+					"media_reference": {{ "target_url": "{}" }} }},
+				{{ "OTIO_SCHEMA": "Transition.1", "transition_type": "SMPTE_Dissolve",
+					"in_offset": {{ "rate": 1, "value": 0.5 }}, "out_offset": {{ "rate": 1, "value": 0.5 }} }},
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{ "start_time": {{ "rate": 1, "value": 0.5 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_reference": {{ "target_url": "https://example.com/b.mp4" }} }},
+				{{ "OTIO_SCHEMA": "Transition.1", "transition_type": "SMPTE_Dissolve",
+					"in_offset": {{ "rate": 1, "value": 0.25 }}, "out_offset": {{ "rate": 1, "value": 0.25 }} }},
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{ "start_time": {{ "rate": 1, "value": 1 }}, "duration": {{ "rate": 1, "value": 3 }} }},
+					"media_reference": {{ "target_url": "{}" }} }}
+			]
+		}}] }}
+	}})", movie_test_url("a.mp4"), movie_test_url("c.mp4"));
+
+	const auto without_middle = read_otio(broken_middle, movie_test_folder());
+	assert_equal(2_z, without_middle.clips.size(), "the clips it can use are read");
+	assert_near(4.0, without_middle.clips[0].end, 1e-9, "the clip before keeps the media its transition reached into");
+	assert_near(0.75, without_middle.clips[1].start, 1e-9, "and the clip after keeps what its own transition did");
+}
+
+// OpenTimelineIO 0.15 and later write Clip.2: a clip names its media in a map of references with the
+// key of the one in use. Read only through the older single reference, every clip of a file from a
+// current tool had no media, and the project opened empty. A range in timecoded media counts from the
+// media's own first frame, and what the file asks for that Movie cannot do is reported.
+static void should_read_clips_as_current_otio_writes_them()
+{
+	const auto json = std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.2",
+					"source_range": {{ "start_time": {{ "rate": 24, "value": 86424 }}, "duration": {{ "rate": 24, "value": 48 }} }},
+					"media_references": {{ "DEFAULT_MEDIA": {{ "OTIO_SCHEMA": "ExternalReference.1", "target_url": "{}",
+						"available_range": {{ "start_time": {{ "rate": 24, "value": 86400 }}, "duration": {{ "rate": 24, "value": 2400 }} }} }} }},
+					"active_media_reference_key": "DEFAULT_MEDIA" }},
+				{{ "OTIO_SCHEMA": "Clip.2",
+					"source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_references": {{
+						"high": {{ "OTIO_SCHEMA": "ExternalReference.1", "target_url": "{}" }},
+						"proxy": {{ "OTIO_SCHEMA": "ExternalReference.1", "target_url": "{}" }} }},
+					"active_media_reference_key": "proxy" }},
+				{{ "OTIO_SCHEMA": "Clip.2", "enabled": false,
+					"source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_references": {{ "DEFAULT_MEDIA": {{ "target_url": "{}" }} }},
+					"active_media_reference_key": "DEFAULT_MEDIA" }},
+				{{ "OTIO_SCHEMA": "Clip.2",
+					"source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"effects": [{{ "OTIO_SCHEMA": "LinearTimeWarp.1", "time_scalar": 2.0 }}],
+					"media_references": {{ "DEFAULT_MEDIA": {{ "target_url": "{}" }} }},
+					"active_media_reference_key": "DEFAULT_MEDIA" }},
+				{{ "OTIO_SCHEMA": "Clip.2",
+					"source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_references": {{ "only": {{ "target_url": "{}" }} }},
+					"active_media_reference_key": "gone" }}
+			]
+		}}] }}
+	}})", movie_test_url("timecode.mov"), movie_test_url("high.mov"), movie_test_url("proxy.mov"),
+	                              movie_test_url("disabled.mov"), movie_test_url("fast.mov"), movie_test_url("only.mov"));
+
+	const auto read = read_otio(json, movie_test_folder());
+
+	assert_equal(true, static_cast<bool>(read), "a project from a current OpenTimelineIO reads");
+	assert_equal(4_z, read.clips.size(), "with every enabled clip");
+	assert_equal(movie_test_path("timecode.mov").pack(), read.clips[0].path.pack(), "a clip finds its media");
+	assert_near(1.0, read.clips[0].start, 1e-9, "a range in timecoded media counts from the media's first frame");
+	assert_near(3.0, read.clips[0].end, 1e-9, "for the length it states");
+	assert_equal(movie_test_path("proxy.mov").pack(), read.clips[1].path.pack(), "the media in use is the active one");
+	assert_equal(movie_test_path("fast.mov").pack(), read.clips[2].path.pack(),
+	             "a clip with an effect Movie cannot apply keeps its place");
+	assert_equal(movie_test_path("only.mov").pack(), read.clips[3].path.pack(),
+	             "a key that names nothing falls back to the media there is");
+	assert_equal(1, omitted_count(read, "disabled clip"), "a disabled clip is left out and said so");
+	assert_equal(1, omitted_count(read, "LinearTimeWarp.1"), "and so is the effect");
+	assert_equal(2, read.ignored_elements, "and nothing else");
+}
+
+// A camera's clip is rarely a whole number of milliseconds long. Saved rounded to the millisecond
+// beside its exact source length, an untrimmed clip came back a fraction short and showed as trimmed.
+static void should_keep_an_untrimmed_clip_untrimmed_through_save()
+{
+	const auto camera = make_video("camera.mov", 12.3452, {1920, 1080}, 30);
+	const auto read = read_otio(write_otio({camera}, {}, movie_test_folder()), movie_test_folder());
+
+	assert_equal(1_z, read.clips.size(), "the clip reads back");
+	assert_equal(false, read.clips[0].is_trimmed(), "an untrimmed clip is still untrimmed");
+	assert_near(12.3452, read.clips[0].end, 1e-9, "and runs to the end of its source");
+
+	// A project an earlier build saved holds the length rounded; its clip opens untrimmed as well.
+	const auto legacy = std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"metadata": {{ "diffractor": {{ "transition": "cut" }} }},
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.1",
+					"source_range": {{ "start_time": {{ "rate": 1000, "value": 0 }}, "duration": {{ "rate": 1000, "value": 12345 }} }},
+					"media_reference": {{ "target_url": "{}" }},
+					"metadata": {{ "diffractor": {{ "photo": false, "source_duration": 12.3452 }} }} }}
+			]
+		}}] }}
+	}})", movie_test_url("camera.mov"));
+
+	const auto legacy_read = read_otio(legacy, movie_test_folder());
+	assert_equal(1_z, legacy_read.clips.size(), "an older project reads");
+	assert_equal(false, legacy_read.clips[0].is_trimmed(), "and its untrimmed clip opens untrimmed");
+}
+
+// A clip saved before its source was measured -- added a moment before, or gone by then -- has no
+// length yet, and OpenTimelineIO's null range means the whole of the media. Both were dropped when
+// the project was opened; they come back for the probe to measure.
+static void should_keep_an_unmeasured_clip_through_save()
+{
+	const auto pending = make_video("pending.mp4", 0, {}, 0);
+	const auto read = read_otio(write_otio({pending, make_photo("b.jpg", 4, {4000, 3000})}, {}, movie_test_folder()),
+	                            movie_test_folder());
+
+	assert_equal(2_z, read.clips.size(), "a clip not yet measured is kept");
+	assert_equal(0, read.ignored_elements, "and is not reported left out");
+	assert_equal(0.0, read.clips[0].duration(), "it still waits for its length");
+
+	movie_probe_result probe;
+	probe.path = read.clips[0].path;
+	probe.found = true;
+	probe.duration = 9.0;
+	probe.extent = {1920, 1080};
+	assert_equal(9.0, apply_movie_probe(read.clips[0], probe, 4.0).end, "which the probe gives it from the source");
+
+	const auto json = std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": null, "media_reference": {{ "target_url": "{}" }} }},
+				{{ "OTIO_SCHEMA": "Clip.1", "media_reference": {{ "target_url": "{}" }} }}
+			]
+		}}] }}
+	}})", movie_test_url("whole.mp4"), movie_test_url("still.jpg"));
+
+	const auto foreign = read_otio(json, movie_test_folder());
+	assert_equal(2_z, foreign.clips.size(), "a clip with no range is the whole of its media");
+	assert_equal(0.0, foreign.clips[0].duration(), "measured by the probe");
+	assert_equal(true, foreign.clips[1].is_photo, "a still with no range is kept");
+	assert_equal(foreign.settings.photo_seconds, foreign.clips[1].end, "and held for the default length");
+	assert_equal(true, foreign.clips[1].photo_duration_is_default, "which it follows");
+}
+
+// A file URI escapes a name byte by byte, and an older tool escaped Latin-1 rather than UTF-8, so
+// "caf%E9.mp4" decodes to a byte that is no UTF-8 character. Converting that through the process code
+// page threw, and Save -- or leaving Movie and choosing Save -- ended the application.
+static void should_save_clip_paths_that_are_not_utf8()
+{
+	const auto odd_path = movie_test_folder().combine_file("caf\xE9.mp4");
+	auto odd = make_video("x.mp4", 4, {1920, 1080}, 30);
+	odd.path = odd_path;
+
+	const auto json = write_otio({odd, make_video("plain.mp4", 4, {1920, 1080}, 30)}, {}, movie_test_folder());
+	const auto read = read_otio(json, movie_test_folder());
+	assert_equal(2_z, read.clips.size(), "both clips save and read back");
+	assert_equal(odd_path.pack(), read.clips[0].path.pack(), "with the name as it was read");
+
+	const auto relative = std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_reference": {{ "target_url": "caf%E9.mp4" }} }},
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{ "start_time": {{ "rate": 1, "value": 0 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_reference": {{ "target_url": "plain.mp4" }} }}
+			]
+		}}] }}
+	}})");
+
+	const auto relative_read = read_otio(relative, movie_test_folder());
+	assert_equal(true, static_cast<bool>(relative_read), "a project naming such a file beside it still opens");
+	assert_equal(movie_test_path("plain.mp4").pack(), relative_read.clips.back().path.pack(),
+	             "with the clips it can name");
+}
+
+// A project file is untrusted input. An in point no source can have became an infinity the writer
+// could not express: the key went out with no value, Save reported success, and the project no longer
+// opened.
+static void should_write_a_project_that_reads_back_whatever_it_holds()
+{
+	const auto json = std::format(R"({{
+		"OTIO_SCHEMA": "Timeline.1",
+		"tracks": {{ "OTIO_SCHEMA": "Stack.1", "children": [{{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+				{{ "OTIO_SCHEMA": "Clip.1", "source_range": {{ "start_time": {{ "rate": 1, "value": 1e306 }}, "duration": {{ "rate": 1, "value": 2 }} }},
+					"media_reference": {{ "target_url": "{}" }} }}
+			]
+		}}] }}
+	}})", movie_test_url("late.mp4"));
+
+	const auto late = read_otio(json, movie_test_folder());
+	assert_equal(1_z, late.clips.size(), "a clip starting impossibly late is read");
+	assert_equal(true, late.clips[0].start <= movie_max_clip_seconds, "with its in point bounded");
+	assert_equal(true, static_cast<bool>(read_otio(write_otio(late.clips, late.settings, movie_test_folder()),
+	                                               movie_test_folder())), "and saved as a project that opens");
+
+	auto broken = make_video("broken.mp4", 10, {1920, 1080}, 30);
+	broken.start = std::numeric_limits<double>::infinity();
+	broken.source_duration = std::numeric_limits<double>::quiet_NaN();
+	assert_equal(true, static_cast<bool>(read_otio(write_otio({broken}, {}, movie_test_folder()), movie_test_folder())),
+	             "what Save writes always reads back");
+
+	const auto xml = std::format(R"(<Project>
+  <MediaItems><MediaItem id="1" filePath="{}" duration="1e308" /></MediaItems>
+  <Extents><VideoClip extentID="10" mediaItemID="1" inTime="1e306" outTime="0" /></Extents>
+</Project>)", movie_test_path("long.mp4"));
+
+	const auto wlmp = read_wlmp(xml, movie_test_folder());
+	assert_equal(1_z, wlmp.recorded_seconds.size(), "a Movie Maker clip is read");
+	assert_equal(true, wlmp.recorded_seconds[0] <= movie_max_clip_seconds, "with the length it recorded bounded");
+	assert_equal(true, wlmp.clips[0].start <= movie_max_clip_seconds, "and its in point too");
+}
+
+// A Movie Maker project is untrusted input too. A path of ampersands made the entity decoder look to
+// the end of the text from every one of them, and a clip carrying thousands of distinct effects made
+// the report search its whole list for each, so a crafted file held the import for hours.
+static void should_bound_what_a_movie_maker_project_costs()
+{
+	const std::string ampersands(20000, '&');
+	std::string effects;
+
+	for (auto i = 0; i < 200; ++i)
+	{
+		effects += std::format(R"(<ShapeEffect effectTemplateID="Effect{}" />)", i);
+	}
+
+	const auto xml = std::format(R"(<Project>
+  <MediaItems><MediaItem id="1" filePath="{}" duration="4" /></MediaItems>
+  <Extents>
+    <VideoClip extentID="10" mediaItemID="1" inTime="0" outTime="4"><Effects>{}</Effects></VideoClip>
+  </Extents>
+</Project>)", movie_test_path(ampersands + "x.mp4"), effects);
+
+	const auto read = read_wlmp(xml, movie_test_folder());
+	assert_equal(1_z, read.clips.size(), "the clip is read");
+	assert_equal(ampersands + "x.mp4", std::string(read.clips[0].path.name()), "bare ampersands are kept as they are");
+	assert_equal(200, read.ignored_elements, "every effect left out is counted");
+	assert_equal(true, read.omitted.size() <= 33, "but the report names a bounded number of kinds");
+	assert_equal(1, omitted_count(read, "Effect0"), "naming the first it met");
+}
+
+// Dragging a slider reports every value it passes. Each was an undo step, so Undo walked a drag back one
+// value at a time, a long drag pushed the saved state out of the history, and a drag that ended where it
+// began still left the timeline asking to be saved.
+static void should_merge_one_gesture_into_one_undo_step()
+{
+	movie_project project;
+	project.insert_many(0, {make_video("a.mp4", 10, {1920, 1080}, 30), make_photo("b.jpg", 4, {4000, 3000})});
+	project.mark_seeded();
+	const auto before = project.settings();
+
+	auto settings = before;
+
+	for (auto tenths = 11; tenths <= 200; ++tenths)
+	{
+		settings.transition_seconds = tenths / 10.0;
+		project.settings(settings, movie_edit_group::transition_length);
+	}
+
+	assert_equal(true, project.is_modified(), "a drag is an edit");
+	project.undo();
+	assert_equal(true, project.settings() == before, "one undo takes the whole drag back");
+	assert_equal(false, project.can_undo(), "in one step");
+	assert_equal(false, project.is_modified(), "to the state it started from");
+
+	settings = before;
+	settings.photo_seconds = 9;
+	project.settings(settings, movie_edit_group::photo_duration);
+	project.settings(before, movie_edit_group::photo_duration);
+	assert_equal(false, project.is_modified(), "a drag that ends where it began is no edit");
+	assert_equal(false, project.can_undo(), "and costs no undo step");
+
+	// A settled drag is a step of its own, and so is the next.
+	settings.photo_seconds = 6;
+	project.settings(settings, movie_edit_group::photo_duration);
+	project.end_edit_group();
+	settings.photo_seconds = 7;
+	project.settings(settings, movie_edit_group::photo_duration);
+	project.undo();
+	assert_equal(6.0, project.settings().photo_seconds, "one settled drag is not merged into the next");
+
+	// Any other edit closes the gesture.
+	project.trim(1, 0, 3, movie_edit_group::clip_hold);
+	project.trim(1, 0, 5, movie_edit_group::clip_hold);
+	project.trim(0, 1, 9);
+	project.undo();
+	project.undo();
+	assert_equal(true, project.clips()[1].photo_duration_is_default, "the held photo follows the default again");
+
+	// So does a save: what comes after it is a change from what is on disk.
+	settings.photo_seconds = 8;
+	project.settings(settings, movie_edit_group::photo_duration);
+	project.mark_saved(movie_test_path("movie.otio"), project.edit_revision());
+	settings.photo_seconds = 5;
+	project.settings(settings, movie_edit_group::photo_duration);
+	project.undo();
+	assert_equal(8.0, project.settings().photo_seconds, "undo returns to what was saved");
+	assert_equal(false, project.is_modified(), "which leaves nothing to save");
+}
+
+// The panel shows lengths in tenths and takes whatever is typed into it. A length it is still showing is
+// the document's own and is kept exactly; a typed one is held to the document's bounds.
+static void should_hold_panel_settings_to_the_document()
+{
+	movie_view_state state;
+	auto settings = state.project.settings();
+	settings.transition_seconds = 0.75;
+	state.project.reset({}, settings, {});
+	state.read_from_project();
+
+	assert_equal(0.75, state.to_settings().transition_seconds, "a length shown rounded keeps its exact value");
+	assert_equal(true, state.to_settings() == state.project.settings(), "so choosing a setting again changes nothing");
+
+	state.transition_tenths = 150;
+	assert_equal(movie_max_transition_seconds, state.to_settings().transition_seconds, "a typed length is bounded");
+	state.photo_tenths = 0;
+	assert_equal(movie_min_photo_seconds, state.to_settings().photo_seconds, "so is a typed photo length");
+	state.photo_tenths = 100000;
+	assert_equal(movie_max_photo_seconds, state.to_settings().photo_seconds, "at both ends");
+}
+
 void register_movie_tests(view_state& state, test_registry& tests)
 {
 	//
@@ -1399,6 +1848,8 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	tests.add("Should add several movie clips as one edit"s, should_add_several_clips_as_one_edit);
 	tests.add("Should tell an unprobed movie clip from a lost one"s,
 	          should_tell_an_unprobed_clip_from_a_lost_one);
+	tests.add("Should merge one movie gesture into one undo step"s, should_merge_one_gesture_into_one_undo_step);
+	tests.add("Should hold movie panel settings to the document"s, should_hold_panel_settings_to_the_document);
 
 	//
 	// Entering Movie
@@ -1415,8 +1866,17 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	tests.add("Should bound movie project durations"s, should_bound_movie_project_durations);
 	tests.add("Should refuse a deeply nested movie project"s, should_refuse_a_deeply_nested_movie_project);
 	tests.add("Should read a movie project it did not write"s, should_read_a_movie_project_it_did_not_write);
+	tests.add("Should write movie transitions as OTIO reads them"s, should_write_transitions_as_otio_reads_them);
+	tests.add("Should read movie clips as current OTIO writes them"s, should_read_clips_as_current_otio_writes_them);
+	tests.add("Should keep an untrimmed movie clip untrimmed through save"s,
+	          should_keep_an_untrimmed_clip_untrimmed_through_save);
+	tests.add("Should keep an unmeasured movie clip through save"s, should_keep_an_unmeasured_clip_through_save);
+	tests.add("Should save movie clip paths that are not UTF-8"s, should_save_clip_paths_that_are_not_utf8);
+	tests.add("Should write a movie project that reads back whatever it holds"s,
+	          should_write_a_project_that_reads_back_whatever_it_holds);
 	tests.add("Should import a movie maker project"s, should_import_a_movie_maker_project);
 	tests.add("Should import a movie maker project as movie maker writes it"s,
 	          should_import_a_movie_maker_project_as_movie_maker_writes_it);
+	tests.add("Should bound what a Movie Maker project costs"s, should_bound_what_a_movie_maker_project_costs);
 	tests.add("Should find moved movie sources"s, should_find_moved_movie_sources);
 }

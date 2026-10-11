@@ -28,8 +28,7 @@ namespace
 	// One frame, larger than the two ends it replaced, because judging a cut from a thumbnail is the
 	// thing this control exists to stop.
 	constexpr int trim_frame_cy = 120;
-	// Frames are cached at whole steps so a scrub reuses them instead of decoding one per pixel.
-	constexpr double frame_step_seconds = 0.04;
+	constexpr double frame_step_seconds = movie_frame_step_seconds;
 	// Bounded by bytes, not by count: one preview frame at 4K is 33 MB and sixty thumbnails are less
 	// than one of them, so a count would either thrash the strip or hold half a gigabyte.
 	constexpr size_t max_cached_bytes = 64 * 1024 * 1024;
@@ -203,7 +202,8 @@ struct movie_frame_key_hash
 class movie_slot_decoders
 {
 public:
-	ui::const_surface_ptr frame(const size_t slot, const df::file_path path, const double time, const int max_dim)
+	ui::const_surface_ptr frame(const size_t slot, const df::file_path path, const double time, const int max_dim,
+	                            const double tolerance)
 	{
 		if (slot >= _decoders.size()) return {};
 
@@ -226,9 +226,9 @@ public:
 
 		ui::surface_ptr surface;
 
-		// Half a step of slack. The preview wants the frame the playhead is on, and refining past
-		// that costs another walk of the group of pictures for a picture nobody can tell apart.
-		if (!decoder->extract_frame_at(surface, {max_dim, max_dim}, time, frame_step_seconds / 2)) return {};
+		// The slack is half a frame of the clip's own, so the frame decoded is the nearest one: a fixed
+		// step wider than a frame let a high-rate clip answer with its neighbour.
+		if (!decoder->extract_frame_at(surface, {max_dim, max_dim}, time, tolerance)) return {};
 
 		return upright_movie_frame(surface);
 	}
@@ -247,6 +247,11 @@ class movie_source_cache final : public std::enable_shared_from_this<movie_sourc
 public:
 	explicit movie_source_cache(view_state& s) : _state(s), _decoders(std::make_shared<movie_slot_decoders>())
 	{
+	}
+
+	~movie_source_cache()
+	{
+		if (_peaks_cancel) _peaks_cancel->store(true);
 	}
 
 	// The controls panel is a separate window with its own frame, so invalidating the view does not
@@ -279,15 +284,12 @@ public:
 
 	// The frame one slot should draw. The slot keeps the last frame it was given and answers with
 	// that until the one asked for arrives, so a preview waiting on a decode holds its picture
-	// instead of blinking to black between frames.
+	// instead of blinking to black between frames. `period` is one frame of the clip's source: a slot
+	// shows the frame at the time asked, so it is keyed to the millisecond and decoded to the nearest.
 	ui::const_surface_ptr slot_frame(const size_t slot, const df::file_path path, const bool is_photo,
-	                                 const double time, const int max_dim)
+	                                 const double time, const int max_dim, const double period)
 	{
 		if (slot >= _slots.size() || path.is_empty() || max_dim <= 0) return {};
-
-		// A photo is one frame however long it is held, and the strip wants the same one, so it
-		// belongs in the shared cache rather than on a decoder.
-		if (is_photo) return fetch(path, true, 0, max_dim, true);
 
 		auto& state = _slots[slot];
 
@@ -300,7 +302,25 @@ public:
 			state.surface.reset();
 		}
 
-		const movie_frame_key key{path, static_cast<int>(std::lround(quantize(time) * 1000)), max_dim};
+		if (is_photo)
+		{
+			// A photo is one frame however long it is held, and the strip wants the same one, so it
+			// comes from the shared cache -- but the slot holds on to it once it has it. Two preview
+			// photos in a crossfade on a large display outweigh the cache's whole budget, and each one
+			// arriving evicted the other, which the next paint decoded again, for ever.
+			const movie_frame_key key{path, 0, max_dim};
+			if (state.shown == key && is_valid(state.surface)) return state.surface;
+
+			if (auto surface = fetch(path, true, 0, max_dim, true); is_valid(surface))
+			{
+				state.shown = key;
+				state.surface = std::move(surface);
+			}
+
+			return state.surface;
+		}
+
+		const movie_frame_key key{path, static_cast<int>(std::lround(time * 1000)), max_dim};
 
 		if (state.shown == key && is_valid(state.surface)) return state.surface;
 
@@ -308,7 +328,7 @@ public:
 		// frame that cannot be decoded would otherwise start a decode on every refresh.
 		if (_failed.contains(key)) return state.surface;
 
-		request({key, false, slot}, true);
+		request({key, false, slot, period / 2}, true);
 		return state.surface;
 	}
 
@@ -323,7 +343,7 @@ public:
 
 		if (const auto found = _peaks.find(path); found != _peaks.end()) return found->second;
 
-		if (_peaks_pending.emplace(path).second) request_peaks(path);
+		if (_peaks_path != path) request_peaks(path);
 		return none;
 	}
 
@@ -337,7 +357,7 @@ public:
 		_in_flight = false;
 		_failed.clear();
 		_peaks.clear();
-		_peaks_pending.clear();
+		cancel_peaks();
 
 		for (auto& slot : _slots) slot = {};
 
@@ -357,6 +377,10 @@ private:
 		// that slot keeps open, and supersedes any earlier request from the same slot: a preview
 		// wants the newest frame, never a backlog of the ones it has already gone past.
 		size_t slot = no_slot;
+		// How far from the time asked a slot's frame may be: half a frame of the clip's own.
+		double tolerance = 0;
+		// Asked for by what the user is looking at, so it jumps the queue and is the last dropped.
+		bool urgent = false;
 	};
 
 	struct slot_state
@@ -433,8 +457,10 @@ private:
 		}
 	}
 
-	void request(const request_state& req, const bool urgent)
+	void request(request_state req, const bool urgent)
 	{
+		req.urgent = urgent;
+
 		// Latest wins, per slot. A playing movie asks for twenty-five frames a second; queueing them
 		// would build a backlog the preview then plays out long after the playhead has left.
 		if (req.slot != no_slot)
@@ -460,7 +486,14 @@ private:
 		if (urgent) _queue.insert(_queue.begin(), req);
 		else _queue.emplace_back(req);
 
-		if (_queue.size() > max_queued_requests) _queue.pop_back();
+		// Full, the oldest thumbnail makes room. It was asked for by a paint the strip has since scrolled
+		// away from; dropping the newest instead kept every tile now on screen blank until the
+		// backlog of ones that were not had decoded.
+		if (_queue.size() > max_queued_requests)
+		{
+			const auto oldest = std::ranges::find_if(_queue, [](const request_state& q) { return !q.urgent; });
+			_queue.erase(oldest != _queue.end() ? oldest : std::prev(_queue.end()));
+		}
 	}
 
 	void start(const request_state& req)
@@ -475,7 +508,8 @@ private:
 		{
 			auto surface = req.slot == no_slot
 				               ? decode(req.key, req.is_photo)
-				               : decoders->frame(req.slot, req.key.path, req.key.time_ms / 1000.0, req.key.max_dim);
+				               : decoders->frame(req.slot, req.key.path, req.key.time_ms / 1000.0, req.key.max_dim,
+				                                 req.tolerance);
 
 			s.queue_ui([weak, req, generation, surface = std::move(surface)]() mutable
 			{
@@ -486,39 +520,71 @@ private:
 		});
 	}
 
-	// Not the render queue: measuring a stream takes seconds, and the preview must not wait behind
-	// it for the frame the user is looking at.
+	// The work queue, not the render or the load queue: measuring reads a whole file, which takes
+	// seconds, and the preview's frames must not wait behind it on the first, nor Save, the probe and
+	// the preview's sound -- and the Items view's media, once Movie is left -- on the second.
+	//
+	// The level track is drawn for one clip at a time, so asking for another clip's levels cancels the
+	// scan for the last where it stands, rather than letting it read a file nobody is looking at.
 	void request_peaks(const df::file_path path)
 	{
+		cancel_peaks();
+
 		const auto weak = weak_from_this();
 		const auto generation = _generation;
+		const auto cancelled = std::make_shared<std::atomic_bool>(false);
 
-		_state.queue_async(async_queue::load, [weak, path, generation, &s = _state]
+		_peaks_path = path;
+		_peaks_cancel = cancelled;
+
+		_state.queue_async(async_queue::work, [weak, path, generation, cancelled, &s = _state]
 		{
 			std::vector<uint8_t> peaks;
+			const df::cancel_token token(*cancelled);
 			av_format_decoder decoder;
 
-			if (decoder.open(path, media_intent::playback))
+			if (!token.is_cancelled() && decoder.open(path, media_intent::playback))
 			{
 				decoder.init_streams(-1, -1, false, false, false);
-				peaks = decoder.extract_audio_peaks(audio_peak_buckets);
+				peaks = decoder.extract_audio_peaks(audio_peak_buckets, token);
 			}
 
-			s.queue_ui([weak, path, generation, peaks = std::move(peaks)]() mutable
+			const auto completed = !token.is_cancelled();
+
+			s.queue_ui([weak, path, generation, cancelled, completed, peaks = std::move(peaks)]() mutable
 			{
-				if (const auto self = weak.lock()) self->publish_peaks(path, std::move(peaks), generation);
+				if (const auto self = weak.lock())
+				{
+					self->publish_peaks(path, std::move(peaks), generation, cancelled, completed);
+				}
 			});
 		});
 	}
 
-	void publish_peaks(const df::file_path path, std::vector<uint8_t> peaks, const uint64_t generation)
+	void cancel_peaks()
+	{
+		if (_peaks_cancel) _peaks_cancel->store(true);
+		_peaks_cancel.reset();
+		_peaks_path.clear();
+	}
+
+	void publish_peaks(const df::file_path path, std::vector<uint8_t> peaks, const uint64_t generation,
+	                   const std::shared_ptr<std::atomic_bool>& request, const bool completed)
 	{
 		// A file with no audio answers with an empty result, and that answer is kept: without it the
 		// next paint would ask again, and every paint after that.
-		const auto decision = decide_movie_peak_completion(_generation, generation);
+		const auto decision = decide_movie_peak_completion(_generation, generation, request == _peaks_cancel,
+		                                                   completed);
 		if (!decision.accept) return;
 
-		if (decision.clear_pending_path) _peaks_pending.erase(path);
+		if (decision.clear_pending)
+		{
+			_peaks_cancel.reset();
+			_peaks_path.clear();
+		}
+
+		if (!decision.store) return;
+
 		_peaks.insert_or_assign(path, std::move(peaks));
 		_state.invalidate_view(view_invalid::view_redraw);
 		if (on_answered) on_answered();
@@ -557,7 +623,10 @@ private:
 	df::hash_map<movie_frame_key, ui::const_surface_ptr, movie_frame_key_hash> _cache;
 	df::hash_set<movie_frame_key, movie_frame_key_hash> _failed;
 	df::hash_map<df::file_path, std::vector<uint8_t>, df::ihash, df::ieq> _peaks;
-	df::hash_set<df::file_path, df::ihash, df::ieq> _peaks_pending;
+	// The one source whose levels are being measured, and the flag that cancels that scan. The flag is
+	// shared with the scan, which outlives this object's interest in it.
+	df::file_path _peaks_path;
+	std::shared_ptr<std::atomic_bool> _peaks_cancel;
 	std::array<slot_state, slot_count> _slots;
 	std::vector<movie_frame_key> _order;
 	std::vector<request_state> _queue;
@@ -674,9 +743,11 @@ public:
 				             ui::color(dc.colors.foreground, dc.colors.alpha), {});
 			}
 
-			if (dragging)
+			const auto marker = dragging ? std::optional<int>(_drag_to) : _external_drop_to;
+
+			if (marker)
 			{
-				const auto x = r.left + _pad + _drag_to * (_tile_cx + _pad) - _pad / 2 - _scroll;
+				const auto x = r.left + _pad + *marker * (_tile_cx + _pad) - _pad / 2 - _scroll;
 				dc.draw_rect({x - 1, r.top + _pad, x + 2, r.top + _pad + _tile_cy},
 				             ui::color(dc.colors.foreground, dc.colors.alpha));
 			}
@@ -817,6 +888,18 @@ public:
 		return _drag_from >= 0 && _drag_to >= 0;
 	}
 
+	// Files dragged in from outside are shown where they would land, as a block dragged within the
+	// strip is: the drop inserts at the boundary under the pointer, and nothing said which one that was.
+	// Empty once the drag leaves the strip, ends, or drops.
+	void external_drag_over(const std::optional<pointi> loc)
+	{
+		const auto to = loc ? std::optional<int>(drop_index(*loc)) : std::nullopt;
+		if (to == _external_drop_to) return;
+
+		_external_drop_to = to;
+		_state.invalidate_view(view_invalid::view_redraw);
+	}
+
 	// Moves the drop marker to the pointer, carrying the strip along when the pointer is held near
 	// either end, so a block can be dropped at a position that was out of view when the drag began.
 	void drag_over(const pointi loc)
@@ -879,6 +962,8 @@ public:
 
 	int _drag_from = -1;
 	int _drag_to = -1;
+	// Where files dragged in from outside would be inserted, while they are over the strip.
+	std::optional<int> _external_drop_to;
 
 private:
 	recti tile_bounds(const size_t index, const recti r) const
@@ -930,8 +1015,12 @@ private:
 	int clip_at_playhead() const
 	{
 		const auto& project = _view->project();
-		const auto frame = calc_movie_frame(project.clips(), project.settings(), _view->movie_state().playhead);
-		return frame.a.index;
+		if (project.is_empty()) return -1;
+
+		// The clip playing from its own start. During a crossfade that is the incoming one: the clip
+		// Previous and Next count from, and the one a click on its tile parks the playhead at the start
+		// of. The outgoing clip marked it before, so a click on a tile put the bar under its neighbour.
+		return static_cast<int>(movie_step_origin(project.timing().starts, 0, true, _view->movie_state().playhead));
 	}
 
 	void draw_thumbnail(ui::draw_context& dc, const movie_clip& clip, const size_t index, const recti target) const
@@ -1164,7 +1253,7 @@ public:
 		// the handle out from under the user.
 		if (loc.y < track.top - grab || loc.y > track.bottom + grab) return -1;
 		if (std::min(dx_start, dx_end) > grab) return -1;
-		return dx_start <= dx_end ? 0 : 1;
+		return pick_movie_trim_handle(dx_start, dx_end, loc.x < to_x(track, _start), _start, _end, _limit);
 	}
 
 	// The box a handle answers for, for the same reason the strip's tiles have their own: a
@@ -1263,13 +1352,14 @@ private:
 
 		const auto at_end = !playing && (_tracking < 0 ? _last_handle : _tracking) == 1;
 
-		// The out point is the first instant *not* kept, so the frame shown for it is the step
-		// before: asking for the boundary itself shows a frame the movie will not contain.
-		const auto time = playing ? *playing : (at_end ? std::max(_start, _end - frame_step_seconds) : _start);
+		// The out point is the first instant *not* kept, so the frame shown for it is the last one
+		// before it: asking for the boundary itself shows a frame the movie will not contain.
+		const auto time = playing ? *playing : (at_end ? movie_last_kept_frame_time(*clip, _start, _end) : _start);
 		const auto slot = at_end ? slot_trim_out : slot_trim_in;
 		auto& held = at_end ? _out : _in;
 
-		const auto surface = _view->sources()->slot_frame(slot, clip->path, false, time, max_dim);
+		const auto surface = _view->sources()->slot_frame(slot, clip->path, false, time, max_dim,
+		                                                  movie_frame_period(*clip));
 		if (is_valid(surface)) draw_fitted(dc, target, surface, held);
 	}
 
@@ -1432,10 +1522,15 @@ namespace
 			_held = false;
 		}
 
+		// Escape drops the block where it was, and lets go of the press too: still held, the next twitch
+		// of the pointer passed the drag threshold again, restarted the drag, and the release moved the
+		// block after all.
 		bool escape() override
 		{
 			if (_strip->_drag_from < 0) return false;
 			_strip->end_drag();
+			_held = false;
+			_collapse_on_release = false;
 			_host->frame()->invalidate();
 			return true;
 		}
@@ -1523,6 +1618,7 @@ namespace
 		{
 			view_controller::on_mouse_left_button_down(loc, keys);
 			_held = true;
+			_press_playhead = _view->movie_state().playhead;
 			seek(loc);
 		}
 
@@ -1538,6 +1634,17 @@ namespace
 			_held = false;
 		}
 
+		// Escape puts the playhead back where the press found it. Unanswered here, it went on to leave
+		// Movie with the button still down.
+		bool escape() override
+		{
+			if (!_held) return false;
+
+			_held = false;
+			_view->seek(_press_playhead);
+			return true;
+		}
+
 	private:
 		void seek(const pointi loc) const
 		{
@@ -1547,6 +1654,7 @@ namespace
 		}
 
 		movie_view* _view;
+		double _press_playhead = 0;
 		bool _held = false;
 	};
 
@@ -1570,6 +1678,20 @@ namespace
 		void on_mouse_left_button_down(const pointi loc, const ui::key_state keys) override
 		{
 			view_controller::on_mouse_left_button_down(loc, keys);
+
+			const auto* const clip = _view->project().current_clip();
+			if (!clip) return;
+
+			// The press decides which clip is trimmed. Keys still reach the view while the button is
+			// down, and a release that trimmed whichever clip focus had moved to by then changed a clip
+			// the user never touched.
+			_clip_index = _view->project().current();
+			_clip_path = clip->path;
+
+			// A handle shows the frame it is on, and a movie playing on beneath would move the picture
+			// away from it, so pressing one stops playback as picking a clip does.
+			_view->stop_playback();
+
 			// Capture begins on the press, not on the hover that made this controller: until then the
 			// preview belongs to the playhead and the handle belongs to the document.
 			_trim->_tracking = _handle;
@@ -1594,10 +1716,38 @@ namespace
 
 			_held = false;
 			_trim->_tracking = -1;
-			_view->trim_current(_trim->_start, _trim->_end);
+
+			if (is_pressed_clip_current()) _view->trim_current(_trim->_start, _trim->_end);
+			else let_go();
+		}
+
+		// Escape lets go of the handle, and the trim stays as the document has it. Unanswered here, it
+		// went on to leave Movie with the handle still held, and the release then trimmed a timeline
+		// leaving had already settled.
+		bool escape() override
+		{
+			if (!_held) return false;
+
+			_held = false;
+			_trim->_tracking = -1;
+			let_go();
+			return true;
 		}
 
 	private:
+		bool is_pressed_clip_current() const
+		{
+			const auto* const clip = _view->project().current_clip();
+			return clip && _view->project().current() == _clip_index && clip->path == _clip_path;
+		}
+
+		// Back to what the document holds: the handles re-read it once nothing is tracked.
+		void let_go() const
+		{
+			_view->end_preview_override();
+			_view->changed(false);
+		}
+
 		void move(const pointi loc) const
 		{
 			const auto time = _trim->time_moved(_press_time, loc.x - _press_x);
@@ -1611,9 +1761,12 @@ namespace
 
 		void show_handle_frame() const
 		{
+			const auto* const clip = _view->project().current_clip();
+			if (!clip) return;
+
 			const auto preview_time = _handle == 0
 				                          ? _trim->_start
-				                          : std::max(_trim->_start, _trim->_end - frame_step_seconds);
+				                          : movie_last_kept_frame_time(*clip, _trim->_start, _trim->_end);
 			_view->seek_preview_only(preview_time);
 			_host->frame()->invalidate();
 		}
@@ -1621,6 +1774,8 @@ namespace
 		movie_view* _view;
 		std::shared_ptr<movie_trim_control> _trim;
 		int _handle;
+		size_t _clip_index = 0;
+		df::file_path _clip_path;
 		int _press_x = 0;
 		double _press_time = 0;
 		bool _held = false;
@@ -1681,10 +1836,21 @@ movie_settings movie_view_state::to_settings() const
 	movie_settings result = project.settings();
 
 	result.transition = crossfade ? movie_transition::crossfade : movie_transition::cut;
-	result.transition_seconds = transition_tenths / 10.0;
 	result.fade_in = fade_in;
 	result.fade_out = fade_out;
-	result.photo_seconds = std::max(0.1, photo_tenths / 10.0);
+
+	// The panel speaks tenths. A length it is still showing is the document's own and is kept exactly --
+	// another tool's 0.75 s crossfade shows as 0.8 -- so choosing a setting again changes nothing. A
+	// length typed in is held to the bounds any document is.
+	if (df::round(result.transition_seconds * 10) != transition_tenths)
+	{
+		result.transition_seconds = std::clamp(transition_tenths / 10.0, 0.0, movie_max_transition_seconds);
+	}
+
+	if (df::round(result.photo_seconds * 10) != photo_tenths)
+	{
+		result.photo_seconds = std::clamp(photo_tenths / 10.0, movie_min_photo_seconds, movie_max_photo_seconds);
+	}
 
 	return result;
 }
@@ -1695,7 +1861,7 @@ movie_settings movie_view_state::to_settings() const
 
 void movie_view_controls::create_controls()
 {
-	auto changed = [this] { _view->settings_changed(); };
+	auto settled = [this] { _view->end_edit_group(); };
 
 	_info = create_view_info_element(tt.movie_info);
 
@@ -1718,13 +1884,22 @@ void movie_view_controls::create_controls()
 		                                                 _view->settings_changed();
 	                                                 });
 	_transition_slider = std::make_shared<ui::slider_control>(_dlg, tt.movie_transition_length,
-	                                                          _movie_state.transition_tenths, 0, 50, changed);
+	                                                          _movie_state.transition_tenths, 0, 50,
+	                                                          [this]
+	                                                          {
+		                                                          _view->settings_changed(
+			                                                          movie_edit_group::transition_length);
+	                                                          }, settled);
 	_fade_in_check = std::make_shared<ui::check_control>(_dlg, tt.movie_fade_in, _movie_state.fade_in, false, false,
 	                                                     [this](bool) { _view->settings_changed(); });
 	_fade_out_check = std::make_shared<ui::check_control>(_dlg, tt.movie_fade_out, _movie_state.fade_out, false,
 	                                                      false, [this](bool) { _view->settings_changed(); });
 	_photo_slider = std::make_shared<ui::slider_control>(_dlg, tt.movie_photo_duration, _movie_state.photo_tenths, 1,
-	                                                     300, changed);
+	                                                     300,
+	                                                     [this]
+	                                                     {
+		                                                     _view->settings_changed(movie_edit_group::photo_duration);
+	                                                     }, settled);
 	_output_text = std::make_shared<text_element>(std::string_view{}, ui::style::text_style::multiline);
 
 	_clip_divider = std::make_shared<divider_element>();
@@ -1733,7 +1908,8 @@ void movie_view_controls::create_controls()
 	_trim = std::make_shared<movie_trim_control>(_view.get());
 	_clip_hold_slider = std::make_shared<ui::slider_control>(_dlg, tt.movie_clip_duration,
 	                                                         _movie_state.clip_hold_tenths, 1, 300,
-	                                                         [this] { _view->hold_changed(); });
+	                                                         [this] { _view->hold_changed(movie_edit_group::clip_hold); },
+	                                                         settled);
 	_clip_hold_default_check = std::make_shared<ui::check_control>(_dlg, tt.movie_use_default,
 	                                                               _movie_state.clip_hold_is_default, false, false,
 	                                                               [this](bool) { _view->hold_changed(); });
@@ -2089,9 +2265,11 @@ double movie_view::duration() const
 	return _movie_state.project.timing().duration;
 }
 
+// Whether this timeline can be rendered now. Whether this machine can render at all is the frame's to
+// say: it asks on a worker at startup, because asking starts Media Foundation.
 bool movie_view::can_render() const
 {
-	return _movie_state.project.is_ready_to_render() && !_progress.active && platform::can_write_movies();
+	return _movie_state.project.is_ready_to_render() && !_progress.active;
 }
 
 void movie_view::layout(ui::measure_context& mc, const sizei extent)
@@ -2139,7 +2317,9 @@ void movie_view::layout(ui::measure_context& mc, const sizei extent)
 
 recti movie_view::calc_preview_target(const sizei source) const
 {
-	if (source.cx <= 0 || source.cy <= 0) return {};
+	// A preview squeezed to nothing has no room for a frame. Fitted into an empty limit, one came back
+	// at its full source size and was drawn across the transport and the strip.
+	if (source.cx <= 0 || source.cy <= 0 || _preview_bounds.is_empty()) return {};
 
 	// Fitted, never stretched. Mixed aspect ratios letterbox on black, which is what the render
 	// does, and the preview exists to be believed.
@@ -2238,7 +2418,7 @@ void movie_view::render(ui::draw_context& dc, view_controller_ptr controller)
 			// Until the session has a picture -- while it opens, and for a photo, which has none --
 			// the frame cache stands in, so the preview never goes blank waiting for a decoder.
 			const auto surface = _sources->slot_frame(cache_slot, clip.path, clip.is_photo, source.source_time,
-			                                          max_dim);
+			                                          max_dim, movie_frame_period(clip));
 			if (!is_valid(surface)) return {};
 
 			// One texture per slot, updated in place. A fresh texture per frame is a GPU allocation
@@ -2571,40 +2751,60 @@ void movie_view::open_clip_session(const df::file_path path, const double at)
 	close_clip_session();
 
 	const auto* const file_type = files::file_type_from_name(path);
-	if (!_state._player || !file_type) return;
+
+	if (!_state._player || !file_type)
+	{
+		// Nothing can play it, so nothing is playing: left set, the clip player would claim to run.
+		_movie_state.playing = movie_view_state::playing_t::nothing;
+		return;
+	}
 
 	_clip_session_path = path;
 
 	const auto weak = weak_from_this();
+	const auto request = ++_clip_session_request;
 
 	_state._player->open_detached(path, file_type, at, true,
-	                              [weak, path](std::shared_ptr<av_session> ses)
+	                              [weak, path, request](std::shared_ptr<av_session> ses)
 	                              {
 		                              // Back on the UI thread before the view is touched: the weak
 		                              // pointer is a lifetime token, not a licence to work here.
 		                              if (const auto self = weak.lock())
 		                              {
-			                              self->clip_session_opened(path, std::move(ses));
+			                              self->clip_session_opened(path, request, std::move(ses));
 		                              }
 	                              });
 }
 
-void movie_view::clip_session_opened(const df::file_path path, std::shared_ptr<av_session> ses)
+void movie_view::clip_session_opened(const df::file_path path, const uint64_t request,
+                                     std::shared_ptr<av_session> ses)
 {
-	if (!ses) return;
+	// Focus may have moved, or the player stopped, or been started again, while the file was opening.
+	// A session for a clip nobody is waiting on is closed rather than adopted: lifetime is not currency.
+	const auto still_wanted = _movie_state.playing == movie_view_state::playing_t::clip && _clip_session_path == path;
 
-	// Focus may have moved, or the player stopped, while the file was opening. A session for a clip
-	// nobody is looking at is closed rather than adopted: lifetime is not currency.
-	if (_movie_state.playing != movie_view_state::playing_t::clip || _clip_session_path != path)
+	switch (decide_movie_clip_session(ses != nullptr, request == _clip_session_request, still_wanted))
 	{
+	case movie_clip_session_answer::adopt:
+		_clip_session = std::move(ses);
+		_state.invalidate_view(view_invalid::view_redraw | view_invalid::animations);
+		invalidate_controls();
+		break;
+
+	case movie_clip_session_answer::close:
 		if (_state._player) _state._player->close(ses, {});
-		return;
+		break;
+
+	case movie_clip_session_answer::stop_playing:
+		_movie_state.playing = movie_view_state::playing_t::nothing;
+		_clip_session_path.clear();
+		_state.invalidate_view(view_invalid::view_redraw | view_invalid::command_state);
+		invalidate_controls();
+		break;
+
+	case movie_clip_session_answer::ignore:
+		break;
 	}
-
-	_clip_session = std::move(ses);
-
-	_state.invalidate_view(view_invalid::view_redraw | view_invalid::animations);
-	invalidate_controls();
 }
 
 void movie_view::close_clip_session()
@@ -2727,24 +2927,30 @@ void movie_view::update_preview_source(const size_t slot, const int clip_index, 
 	auto& preview = _preview_sources[slot];
 
 	// The session runs while the movie runs and holds while it is parked -- or while the movie waits
-	// for its sound, or it would walk on ahead of a playhead that is standing still. Both clocks are
-	// the wall clock, so a clip that started in step with the movie stays in step with it.
-	const auto playing = _movie_state.playing == movie_view_state::playing_t::movie && !_preview_audio_priming;
+	// for its sound, or it would walk on ahead of a playhead that is standing still, or while a trim
+	// handle is held, whose frame is the one wanted. Both clocks are the wall clock, so a clip that
+	// started in step with the movie stays in step with it.
+	const auto playing = _movie_state.playing == movie_view_state::playing_t::movie && !_preview_audio_priming &&
+		!_preview_override;
 
 	if (playing != preview.session->is_playing())
 	{
 		if (playing) _state._player->play(preview.session);
 		else _state._player->pause(preview.session);
+
+		// Set going or stopped, the session leaves wherever it was last sent, so that is forgotten.
+		preview.sought.reset();
 	}
 
-	const auto drift = std::abs(preview.session->pos(df::now()) - source_time);
-	const auto tolerance = playing ? preview_seek_tolerance : frame_step_seconds;
+	const auto position = preview.session->pos(df::now());
+	// Parked, the frame shown must be the one at the playhead or the handle, not a neighbour, so it is
+	// held to half a frame of the clip's own.
+	const auto tolerance = playing ? preview_seek_tolerance : movie_frame_period(clip) / 2;
 
 	// Only a jump the forward walk cannot absorb is a seek. Re-seeking to every position the
 	// playhead passes would decode from a key frame for each one and show almost none of them.
-	if (drift > tolerance && std::abs(preview.sought - source_time) > tolerance)
+	if (decide_movie_preview_seek(position, source_time, tolerance, preview.sought))
 	{
-		preview.sought = source_time;
 		_state._player->seek(preview.session, source_time, !playing);
 	}
 }
@@ -3307,13 +3513,18 @@ void movie_view::invalidate_controls() const
 	if (_controls) _controls->frame()->invalidate();
 }
 
-void movie_view::settings_changed()
+void movie_view::settings_changed(const movie_edit_group group)
 {
-	_movie_state.project.settings(_movie_state.to_settings());
+	_movie_state.project.settings(_movie_state.to_settings(), group);
 	changed();
 }
 
-void movie_view::hold_changed()
+void movie_view::end_edit_group()
+{
+	_movie_state.project.end_edit_group();
+}
+
+void movie_view::hold_changed(const movie_edit_group group)
 {
 	auto& project = _movie_state.project;
 	const auto* const clip = project.current_clip();
@@ -3338,7 +3549,10 @@ void movie_view::hold_changed()
 			if (_controls) _controls->show_clip_values();
 		}
 
-		project.trim(project.current(), 0, _movie_state.clip_hold_tenths / 10.0);
+		// A typed length is held to what any clip in a document may be.
+		project.trim(project.current(), 0,
+		             std::clamp(_movie_state.clip_hold_tenths / 10.0, movie_min_photo_seconds, movie_max_clip_seconds),
+		             group);
 	}
 
 	changed();
@@ -3415,6 +3629,11 @@ bool movie_view::drop_paths(const std::vector<df::file_path>& paths, const point
 
 	add_paths_at(media, at);
 	return true;
+}
+
+void movie_view::drag_paths_over(const std::optional<pointi> loc)
+{
+	if (_timeline) _timeline->external_drag_over(loc && _timeline->bounds.contains(*loc) ? loc : std::nullopt);
 }
 
 void movie_view::remove_current()

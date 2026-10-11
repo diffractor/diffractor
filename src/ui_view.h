@@ -607,6 +607,13 @@ public:
 		return false;
 	}
 
+	// Files from outside are being dragged over this view at `loc`, in view coordinates, or have left
+	// it, ended or dropped when empty. A view that inserts a drop at a position shows that position
+	// while the drag lasts.
+	virtual void drag_paths_over(const std::optional<pointi> loc)
+	{
+	}
+
 	virtual bool escape()
 	{
 		return false;

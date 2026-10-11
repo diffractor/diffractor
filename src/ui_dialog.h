@@ -89,18 +89,25 @@ namespace ui
 		int _min;
 		int _max;
 		std::function<void()> _changed;
+		// Once a change is complete: the thumb let go, a key step, a click on the track. The values a
+		// drag passes through arrive first through `_changed`, so an owner keeping history can make one
+		// gesture one step.
+		std::function<void()> _settled;
 		bool _showing_bound_value = false;
 
 	public:
 		slider_control(const control_frame_ptr& h, const std::string_view label, int& v, const int min, const int max,
-		               std::function<void()> changed = {}) :
-			_label(label), _val(v), _min(min), _max(max), _changed(std::move(changed))
+		               std::function<void()> changed = {}, std::function<void()> settled = {}) :
+			_label(label), _val(v), _min(min), _max(max), _changed(std::move(changed)), _settled(std::move(settled))
 		{
 			edit_styles style;
 			style.number = true;
 			style.align_center = true;
 			_edit = h->create_edit(style, {}, [this](const std::string_view text) { edit_change(text); });
-			_slider = h->create_slider(min, max, [this](const int pos, bool is_tracking) { slider_change(pos); });
+			_slider = h->create_slider(min, max, [this](const int pos, const bool is_tracking)
+			{
+				slider_change(pos, is_tracking);
+			});
 
 			update_slider();
 			update_edit();
@@ -200,11 +207,12 @@ namespace ui
 			if (_changed) _changed();
 		}
 
-		void slider_change(const int pos)
+		void slider_change(const int pos, const bool is_tracking)
 		{
 			_val = pos;
 			update_edit();
 			if (_changed) _changed();
+			if (!is_tracking && _settled) _settled();
 		}
 	};
 

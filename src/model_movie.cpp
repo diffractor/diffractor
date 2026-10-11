@@ -20,10 +20,15 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
-// OpenTimelineIO stores times as a value over a rate. A rate of 1000 makes every value whole
-// milliseconds, so a project round-trips exactly instead of being quantised onto whatever frame
-// rate the movie happened to derive when it was saved.
+// OpenTimelineIO stores times as a value over a rate. Values are written exactly, over a rate of 1000
+// so they still read as milliseconds: rounded to whole milliseconds, a clip whose source is not a
+// whole number of them long read back a fraction short of it, and showed as trimmed.
 static constexpr double otio_rate = 1000.0;
+
+// The convention a project's clip ranges follow. From version 2 a range stops at the cut and each
+// transition reaches past it into the media on both sides, as OpenTimelineIO has it; before that,
+// Movie wrote each clip's whole retained range and other tools read every crossfade as extra length.
+static constexpr int otio_project_version = 2;
 
 static bool is_qualified_path(const std::string_view s)
 {
@@ -265,9 +270,18 @@ static std::string to_url(const df::file_path path, const df::folder_path projec
 
 	if (!project_folder.is_empty())
 	{
-		const auto relative = std::filesystem::path(path.pack()).lexically_relative(
-			std::filesystem::path(project_folder.text().sv()));
-		if (!relative.empty()) return escape_percent(relative.generic_string());
+		try
+		{
+			const auto relative = std::filesystem::path(path.pack()).lexically_relative(
+				std::filesystem::path(project_folder.text().sv()));
+			if (!relative.empty()) return escape_percent(relative.generic_string());
+		}
+		catch (const std::exception&)
+		{
+			// A narrow path converts through the process code page, which refuses a byte that is not
+			// UTF-8 -- and a name decoded from another tool's file URI can hold one. Such a path is
+			// written whole, as one on another drive is.
+		}
 	}
 
 	auto result = path.pack();
@@ -317,12 +331,21 @@ static std::optional<std::string> decode_url_path(const std::string_view url)
 }
 
 // A path relative to the project's folder, which is how a project and the media beside it move
-// together. The caller has already put the separators in the form this platform reads.
+// together. The caller has already put the separators in the form this platform reads. Empty for a
+// path the process code page cannot convert, a byte that is not UTF-8 among it: that names no file
+// here, and its clip is reported as having none rather than the whole project being refused.
 static df::file_path resolve_in_project_folder(const std::string_view relative, const df::folder_path project_folder)
 {
-	const auto resolved = (std::filesystem::path(project_folder.text().sv()) / std::filesystem::path(relative))
-		.lexically_normal();
-	return df::file_path(resolved.string());
+	try
+	{
+		const auto resolved = (std::filesystem::path(project_folder.text().sv()) / std::filesystem::path(relative))
+			.lexically_normal();
+		return df::file_path(resolved.string());
+	}
+	catch (const std::exception&)
+	{
+		return {};
+	}
 }
 
 static df::file_path from_url(const std::string_view url, const df::folder_path project_folder)
@@ -373,6 +396,13 @@ static df::file_path from_url(const std::string_view url, const df::folder_path 
 
 using json_writer = rapidjson::Writer<rapidjson::StringBuffer>;
 
+// A value JSON cannot express -- an infinity, or not a number -- goes out as a key with no value, and
+// the project no longer parses. A document read from a file is not trusted to the last digit.
+static double finite_or_zero(const double value)
+{
+	return std::isfinite(value) ? value : 0.0;
+}
+
 static void write_rational_time(json_writer& w, const double seconds)
 {
 	w.StartObject();
@@ -381,7 +411,7 @@ static void write_rational_time(json_writer& w, const double seconds)
 	w.Key("rate");
 	w.Double(otio_rate);
 	w.Key("value");
-	w.Double(std::round(seconds * otio_rate));
+	w.Double(finite_or_zero(seconds * otio_rate));
 	w.EndObject();
 }
 
@@ -422,28 +452,29 @@ std::string write_otio(const std::vector<movie_clip>& clips, const movie_setting
 	{
 		const auto& c = clips[i];
 
-		if (i > 0)
-		{
-			const auto overlap = movie_overlap(clips[i - 1], c, settings);
+		// A transition straddles its cut and reaches half its length into the clip on each side, which
+		// is where OpenTimelineIO puts one: a clip's range stops at the cut and the transition draws on
+		// the media past it. Another tool then lays the clips end to end to the movie's own length.
+		const auto head = i > 0 ? movie_overlap(clips[i - 1], c, settings) / 2 : 0.0;
+		const auto tail = i + 1 < clips.size() ? movie_overlap(c, clips[i + 1], settings) / 2 : 0.0;
 
-			if (overlap > 0)
-			{
-				w.StartObject();
-				w.Key("OTIO_SCHEMA");
-				w.String("Transition.1");
-				w.Key("name");
-				w.String("Crossfade");
-				w.Key("transition_type");
-				w.String("SMPTE_Dissolve");
-				w.Key("in_offset");
-				write_rational_time(w, overlap / 2);
-				w.Key("out_offset");
-				write_rational_time(w, overlap / 2);
-				w.Key("metadata");
-				w.StartObject();
-				w.EndObject();
-				w.EndObject();
-			}
+		if (head > 0)
+		{
+			w.StartObject();
+			w.Key("OTIO_SCHEMA");
+			w.String("Transition.1");
+			w.Key("name");
+			w.String("Crossfade");
+			w.Key("transition_type");
+			w.String("SMPTE_Dissolve");
+			w.Key("in_offset");
+			write_rational_time(w, head);
+			w.Key("out_offset");
+			write_rational_time(w, head);
+			w.Key("metadata");
+			w.StartObject();
+			w.EndObject();
+			w.EndObject();
 		}
 
 		w.StartObject();
@@ -458,9 +489,9 @@ std::string write_otio(const std::vector<movie_clip>& clips, const movie_setting
 		w.Key("OTIO_SCHEMA");
 		w.String("TimeRange.1");
 		w.Key("start_time");
-		write_rational_time(w, c.start);
+		write_rational_time(w, c.start + head);
 		w.Key("duration");
-		write_rational_time(w, c.duration());
+		write_rational_time(w, std::max(0.0, c.duration() - head - tail));
 		w.EndObject();
 
 		w.Key("media_reference");
@@ -487,7 +518,7 @@ std::string write_otio(const std::vector<movie_clip>& clips, const movie_setting
 		w.Key("photo_duration_is_default");
 		w.Bool(c.photo_duration_is_default);
 		w.Key("source_duration");
-		w.Double(c.source_duration);
+		w.Double(finite_or_zero(c.source_duration));
 		w.EndObject();
 		w.EndObject();
 
@@ -512,16 +543,18 @@ std::string write_otio(const std::vector<movie_clip>& clips, const movie_setting
 	w.StartObject();
 	w.Key("diffractor");
 	w.StartObject();
+	w.Key("version");
+	w.Int(otio_project_version);
 	w.Key("transition");
 	w.String(settings.transition == movie_transition::crossfade ? "crossfade" : "cut");
 	w.Key("transition_seconds");
-	w.Double(settings.transition_seconds);
+	w.Double(finite_or_zero(settings.transition_seconds));
 	w.Key("fade_in");
 	w.Bool(settings.fade_in);
 	w.Key("fade_out");
 	w.Bool(settings.fade_out);
 	w.Key("photo_seconds");
-	w.Double(settings.photo_seconds);
+	w.Double(finite_or_zero(settings.photo_seconds));
 	w.EndObject();
 	w.EndObject();
 
@@ -573,9 +606,11 @@ static double read_bounded_double(const json_value& v, const char* name, const d
 }
 
 // The same for each clip's own range. A still has no timeline of its own, so only its hold means
-// anything; every clip is held to the longest movie a render will make.
+// anything; every clip is held to the longest movie a render will make, and so is its in point, which
+// no source that long can have past.
 static void bound_clip_range(movie_clip& clip)
 {
+	clip.start = std::clamp(clip.start, 0.0, movie_max_clip_seconds);
 	const auto duration = std::min(clip.end - clip.start, movie_max_clip_seconds);
 
 	if (clip.is_photo)
@@ -604,9 +639,46 @@ void movie_load_result::omit(const std::string_view name, const int count)
 
 	ignored_elements += count;
 
+	// The kinds named are bounded. A crafted file naming a million distinct effects made every count a
+	// search of all of them, and a report of a million names says less than a count of the rest.
+	constexpr size_t max_named = 32;
+
 	const auto found = std::ranges::find_if(omitted, [name](const auto& entry) { return entry.first == name; });
 	if (found != omitted.end()) found->second += count;
-	else omitted.emplace_back(std::string(name), count);
+	else if (omitted.size() < max_named) omitted.emplace_back(std::string(name), count);
+	else if (omitted.size() == max_named) omitted.emplace_back("other", count);
+	else omitted.back().second += count;
+}
+
+// The media a clip plays. OpenTimelineIO 0.15 and later write Clip.2, which keeps its references in a
+// map with the key of the one in use; earlier versions wrote the one reference alone.
+static const json_value& clip_media_reference(const json_value& clip)
+{
+	const auto& references = df::util::json::safe_object(clip, "media_references");
+
+	if (references.MemberCount() > 0)
+	{
+		const auto key = df::util::json::safe_string(clip, "active_media_reference_key");
+		const auto& active = df::util::json::safe_object(references, key.empty() ? "DEFAULT_MEDIA" : key.c_str());
+		if (active.MemberCount() > 0) return active;
+
+		// A key that names no reference is a broken file, and the media there is beats none.
+		for (const auto& member : references.GetObject())
+		{
+			if (member.value.IsObject()) return member.value;
+		}
+	}
+
+	return df::util::json::safe_object(clip, "media_reference");
+}
+
+// Where the media's own time begins. An editor states a range in timecoded media in that time, from
+// its first frame's timecode rather than from zero, and Movie counts from the first frame.
+static double media_start_time(const json_value& reference)
+{
+	const auto& available = df::util::json::safe_object(reference, "available_range");
+	const auto start = available.FindMember("start_time");
+	return start != available.MemberEnd() ? std::max(0.0, read_rational_time(start->value)) : 0.0;
 }
 
 movie_load_result read_otio(const std::string_view json, const df::folder_path project_folder)
@@ -672,6 +744,12 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 	result.settings.photo_seconds = read_bounded_double(doc_meta, "photo_seconds", 4.0, movie_min_photo_seconds,
 	                                                    movie_max_photo_seconds);
 
+	// Which convention the clip ranges follow. OpenTimelineIO's own -- a range stops at the cut, and a
+	// transition reaches past it into the media on each side -- is what other tools write and what
+	// Movie writes from version 2. Earlier Movie projects hold each clip's whole retained range.
+	const auto ranges_stop_at_cuts = !has_diffractor_settings ||
+		read_double(doc_meta, "version", 1.0) >= otio_project_version;
+
 	const auto track_children = track->FindMember("children");
 
 	if (track_children == track->MemberEnd() || !track_children->value.IsArray())
@@ -680,84 +758,127 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		return result;
 	}
 
-	struct foreign_transition
+	// One transition standing on a cut between two clips the reader kept.
+	struct cut_transition
 	{
-		size_t boundary = 0;
-		double length = 0;
+		// How far it reaches into the outgoing clip's media before the cut, and the incoming clip's
+		// after it.
+		double in_offset = 0;
+		double out_offset = 0;
+		bool is_dissolve = false;
 	};
 
-	std::vector<foreign_transition> foreign_transitions;
-	std::optional<double> pending_transition;
+	std::vector<cut_transition> transitions;
+	std::optional<cut_transition> pending_transition;
 	auto foreign_transition_count = 0;
-	auto foreign_transition_positions_valid = true;
+	auto transitions_stand_on_cuts = true;
+	auto previous_is_kept_clip = false;
+
+	// How far the transitions beside each kept clip reach into its media: the one before it into its
+	// head, the one after into its tail. Each side belongs to the clip it touches, whatever the file
+	// left out on the other side of that transition.
+	struct clip_handles
+	{
+		double head = 0;
+		double tail = 0;
+	};
+
+	std::vector<clip_handles> handles;
+	std::optional<double> pending_head;
+
+	// Whatever is left out breaks the cut a transition waiting for its next clip was standing on, so
+	// that transition is not carried on to join two clips it never stood between.
+	const auto leave_out = [&](const std::string_view name)
+	{
+		if (pending_transition)
+		{
+			transitions_stand_on_cuts = false;
+			pending_transition.reset();
+		}
+
+		pending_head.reset();
+		previous_is_kept_clip = false;
+		result.omit(name);
+	};
 
 	for (const auto& child : track_children->value.GetArray())
 	{
 		if (is_schema(child, "Transition"))
 		{
-			if (has_diffractor_settings) continue;
-			++foreign_transition_count;
+			if (!has_diffractor_settings) ++foreign_transition_count;
 
-			if (str::icmp(df::util::json::safe_string(child, "transition_type"), "SMPTE_Dissolve") == 0)
+			const auto in = child.FindMember("in_offset");
+			const auto out = child.FindMember("out_offset");
+
+			cut_transition transition;
+			transition.in_offset = in != child.MemberEnd() ? read_rational_time(in->value) : 0.0;
+			transition.out_offset = out != child.MemberEnd() ? read_rational_time(out->value) : 0.0;
+			transition.is_dissolve = str::icmp(df::util::json::safe_string(child, "transition_type"),
+			                                   "SMPTE_Dissolve") == 0 && transition.in_offset >= 0 &&
+				transition.out_offset >= 0 && transition.in_offset + transition.out_offset > 0;
+
+			// Only a transition standing directly between two clips the reader keeps has a cut to
+			// stand on.
+			if (!previous_is_kept_clip || pending_transition)
 			{
-				const auto in = child.FindMember("in_offset");
-				const auto out = child.FindMember("out_offset");
-				const auto in_length = in != child.MemberEnd() ? read_rational_time(in->value) : 0.0;
-				const auto out_length = out != child.MemberEnd() ? read_rational_time(out->value) : 0.0;
-				const auto length = in_length + out_length;
-
-				if (in_length > 0 && out_length > 0 && std::abs(in_length - out_length) < 0.0001)
-				{
-					if (result.clips.empty() || pending_transition)
-					{
-						foreign_transition_positions_valid = false;
-					}
-					else
-					{
-						pending_transition = length;
-					}
-					continue;
-				}
+				transitions_stand_on_cuts = false;
+			}
+			else
+			{
+				pending_transition = transition;
 			}
 
-			foreign_transition_positions_valid = false;
+			if (previous_is_kept_clip) handles.back().tail = std::max(0.0, transition.out_offset);
+			pending_head = std::max(0.0, transition.in_offset);
+			previous_is_kept_clip = false;
 			continue;
 		}
 
 		if (!is_schema(child, "Clip"))
 		{
-			if (pending_transition) foreign_transition_positions_valid = false;
 			const auto schema = df::util::json::safe_string(child, "OTIO_SCHEMA");
-			result.omit(schema.empty() ? "unknown element"sv : schema);
+			leave_out(schema.empty() ? "unknown element"sv : std::string_view(schema));
 			continue;
 		}
 
-		const auto& reference = df::util::json::safe_object(child, "media_reference");
-		const auto url = df::util::json::safe_string(reference, "target_url");
-		const auto path = from_url(url, project_folder);
+		// A disabled clip is a gap where it stands, and Movie has no gaps.
+		if (!read_bool(child, "enabled", true))
+		{
+			leave_out("disabled clip");
+			continue;
+		}
+
+		const auto& reference = clip_media_reference(child);
+		const auto path = from_url(df::util::json::safe_string(reference, "target_url"), project_folder);
 
 		if (path.is_empty())
 		{
-			if (pending_transition) foreign_transition_positions_valid = false;
-			result.omit("clip with no media file");
+			leave_out("clip with no media file");
 			continue;
 		}
 
 		movie_clip clip;
 		clip.path = path;
 
+		// A clip with no range is OpenTimelineIO's whole media, and one saved before its source was
+		// measured has a range of no length. Either is kept with no length, for the probe to give it
+		// the length of its source, as a clip just added is.
 		const auto& range = df::util::json::safe_object(child, "source_range");
 		const auto start = range.FindMember("start_time");
 		const auto duration = range.FindMember("duration");
 
 		clip.start = start != range.MemberEnd() ? read_rational_time(start->value) : 0.0;
 		const auto clip_duration = duration != range.MemberEnd() ? read_rational_time(duration->value) : 0.0;
+
+		// A range already counted from zero is left alone: it cannot start before the media does.
+		const auto media_start = media_start_time(reference);
+		if (media_start > 0 && clip.start >= media_start) clip.start -= media_start;
+
 		clip.end = clip.start + clip_duration;
 
-		if (!std::isfinite(clip.start) || !std::isfinite(clip.end) || clip.start < 0 || clip_duration <= 0)
+		if (!std::isfinite(clip.start) || !std::isfinite(clip.end) || clip.start < 0 || clip_duration < 0)
 		{
-			if (pending_transition) foreign_transition_positions_valid = false;
-			result.omit("clip with no usable range");
+			leave_out("clip with no usable range");
 			continue;
 		}
 
@@ -767,57 +888,113 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		const auto mt = files::file_type_from_name(path);
 		clip.is_photo = read_bool(clip_meta, "photo", mt && mt->group == file_group::photo);
 		clip.photo_duration_is_default = read_bool(clip_meta, "photo_duration_is_default", false);
-		bound_clip_range(clip);
-		clip.source_duration = read_double(clip_meta, "source_duration", clip.end);
+		// Negative until the range is final: a file that recorded no source length takes the range's end.
+		clip.source_duration = read_double(clip_meta, "source_duration", -1.0);
+
+		// A speed change, a freeze or any other effect is not something Movie can apply. The clip keeps
+		// its place, and what it carried is reported.
+		if (const auto effects = child.FindMember("effects");
+			effects != child.MemberEnd() && effects->value.IsArray())
+		{
+			for (const auto& effect : effects->value.GetArray())
+			{
+				const auto schema = df::util::json::safe_string(effect, "OTIO_SCHEMA");
+				result.omit(schema.empty() ? "effect"sv : std::string_view(schema));
+			}
+		}
 
 		if (pending_transition)
 		{
-			foreign_transitions.emplace_back(foreign_transition{result.clips.size(), *pending_transition});
+			transitions.emplace_back(*pending_transition);
 			pending_transition.reset();
 		}
 
 		result.clips.emplace_back(clip);
+		handles.emplace_back(clip_handles{pending_head.value_or(0.0), 0.0});
+		pending_head.reset();
+		previous_is_kept_clip = true;
 	}
 
-	if (pending_transition) foreign_transition_positions_valid = false;
+	if (pending_transition) transitions_stand_on_cuts = false;
 
-	if (!has_diffractor_settings && foreign_transition_positions_valid && result.clips.size() > 1 &&
-		foreign_transitions.size() == result.clips.size() - 1)
+	// Each clip widened by the transitions beside it reaching past its cuts, which is the range Movie
+	// overlaps. A still is the same picture before its range as in it, so it simply holds longer.
+	const auto widened = [&result, &handles]
 	{
-		const auto length = foreign_transitions.front().length;
-		const auto uniform = std::all_of(foreign_transitions.begin(), foreign_transitions.end(),
-			[length](const foreign_transition& transition)
-			{
-				return std::abs(transition.length - length) < 0.0001;
-			});
-		auto complete = true;
-		for (size_t i = 0; i < foreign_transitions.size(); ++i)
+		auto clips = result.clips;
+
+		for (size_t i = 0; i < clips.size(); ++i)
 		{
-			const auto boundary = foreign_transitions[i].boundary;
-			if (boundary != i + 1 || boundary >= result.clips.size())
+			auto& clip = clips[i];
+			clip.end += handles[i].tail;
+			if (clip.is_photo) clip.end += handles[i].head;
+			else clip.start = std::max(0.0, clip.start - handles[i].head);
+		}
+
+		return clips;
+	};
+
+	if (has_diffractor_settings)
+	{
+		// Movie's own transitions are in its settings; the ones in the track only say where its ranges
+		// stop.
+		if (ranges_stop_at_cuts) result.clips = widened();
+	}
+	else
+	{
+		// Movie draws one crossfade, the same at every cut, so another tool's dissolves are adopted only
+		// when one of the same length stands at every cut, and no clip is too short to give it.
+		auto adopt = transitions_stand_on_cuts && result.clips.size() > 1 &&
+			transitions.size() == result.clips.size() - 1;
+		const auto length = adopt ? transitions.front().in_offset + transitions.front().out_offset : 0.0;
+		adopt = adopt && length <= movie_max_transition_seconds &&
+			std::ranges::all_of(transitions, [length](const cut_transition& transition)
 			{
-				complete = false;
-				continue;
+				return transition.is_dissolve &&
+					std::abs(transition.in_offset + transition.out_offset - length) < 0.0001;
+			});
+
+		if (adopt)
+		{
+			auto clips = widened();
+
+			for (size_t i = 1; i < clips.size() && adopt; ++i)
+			{
+				adopt = length <= std::min(clips[i - 1].duration(), clips[i].duration()) / 2 + 0.0001;
 			}
 
-			const auto representable = std::min(result.clips[boundary - 1].duration() / 2,
-			                                    result.clips[boundary].duration() / 2);
-			if (foreign_transitions[i].length > representable + 0.0001) complete = false;
+			if (adopt)
+			{
+				result.clips = std::move(clips);
+				result.settings.transition = movie_transition::crossfade;
+				result.settings.transition_seconds = length;
+			}
 		}
 
-		if (uniform && complete)
-		{
-			result.settings.transition = movie_transition::crossfade;
-			result.settings.transition_seconds = std::clamp(length, 0.0, movie_max_transition_seconds);
-		}
-		else
-		{
-			result.omit("Transition", foreign_transition_count);
-		}
+		if (!adopt) result.omit("Transition", foreign_transition_count);
 	}
-	else if (!has_diffractor_settings)
+
+	for (auto& clip : result.clips)
 	{
-		result.omit("Transition", foreign_transition_count);
+		// A still with no range of its own follows the movie's hold.
+		if (clip.is_photo && clip.duration() <= 0)
+		{
+			clip.end = clip.start + result.settings.photo_seconds;
+			clip.photo_duration_is_default = true;
+		}
+
+		bound_clip_range(clip);
+
+		if (!std::isfinite(clip.source_duration) || clip.source_duration < 0)
+		{
+			clip.source_duration = clip.end;
+		}
+		else if (!clip.is_photo && clip.source_duration > 0 && std::abs(clip.end - clip.source_duration) <= 0.001)
+		{
+			// A clip running to the end of its source, saved by an earlier build with its range rounded to
+			// the millisecond, would otherwise open a fraction short of it and show as trimmed.
+			clip.end = clip.source_duration;
+		}
 	}
 
 	result.status = result.clips.empty() && !has_diffractor_settings ? movie_load_status::empty : movie_load_status::ok;
@@ -868,14 +1045,17 @@ namespace
 				continue;
 			}
 
-			const auto end = text.find(';', i);
+			// An entity is a handful of characters, so its ';' is looked for only that far. Looking to the
+			// end of the text from every '&' made a run of bare ampersands cost the square of its length.
+			const auto semicolon = text.substr(i, 11).find(';');
 
-			if (end == std::string_view::npos || end - i > 10)
+			if (semicolon == std::string_view::npos)
 			{
 				result += text[i++];
 				continue;
 			}
 
+			const auto end = i + semicolon;
 			const auto entity = text.substr(i + 1, end - i - 1);
 
 			if (entity == "amp") result += '&';
@@ -892,7 +1072,10 @@ namespace
 				const auto [ptr, ec] = std::from_chars(digits.data(), digits.data() + digits.size(), code,
 				                                       hex ? 16 : 10);
 
-				if (ec == std::errc{} && ptr == digits.data() + digits.size() && code > 0 && code < 0x110000)
+				// A surrogate is half of a UTF-16 pair and no character of its own; encoded alone it would
+				// put a path into the timeline that no file system call can convert.
+				if (ec == std::errc{} && ptr == digits.data() + digits.size() && code > 0 && code < 0x110000 &&
+					(code < 0xD800 || code > 0xDFFF))
 				{
 					str::char32_to_utf8(std::back_inserter(result), code);
 				}
@@ -1059,7 +1242,10 @@ movie_load_result read_wlmp(const std::string_view xml, const df::folder_path pr
 		const auto path = wlmp_media_path(*file, project_folder);
 		if (path.is_empty()) continue;
 
-		media.insert_or_assign(*id, wlmp_media{path, std::max(0.0, parse_seconds(element.find("duration")))});
+		// A recorded length past the longest movie Movie renders is a broken file, not a source.
+		media.insert_or_assign(*id, wlmp_media{
+			                       path, std::clamp(parse_seconds(element.find("duration")), 0.0, movie_max_clip_seconds)
+		                       });
 	}
 
 	if (media.empty()) return result;
@@ -1436,6 +1622,9 @@ std::vector<movie_source_choice> choose_movie_sources(const std::vector<df::file
 
 void movie_project::push_undo()
 {
+	// Every step that is not a gesture's own ends the gesture before it.
+	_open_group = movie_edit_group::none;
+
 	// An edit made after undoing past the clean state replaces the history that led back to it.
 	if (_clean_depth && _undo.size() < *_clean_depth) _clean_depth.reset();
 
@@ -1459,10 +1648,40 @@ void movie_project::push_undo()
 	++_edit_revision;
 }
 
+// The undo step for an edit: a new one, or the one its gesture already holds, which keeps the state from
+// before the gesture began.
+void movie_project::begin_edit(const movie_edit_group group)
+{
+	if (group != movie_edit_group::none && group == _open_group && !_undo.empty())
+	{
+		_modified = true;
+		++_revision;
+		++_edit_revision;
+		return;
+	}
+
+	push_undo();
+	_open_group = group;
+}
+
+// A gesture that has come back to where it began is no edit, so its step is given back.
+void movie_project::settle_edit()
+{
+	if (_open_group == movie_edit_group::none || _undo.empty()) return;
+
+	const auto& began = _undo.back();
+	if (began.clips != _clips || !(began.settings == _settings)) return;
+
+	_undo.pop_back();
+	_open_group = movie_edit_group::none;
+	_modified = !_clean_depth || *_clean_depth != _undo.size();
+}
+
 void movie_project::mark_clean()
 {
 	_clean_depth = _undo.size();
 	_modified = false;
+	_open_group = movie_edit_group::none;
 }
 
 void movie_project::select_only(const size_t index)
@@ -1693,15 +1912,16 @@ void movie_project::replace_quietly(const size_t at, const movie_clip& clip)
 	++_revision;
 }
 
-void movie_project::settings(const movie_settings& s)
+void movie_project::settings(const movie_settings& s, const movie_edit_group group)
 {
 	// The panel reports every notification its native controls raise, including the echo of a value
 	// the view itself wrote. One that changes nothing is not an edit.
 	if (s == _settings) return;
 
-	push_undo();
+	begin_edit(group);
 	_settings = s;
 	apply_photo_duration();
+	settle_edit();
 }
 
 void movie_project::apply_photo_duration()
@@ -1714,7 +1934,7 @@ void movie_project::apply_photo_duration()
 	}
 }
 
-void movie_project::trim(const size_t at, const double start, const double end)
+void movie_project::trim(const size_t at, const double start, const double end, const movie_edit_group group)
 {
 	if (at >= _clips.size()) return;
 
@@ -1736,8 +1956,14 @@ void movie_project::trim(const size_t at, const double start, const double end)
 	// A handle pressed and let go where it was is not a trim.
 	if (c == _clips[at]) return;
 
-	push_undo();
+	begin_edit(group);
 	_clips[at] = c;
+	settle_edit();
+}
+
+void movie_project::end_edit_group()
+{
+	_open_group = movie_edit_group::none;
 }
 
 void movie_project::reset(std::vector<movie_clip> clips, const movie_settings& s, const df::file_path path)
@@ -1765,6 +1991,7 @@ void movie_project::mark_saved(const df::file_path path, const uint64_t edit_rev
 	{
 		_clean_depth.reset();
 		_modified = true;
+		_open_group = movie_edit_group::none;
 	}
 }
 
@@ -1777,6 +2004,8 @@ void movie_project::mark_seeded()
 void movie_project::undo()
 {
 	if (_undo.empty()) return;
+
+	_open_group = movie_edit_group::none;
 
 	auto entry = std::move(_undo.back());
 	_undo.pop_back();
@@ -1799,7 +2028,9 @@ void movie_project::undo()
 movie_entry decide_movie_entry(const movie_project& project, const std::vector<df::file_path>& selection,
                                const std::vector<df::file_path>& built_from)
 {
-	if (project.is_empty()) return project.is_modified() ? movie_entry::resume : movie_entry::seed;
+	// A pristine empty timeline with no file behind it has nothing to return to. One that was opened or
+	// saved empty is a document like any other, and the rules below answer for it.
+	if (project.is_empty() && !project.is_modified() && project.path().is_empty()) return movie_entry::seed;
 	if (selection.empty() || selection == built_from) return movie_entry::resume;
 
 	// Leaving Movie settles unsaved edits, so a timeline still holding them reached here some other

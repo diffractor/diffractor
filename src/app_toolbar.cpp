@@ -718,9 +718,11 @@ void app_frame::update_button_state(const bool resize)
 	_commands[commands::tool_movie_relink]->visible = is_movie_view && _view_movie->has_missing_clips();
 	_commands[commands::tool_movie_relink]->enable = is_movie_view && !movie_project_busy && _view_movie->has_missing_clips();
 	// A machine with no encoder cannot render at all, so Render is absent rather than dimmed, as
-	// Burn is on a machine with no writer.
-	_commands[commands::tool_movie_render]->visible = platform::can_write_movies();
-	_commands[commands::tool_movie_render]->enable = is_movie_view && !view_processing && _view_movie->can_render();
+	// Burn is on a machine with no writer. The answer comes from the startup worker.
+	const auto can_write_movies = _can_write_movies.value_or(false);
+	_commands[commands::tool_movie_render]->visible = can_write_movies;
+	_commands[commands::tool_movie_render]->enable = is_movie_view && !view_processing && can_write_movies &&
+		_view_movie->can_render();
 	_commands[commands::tool_new_folder]->enable = is_media_or_items_view && has_save_folder;
 	_commands[commands::tool_open_with]->enable = has_selection;
 	_commands[commands::tool_rename]->enable = can_process_local_items;

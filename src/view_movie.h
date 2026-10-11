@@ -220,14 +220,60 @@ inline size_t movie_cache_bytes_after_store(const size_t bytes, const size_t rep
 struct movie_peak_completion_decision
 {
 	bool accept = false;
-	bool clear_pending_path = false;
+	// The scan answered the request the level track is waiting on, so nothing is pending any more.
+	bool clear_pending = false;
+	// Kept as the source's levels. A scan cancelled part way measured part of a file, and an empty
+	// answer from it would read as a file with no sound.
+	bool store = false;
 };
 
 inline movie_peak_completion_decision decide_movie_peak_completion(const uint64_t current_generation,
-                                                                   const uint64_t result_generation)
+                                                                   const uint64_t result_generation,
+                                                                   const bool is_pending_request,
+                                                                   const bool completed)
 {
 	if (current_generation != result_generation) return {};
-	return {true, true};
+	return {true, is_pending_request, completed};
+}
+
+// The step the preview scrubs and caches strip frames in, so a scrub reuses frames instead of decoding
+// one per pixel.
+inline constexpr double movie_frame_step_seconds = 0.04;
+
+// One frame of a clip's source, at the rate its probe measured. A clip not yet measured answers the
+// step the preview scrubs in.
+inline double movie_frame_period(const movie_clip& clip)
+{
+	return clip.frame_rate > 0 ? 1.0 / clip.frame_rate : movie_frame_step_seconds;
+}
+
+// Where to ask for the last frame a trim keeps. The out point is the first instant not kept, so this is
+// just under half a frame before it: nearest to the last frame starting before the out point, whether
+// the point falls on a frame's start or inside one. A fixed step back showed a frame or two early on
+// high-rate video. Never before the in point.
+inline double movie_last_kept_frame_time(const movie_clip& clip, const double start, const double end)
+{
+	return std::max(start, end - movie_frame_period(clip) / 2 - 1e-6);
+}
+
+// Whether a preview session must be sent to `target`: only when it is further away than `tolerance`,
+// and not already on its way there. `sought` is where it was last sent, and is forgotten once the
+// session arrives, so a later jump back to the same place is a seek again. Remembered for ever, a
+// clip's in point was never sought a second time, and the paused preview kept the frame the movie had
+// played on to.
+inline bool decide_movie_preview_seek(const double position, const double target, const double tolerance,
+                                      std::optional<double>& sought)
+{
+	if (std::abs(position - target) <= tolerance)
+	{
+		sought.reset();
+		return false;
+	}
+
+	if (sought && std::abs(*sought - target) <= tolerance) return false;
+
+	sought = target;
+	return true;
 }
 
 enum class movie_probe_changed_action
@@ -330,9 +376,44 @@ inline size_t movie_step_target(const std::vector<double>& starts, const size_t 
 	return origin == 0 ? 0 : origin - 1;
 }
 
+// Which trim handle a press takes: the nearer, 0 for the in handle and 1 for the out. Handles drawn on
+// one pixel -- a long clip trimmed to a tenth of a second -- are told apart by which still has room to
+// move, then by the side of them the pointer is on. The in handle won every tie, and pressed against an
+// in point of zero it could not move, so a clip trimmed to its start could be undone but never dragged
+// back out.
+inline int pick_movie_trim_handle(const int dx_start, const int dx_end, const bool pointer_left_of_handles,
+                                  const double start, const double end, const double limit)
+{
+	if (dx_start != dx_end) return dx_start < dx_end ? 0 : 1;
+	if (start <= 0) return 1;
+	if (end >= limit) return 0;
+	return pointer_left_of_handles ? 0 : 1;
+}
+
 inline bool should_retire_movie_sources_after_project_change(const bool project_changed_successfully)
 {
 	return project_changed_successfully;
+}
+
+enum class movie_clip_session_answer
+{
+	adopt,
+	close,
+	stop_playing,
+	ignore,
+};
+
+// What the clip player does with a session the player answered with. Only the latest request is
+// adopted, and only while the clip player still wants that clip: a session opened for a Play that a
+// Pause and a second Play have since replaced is closed, rather than adopted and then overwritten
+// without being closed. A latest request that failed stops the clip player, which otherwise went on
+// "playing" over a frozen picture and repainting at full rate until Pause was pressed.
+inline movie_clip_session_answer decide_movie_clip_session(const bool opened, const bool is_latest_request,
+                                                           const bool still_wanted)
+{
+	const auto current = is_latest_request && still_wanted;
+	if (opened) return current ? movie_clip_session_answer::adopt : movie_clip_session_answer::close;
+	return current ? movie_clip_session_answer::stop_playing : movie_clip_session_answer::ignore;
 }
 
 inline bool should_clear_movie_preview_audio_after_source_retire(const bool project_changed_successfully)
@@ -467,9 +548,9 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 		// closed rather than adopted: it is alive, but it is no longer current.
 		int index = -1;
 		bool opening = false;
-		// Where the session was last told to be, so a position it is already walking towards does
-		// not become a seek on every frame.
-		double sought = -1;
+		// Where the session was last told to be, until it gets there, so a position it is already
+		// walking towards does not become a seek on every frame.
+		std::optional<double> sought;
 		mutable ui::texture_ptr texture;
 	};
 
@@ -526,6 +607,9 @@ class movie_view final : public view_base, public std::enable_shared_from_this<m
 	// owns that exclusivity; without it two things would be fighting over one audio device.
 	std::shared_ptr<av_session> _clip_session;
 	df::file_path _clip_session_path;
+	// Counts the clip player's open requests, so a session answering one that has since been replaced
+	// is closed rather than adopted.
+	uint64_t _clip_session_request = 0;
 	// Shed on device loss from the const broadcast, as the preview's textures are.
 	mutable ui::texture_ptr _clip_texture;
 	// Set while a trim handle is captured: the preview shows that handle's frame instead of the
@@ -585,6 +669,7 @@ public:
 	// boundary under the pointer, anywhere else it appends. Answers false when nothing dropped was a
 	// photo or a video.
 	bool drop_paths(const std::vector<df::file_path>& paths, pointi loc) override;
+	void drag_paths_over(std::optional<pointi> loc) override;
 	void add_files();
 	void remove_current();
 	// One click's worth of strip selection. Focus always lands on `index`.
@@ -599,8 +684,12 @@ public:
 	void move_selection(size_t to);
 	void send_selection_to_end();
 	void undo();
-	void settings_changed();
-	void hold_changed();
+	// A setting or the photo hold changed in the panel. `group` names the slider a value came from, so
+	// the values one drag passes through are one undo step; end_edit_group closes it when the slider
+	// is let go.
+	void settings_changed(movie_edit_group group = movie_edit_group::none);
+	void hold_changed(movie_edit_group group = movie_edit_group::none);
+	void end_edit_group();
 	void trim_current(double start, double end);
 	// Restores the whole source, which is the only way back from a trim that went wrong.
 	void reset_trim();
@@ -711,7 +800,7 @@ private:
 	void rewind_clip_player();
 	// Adopts a session the player opened, if the focus has not moved on since it was asked for.
 	void open_clip_session(df::file_path path, double at);
-	void clip_session_opened(df::file_path path, std::shared_ptr<av_session> ses);
+	void clip_session_opened(df::file_path path, uint64_t request, std::shared_ptr<av_session> ses);
 	void close_clip_session();
 	void retire_source_state();
 	// Asks before a running render is abandoned. Answers whether the caller may go on.

@@ -368,7 +368,12 @@ public:
 			if (data.has_drop_files())
 			{
 				update_status(tt.command_movie_add, data.files_description().first_name);
+				_view->drag_paths_over(loc);
 				result = platform::drop_effect::copy;
+			}
+			else
+			{
+				_view->drag_paths_over(std::nullopt);
 			}
 
 			return result;
@@ -483,6 +488,7 @@ public:
 	void drag_leave() override
 	{
 		clear_status();
+		if (_view) _view->drag_paths_over(std::nullopt);
 	}
 
 	void invalidate_view(const view_invalid invalid) override
@@ -670,6 +676,12 @@ public:
 	// Machine-scoped and only changed by a device arriving, which system_device_change reports, so it
 	// is answered once rather than by instantiating a shell COM object on every command-state update.
 	std::optional<bool> _has_burner;
+
+	// Whether this machine can encode a movie, once the startup worker has asked. Asking starts Media
+	// Foundation and enumerates its encoders, about half a second, which the first command-state update
+	// used to spend on the UI thread before the window had painted. Unknown reads as no, so Render is
+	// absent for the moment before the answer, as it is on a machine that cannot render at all.
+	std::optional<bool> _can_write_movies;
 
 	// Recovery from a crash that happened before the user could touch anything. _safe_start says
 	// this launch reverted presentation because previous ones never settled; _startup_settled

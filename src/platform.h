@@ -354,7 +354,8 @@ namespace platform
 
 	// Asked of the running system rather than fixed at build time: the same build offers Render on
 	// a machine with the required encoders and does not offer it on one without. The answer is
-	// cached after the first probe.
+	// cached after the first probe, which starts the system's media framework and enumerates its
+	// encoders -- about half a second -- so the first call belongs on a worker, never the UI thread.
 	bool can_write_movies();
 	movie_writer_ptr create_movie_writer(const movie_writer_request& request);
 

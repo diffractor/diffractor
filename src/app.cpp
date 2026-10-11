@@ -3144,6 +3144,15 @@ bool app_frame::init(const std::string_view command_line_text)
 		// group tables on the UI thread, which owns them.
 		auto tools = scan_tools();
 		queue_ui([t = std::move(tools)]() mutable { apply_tools(std::move(t)); });
+
+		// Render is offered only where the machine can encode, and finding out is platform work the
+		// UI thread does not do. Asked once here; the answer is the platform's to cache.
+		const auto can_write_movies = platform::can_write_movies();
+		queue_ui([this, can_write_movies]
+		{
+			_can_write_movies = can_write_movies;
+			invalidate_view(view_invalid::command_state);
+		});
 	});
 
 #ifdef _DEBUG

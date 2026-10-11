@@ -122,12 +122,15 @@ namespace
 
 			ComPtr<IMFAttributes> attributes;
 
-			if (!check(MFCreateAttributes(&attributes, 2), "MFCreateAttributes")) return false;
+			if (!check(MFCreateAttributes(&attributes, 1), "MFCreateAttributes")) return false;
 
 			// Without this the sink writer uses the software encoder even where a GPU one exists,
 			// which is the difference between minutes and tens of minutes on a long movie.
 			attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
-			attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, TRUE);
+			// Throttling is left on: WriteSample then waits while the encoder catches up. Turned off, a
+			// render whose frames are composed faster than they are encoded queues every uncompressed
+			// frame -- 33 MB each at 4K -- for as long as it runs. Measured, waiting costs nothing: the
+			// compositor is the slower side whenever the encoder keeps up.
 
 			const auto native = platform::to_file_system_path(_request.path);
 

@@ -19,7 +19,8 @@ one photo or video, or when an existing Movie timeline can be resumed.
 Entering Movie with a selection of photos and videos that differs from the one its timeline was built
 from, in its items or their listing order, builds a new timeline from it in listing order. Entering
 with the same selection, or with none, returns to the timeline left behind, including edits that were
-saved; a project opened in Movie answers to the selection the timeline it replaced was built from.
+saved and a project that was opened or saved empty; a project opened in Movie answers to the selection
+the timeline it replaced was built from.
 
 Leaving Movie settles unsaved edits. When the timeline has changed since it was built, opened or
 saved, Close, Items and Escape offer Save project, Discard or Cancel. An edited timeline that has
@@ -31,8 +32,9 @@ asked about first. Open, Import and quitting while Movie is open ask the same qu
 timeline is replaced or lost.
 
 Only a change is an edit. Undoing back to the state last built, opened or saved leaves nothing to
-ask about, and a handle pressed and released in place, or a setting chosen again, changes nothing.
-The probe filling in a clip's measured length and size is not an edit either.
+ask about, and a handle pressed and released in place, a setting chosen again, or a slider dragged
+back to where it began, changes nothing. The probe filling in a clip's measured length and size is
+not an edit either.
 
 Project Open, Save and Relink perform file access on workers. Save writes a sibling temporary file
 and replaces the destination only after the complete project has been written. Edits made while a
@@ -53,16 +55,21 @@ Selection, focus and playback are separate:
 
 - Filled tiles are selected and receive timeline commands.
 - One outlined tile is focused and supplies the clip controls.
-- A bar at the tile foot shows the playhead.
+- A bar at the tile foot shows the playhead, under the clip playing from its own start: during a
+  crossfade, the incoming one.
 
 Plain click selects and focuses one clip. Ctrl+click toggles membership without allowing an empty
 selection. Shift+click selects from the anchor. Pressing an already selected tile moves focus without
 collapsing the selected block, so dragging moves the complete selection. A block keeps its internal
-order and focus, and a no-op drop creates no undo entry.
+order and focus, and a no-op drop creates no undo entry. Escape during a drag drops nothing: the block,
+a trim handle or the scrubber returns to where it was pressed, and Movie stays open.
 
-Files dropped on the timeline insert at the displayed boundary; files dropped elsewhere append.
-Photos and videos are accepted and other files are ignored. Remove, reorder, send to end, trim, add and
-relink are undoable. One Add, drop or Relink is one undo step regardless of how many files it carries.
+Files dropped on the timeline insert at the displayed boundary; files dropped elsewhere append. While
+files dragged from another application are over the strip, the boundary they would insert at is
+drawn, as it is for a block dragged within the strip. Photos and videos are accepted and other files
+are ignored. Remove, reorder, send to end, trim, add and relink are undoable. One Add, drop or Relink
+is one undo step regardless of how many files it carries, and one drag of a slider, or one length
+typed into it, is one undo step however many values it passes through.
 
 ## 4. Preview and clip controls
 
@@ -77,23 +84,27 @@ whole-movie scrubber. Selecting a clip parks the preview on its first retained f
 playback; while the movie plays, previous and next clip instead count from the clip the playhead is
 in, not the focus, and carry playback on from the start of the clip they reach. A clip is the one
 playing from its own start, so during a crossfade the incoming clip is the one counted from.
-Starting movie playback or clip playback stops the other.
+Starting movie playback or clip playback stops the other, and a clip whose source cannot be opened
+stops the clip player rather than leaving it playing a still picture.
 
 Video controls provide in and out points, a two-handle range scrubber, retained-region playback,
-endpoint frames, an audio-level track and Reset. The out-point preview shows the last retained frame.
-While a handle is dragged the preview follows it, and once the pointer rests the preview shows the
-frame at the handle, not one near it.
+endpoint frames, an audio-level track and Reset. Pressing a handle stops playback. The out-point
+preview shows the last retained frame, one of the clip's own frames before the out point. While a
+handle is dragged the preview follows it, and once the pointer rests the preview shows the frame at
+the handle, not one near it. Handles drawn on one point are told apart by which can still move.
 Photo controls provide a duration and an option to follow the movie default; turning the default off
 keeps the photo's current length. The controls always show the document's values, including after
 Undo, Open or a change of focus.
 
 Playing preview video uses two persistent frame sessions, bound to clip identity and opened ahead of a
-crossfade. Photo and parked frames use the bounded frame cache. Preview audio is decoded off the UI
-thread in bounded windows of each contributing clip's retained interval, held by source window so a
-crossfade's incoming clip keeps its sound, and read ahead of the playhead. It is mixed at the endpoint
-rate and the user's media volume into an endpoint ring long enough to outlast the UI tick that
-refills it. When playback starts or jumps, the picture waits briefly for its sound so the two begin
-together; a window still unread after that plays as silence rather than stalling, and sound that
+crossfade. Photo and parked frames come from the bounded frame cache, and each preview slot keeps the
+frame it is showing, so the two photos of a crossfade stay drawn however large the preview. A parked
+frame is the source frame at the playhead, to half a frame of the clip's own. Preview audio is decoded
+off the UI thread in bounded windows of each contributing clip's retained interval, held by source
+window so a crossfade's incoming clip keeps its sound, and read ahead of the playhead. It is mixed at
+the endpoint rate and the user's media volume into an endpoint ring long enough to outlast the UI tick
+that refills it. When playback starts or jumps, the picture waits briefly for its sound so the two
+begin together; a window still unread after that plays as silence rather than stalling, and sound that
 falls behind the picture restarts at the playhead. A seek discards queued sound from the old position.
 
 ## 5. Movie settings
@@ -107,19 +118,35 @@ Movie settings are:
 - Fade in from black and fade out to black, applied to picture and sound.
 - Default photo duration. Changing it updates photos that still follow the default.
 
+The panel shows lengths in tenths of a second. A length it shows rounded, such as another tool's
+0.75 s crossfade, keeps its exact value until the user changes it, and a length typed in is held to
+the document's bounds.
+
 Output is read-only and reports the derived dimensions, frame rate and duration.
 
 ## 6. Project files
 
 The native project format is OpenTimelineIO (`.otio`). Movie writes one video track containing clips,
-source ranges and uniform transitions. A saved project may have no clips. Source paths are relative
-to the project folder when possible. Photos are represented as image references with retained
-durations.
+source ranges and uniform transitions, with times written exactly. A saved project may have no clips.
+Source paths are relative to the project folder when possible. Photos are represented as image
+references with retained durations.
 
-Movie reads the first video track and reports constructs it cannot represent. A foreign OTIO project
+Transitions follow OpenTimelineIO's model: a clip's source range stops at the cut, and each crossfade
+reaches half its length past the cut into the media on both sides, so another tool lays the clips end
+to end to the movie's own length and draws each crossfade from the media Movie mixes. Movie's metadata
+records this convention with a version; a project saved before it holds each clip's whole retained
+range and is read as it was written.
+
+Movie reads the first video track and reports constructs it cannot represent. It finds a clip's media
+in OpenTimelineIO's named media references, using the active one, as well as in the older single
+reference. A range in timecoded media counts from the media's first frame. A clip with no range, which
+OpenTimelineIO reads as the whole media, and one saved before its source was measured are kept, and
+take the length of their source when it is probed. A disabled clip is left out, and an effect such as
+a speed change is not applied while its clip keeps its place; both are counted. A foreign OTIO project
 defaults to cuts and no end fades. A foreign dissolve is adopted only when every clip boundary carries
-the same representable dissolve; mixed or unsupported transitions are reported as ignored rather than
-silently applied to other boundaries.
+a dissolve of the same length that both clips can hold; adopting it widens each clip by the media the
+dissolve reaches into. Mixed or unsupported transitions are reported as ignored rather than silently
+applied to other boundaries.
 
 Windows Live Movie Maker (`.wlmp`) import accepts video and image extents in the order of the
 project's main track, and leaves out an extent the main track does not place; a file without a main
@@ -154,8 +181,10 @@ probes the replacements before clamping trims.
 
 ## 7. Rendering
 
-Render is shown only when the running platform provides an encoder. It is enabled only when every clip
-has been probed, exists, has a positive retained duration and has decodable dimensions.
+Render is shown only when the running platform provides an encoder. The platform is asked once, on a
+worker at startup, because asking starts its media framework; Render appears when it answers. It is
+enabled only when every clip has been probed, exists, has a positive retained duration and has
+decodable dimensions.
 
 Output is derived without asking for codec settings:
 
@@ -178,7 +207,8 @@ The render worker receives an
 immutable project snapshot, precomputes clip timing once, walks frames in order and uses CPU surfaces
 independent of the display device: a driver update or a device-removed reset mid-render would
 otherwise destroy an hour of work. It retains at most the two frame decoders and two bounded audio
-chunks needed by a crossfade.
+chunks needed by a crossfade, and hands frames to the encoder only as fast as the encoder takes them,
+so a render's memory stays bounded whether composing or encoding is the slower side.
 
 The output is staged in the destination folder. Any missing or undecodable contributing frame fails
 the render instead of writing black. A clip whose sound outlasts its picture, as camera files often
@@ -191,7 +221,9 @@ is reported as a translated reason; the encoder's own diagnostic text goes to th
 Timeline and view state are UI-thread-owned. Workers consume detached paths, settings and clip
 snapshots and publish complete results through the UI queue with generation, revision, path and trim
 currency checks. Import reads the collection's members from the index's published snapshot on its
-worker rather than walking the disk. Paint performs no file, database, decode or network work.
+worker rather than walking the disk. The audio-level track reads the focused clip's whole source on a
+worker apart from the one that probes, opens and saves; that read is cancelled when focus moves to
+another clip or Movie lets its sources go. Paint performs no file, database, decode or network work.
 
 Movie intentionally has one video track, no title or effects track, no music or narration track, no
 speed control, no per-clip volume, no pan-and-zoom, no color grading, no output settings, no redo and

@@ -248,6 +248,18 @@ std::vector<movie_source_choice> choose_movie_sources(const std::vector<df::file
                                                       const std::vector<double>& recorded_seconds,
                                                       const std::function<double(df::file_path)>& measure_seconds);
 
+// Which control an edit came from, where that control reports one gesture as a stream of values: a
+// slider dragged across fifty values, or a length typed a digit at a time. Edits naming the same group
+// merge into one undo step until the gesture settles or anything else happens, so one drag is one
+// edit, one Undo takes it back, and a drag that ends where it began is no edit at all.
+enum class movie_edit_group
+{
+	none,
+	transition_length,
+	photo_duration,
+	clip_hold,
+};
+
 // The timeline as a document: ordered, editable, and undoable. UI-thread-owned; the render takes a
 // detached copy of `clips()` and `settings()` and never reads this object again.
 class movie_project
@@ -311,10 +323,14 @@ public:
 	// Changing the default photo length retrims every photo still following it; a photo the user set
 	// explicitly keeps its own length, which is what makes the movie setting a default rather than an
 	// override. Settings equal to the current ones are not an edit.
-	void settings(const movie_settings& s);
+	void settings(const movie_settings& s, movie_edit_group group = movie_edit_group::none);
 
 	// Equal ranges are not an edit, so a handle pressed and released in place costs nothing.
-	void trim(size_t at, double start, double end);
+	void trim(size_t at, double start, double end, movie_edit_group group = movie_edit_group::none);
+
+	// The control that reported a gesture has let go, so the next edit, from it or anything else, is
+	// a step of its own.
+	void end_edit_group();
 
 	void reset(std::vector<movie_clip> clips, const movie_settings& s, df::file_path path);
 	void mark_saved(df::file_path path, uint64_t edit_revision);
@@ -342,6 +358,8 @@ private:
 	};
 
 	void push_undo();
+	void begin_edit(movie_edit_group group);
+	void settle_edit();
 	void select_only(size_t index);
 	void mark_clean();
 	void apply_photo_duration();
@@ -360,6 +378,8 @@ private:
 	// state can no longer be reached: its snapshot fell off the bounded stack, or an edit made after
 	// undoing past it replaced the history that led back to it.
 	std::optional<size_t> _clean_depth = 0;
+	// The gesture whose undo step is still open, so its next value lands in that step.
+	movie_edit_group _open_group = movie_edit_group::none;
 };
 
 // What entering Movie does with the timeline it already holds. A photo and video selection
