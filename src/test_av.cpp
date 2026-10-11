@@ -6,7 +6,7 @@
 // License details are available at https://www.gnu.org/licenses/lgpl-2.1.html
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
-// Purpose: Tests for the audio and video layer (av*) -- stream naming, audio buffering and
+// Purpose: Tests for the audio and video layer (av*) -- stream naming, audio buffering, resampling and
 // visualization, container probing, seeking, playback timing and the hover preview decoder.
 
 #include "pch.h"
@@ -2593,6 +2593,65 @@ static void should_read_an_audio_range_as_the_stream_holds_it()
 	                         ratio, boundary));
 }
 
+static void should_keep_resampled_audio_continuous()
+{
+	constexpr int output_rate = 48000;
+	constexpr int16_t left = 10000;
+	constexpr int16_t right = -12000;
+
+	for (const auto input_rate : {44100, 96000})
+	{
+		const auto path = _temps.next_folder("audio-resample").combine_file("constant.wav");
+		std::string wave;
+		const auto append = [&wave](const uint32_t value, const int bytes)
+		{
+			for (auto i = 0; i < bytes; ++i) wave.push_back(static_cast<char>((value >> (i * 8)) & 0xff));
+		};
+		const auto data_bytes = input_rate / 2 * 4;
+		wave += "RIFF";
+		append(36 + data_bytes, 4);
+		wave += "WAVEfmt ";
+		append(16, 4);
+		append(1, 2);
+		append(2, 2);
+		append(input_rate, 4);
+		append(input_rate * 4, 4);
+		append(4, 2);
+		append(16, 2);
+		wave += "data";
+		append(data_bytes, 4);
+
+		for (auto i = 0; i < input_rate / 2; ++i)
+		{
+			append(static_cast<uint16_t>(left), 2);
+			append(static_cast<uint16_t>(right), 2);
+		}
+		write_test_file(path, wave);
+
+		// Window starts align to both rates so seek rounding cannot masquerade as resampler delay.
+		for (const auto [start, duration] : {std::pair{0.0, 0.25}, {0.1, 0.25}, {0.0, 0.5}})
+		{
+			av_format_decoder decoder;
+			assert_equal(true, decoder.open(path, media_intent::playback), "the PCM fixture opens");
+			decoder.init_streams(-1, -1, false, false, false);
+			assert_equal(true, decoder.has_audio(), "the fixture carries audio");
+
+			const auto pcm = decoder.extract_audio_pcm_range(output_rate, start, duration);
+			assert_equal(static_cast<size_t>(duration * output_rate) * 2, pcm.size(),
+			             "resampling keeps the exact requested stereo length");
+
+			auto incorrect = size_t{0};
+			for (size_t i = 0; i < pcm.size(); ++i)
+			{
+				if (std::abs(static_cast<int>(pcm[i]) - (i % 2 == 0 ? left : right)) > 1) ++incorrect;
+			}
+			assert_equal(size_t{0}, incorrect,
+			             std::format("{} Hz audio has no inserted silence at {:.3f}s or its drained tail",
+			                         input_rate, start));
+		}
+	}
+}
+
 void register_av_tests(view_state& state, test_registry& tests)
 
 {
@@ -2721,6 +2780,8 @@ void register_av_tests(view_state& state, test_registry& tests)
 	tests.add("Should measure audio peaks"s, should_measure_audio_peaks);
 	tests.add("Should decode audio into a buffer"s, should_decode_audio_into_a_buffer);
 	tests.add("Should read an audio range as the stream holds it"s, should_read_an_audio_range_as_the_stream_holds_it);
+	// Release review: input timestamps do not include the resampler's buffered delay.
+	tests.add("Should keep resampled audio continuous"s, should_keep_resampled_audio_continuous);
 
 	//
 	// Session lifetime

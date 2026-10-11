@@ -95,6 +95,12 @@ an unreadable sidecar fails rather than being replaced. For a combined media and
 media replacement completes first and is rolled back if the sidecar replacement fails where the
 platform supports that recovery.
 
+Import treats automatic sidecars as companions, not additional rows. When collision resolution sends
+two primaries sharing one sidecar to different basenames or folders, each destination receives the
+sidecar. A completed companion copy is reused only by the same source and destination pair and is
+revalidated before reuse. Move retains the source sidecar until every dependent primary has moved;
+skipped, failed, and canceled sources keep their metadata.
+
 ## Coherent Read-Back
 
 Every successful write is rescanned so the index, thumbnail, and displayed properties describe the
@@ -120,6 +126,11 @@ by folder comparison and treated conservatively because their effect is unknown.
 Cancellation stops future items in a batch and reports completed, failed, skipped, and cancelled
 items separately. It does not claim to undo completed writes.
 
+Rename recovers a displaced, unfinished media file and all its sidecars as one group. It uses their
+original names if available, otherwise their reviewed names, otherwise one collectively free numbered
+basename. Recovery never places a sidecar beside an unrelated primary; a failed recovery reports the
+surviving paths.
+
 ## Where this lives
 
 - [files_core.cpp](../src/files_core.cpp): `files::load`, `files::update`, staging, sidecars, and
@@ -130,6 +141,8 @@ items separately. It does not claim to undo completed writes.
   `texture_state` and `display_state_t`.
 - [model_index.cpp](../src/model_index.cpp): change discovery, scanning, and thumbnail scheduling.
 - [platform_win_files.cpp](../src/platform_win_files.cpp): replacement and coherent file handles.
+- [view_rename.cpp](../src/view_rename.cpp): displaced rename groups and cancellation recovery.
+- [app_util.cpp](../src/app_util.cpp): Import planning, shared companions, and write rollback.
 - [platform_win_wic.cpp](../src/platform_win_wic.cpp): pasted clipboard bitmap encoding and staged
   publication.
 - [metadata_xmp.cpp](../src/metadata_xmp.cpp): XMP packet and sidecar updates.

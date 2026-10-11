@@ -137,6 +137,10 @@ in the demuxer. Closing a session, or abandoning an audio walk, interrupts a rea
 demuxer rather than waiting it out. Software decode uses frame and slice threads, bounded by the
 core count and by the memory each frame thread holds.
 
+Movie's bounded PCM reads place converted audio by its source timestamp minus the resampler's
+buffered delay. Continuous source audio stays continuous when its sample rate changes; genuine
+timestamp gaps remain gaps, and the resampler's delayed tail is drained at the end of a read.
+
 AV1 has no FFmpeg software decoder of its own, so software AV1 decodes through libdav1d; FFmpeg's
 own `av1` decoder exists only to drive hardware acceleration.
 

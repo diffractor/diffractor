@@ -2791,6 +2791,13 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 
 		auto* out = std::bit_cast<uint8_t*>(converted.data());
 		const auto** in = frame ? const_cast<const uint8_t**>(frame->extended_data) : nullptr;
+		// The rate product expresses the buffered delay exactly, including fractional output samples.
+		// A converted block starts before its input frame's timestamp by this delay.
+		const auto delayed_frames = frame
+			                            ? static_cast<double>(swr_get_delay(
+				                            swr, static_cast<int64_t>(_audio_context->sample_rate) * sample_rate)) /
+				                            _audio_context->sample_rate
+			                            : 0.0;
 		const auto produced = swr_convert(swr, &out, capacity, in, frame ? frame->nb_samples : 0);
 
 		if (produced <= 0) return;
@@ -2802,7 +2809,7 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 		// contributes nothing regardless - the clamps below reduce it to a zero-length copy - so
 		// bounding the offset changes no placement while keeping the conversion defined.
 		const auto placement_limit = static_cast<double>(wanted_frames) + static_cast<double>(source_frames) + 1.0;
-		const auto offset_frames = (frame_time - wanted_start) * sample_rate;
+		const auto offset_frames = (frame_time - wanted_start) * sample_rate - delayed_frames;
 		const auto timestamp_frame = std::isfinite(offset_frames)
 			                             ? static_cast<int64_t>(std::llround(
 				                             std::clamp(offset_frames, -placement_limit, placement_limit)))

@@ -7,7 +7,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Tests for application coordination (app*, view_* task views): command registration
-// and input dispatch, settings persistence, and rename, import, sync and convert planning.
+// and input dispatch, settings persistence, headless Movie batches, and rename, import, sync and convert planning.
 
 #include "pch.h"
 #include "files.h"
@@ -28,6 +28,7 @@
 #include "app.h"
 #include "app_sidebar.h"
 #include "app_dialogs.h"
+#include "view_movie.h"
 #include "view_rename.h"
 #include "view_batch.h"
 #include "view_tags.h"
@@ -693,6 +694,7 @@ struct recording_status final : df::status_i
 	// The first completion only, as the views show it: a later one is ignored.
 	std::string completion;
 	bool completed = false;
+	bool canceled = false;
 
 	void start_item(std::string_view) override
 	{
@@ -731,7 +733,7 @@ struct recording_status final : df::status_i
 	{
 	}
 
-	bool is_canceled() const override { return false; }
+	bool is_canceled() const override { return canceled; }
 
 	void wait_for_complete() const override
 	{
@@ -1105,7 +1107,10 @@ static void should_revalidate_import_sidecars(shared_test_context& stc)
 // Under Replace that refused the JPEG outright, and under Skip the JPEG was blocked by its own twin.
 static void should_import_a_shared_sidecar_once(shared_test_context& stc)
 {
-	for (const auto policy : {collision_policy::replace, collision_policy::skip})
+	for (const auto [policy, move] : {
+		     std::pair{collision_policy::replace, false}, {collision_policy::replace, true},
+		     {collision_policy::skip, false}, {collision_policy::skip, true},
+		     {collision_policy::auto_rename, false}, {collision_policy::auto_rename, true}})
 	{
 		const auto root = _temps.next_folder("import-shared-sidecar");
 		const auto src = root.combine("source");
@@ -1115,6 +1120,7 @@ static void should_import_a_shared_sidecar_once(shared_test_context& stc)
 
 		const auto sidecar = src.combine_file("shot.xmp");
 		write_test_file(sidecar, "shared sidecar");
+		write_test_file(src.combine_file("shot.dop"), "shared adjustments");
 
 		const auto make_item = [&src, &sidecar](const std::string_view name)
 		{
@@ -1131,7 +1137,7 @@ static void should_import_a_shared_sidecar_once(shared_test_context& stc)
 			item.item.ft = files::file_type_from_name(path);
 
 			const auto metadata = std::make_shared<prop::item_metadata>();
-			metadata->sidecars = sidecar.name();
+			metadata->sidecars = str::cache("shot.xmp;shot.dop");
 			item.item.metadata.store(metadata);
 			return item;
 		};
@@ -1142,6 +1148,7 @@ static void should_import_a_shared_sidecar_once(shared_test_context& stc)
 		options.dest_folder = dest;
 		options.dest_structure = {};
 		options.collision = policy;
+		options.is_move = move;
 
 		const auto analysis = import_analysis(items, options, {}, test_token);
 		assert_equal(2, static_cast<int>(count_imports(analysis)), "both files of the shot are planned");
@@ -1153,6 +1160,134 @@ static void should_import_a_shared_sidecar_once(shared_test_context& stc)
 		assert_equal(true, status->status_of("shot.jpg") == item_status::success, "and so does the jpeg");
 		assert_equal("shared sidecar"s, read_test_file(dest.combine_file("shot.xmp")),
 		             "the sidecar they share arrives once");
+		assert_equal(!move, sidecar.exists(), "Move releases the shared source after both primary writes");
+		assert_equal("shared adjustments"s, read_test_file(dest.combine_file("shot.dop")),
+		             "each dependency is published once per row, not once per new companion");
+		assert_equal(!move, src.combine_file("shot.dop").exists(), "the second shared source has the same lifetime");
+	}
+}
+
+static folder_scan_item import_test_item(const df::file_path path, const std::string_view sidecars = {})
+{
+	const auto fi = platform::file_attributes(path);
+	folder_scan_item item;
+	item.folder = path.folder();
+	item.item.name = path.name();
+	item.item.file_modified = df::date_t(fi.modified);
+	item.item.file_created = fi.created;
+	item.item.size = df::file_size(fi.size);
+	item.item.ft = files::file_type_from_name(path);
+	if (!sidecars.empty())
+	{
+		const auto metadata = std::make_shared<prop::item_metadata>();
+		metadata->sidecars = str::cache(sidecars);
+		item.item.metadata.store(metadata);
+	}
+	return item;
+}
+
+static void should_preserve_shared_import_sidecars_after_auto_rename(shared_test_context& stc)
+{
+	for (const auto move : {false, true})
+	{
+		const auto root = _temps.next_folder("import-shared-renamed");
+		const auto src = root.combine("source");
+		const auto dest = root.combine("dest");
+		platform::create_folder(src);
+		platform::create_folder(dest);
+		write_test_file(src.combine_file("shot.jpg"), "jpeg");
+		write_test_file(src.combine_file("shot.nef"), "raw");
+		write_test_file(src.combine_file("shot.xmp"), "shared metadata");
+		write_test_file(dest.combine_file("shot.nef"), "existing raw");
+		write_test_file(dest.combine_file("shot (2).nef"), "another raw");
+
+		const std::vector items{
+			import_test_item(src.combine_file("shot.jpg"), "shot.xmp"),
+			import_test_item(src.combine_file("shot.nef"), "shot.xmp"),
+			import_test_item(src.combine_file("shot.xmp"))
+		};
+		import_options options;
+		options.dest_folder = dest;
+		options.is_move = move;
+		options.collision = collision_policy::auto_rename;
+		const auto analysis = import_analysis(items, options, {}, test_token);
+		const auto status = std::make_shared<recording_status>();
+		const auto imported = import_copy(stc.empty_index, status, analysis, options, test_token);
+
+		assert_equal("raw"s, read_test_file(dest.combine_file("shot (3).nef")), "the RAW follows its reviewed rename");
+		assert_equal("shared metadata"s, read_test_file(dest.combine_file("shot (3).xmp")),
+		             "the renamed RAW receives its matching metadata");
+		assert_equal("jpeg"s, read_test_file(dest.combine_file("shot.jpg")), "the JPEG keeps its free name");
+		assert_equal("shared metadata"s, read_test_file(dest.combine_file("shot.xmp")),
+		             "both destinations receive the shared metadata");
+		assert_equal("existing raw"s, read_test_file(dest.combine_file("shot.nef")), "the first collision survives");
+		assert_equal("another raw"s, read_test_file(dest.combine_file("shot (2).nef")), "the second collision survives");
+		assert_equal(false, dest.combine_file("shot (2).xmp").exists(), "no standalone companion is auto-renamed");
+		assert_equal(2_z, count_imports(analysis), "automatic companions do not become independent rows");
+		assert_equal(2_z, imported.imports.size(), "both primary imports are recorded");
+		assert_equal(true, status->status_of("shot.jpg") == item_status::success, "the JPEG reports success");
+		assert_equal(true, status->status_of("shot.nef") == item_status::success, "the RAW reports success");
+		for (const auto name : {"shot.jpg", "shot.nef", "shot.xmp"})
+			assert_equal(!move, src.combine_file(name).exists(), "only a completed Move removes its sources");
+	}
+}
+
+static void should_keep_shared_import_sidecars_for_unfinished_sources(shared_test_context& stc)
+{
+	for (const auto outcome : {item_status::ignore, item_status::fail, item_status::cancel})
+	{
+		const auto root = _temps.next_folder("import-shared-unfinished");
+		const auto src = root.combine("source");
+		const auto dest = root.combine("dest");
+		platform::create_folder(src);
+		platform::create_folder(dest);
+		write_test_file(src.combine_file("shot.jpg"), "jpeg");
+		write_test_file(src.combine_file("shot.nef"), "raw");
+		write_test_file(src.combine_file("shot.xmp"), "shared metadata");
+		if (outcome == item_status::ignore) write_test_file(dest.combine_file("shot.nef"), "existing raw");
+
+		const std::vector items{
+			import_test_item(src.combine_file("shot.jpg"), "shot.xmp"),
+			import_test_item(src.combine_file("shot.nef"), "shot.xmp"),
+			import_test_item(src.combine_file("shot.xmp"))
+		};
+		import_options options;
+		options.dest_folder = dest;
+		options.is_move = true;
+		options.collision = collision_policy::skip;
+		const auto analysis = import_analysis(items, options, {}, test_token);
+		const auto status = std::make_shared<recording_status>();
+		auto first_write = true;
+		test_import_sidecar_write_override = [outcome, dest, status, &first_write](df::file_path)
+			-> std::optional<platform::file_op_result>
+		{
+			if (first_write)
+			{
+				first_write = false;
+				if (outcome == item_status::fail) write_test_file(dest.combine_file("shot.jpg"), "new occupant");
+				if (outcome == item_status::cancel) status->canceled = true;
+			}
+			return {};
+		};
+		const df::scope_exit restore_hook([] { test_import_sidecar_write_override = {}; });
+		import_copy(stc.empty_index, status, analysis, options, test_token);
+
+		assert_equal("shared metadata"s, read_test_file(src.combine_file("shot.xmp")),
+		             "the unfinished source retains its authored sidecar");
+		assert_equal("shared metadata"s, read_test_file(dest.combine_file("shot.xmp")),
+		             "the completed source also has its sidecar, even if an earlier row rolled back");
+		if (outcome == item_status::fail)
+		{
+			assert_equal(true, status->status_of("shot.jpg") == item_status::fail, "the raced JPEG is refused");
+			assert_equal(true, status->status_of("shot.nef") == item_status::success, "the RAW still arrives whole");
+			assert_equal("jpeg"s, read_test_file(src.combine_file("shot.jpg")), "the refused primary stays");
+		}
+		else
+		{
+			assert_equal(true, status->status_of("shot.jpg") == item_status::success, "the JPEG completed");
+			assert_equal(true, status->status_of("shot.nef") == outcome, "the RAW has the expected unfinished result");
+			assert_equal("raw"s, read_test_file(src.combine_file("shot.nef")), "the unfinished primary stays");
+		}
 	}
 }
 
@@ -3016,6 +3151,77 @@ static void should_run_a_rename_onto_vacated_names()
 	{
 		assert_equal(true, std::string_view(file.name).find(" (") == std::string_view::npos,
 		             std::format("{} is a reviewed name, not a generated variant", file.name));
+	}
+}
+
+static void should_recover_canceled_rename_sidecars_as_a_group()
+{
+	for (const auto [block_reviewed, block_numbered, first_has_sidecar] :
+	     {std::tuple{true, 0, true}, {true, 1, true}, {false, 0, true}, {true, 0, false}, {true, 2, true}})
+	{
+		const auto root = _temps.next_folder("rename-cancel-group");
+		const auto first = root.combine_file("1.jpg");
+		const auto second = root.combine_file("2.jpg");
+		const auto third = root.combine_file("3.jpg");
+		const auto source_bytes = read_test_file(test_files_folder.combine_file("Test.jpg"));
+		write_test_file(first, source_bytes + "first");
+		write_test_file(second, source_bytes + "second");
+		if (first_has_sidecar) write_test_file(first.extension(".xmp"), "first metadata");
+		write_test_file(second.extension(".xmp"), "second metadata");
+		if (block_reviewed) write_test_file(third, source_bytes + "unrelated");
+		if (block_numbered == 1) write_test_file(root.combine_file("2 (2).xmp"), "unrelated sidecar");
+
+		browsing_fixture f(root);
+		f.state.select(f.view, f.find("1.jpg"), false, false, false);
+		f.state.select(f.view, f.find("2.jpg"), true, false, false);
+		f.state.update_selection();
+		assert_equal(2_z, f.state.selected_count(), "only the two source media are selected");
+		assert_equal(true, str::contains(f.find("2.jpg")->sidecars(), "2.xmp"),
+		             "the unfinished row carries its automatic companion");
+
+		const auto saved = setting.rename;
+		const df::scope_exit restore([saved] { setting.rename = saved; });
+		setting.rename.name_template = "#";
+		setting.rename.start_seq = "2";
+		setting.rename.collision = collision_policy::replace;
+
+		const auto view = std::make_shared<rename_view>(f.state, nullptr);
+		view->activate({100, 100});
+		assert_equal(true, view->can_run(), "the reviewed chain can run");
+		df::rename_after_move_for_test = [first, second, root, block_numbered, &view](const df::file_path from,
+		                                                                           const df::file_path to)
+		{
+			if (from == first && to == second) view->cancel_operation();
+			if (block_numbered == 2 && to == root.combine_file("2 (2).jpg"))
+				write_test_file(root.combine_file("2 (2).xmp"), "unrelated sidecar");
+		};
+		const df::scope_exit restore_hook([] { df::rename_after_move_for_test = {}; });
+		view->run();
+
+		const auto recovered = !block_reviewed ? third :
+			root.combine_file(block_numbered ? "2 (3).jpg" : "2 (2).jpg");
+		assert_equal(source_bytes + "first", read_test_file(second), "the completed rename stays completed");
+		if (first_has_sidecar)
+			assert_equal("first metadata"s, read_test_file(second.extension(".xmp")),
+			             "the completed media keeps its own metadata");
+		else
+			assert_equal(false, second.extension(".xmp").exists(),
+			             "an unparked companion must not stay beside the completed primary");
+		assert_equal(source_bytes + "second", read_test_file(recovered), "the parked primary is recovered");
+		assert_equal("second metadata"s, read_test_file(recovered.extension(".xmp")),
+		             "its parked sidecar uses the same recovered basename");
+		if (block_reviewed)
+		{
+			assert_equal(source_bytes + "unrelated", read_test_file(third), "the unrelated primary is untouched");
+			assert_equal(false, third.extension(".xmp").exists(), "it acquires no recovered metadata");
+		}
+		if (block_numbered)
+		{
+			assert_equal("unrelated sidecar"s, read_test_file(root.combine_file("2 (2).xmp")),
+			             "a numbered sidecar collision advances the whole group");
+			assert_equal(false, root.combine_file("2 (2).jpg").exists(),
+			             "a partially recovered primary is rolled back before trying the next basename");
+		}
 	}
 }
 
@@ -4925,9 +5131,102 @@ static void should_consume_cancelled_globe_release()
 	assert_equal(false, should_invoke_globe_release(false, false, false), "release outside the globe does not invoke");
 }
 
+static void should_offer_only_native_movie_project_dialogs()
+{
+	const auto filters = movie_project_filters();
+	assert_equal(1_z, filters.size(), "Open and Save offer one native project format");
+	assert_equal("*.otio"s, filters.front().extensions, "Movie Maker projects are not an Open or Save choice");
+	assert_equal(std::string(tt.movie_project_files.sv()), filters.front().text, "the native filter is localized");
+}
+
+static void should_skip_existing_movie_batch_outputs()
+{
+	constexpr auto missing_media_project = R"({
+		"OTIO_SCHEMA": "Timeline.1",
+		"tracks": {"OTIO_SCHEMA": "Stack.1", "children": [{
+			"OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [{
+				"OTIO_SCHEMA": "Clip.1",
+				"source_range": {
+					"start_time": {"value": 0, "rate": 30},
+					"duration": {"value": 30, "rate": 30}
+				},
+				"media_reference": {"OTIO_SCHEMA": "ExternalReference.1", "target_url": "missing.mp4"}
+			}]
+		}]}
+	})";
+	for (const auto import : {false, true})
+		for (const auto separate_output : {false, true})
+		{
+			const auto root = _temps.next_folder("movie-batch-skip");
+			const auto project = root.combine_file(import ? "project.wlmp" : "project.otio");
+			const auto output_folder = separate_output ? root.combine("output") : root;
+			platform::create_folder(output_folder);
+			const auto output = output_folder.combine_file(import ? "project.otio" : "project.mp4");
+			write_test_file(project, import ? "unreadable project" : missing_media_project);
+			write_test_file(output, "existing output");
+
+			movie_batch_options options;
+			options.mode = import ? movie_batch_mode::import : movie_batch_mode::render;
+			if (separate_output) options.output = output_folder.text();
+			assert_equal(true, movie_batch_test_seams::project_is_skipped(project, options),
+			             "existing output is skipped before reading the project or its missing media");
+			assert_equal("existing output"s, read_test_file(output), "skipping preserves existing bytes");
+
+			options.overwrite = true;
+			assert_equal(false, movie_batch_test_seams::project_is_skipped(project, options),
+			             "explicit overwrite still validates the project and media");
+			options.overwrite = false;
+			options.mode = movie_batch_mode::check;
+			assert_equal(false, movie_batch_test_seams::project_is_skipped(project, options),
+			             "check validates instead of skipping an existing output");
+			assert_equal("existing output"s, read_test_file(output), "failed validation writes nothing");
+			assert_equal(false, write_movie_project_file(output, "unapproved replacement", true).empty(),
+			             "staged publication also refuses an output that appears after the skip check");
+			assert_equal("existing output"s, read_test_file(output), "publication preserves the competing file");
+		}
+}
+
+static void should_refuse_a_movie_output_claimed_during_render()
+{
+	movie_clip clip;
+	clip.path = test_files_folder.combine_file("Small.jpg");
+	clip.is_photo = true;
+	clip.is_missing = false;
+	clip.is_probed = true;
+	clip.end = 0.1;
+	clip.extent = {64, 64};
+	movie_render_request request;
+	request.clips = {clip};
+	request.output = derive_movie_output(request.clips);
+	request.path = _temps.next_path(".mp4");
+	request.fail_if_exists = true;
+	const auto control = std::make_shared<movie_render_control>();
+	auto claimed = false;
+	const auto result = render_movie_to_file(request, [&](double)
+	{
+		if (!claimed)
+		{
+			claimed = true;
+			write_test_file(request.path, "competing movie");
+		}
+	}, test_token, control);
+
+	assert_equal(false, result.ok, "render never replaces a destination without permission");
+	if (claimed)
+		assert_equal("competing movie"s, read_test_file(request.path), "the late destination survives publication");
+	else
+		assert_equal(true, result.reason == movie_render_error::no_encoder,
+		             "only an unavailable platform writer can prevent the publication race from running");
+}
+
 void register_app_tests(view_state& state, test_registry& tests)
 {
 	tests.add("Should bind every advertised command"s, should_bind_every_advertised_command);
+	tests.add("Should offer only native Movie project dialogs"s, should_offer_only_native_movie_project_dialogs);
+	// Release review: an existing batch output needs neither a readable project nor usable sources.
+	tests.add("Should skip existing Movie batch outputs"s, should_skip_existing_movie_batch_outputs);
+	tests.add("Should refuse a Movie output claimed during render"s,
+	          should_refuse_a_movie_output_claimed_during_render);
 	tests.add("Should invoke link commands and selection shortcuts"s, should_invoke_link_commands_and_selection_shortcuts);
 	tests.add("Should route focused view keyboard commands"s, should_route_focused_view_keyboard_commands);
 	tests.add("Should honor no-indexing for collection updates"s, should_honor_no_indexing_for_collection_updates);
@@ -4956,6 +5255,9 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should cascade skipped rename rows"s, should_cascade_skipped_rename_rows);
 	tests.add("Should record rename identity"s, should_record_rename_identity);
 	tests.add("Should run a rename onto vacated names"s, should_run_a_rename_onto_vacated_names);
+	// Release review: cancellation recovery must choose one basename for every companion.
+	tests.add("Should recover canceled Rename sidecars as a group"s,
+	          should_recover_canceled_rename_sidecars_as_a_group);
 	tests.add("Should refuse a rename whose source changed since review"s,
 	          should_refuse_a_rename_whose_source_changed_since_review);
 	// Concurrency review #26 - a Close handled while handles were released did not stop the run.
@@ -5000,6 +5302,11 @@ void register_app_tests(view_state& state, test_registry& tests)
 	tests.add("Should revalidate import rows"s, should_revalidate_import_rows);
 	tests.add("Should revalidate import sidecars"s, should_revalidate_import_sidecars);
 	tests.add("Should import a shared sidecar once"s, should_import_a_shared_sidecar_once);
+	// Release review: shared companions follow every resolved destination and every unfinished source.
+	tests.add("Should preserve shared Import sidecars after Auto-rename"s,
+	          should_preserve_shared_import_sidecars_after_auto_rename);
+	tests.add("Should keep shared Import sidecars for unfinished sources"s,
+	          should_keep_shared_import_sidecars_for_unfinished_sources);
 	tests.add("Should keep import bookkeeping when a folder fails"s,
 	          should_keep_import_bookkeeping_when_a_folder_fails);
 	tests.add("Should revalidate replaced import destinations"s, should_revalidate_replaced_import_destinations);

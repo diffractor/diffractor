@@ -94,3 +94,9 @@ duplicate_report_anchor_stats calc_duplicate_report_anchor_stats_for_tests(
 // Returns the process exit code: zero when every project ends ready to render -- checked or imported
 // -- or rendered, a project or movie skipped because it is already there aside.
 int run_movie_batch(const movie_batch_options& options);
+
+namespace movie_batch_test_seams
+{
+	// Exercise the per-project worker without process initialization or the user's collection settings.
+	bool project_is_skipped(df::file_path project, const movie_batch_options& options);
+}

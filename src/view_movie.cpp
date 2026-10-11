@@ -7,8 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Implements the Movie task view -- the timeline strip, the composed preview and its
-// transport, the two-halved settings panel, and the source frames both the strip and the preview
-// draw. Every rule about the document lives in model_movie; this only presents it.
+// transport, the two-halved settings panel, source frames, and the project I/O and render workers
+// shared with the command line. The document's rules live in model_movie.
 
 #include "pch.h"
 #include "view_movie.h"
@@ -3909,16 +3909,15 @@ void movie_view::apply_probe(const std::vector<movie_probe_result>& results)
 // Project files
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+std::vector<platform::file_dialog_filter> movie_project_filters()
+{
+	return {
+		{std::string(tt.movie_project_files.sv()), "*.otio"},
+	};
+}
+
 namespace
 {
-	std::vector<platform::file_dialog_filter> project_filters()
-	{
-		return {
-			{std::string(tt.movie_project_files.sv()), "*.otio"},
-			{std::string(tt.movie_maker_files.sv()), "*.wlmp"},
-		};
-	}
-
 	std::string read_text_file(const df::file_path path)
 	{
 		const auto file = platform::open_file(path, platform::file_open_mode::read);
@@ -3961,7 +3960,8 @@ namespace
 	}
 }
 
-std::string write_movie_project_file(const df::file_path path, const std::string_view text)
+std::string write_movie_project_file(const df::file_path path, const std::string_view text,
+                                    const bool fail_if_exists)
 {
 	const auto staged = platform::temp_file(".otio", path.folder());
 	const auto cleanup = df::scope_exit([&staged] { platform::delete_file(staged); });
@@ -3971,7 +3971,9 @@ std::string write_movie_project_file(const df::file_path path, const std::string
 		return "could not write the staged project";
 	}
 
-	const auto moved = platform::replace_file(path, staged);
+	const auto moved = fail_if_exists
+		                   ? platform::move_file(staged, path, true)
+		                   : platform::replace_file(path, staged);
 	return moved.failed() ? moved.format_error() : std::string{};
 }
 
@@ -4096,9 +4098,9 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 void movie_view::open_project()
 {
 	std::vector<df::file_path> paths;
-	if (!platform::prompt_for_open_paths(paths, project_filters(), false) || paths.empty()) return;
+	if (!platform::prompt_for_open_paths(paths, movie_project_filters(), false) || paths.empty()) return;
 
-	load_project(paths.front(), str::icmp(paths.front().extension(), ".wlmp") == 0);
+	load_project(paths.front(), false);
 }
 
 void movie_view::import_project()
@@ -4135,11 +4137,7 @@ void movie_view::save_project(std::function<void(bool)> complete)
 			std::string(tt.movie_title.sv()), ".otio");
 	}
 
-	const std::vector<platform::file_dialog_filter> filters{
-		{std::string(tt.movie_project_files.sv()), "*.otio"}
-	};
-
-	if (!platform::prompt_for_save_path(path, filters))
+	if (!platform::prompt_for_save_path(path, movie_project_filters()))
 	{
 		if (complete) complete(false);
 		return;
@@ -4756,7 +4754,9 @@ movie_render_result render_movie_to_file(const movie_render_request& request,
 		return result;
 	}
 
-	const auto moved = platform::replace_file(request.path, staged);
+	const auto moved = request.fail_if_exists
+		                   ? platform::move_file(staged, request.path, true)
+		                   : platform::replace_file(request.path, staged);
 
 	if (moved.failed())
 	{

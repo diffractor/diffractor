@@ -131,6 +131,9 @@ source ranges and uniform transitions, with times written exactly. A saved proje
 Source paths are relative to the project folder when possible. Photos are represented as image
 references with retained durations.
 
+Open and Save offer only native `.otio` projects. Windows Live Movie Maker `.wlmp` projects enter
+through Import, never Open; saving an imported timeline writes a native project.
+
 Transitions follow OpenTimelineIO's model: a clip's source range stops at the cut, and each crossfade
 reaches half its length past the cut into the media on both sides, so another tool lays the clips end
 to end to the movie's own length and draws each crossfade from the media Movie mixes. Movie's metadata
@@ -252,6 +255,8 @@ out.
 `-movie-check:<project or folder>` reports what import would make of a `.wlmp`, or what render would
 find in an `.otio`, and writes nothing. The exit code is zero only when every project ends ready to
 render, or rendered; a project or movie skipped because it already exists is not a failure.
+Existing destinations are skipped before the project or its sources are read. Without
+`-movie-overwrite`, publication also refuses a destination that appears while the operation runs.
 
 ## Where this lives
 

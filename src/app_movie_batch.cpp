@@ -488,6 +488,14 @@ namespace
 	                               source_search& search, const df::folder_path output_folder,
 	                               std::vector<df::file_path>& written)
 	{
+		std::optional<df::file_path> destination;
+		if (options.mode != movie_batch_mode::check)
+		{
+			auto skipped = false;
+			destination = choose_destination(project_path, ".otio", output_folder, options.overwrite, written, skipped);
+			if (!destination) return skipped ? project_outcome::skipped : project_outcome::failed;
+		}
+
 		const auto text = read_project_text(project_path);
 
 		if (text.empty())
@@ -523,13 +531,8 @@ namespace
 			return movie.ready ? project_outcome::ready : project_outcome::failed;
 		}
 
-		auto skipped = false;
-		const auto destination = choose_destination(project_path, ".otio", output_folder, options.overwrite, written,
-		                                            skipped);
-		if (!destination) return skipped ? project_outcome::skipped : project_outcome::failed;
-
 		const auto json = write_otio(loaded.clips, loaded.settings, destination->folder());
-		const auto error = write_movie_project_file(*destination, json);
+		const auto error = write_movie_project_file(*destination, json, !options.overwrite);
 
 		if (!error.empty())
 		{
@@ -546,6 +549,14 @@ namespace
 	project_outcome render_project(const df::file_path project_path, const movie_batch_options& options,
 	                               const df::folder_path output_folder, std::vector<df::file_path>& written)
 	{
+		std::optional<df::file_path> destination;
+		if (options.mode != movie_batch_mode::check)
+		{
+			auto skipped = false;
+			destination = choose_destination(project_path, ".mp4", output_folder, options.overwrite, written, skipped);
+			if (!destination) return skipped ? project_outcome::skipped : project_outcome::failed;
+		}
+
 		const auto text = read_project_text(project_path);
 
 		if (text.empty())
@@ -606,16 +617,12 @@ namespace
 			return project_outcome::ready;
 		}
 
-		auto skipped = false;
-		const auto destination = choose_destination(project_path, ".mp4", output_folder, options.overwrite, written,
-		                                            skipped);
-		if (!destination) return skipped ? project_outcome::skipped : project_outcome::failed;
-
 		movie_render_request request;
 		request.clips = std::move(movie.clips);
 		request.settings = loaded.settings;
 		request.output = movie.output;
 		request.path = *destination;
+		request.fail_if_exists = !options.overwrite;
 
 		const auto control = std::make_shared<movie_render_control>();
 		const auto token = df::cancel_token(control->cancelled);
@@ -654,6 +661,17 @@ namespace
 		                  format_duration(took), took > 0 ? movie.duration / took : 0.0));
 		return project_outcome::rendered;
 	}
+}
+
+bool movie_batch_test_seams::project_is_skipped(const df::file_path project, const movie_batch_options& options)
+{
+	std::vector<df::file_path> written;
+	source_search search({}, false);
+	const auto folder = options.output.empty() ? df::folder_path{} : df::folder_path(options.output);
+	const auto outcome = has_extension(project, ".wlmp")
+		                     ? import_project(project, options, search, folder, written)
+		                     : render_project(project, options, folder, written);
+	return outcome == project_outcome::skipped;
 }
 
 int run_movie_batch(const movie_batch_options& options)

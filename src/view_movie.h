@@ -25,6 +25,8 @@ class movie_timeline_element;
 class movie_trim_control;
 class movie_source_cache;
 
+std::vector<platform::file_dialog_filter> movie_project_filters();
+
 // What probing one source found. A detached value, produced on a worker and applied on the UI
 // thread by matching on path, so nothing the view owns crosses a queue.
 struct movie_probe_result
@@ -115,7 +117,7 @@ movie_import import_movie_maker_project(std::string_view xml, df::folder_path pr
 
 // Writes `text` to a staged file beside `path`, and replaces `path` only once all of it is written,
 // so a failed save leaves the project that was there. Answers a failure in words, or nothing.
-std::string write_movie_project_file(df::file_path path, std::string_view text);
+std::string write_movie_project_file(df::file_path path, std::string_view text, bool fail_if_exists = false);
 
 struct movie_probe_retry_updates
 {
@@ -170,6 +172,7 @@ struct movie_render_request
 	movie_settings settings;
 	movie_output output;
 	df::file_path path;
+	bool fail_if_exists = false;
 };
 
 struct movie_render_result

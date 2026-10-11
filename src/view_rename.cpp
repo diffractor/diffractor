@@ -7,7 +7,7 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Batch file rename view. Provides template-based renaming with preview,
-// sequential numbering, and metadata-driven naming patterns.
+// sequential numbering, metadata-driven naming patterns, and grouped sidecar recovery.
 
 #include "pch.h"
 #include "model.h"
@@ -170,10 +170,6 @@ void rename_view::run()
 		// path the plan never counted as free.
 		std::set<std::string, df::path_key_less> vacating;
 
-		// Where each displaced path was reviewed to land. A parked file whose own name has since
-		// been taken has exactly one other name the user saw for it, and this is it.
-		std::map<std::string, df::file_path, df::path_key_less> reviewed_destination;
-
 		for (const auto& rename : renames)
 		{
 			const auto source_key = rename_path_key(rename.source, rename.is_folder);
@@ -181,13 +177,10 @@ void rename_view::run()
 				continue;
 
 			vacating.emplace(source_key);
-			reviewed_destination.emplace(source_key, rename.destination);
-
 			for (const auto& [source, destination] : rename.sidecars)
 				if (df::compare_path_key(source.pack(), destination.pack()) != 0)
 				{
 					vacating.emplace(source.pack());
-					reviewed_destination.emplace(source.pack(), destination);
 				}
 		}
 
@@ -298,46 +291,130 @@ void rename_view::run()
 			results->end_item(rename.original_name, to_status(result.code));
 		}
 
-		// A row that failed or never ran leaves its source parked, so put it back under its own name.
-		for (const auto& [key, entry] : parked)
+		// Recover the whole row, including companions that never needed parking. Independent
+		// destinations could attach a recovered sidecar to an unrelated, occupied primary.
+		for (const auto& rename : renames)
 		{
-			scan_folders.emplace(entry.original.folder());
-
-			// Its own name first: that is where it belongs whenever the row that displaced it did
-			// not complete.
-			auto recovery = move_rename_path(entry.temporary, entry.original, true, entry.is_folder);
-			if (recovery.success()) continue;
-			scan_folders.emplace(entry.temporary.folder());
-
-			// The row that displaced it did complete, so that name is gone for good. The review
-			// showed this file exactly one other name - its own destination - so it goes there.
-			// Cancelling used to drop straight to a generated " (n)" variant, which meant a file
-			// ended up under a name the user had never been shown and could not have expected.
-			const auto reviewed = reviewed_destination.find(key);
-
-			if (reviewed != reviewed_destination.end() &&
-				(recovery = move_rename_path(entry.temporary, reviewed->second, true, entry.is_folder)).success())
+			if (!parked.contains(rename_path_key(rename.source, rename.is_folder)) &&
+				std::ranges::none_of(rename.sidecars, [&parked](const auto& sidecar)
+				{
+					return parked.contains(rename_path_key(sidecar.first, false));
+				}))
 			{
-				scan_folders.emplace(reviewed->second.folder());
 				continue;
 			}
-			if (reviewed != reviewed_destination.end()) scan_folders.emplace(reviewed->second.folder());
 
-			// Both names are taken. Landing beside the original is best effort: if that fails too
-			// the item keeps the temporary name, which is where it already was.
-			const auto fallback = next_free_destination(entry.original);
-			recovery = move_rename_path(entry.temporary, fallback, true, entry.is_folder);
+			struct recovery_member
+			{
+				df::file_path original;
+				df::file_path current;
+				df::file_path reviewed;
+				bool is_folder;
+			};
+			const auto primary = rename.is_folder
+				                     ? df::file_path(rename.source.folder().parent(), rename.source.folder().name())
+				                     : rename.source;
+			std::vector<recovery_member> group{
+				{primary, current_path(rename.source, rename.is_folder), rename.destination, rename.is_folder}
+			};
+			for (const auto& [source, destination] : rename.sidecars)
+				group.push_back({source, current_path(source, false), destination, false});
+
+			const auto destinations_free = [&group](const std::vector<df::file_path>& destinations)
+			{
+				for (size_t i = 0; i < group.size(); ++i)
+				{
+					const auto& member = group[i];
+					if (df::compare_path_key(rename_path_key(member.current, member.is_folder),
+					                         rename_path_key(destinations[i], member.is_folder)) != 0 &&
+						rename_path_exists(destinations[i], member.is_folder))
+						return false;
+				}
+				return true;
+			};
+			const auto recover = [&](const std::vector<df::file_path>& destinations)
+			{
+				platform::file_op_result recovery{platform::file_op_result_code::ALREADY_EXISTS};
+				if (!destinations_free(destinations)) return recovery;
+				for (const auto& member : group)
+					if (!rename_path_exists(member.current, member.is_folder))
+						return platform::file_op_result{platform::file_op_result_code::FAILED,
+							std::format("Missing rename recovery source {}", member.current.str())};
+
+				std::vector<std::pair<size_t, df::file_path>> moved;
+				for (size_t i = 0; i < group.size(); ++i)
+				{
+					auto& member = group[i];
+					scan_folders.emplace(member.current.folder());
+					scan_folders.emplace(destinations[i].folder());
+					if (rename_path_key(member.current, member.is_folder) ==
+						rename_path_key(destinations[i], member.is_folder)) continue;
+
+					recovery = move_rename_path(member.current, destinations[i], true, member.is_folder);
+					if (recovery.failed())
+					{
+						for (auto it = moved.rbegin(); it != moved.rend(); ++it)
+						{
+							auto& previous = group[it->first];
+							const auto rollback = move_rename_path(previous.current, it->second, true,
+							                                       previous.is_folder);
+							if (rollback.success()) previous.current = it->second;
+							else (void)rename_recovery_failed(previous.original, previous.current, rollback);
+						}
+						return recovery;
+					}
+					moved.emplace_back(i, member.current);
+					member.current = destinations[i];
+				}
+				return platform::file_op_result{platform::file_op_result_code::OK};
+			};
+
+			std::vector<df::file_path> destinations;
+			for (const auto& member : group) destinations.emplace_back(member.original);
+			auto recovery = recover(destinations);
+			if (recovery.failed())
+			{
+				for (size_t i = 0; i < group.size(); ++i) destinations[i] = group[i].reviewed;
+				recovery = recover(destinations);
+			}
+
+			auto numbered = false;
+			if (recovery.failed())
+			{
+				const auto base = rename.is_folder ? std::string(primary.name()) :
+					std::string(primary.file_name_without_extension());
+				const auto extension = rename.is_folder ? ""sv : primary.extension();
+				for (auto suffix = 2; suffix < 10000; ++suffix)
+				{
+					destinations[0] = df::file_path(primary.folder(), std::format("{} ({})", base, suffix), extension);
+					for (size_t i = 1; i < group.size(); ++i)
+						destinations[i] = destinations[0].extension(group[i].original.extension());
+					if (!destinations_free(destinations)) continue;
+					recovery = recover(destinations);
+					numbered = recovery.success();
+					if (recovery.code != platform::file_op_result_code::ALREADY_EXISTS) break;
+				}
+			}
+
 			if (recovery.success())
 			{
-				scan_folders.emplace(fallback.folder());
-				const auto message = std::format("Recovered {} as {}", entry.original.str(), fallback.str());
-				df::log(__FUNCTION__, message);
-				remember_recovery_message(message);
+				for (const auto& member : group) parked.erase(rename_path_key(member.original, member.is_folder));
+				if (numbered)
+				{
+					const auto message = std::format("Recovered {} as {}", primary.str(), destinations[0].str());
+					df::log(__FUNCTION__, message);
+					remember_recovery_message(message);
+				}
 			}
 			else
 			{
-				const auto failed = rename_recovery_failed(entry.original, entry.temporary, recovery);
-				remember_recovery_error(failed);
+				for (const auto& member : group)
+				{
+					if (auto found = parked.find(rename_path_key(member.original, member.is_folder));
+						found != parked.end())
+						found->second.temporary = member.current;
+					remember_recovery_error(rename_recovery_failed(member.original, member.current, recovery));
+				}
 			}
 		}
 

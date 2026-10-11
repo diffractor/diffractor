@@ -659,11 +659,18 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 	// discard one source and Auto-rename would hand both the same free name.
 	df::unique_paths planned_destinations;
 
-	// Sidecars an earlier importing row already carries. The RAW and the JPEG of one shot share an
-	// XMP by base name, so both rows name it, but the group travels once: a second row carrying it
-	// again collided with the copy the first had just written - refused outright under Replace - or,
-	// on a move, found it already gone.
-	df::unique_paths claimed_sidecars;
+	df::unique_paths attached_sidecars;
+	for (const auto& item : src_items)
+	{
+		if (token.is_cancelled()) return result;
+		if (const auto md = item.item.metadata.load())
+			for (const auto& name : split(md->sidecars, true))
+			{
+				const auto sidecar = item.folder.combine_file(name);
+				if (sidecar != item.folder.combine_file(item.item.name)) attached_sidecars.emplace(sidecar);
+			}
+	}
+	df::hash_map<df::file_path, df::file_path, df::ihash, df::ieq> sidecar_owners;
 
 	for (const auto& i : src_items)
 	{
@@ -680,6 +687,7 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 
 		const auto import_folder_out = replace_tokens(options.dest_structure, md, i.item.name, i.item.created());
 		const auto path_in = i.folder.combine_file(i.item.name);
+		if (attached_sidecars.contains(path_in)) continue;
 		auto path_out = options.dest_folder.combine(import_folder_out).combine_file(path_in.name());
 		const auto import_rec = item_import{i.item.name, i.item.file_modified, i.item.size, now};
 		std::vector<df::file_path> sidecar_paths_in;
@@ -688,7 +696,9 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 			for (const auto& file_name : split(md->sidecars, true))
 			{
 				const auto sidecar_path_in = i.folder.combine_file(file_name);
-				if (!claimed_sidecars.contains(sidecar_path_in)) sidecar_paths_in.emplace_back(sidecar_path_in);
+				if (sidecar_path_in != path_in &&
+					std::ranges::find(sidecar_paths_in, sidecar_path_in) == sidecar_paths_in.end())
+					sidecar_paths_in.emplace_back(sidecar_path_in);
 			}
 		}
 
@@ -703,7 +713,10 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 			                           [&](const auto sidecar)
 			                           {
 				                           const auto destination = sidecar_destination(primary, sidecar);
-				                           return destination.exists() || planned_destinations.contains(destination);
+				                           const auto owner = sidecar_owners.find(destination);
+				                           return destination.exists() ||
+					                           (planned_destinations.contains(destination) &&
+						                           (owner == sidecar_owners.end() || owner->second != sidecar));
 			                           });
 		};
 
@@ -739,45 +752,37 @@ import_analysis_result import_analysis(const std::vector<folder_scan_item>& src_
 			}
 		}
 
-		if (previous_imported.contains(import_rec))
-		{
-			result[path_out.folder()].emplace_back(path_in, path_out, import_action::already_imported, created,
-			                                       import_rec, already_exists, import_folder_out);
-		}
-		else if (blocked_by_collision)
-		{
-			result[path_out.folder()].emplace_back(path_in, path_out, import_action::already_exists, created,
-			                                       import_rec, already_exists, import_folder_out);
-		}
-		else
-		{
-			std::vector<import_analysis_item::sidecar_move> sidecars;
-			sidecars.reserve(sidecar_paths_in.size());
+		const auto action = previous_imported.contains(import_rec) ? import_action::already_imported :
+			blocked_by_collision ? import_action::already_exists : import_action::import;
+		const auto importing = action == import_action::import;
+		std::vector<import_analysis_item::sidecar_move> sidecars;
+		sidecars.reserve(sidecar_paths_in.size());
 
-			for (const auto sidecar_path_in : sidecar_paths_in)
+		for (const auto sidecar_path_in : sidecar_paths_in)
+		{
+			const auto sidecar_path_out = sidecar_destination(path_out, sidecar_path_in);
+			sidecars.emplace_back(sidecar_path_in, sidecar_path_out,
+			                      importing ? platform::file_attributes(sidecar_path_in) : platform::file_attributes_t{},
+			                      importing && options.collision == collision_policy::replace
+				                      ? platform::file_attributes(sidecar_path_out)
+				                      : platform::file_attributes_t{});
+			if (importing)
 			{
-				const auto sidecar_path_out = sidecar_destination(path_out, sidecar_path_in);
-				sidecars.emplace_back(sidecar_path_in, sidecar_path_out,
-				                      platform::file_attributes(sidecar_path_in),
-				                      options.collision == collision_policy::replace
-					                      ? platform::file_attributes(sidecar_path_out)
-					                      : platform::file_attributes_t{});
 				planned_destinations.emplace(sidecar_path_out);
-				claimed_sidecars.emplace(sidecar_path_in);
+				sidecar_owners.emplace(sidecar_path_out, sidecar_path_in);
 			}
-
-			// Every other policy leaves the destination free, and the write itself proves that. Only
-			// Replace needs a record of what it is about to write over.
-			const auto destination_fi = options.collision == collision_policy::replace
-				                            ? platform::file_attributes(path_out)
-				                            : platform::file_attributes_t{};
-
-			result[path_out.folder()].emplace_back(path_in, path_out, import_action::import, created, import_rec,
-			                                       already_exists, import_folder_out,
-			                                       platform::file_attributes(path_in), destination_fi,
-			                                       std::move(sidecars));
-			planned_destinations.emplace(path_out);
 		}
+
+		// Ignored rows retain their dependencies, so Move cannot remove a companion they still need.
+		const auto destination_fi = importing && options.collision == collision_policy::replace
+			                            ? platform::file_attributes(path_out)
+			                            : platform::file_attributes_t{};
+
+		result[path_out.folder()].emplace_back(path_in, path_out, action, created, import_rec,
+		                                       already_exists, import_folder_out,
+		                                       importing ? platform::file_attributes(path_in) : platform::file_attributes_t{},
+		                                       destination_fi, std::move(sidecars));
+		if (importing) planned_destinations.emplace(path_out);
 	}
 
 	return result;
@@ -798,6 +803,14 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 		bool success = true;
 	};
 	df::hash_map<item_import, import_group_state, item_import_hash, item_import_eq> import_states;
+	struct published_sidecar
+	{
+		df::file_path source;
+		platform::file_attributes_t attributes;
+	};
+	df::hash_map<df::file_path, published_sidecar, df::ihash, df::ieq> published_sidecars;
+	df::hash_map<df::file_path, size_t, df::ihash, df::ieq> sidecar_consumers;
+	std::string sidecar_cleanup_error;
 	// Set when a destination folder cannot be made. The run stops there, but everything already
 	// written still has to be recorded and rescanned below - returning from the middle of the walk
 	// lost both, so a later run imported those files again and the index never saw them.
@@ -808,6 +821,8 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 		for (const auto& item : ff_dest.second)
 		{
 			if (item.action == import_action::import) import_states.try_emplace(item.import_rec);
+			if (options.is_move)
+				for (const auto& sidecar : item.sidecars) ++sidecar_consumers[sidecar.source];
 		}
 	}
 
@@ -912,8 +927,11 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 				});
 
 			const auto destination_unchanged = reviewed_destination(path_out, i.destination_fi) &&
-				std::ranges::all_of(i.sidecars, [&reviewed_destination](const import_analysis_item::sidecar_move& sc)
+				std::ranges::all_of(i.sidecars, [&](const import_analysis_item::sidecar_move& sc)
 				{
+					if (const auto found = published_sidecars.find(sc.destination); found != published_sidecars.end())
+						return found->second.source == sc.source &&
+							reviewed_source(sc.destination, found->second.attributes);
 					return reviewed_destination(sc.destination, sc.destination_fi);
 				});
 
@@ -932,13 +950,10 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 				df::file_path source;
 				df::file_path destination;
 				df::file_path rollback;
-				bool moved = false;
 			};
 
-			// Sidecars are written before the file they describe and undone in reverse if anything in the
-			// group fails, so the group either arrives whole or is left entirely at the source. Replaced
-			// destination sidecars keep a bounded rollback copy because deleting or moving back the new
-			// sidecar would otherwise leave the reviewed destination with the wrong metadata.
+			// Copy companions before moving a primary. A shared source stays until every dependent
+			// primary has moved; a failed row only undoes companion destinations it created itself.
 			auto undo_sidecar = [&](const sidecar_undo& undo)
 			{
 				write_folders.emplace(undo.source.folder());
@@ -947,19 +962,6 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 				platform::file_op_result undo_result{platform::file_op_result_code::OK, {}, {}};
 				if (!undo.rollback.is_empty())
 				{
-					if (undo.moved)
-					{
-						undo_result = move_or_copy(undo.destination, undo.source, true, false);
-						if (undo_result.failed())
-						{
-							df::log(__FUNCTION__,
-							        std::format(
-								        "could not restore import sidecar {}; replacement retained as {}; original retained as {}",
-								        undo.source.str(), undo.destination.str(), undo.rollback.str()));
-							return undo_result;
-						}
-					}
-
 					platform::make_file_writable(undo.destination);
 					undo_result = platform::replace_file(undo.destination, undo.rollback, false);
 					if (undo_result.failed())
@@ -967,10 +969,6 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 						df::log(__FUNCTION__, std::format("could not restore import sidecar {}; original retained as {}",
 						                                  undo.destination.str(), undo.rollback.str()));
 					}
-				}
-				else if (undo.moved)
-				{
-					undo_result = move_or_copy(undo.destination, undo.source, true, false);
 				}
 				else
 				{
@@ -1003,6 +1001,7 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 
 			for (const auto& sidecar : i.sidecars)
 			{
+				if (published_sidecars.contains(sidecar.destination)) continue;
 				// The same rule the primary takes: only a destination the review actually saw is a
 				// reviewed replacement, so anything that appeared since has to stop the write.
 				const auto sidecar_fail_if_exists = fail_if_exists || !sidecar.destination_fi.exists();
@@ -1019,7 +1018,7 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 					}
 				}
 
-				move_or_copy_result = move_or_copy(sidecar.source, sidecar.destination, options.is_move,
+				move_or_copy_result = move_or_copy(sidecar.source, sidecar.destination, false,
 				                                   sidecar_fail_if_exists);
 				if (move_or_copy_result.success() && test_import_sidecar_write_override)
 				{
@@ -1036,7 +1035,6 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 					}
 					break;
 				}
-				undo.moved = options.is_move;
 				moved_sidecars.emplace_back(std::move(undo));
 			}
 
@@ -1064,6 +1062,37 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 						(void)cleanup_result;
 					}
 				}
+
+				for (const auto& sidecar : i.sidecars)
+				{
+					if (!published_sidecars.contains(sidecar.destination))
+						published_sidecars.emplace(sidecar.destination,
+						                          published_sidecar{sidecar.source,
+							                          platform::file_attributes(sidecar.destination)});
+				}
+
+				if (options.is_move && path_in != path_out)
+					for (const auto& sidecar : i.sidecars)
+					{
+						if (--sidecar_consumers.at(sidecar.source) != 0 ||
+							published_sidecars.contains(sidecar.source)) continue;
+
+						write_folders.emplace(sidecar.source.folder());
+						auto cleanup = platform::file_op_result{platform::file_op_result_code::ALREADY_EXISTS};
+						if (reviewed_source(sidecar.source, sidecar.source_fi))
+						{
+							platform::make_file_writable(sidecar.source);
+							cleanup = platform::delete_file(sidecar.source);
+						}
+						if (cleanup.failed())
+						{
+							if (move_or_copy_result.success()) move_or_copy_result = cleanup;
+							const auto message = std::format("Could not remove imported sidecar source {}: {}",
+							                                 sidecar.source.str(), cleanup.format_error());
+							df::log(__FUNCTION__, message);
+							if (sidecar_cleanup_error.empty()) sidecar_cleanup_error = message;
+						}
+					}
 			}
 
 			if (move_or_copy_result.success())
@@ -1113,7 +1142,7 @@ import_result import_copy(index_state& index, df::results_ptr results, const imp
 		return result;
 	}
 
-	std::string result_text;
+	std::string result_text = sidecar_cleanup_error;
 
 	if (!existing.empty())
 	{

@@ -209,6 +209,8 @@ struct import_analysis_item
 	// partial import can never leave metadata at one end and its file at the other. Each carries the
 	// same pair of stamps the primary does: the run writes the group that was reviewed or none of
 	// it, and a sidecar destination that appeared since the review is not a reviewed replacement.
+	// Shared companions remain dependencies of every primary, including ignored rows; Move removes
+	// the source only after all dependent primaries have moved successfully.
 	struct sidecar_move
 	{
 		df::file_path source;
