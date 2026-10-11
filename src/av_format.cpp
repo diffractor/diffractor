@@ -2568,6 +2568,15 @@ bool av_format_decoder::extract_frame_at(ui::surface_ptr& dest_surface, const si
 
 	if (!decode_nearest_frame(decoded, max_dim, target, std::max(0.0, tolerance_seconds), abandon))
 	{
+		// A walk that ran out of stream past the last frame holds the nearest frame there is, and a
+		// seek to the same time lands on it too. A container whose sound outlasts its picture asks
+		// exactly this at its end, and failing it failed every Movie render holding such a clip.
+		if (_eof && _sequential_prev && _sequential_prev->time <= target)
+		{
+			_sequential_time = _sequential_prev->time;
+			return scale_sequential_frame(dest_surface, max_dim, *_sequential_prev);
+		}
+
 		// The decoder is now somewhere unknown - at end of stream, or wherever a failed walk left
 		// it - so the next call must seek rather than assume it can step on from here.
 		_sequential_time = -1;

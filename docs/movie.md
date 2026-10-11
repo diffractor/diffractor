@@ -121,9 +121,31 @@ defaults to cuts and no end fades. A foreign dissolve is adopted only when every
 the same representable dissolve; mixed or unsupported transitions are reported as ignored rather than
 silently applied to other boundaries.
 
-Windows Live Movie Maker (`.wlmp`) import accepts video and image extents, orders them by timeline
-position, and preserves trims and photo durations. Titles, captions, effects, animations, narration,
-music and other unsupported elements are omitted and counted in the view.
+Windows Live Movie Maker (`.wlmp`) import accepts video and image extents in the order of the
+project's main track, and leaves out an extent the main track does not place; a file without a main
+track is ordered by timeline position. It preserves trims and photo durations. A clip with no out
+point, which is how Movie Maker records one never trimmed, runs to the end of its source. A relative
+media path is relative to the project's folder. The movie settings are Movie's defaults, whose
+crossfade stands in for Movie Maker's crossfades. Titles, captions, narration, music, effects,
+animations, other transitions, and a clip's speed, rotation, volume or mute are left out. Each is
+counted in the view, and the command line names them.
+
+Import then finds each source missing from its stored path among the collection's members, by name.
+These rules choose among the files that carry the name, in order:
+
+1. A file whose length differs by more than half a second from the length the project recorded is
+   another file with the same name, and is never used.
+2. The only file of that name left is the source.
+3. Of several, the source is the one whose folders share the most trailing names with the stored
+   path, including at least its own folder.
+4. Of several, the source is the one in the folder where most of the project's other sources from
+   the same stored folder were found.
+5. Otherwise the source stays missing.
+
+A clip whose source stays missing keeps its stored path, and the length the project recorded for an
+untrimmed one, so the timeline still shows it and a saved project keeps it for a later relink.
+Import measures every source while it runs, and the timeline arrives probed. The view states how
+many clips were relinked. Import modifies no file; Save writes the native project.
 
 Newly opened clips are unresolved until an asynchronous probe supplies type, dimensions, duration and
 frame rate. A source confirmed missing remains in the timeline with its trim and an error marker.
@@ -159,7 +181,8 @@ otherwise destroy an hour of work. It retains at most the two frame decoders and
 chunks needed by a crossfade.
 
 The output is staged in the destination folder. Any missing or undecodable contributing frame fails
-the render instead of writing black. Cancel abandons the writer and is checked again after encoder
+the render instead of writing black. A clip whose sound outlasts its picture, as camera files often
+do, holds its last frame to its end, because that frame is the nearest one the source has. Cancel abandons the writer and is checked again after encoder
 finalization; the staged file replaces the destination only after successful completion. A failure
 is reported as a translated reason; the encoder's own diagnostic text goes to the log.
 
@@ -167,22 +190,53 @@ is reported as a translated reason; the encoder's own diagnostic text goes to th
 
 Timeline and view state are UI-thread-owned. Workers consume detached paths, settings and clip
 snapshots and publish complete results through the UI queue with generation, revision, path and trim
-currency checks. Paint performs no file, database, decode or network work.
+currency checks. Import reads the collection's members from the index's published snapshot on its
+worker rather than walking the disk. Paint performs no file, database, decode or network work.
 
 Movie intentionally has one video track, no title or effects track, no music or narration track, no
 speed control, no per-clip volume, no pan-and-zoom, no color grading, no output settings, no redo and
 no HEVC or AV1 output. Rendering is unavailable where the platform reports no movie writer.
 
+## 9. Command line
+
+The command line runs the same import and render without opening a window. Each takes one project or
+a folder, and a folder's projects are those directly inside it. Everything runs on the process's own
+thread before any window exists, and no source or Movie Maker project is ever modified.
+
+`-movie-import:<project or folder>` imports each `.wlmp` and writes its native project, named after
+it with `.otio`, beside it or into `-movie-out:<folder>`. An existing project is skipped unless
+`-movie-overwrite` is given, because it may hold edits. The search covers the collection the app's
+settings name, plus any folder given with `-movie-media:<folder>`. The report states what was read
+and left out, which stored folder each source moved to, what is ambiguous, missing or unreadable,
+and whether each found video is as long as the project recorded.
+
+`-movie-render:<project or folder>` renders native `.otio` projects only, each to its name with
+`.mp4`, beside it or into `-movie-out:<folder>`. The movie is staged and published as Render's output
+is. An existing movie is skipped unless `-movie-overwrite` is given, and one run never writes the
+same file twice. A project with a missing or unreadable source is not rendered, unless
+`-movie-skip-missing` is given; that renders the clips that remain and reports how many were left
+out.
+
+`-movie-check:<project or folder>` reports what import would make of a `.wlmp`, or what render would
+find in an `.otio`, and writes nothing. The exit code is zero only when every project ends ready to
+render, or rendered; a project or movie skipped because it already exists is not a failure.
+
 ## Where this lives
 
-The timeline, timing, output derivation, project readers and the decision entering Movie makes about
-the timeline it holds are in [model_movie.h](../src/model_movie.h) and [model_movie.cpp](../src/model_movie.cpp).
+The timeline, timing, output derivation, project readers, the choice among same-named files for a
+moved source, and the decision entering Movie makes about the timeline it holds are in
+[model_movie.h](../src/model_movie.h) and [model_movie.cpp](../src/model_movie.cpp).
 
-The task view, timeline controls, preview, project workflows and render worker are in
-[view_movie.h](../src/view_movie.h) and [view_movie.cpp](../src/view_movie.cpp). Persistent Movie state
+The task view, timeline controls, preview, project workflows, and the source probe, Movie Maker
+import and render worker the command line shares are in [view_movie.h](../src/view_movie.h) and
+[view_movie.cpp](../src/view_movie.cpp). Persistent Movie state
 is in [model.h](../src/model.h); application entry, shutdown and command availability are in
 [app.cpp](../src/app.cpp), [app_commands.cpp](../src/app_commands.cpp) and
 [app_toolbar.cpp](../src/app_toolbar.cpp).
+
+The command line batch is [app_movie_batch.cpp](../src/app_movie_batch.cpp). Its switches are parsed
+in [app.cpp](../src/app.cpp) into [app_command_line.h](../src/app_command_line.h), and
+[platform_win_ui.cpp](../src/platform_win_ui.cpp) runs it in place of the window.
 
 Frame and audio extraction are in [av_format.h](../src/av_format.h),
 [av_format.cpp](../src/av_format.cpp) and [av_player.h](../src/av_player.h). The audio endpoint the
@@ -193,4 +247,5 @@ is in [platform.h](../src/platform.h), with Windows implementation in
 [platform_linux_desktop.cpp](../src/platform_linux_desktop.cpp).
 
 Tests are in [test_movie.cpp](../src/test_movie.cpp), [test_view.cpp](../src/test_view.cpp),
-[test_av.cpp](../src/test_av.cpp) and [test_platform_win.cpp](../src/test_platform_win.cpp).
+[test_av.cpp](../src/test_av.cpp), [test_platform_win.cpp](../src/test_platform_win.cpp) and, for the
+command line switches, [test_util.cpp](../src/test_util.cpp).

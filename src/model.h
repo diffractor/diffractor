@@ -1895,6 +1895,9 @@ public:
 	// the explainer: a project that imported as a silently different movie is exactly the hidden
 	// state the product promise forbids.
 	int import_ignored = 0;
+	// How many clips the last import pointed at a collection file instead of the path the project
+	// stored. Stated in the explainer for the same reason.
+	int import_relinked = 0;
 
 	// The photos and videos the timeline was built from, in listing order. Entering with the same ones
 	// returns to it; entering with others starts a new one. A project opened in Movie keeps the

@@ -160,6 +160,134 @@ static void should_bound_movie_probe_retries_for_moving_sources()
 	             "a replaced Movie document starts with a fresh probe retry budget");
 }
 
+// A Movie Maker clip the user never trimmed arrives with no end of its own. The probe is what
+// measures its source, so the probe is what must give it the rest of that source -- the same rule
+// as a video just added, shared by the view and the command line.
+static void should_apply_a_movie_probe_to_the_clip_it_measured()
+{
+	const auto path = df::file_path(df::windows_path_semantics ? "c:\\movie\\clip.mp4" : "/movie/clip.mp4");
+
+	movie_probe_result measured;
+	measured.path = path;
+	measured.found = true;
+	measured.duration = 30.0;
+	measured.extent = {640, 480};
+	measured.frame_rate = 25.0;
+
+	movie_clip untrimmed;
+	untrimmed.path = path;
+	const auto whole = apply_movie_probe(untrimmed, measured, 4.0);
+	assert_equal(true, whole.is_probed && !whole.is_missing, "a measured source is present");
+	assert_equal(30.0, whole.end, "a clip with no end runs to the end of its source");
+	assert_equal(false, whole.is_trimmed(), "and is not shown as trimmed");
+	assert_equal(25.0, whole.frame_rate, "and takes the measured rate");
+
+	movie_clip start_only;
+	start_only.path = path;
+	start_only.start = 4.5;
+	const auto rest = apply_movie_probe(start_only, measured, 4.0);
+	assert_equal(4.5, rest.start, "a clip trimmed only at its start keeps its in point");
+	assert_equal(30.0, rest.end, "and runs to the end of its source");
+
+	movie_clip overlong;
+	overlong.path = path;
+	overlong.start = 2.0;
+	overlong.end = 50.0;
+	const auto clamped = apply_movie_probe(overlong, measured, 4.0);
+	assert_equal(2.0, clamped.start, "a stored trim keeps its in point");
+	assert_equal(30.0, clamped.end, "and is clamped to the source it measured");
+
+	auto gone = measured;
+	gone.found = false;
+	const auto lost = apply_movie_probe(overlong, gone, 4.0);
+	assert_equal(true, lost.is_lost(), "a source that is not there is lost rather than unexamined");
+	assert_equal(50.0, lost.end, "and keeps its stored times for a relink");
+
+	auto still = measured;
+	still.is_photo = true;
+	still.duration = 0;
+	movie_clip photo;
+	photo.path = path;
+	const auto held = apply_movie_probe(photo, still, 4.0);
+	assert_equal(true, held.is_photo, "a measured photo is a photo");
+	assert_equal(4.0, held.end, "and a photo with no hold takes the default one");
+}
+
+// A Movie Maker project names its sources where they were years ago. Import finds each one by name
+// among the files it is offered, keeps a namesake only when its length agrees with the one the
+// project recorded, and hands back the clips already measured -- the work Movie > Import and
+// -movie-import share.
+static void should_import_a_movie_maker_project_from_the_collection()
+{
+	const auto video = test_files_folder.combine_file("gizmo.mp4");
+	const auto measured = probe_movie_source(video);
+	assert_equal(true, measured.found && measured.duration > 1.6, "the fixture video measures");
+
+	const auto gone = test_files_folder.combine("no such folder");
+	const auto moved = gone.combine_file("gizmo.mp4");
+	const auto other = gone.combine_file("trip.mp4");
+	const auto lost = gone.combine_file("lost.mp4");
+
+	const auto xml = std::format(R"(<Project>
+  <MediaItems>
+    <MediaItem id="1" filePath="{}" duration="{}" />
+    <MediaItem id="2" filePath="{}" duration="{}" />
+    <MediaItem id="3" filePath="{}" duration="12.5" />
+    <MediaItem id="4" filePath="{}" duration="{}" />
+  </MediaItems>
+  <Extents>
+    <VideoClip extentID="10" mediaItemID="1" inTime="0" outTime="0" />
+    <VideoClip extentID="11" mediaItemID="2" inTime="0" outTime="0" />
+    <VideoClip extentID="12" mediaItemID="3" inTime="1" outTime="0" />
+    <VideoClip extentID="13" mediaItemID="4" inTime="0" outTime="0" />
+    <VideoClip extentID="14" mediaItemID="1" inTime="0.5" outTime="1.5" />
+  </Extents>
+</Project>)", moved, measured.duration, other, measured.duration + 30.0, lost, video, measured.duration);
+
+	auto searches = 0;
+	const movie_source_finder find = [&](const std::vector<df::file_path>& missing)
+	{
+		++searches;
+		std::vector<std::vector<df::file_path>> result(missing.size());
+
+		// The fixture stands in for both namesakes: the right file for one, a different one for the other.
+		for (size_t i = 0; i < missing.size(); ++i)
+		{
+			if (missing[i] == moved || missing[i] == other) result[i].emplace_back(video);
+		}
+
+		return result;
+	};
+
+	const auto imported = import_movie_maker_project(xml, test_files_folder, find);
+	const auto& clips = imported.loaded.clips;
+
+	assert_equal(true, static_cast<bool>(imported.loaded), "the project imports");
+	assert_equal(5_z, clips.size(), "with every clip, found or not");
+	assert_equal(4_z, imported.sources.size(), "and one report per source");
+	assert_equal(1, searches, "every missing source is looked for at once");
+
+	assert_equal(true, imported.sources[0].match == movie_source_match::only_name, "a moved source is found by name");
+	assert_equal(video.pack(), clips[0].path.pack(), "and the clip points at it");
+	assert_equal(true, clips[0].is_probed && !clips[0].is_missing, "already measured");
+	assert_equal(measured.duration, clips[0].end, "an untrimmed clip runs to the end of the file found");
+	assert_equal(1.5, clips[4].end, "a trimmed clip of the same source keeps its trim");
+	assert_equal(2, imported.relinked_clips, "both clips of the moved source are relinked");
+
+	assert_equal(true, imported.sources[1].match == movie_source_match::other_length,
+	             "a namesake whose length disagrees with the record is another file");
+	assert_equal(other.pack(), clips[1].path.pack(), "so the clip keeps its stored path");
+	assert_equal(true, clips[1].is_lost(), "and is missing rather than wrong");
+	assert_equal(measured.duration + 30.0, clips[1].end, "holding the length the project recorded");
+
+	assert_equal(true, imported.sources[2].match == movie_source_match::missing, "a name found nowhere is missing");
+	assert_equal(1.0, clips[2].start, "a lost clip keeps its in point");
+	assert_equal(12.5, clips[2].end, "and runs to the recorded end, so a saved project keeps it");
+
+	assert_equal(true, imported.sources[3].match == movie_source_match::stored, "a source where it was stored stays");
+	assert_equal(true, clips[3].is_probed && !clips[3].is_missing, "and is measured");
+}
+
 // Two requests for one frame can both complete. Counting the second store without releasing the
 // first leaked bytes until the cache sat permanently over budget, evicted every frame it stored, and
 // the strip and preview decoded the same photo in a loop, holding a core at full load.
@@ -4337,6 +4465,10 @@ void register_view_tests(view_state& state, test_registry& tests)
 	// VIEW-014 - a source that moves during probing gets bounded retries, then an explicit state.
 	tests.add("Should bound Movie probe retries for moving sources"s,
 	          should_bound_movie_probe_retries_for_moving_sources);
+	tests.add("Should apply a Movie probe to the clip it measured"s,
+	          should_apply_a_movie_probe_to_the_clip_it_measured);
+	tests.add("Should import a Movie Maker project from the collection"s,
+	          should_import_a_movie_maker_project_from_the_collection);
 	// VIEW-016 - source caches are retired only for successful project/source replacement.
 	tests.add("Should retire Movie source caches only after successful replacement"s,
 	          should_retire_movie_source_caches_only_after_successful_replacement);

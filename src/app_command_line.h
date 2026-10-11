@@ -7,9 +7,35 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: Command line argument parsing. Handles startup options like folder paths,
-// file selection, no-gpu mode, and test execution flags.
+// file selection, no-gpu mode, and test execution flags, and the options of the headless
+// tools that run instead of the window.
 
 #pragma once
+
+// Reads Movie projects without a window (-movie-check, -movie-import, -movie-render). Import turns
+// each Movie Maker project into a native one, finding its moved sources in the collection; render
+// makes a movie from each native project. docs/movie.md owns the rules.
+enum class movie_batch_mode
+{
+	check,
+	import,
+	render,
+};
+
+struct movie_batch_options
+{
+	// A project, or a folder holding them: .wlmp to check or import, .otio to check or render.
+	std::string projects;
+	// Searched by name, with its subfolders, besides the collection's folders, for sources missing
+	// from their stored paths.
+	std::string media;
+	// Where imported projects or rendered movies go. Empty puts each beside the project it came from.
+	std::string output;
+	movie_batch_mode mode = movie_batch_mode::check;
+	bool overwrite = false;
+	// Leaves out clips whose source cannot be used instead of refusing the project.
+	bool skip_missing = false;
+};
 
 struct command_line_t
 {
@@ -31,6 +57,9 @@ struct command_line_t
 	bool dup_report = false;
 	std::string dup_report_folder;
 	std::string dup_report_output;
+
+	// Runs when `projects` is set.
+	movie_batch_options movie_batch;
 
 #ifdef _DEBUG
 	std::string test_action;
@@ -61,3 +90,7 @@ struct duplicate_report_anchor_stats
 int run_duplicate_report(std::string_view folder_text, std::string_view output_text);
 duplicate_report_anchor_stats calc_duplicate_report_anchor_stats_for_tests(
 	const std::vector<duplicate_report_test_photo>& photos);
+
+// Returns the process exit code: zero when every project ends ready to render -- checked or imported
+// -- or rendered, a project or movie skipped because it is already there aside.
+int run_movie_batch(const movie_batch_options& options);

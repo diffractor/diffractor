@@ -8,8 +8,8 @@
 
 // Purpose: Tests for the Movie document (model_movie) -- the derived output geometry, transition
 // and duration arithmetic, timeline edits and undo, what entering Movie does with the timeline it
-// holds, the OpenTimelineIO project file, and the Windows Live Movie Maker reader. docs/movie.md
-// owns the behaviour.
+// holds, the OpenTimelineIO project file, the Windows Live Movie Maker reader, and the choice of a
+// moved source among same-named files. docs/movie.md owns the behaviour.
 
 #include "pch.h"
 #include "test.h"
@@ -744,7 +744,7 @@ static void should_import_a_movie_maker_project()
 	</Extents>
 </Project>)", video, image_attribute, music);
 
-	const auto read = read_wlmp(xml);
+	const auto read = read_wlmp(xml, movie_test_folder());
 
 	assert_equal(true, static_cast<bool>(read), "the project imports");
 	assert_equal(2, static_cast<int>(read.clips.size()), "with the video and the image only");
@@ -762,9 +762,270 @@ static void should_import_a_movie_maker_project()
 	// The music, title, missing clip, effect and animation.
 	assert_equal(5, read.ignored_elements, "everything it cannot represent is counted");
 
-	assert_equal(false, static_cast<bool>(read_wlmp("")), "an empty file is refused");
-	assert_equal(false, static_cast<bool>(read_wlmp("<Project><Extents /></Project>")),
+	auto named = 0;
+	for (const auto& [name, count] : read.omitted) named += count;
+	assert_equal(read.ignored_elements, named, "and the breakdown names every one of them");
+
+	assert_equal(false, static_cast<bool>(read_wlmp("", movie_test_folder())), "an empty file is refused");
+	assert_equal(false, static_cast<bool>(read_wlmp("<Project><Extents /></Project>", movie_test_folder())),
 	             "a project with no media is refused");
+}
+
+static int omitted_count(const movie_load_result& read, const std::string_view name)
+{
+	const auto found = std::ranges::find_if(read.omitted, [name](const auto& entry) { return entry.first == name; });
+	return found == read.omitted.end() ? 0 : found->second;
+}
+
+// Laid out as Movie Maker 2012 writes a project: every extent in one flat list, the timeline in the
+// track bound to the "Main" placeholder, and an out point of zero on any clip the user did not
+// trim. A reader that took the list's order and wanted a positive out point dropped every
+// untrimmed clip and played the rest in the order they were first added.
+static void should_import_a_movie_maker_project_as_movie_maker_writes_it()
+{
+	const auto video = movie_test_path("a.mp4");
+	const auto photo = movie_test_path("b.jpg");
+	const auto music = movie_test_path("track.mp3");
+	const auto unplaced = movie_test_path("d.mp4");
+
+	const auto xml = std::format(R"(<?xml version="1.0" encoding="utf-8"?>
+<Project name="Trip" themeId="0" version="65538" templateID="SimpleProjectTemplate">
+  <MediaItems>
+    <MediaItem id="1" filePath="{}" arWidth="640" arHeight="480" duration="20" />
+    <MediaItem id="2" filePath="{}" arWidth="640" arHeight="480" duration="0" />
+    <MediaItem id="3" filePath="clips\c.mp4" arWidth="640" arHeight="480" duration="12" />
+    <MediaItem id="4" filePath="{}" duration="180" />
+    <MediaItem id="5" filePath="{}" duration="30" />
+  </MediaItems>
+  <Extents>
+    <VideoClip extentID="10" gapBefore="0" mediaItemID="1" inTime="0" outTime="0" speed="1">
+      <Effects />
+      <Transitions />
+      <BoundProperties>
+        <BoundPropertyBool Name="Mute" Value="false" />
+        <BoundPropertyInt Name="rotateStepNinety" Value="0" />
+        <BoundPropertyFloat Name="Volume" Value="1" />
+      </BoundProperties>
+    </VideoClip>
+    <ImageClip extentID="11" gapBefore="0" mediaItemID="2" duration="7">
+      <Effects>
+        <PanAndZoomShapeEffect effectTemplateID="PanAndZoomEffectAutomaticTemplate">
+          <BoundProperties><BoundPropertyInt Name="effectType" Value="5" /></BoundProperties>
+        </PanAndZoomShapeEffect>
+      </Effects>
+      <Transitions><ShapeEffect effectTemplateID="CrossfadeTransitionTemplate" duration="1.5"><BoundProperties /></ShapeEffect></Transitions>
+      <BoundProperties><BoundPropertyInt Name="rotateStepNinety" Value="2" /></BoundProperties>
+    </ImageClip>
+    <VideoClip extentID="12" gapBefore="0" mediaItemID="3" inTime="4.5" outTime="0" speed="4">
+      <Effects />
+      <Transitions><ShapeEffect effectTemplateID="BlurTransitionTemplate" duration="1.5"><BoundProperties /></ShapeEffect></Transitions>
+      <BoundProperties>
+        <BoundPropertyBool Name="Mute" Value="true" />
+        <BoundPropertyFloat Name="Volume" Value="0.5" />
+      </BoundProperties>
+    </VideoClip>
+    <VideoClip extentID="13" gapBefore="0" mediaItemID="5" inTime="0" outTime="0" speed="32">
+      <Effects />
+      <Transitions />
+      <BoundProperties />
+    </VideoClip>
+    <TitleClip extentID="14" gapBefore="0" duration="5">
+      <Effects><TextEffect effectTemplateID="TextEffectStretchTemplate" TextScriptId="1"><BoundProperties /></TextEffect></Effects>
+      <Transitions />
+      <BoundProperties />
+    </TitleClip>
+    <AudioClip extentID="15" gapBefore="0" mediaItemID="4" inTime="0" outTime="0">
+      <Effects />
+      <Transitions />
+      <BoundProperties><BoundPropertyFloat Name="Volume" Value="0.5" /></BoundProperties>
+    </AudioClip>
+    <VideoClip extentID="16" gapBefore="0" mediaItemID="1" inTime="2" outTime="9.25" speed="1">
+      <Effects />
+      <Transitions />
+      <BoundProperties />
+    </VideoClip>
+    <ExtentSelector extentID="1" gapBefore="0" primaryTrack="true">
+      <Effects />
+      <Transitions />
+      <BoundProperties />
+      <ExtentRefs>
+        <ExtentRef id="14" />
+        <ExtentRef id="16" />
+        <ExtentRef id="12" />
+        <ExtentRef id="11" />
+        <ExtentRef id="10" />
+      </ExtentRefs>
+    </ExtentSelector>
+    <ExtentSelector extentID="2" gapBefore="0" primaryTrack="false">
+      <Effects />
+      <Transitions />
+      <BoundProperties />
+      <ExtentRefs><ExtentRef id="15" /></ExtentRefs>
+    </ExtentSelector>
+    <ExtentSelector extentID="0" gapBefore="0" primaryTrack="false">
+      <Effects />
+      <Transitions />
+      <BoundProperties />
+      <ExtentRefs><ExtentRef id="13" /></ExtentRefs>
+    </ExtentSelector>
+  </Extents>
+  <BoundPlaceholders>
+    <BoundPlaceholder placeholderID="SingleExtentView" extentID="0" />
+    <BoundPlaceholder placeholderID="Main" extentID="1" />
+    <BoundPlaceholder placeholderID="SoundTrack" extentID="2" />
+  </BoundPlaceholders>
+  <BoundProperties>
+    <BoundPropertyFloat Name="SoundTrackMix" Value="0" />
+  </BoundProperties>
+</Project>)", video, photo, music, unplaced);
+
+	const auto read = read_wlmp(xml, movie_test_folder());
+
+	assert_equal(true, static_cast<bool>(read), "the project imports");
+	assert_equal(4, static_cast<int>(read.clips.size()), "with the four media clips the main track places");
+
+	const auto beside = movie_test_folder().combine("clips").combine_file("c.mp4");
+	assert_equal(video.pack(), read.clips[0].path.pack(), "the main track orders the timeline, not the list");
+	assert_equal(beside.pack(), read.clips[1].path.pack(), "a relative path is found beside the project");
+	assert_equal(photo.pack(), read.clips[2].path.pack(), "the photo is third on the track");
+	assert_equal(video.pack(), read.clips[3].path.pack(), "and the first clip added plays last");
+
+	assert_equal(2.0, read.clips[0].start, "a trimmed clip keeps its in point");
+	assert_equal(9.25, read.clips[0].end, "and its out point");
+
+	// End zero is what a newly added video has: the probe gives it the rest of its source.
+	assert_equal(4.5, read.clips[1].start, "a clip trimmed only at the start keeps its in point");
+	assert_equal(0.0, read.clips[1].end, "and runs to the end of its source");
+	assert_equal(0.0, read.clips[3].start, "an untrimmed clip starts at the start");
+	assert_equal(0.0, read.clips[3].end, "and is kept rather than dropped");
+	assert_equal(false, read.clips[3].is_trimmed(), "and is not shown as trimmed");
+
+	assert_equal(true, read.clips[2].is_photo, "an image clip is a photo");
+	assert_equal(7.0, read.clips[2].end, "held for its stated duration");
+
+	assert_equal(1, omitted_count(read, "TitleClip"), "the title on the main track is left out");
+	assert_equal(1, omitted_count(read, "AudioClip"), "and so is the music");
+	assert_equal(1, omitted_count(read, "clip off the main track"), "a clip the timeline does not place is left out");
+	assert_equal(1, omitted_count(read, "speed"), "only a placed clip's speed is counted");
+	assert_equal(1, omitted_count(read, "BlurTransitionTemplate"), "a transition Movie cannot draw is counted");
+	assert_equal(0, omitted_count(read, "CrossfadeTransitionTemplate"), "a crossfade is Movie's own transition");
+	assert_equal(1, omitted_count(read, "PanAndZoomEffectAutomaticTemplate"), "an effect on a clip is counted");
+	assert_equal(1, omitted_count(read, "rotateStepNinety"), "and so is a rotation");
+	assert_equal(1, omitted_count(read, "Mute"), "a muted clip");
+	assert_equal(1, omitted_count(read, "Volume"), "and a changed volume, but not the music's");
+	assert_equal(0, omitted_count(read, "Effects"), "an empty effect list is not an element left out");
+	assert_equal(0, omitted_count(read, "TextEffectStretchTemplate"), "nor is the inside of a title already counted");
+	assert_equal(9, read.ignored_elements, "and the total is the sum of what was named");
+
+	const auto without_folder = read_wlmp(xml, {});
+	assert_equal(3, static_cast<int>(without_folder.clips.size()), "a relative path needs the project's folder");
+	assert_equal(1, omitted_count(without_folder, "clip with no media file"), "and its clip says why it is gone");
+}
+
+// Movie Maker projects name their sources where they were years ago. The batch finds each by name
+// and must choose between same-named files the way a person would.
+static void should_find_moved_movie_sources()
+{
+	const auto old_root = movie_test_folder().combine("old");
+	const auto park = old_root.combine("Alfie in the park");
+	const auto dated = old_root.combine("Pictures").combine("2010").combine("2010-08-28");
+
+	const auto collection = movie_test_folder().combine("collection");
+	const auto january = collection.combine("2013").combine("2013-01-16");
+	const auto december = collection.combine("2012").combine("2012-12-26");
+	const auto august = collection.combine("2010").combine("2010-08-28");
+	const auto march = collection.combine("2005").combine("2005-03-26");
+
+	const std::vector<df::file_path> stored{
+		park.combine_file("IMG_0737.MOV"),
+		park.combine_file("IMG_0738.MOV"),
+		park.combine_file("IMG_0754.MOV"),
+		dated.combine_file("IMG_4823.JPG"),
+		park.combine_file("IMG_0001.MOV"),
+		park.combine_file("gone.mov"),
+		park.combine_file("IMG_0760.MOV"),
+		park.combine_file("IMG_0761.MOV"),
+		park.combine_file("IMG_0099.MOV"),
+	};
+
+	const std::vector<std::vector<df::file_path>> candidates{
+		{january.combine_file("IMG_0737.MOV")},
+		{january.combine_file("IMG_0738.MOV")},
+		{december.combine_file("IMG_0754.MOV"), january.combine_file("IMG_0754.MOV")},
+		{march.combine_file("IMG_4823.JPG"), august.combine_file("IMG_4823.JPG")},
+		{march.combine_file("IMG_0001.MOV"), august.combine_file("IMG_0001.MOV")},
+		{},
+		{january.combine_file("IMG_0760.MOV"), december.combine_file("IMG_0760.MOV")},
+		{january.combine_file("IMG_0761.MOV"), december.combine_file("IMG_0761.MOV")},
+		{march.combine_file("IMG_0099.MOV")},
+	};
+
+	const std::vector<double> recorded{20.0, 20.0, 0.0, 0.0, 0.0, 0.0, 12.5, 12.5, 27.8};
+
+	const df::hash_map<df::file_path, double, df::ihash, df::ieq> lengths{
+		{january.combine_file("IMG_0737.MOV"), 20.0},
+		{january.combine_file("IMG_0738.MOV"), 20.2},
+		{january.combine_file("IMG_0760.MOV"), 30.0},
+		{december.combine_file("IMG_0760.MOV"), 12.4},
+		{january.combine_file("IMG_0761.MOV"), 12.4},
+		{december.combine_file("IMG_0761.MOV"), 12.6},
+		{march.combine_file("IMG_0099.MOV"), 116.6},
+	};
+
+	std::vector<df::file_path> measured;
+	const auto measure = [&measured, &lengths](const df::file_path path)
+	{
+		measured.emplace_back(path);
+		const auto found = lengths.find(path);
+		return found == lengths.end() ? 0.0 : found->second;
+	};
+
+	const auto chosen = choose_movie_sources(stored, candidates, recorded, measure);
+	assert_equal(stored.size(), chosen.size(), "one answer per source");
+
+	assert_equal(true, chosen[0].match == movie_source_match::only_name, "the only file of that name");
+	assert_equal(candidates[0][0].pack(), chosen[0].path.pack(), "is the source when its length agrees");
+
+	assert_equal(true, chosen[3].match == movie_source_match::same_folders,
+	             "the one in folders named as the stored ones");
+	assert_equal(august.combine_file("IMG_4823.JPG").pack(), chosen[3].path.pack(), "beats an older namesake");
+
+	assert_equal(true, chosen[2].match == movie_source_match::siblings,
+	             "the one where its neighbours went");
+	assert_equal(january.combine_file("IMG_0754.MOV").pack(), chosen[2].path.pack(), "beats one elsewhere");
+
+	assert_equal(true, chosen[6].match == movie_source_match::same_length, "the one as long as the project recorded");
+	assert_equal(december.combine_file("IMG_0760.MOV").pack(), chosen[6].path.pack(),
+	             "outranks where its neighbours went");
+
+	assert_equal(true, chosen[7].match == movie_source_match::siblings, "a length both share settles nothing");
+	assert_equal(january.combine_file("IMG_0761.MOV").pack(), chosen[7].path.pack(), "so the neighbours do");
+
+	assert_equal(true, chosen[8].match == movie_source_match::other_length,
+	             "a lone namesake of another length is another file");
+	assert_equal(true, chosen[8].path.is_empty(), "and is never used in its place");
+
+	assert_equal(true, chosen[4].match == movie_source_match::ambiguous, "with no reason to prefer one");
+	assert_equal(true, chosen[4].path.is_empty(), "nothing is guessed");
+
+	assert_equal(true, chosen[5].match == movie_source_match::missing, "a name found nowhere is missing");
+	assert_equal(true, chosen[5].path.is_empty(), "and has no path");
+
+	// A probe per candidate is the expensive part, so only a source with a length to check pays.
+	assert_equal(7_z, measured.size(), "only the candidates of a source with a recorded length are measured");
+
+	// Neighbours that went two ways settle nothing.
+	const std::vector<df::file_path> split_stored{
+		park.combine_file("a.mov"), park.combine_file("b.mov"), park.combine_file("c.mov")
+	};
+	const std::vector<std::vector<df::file_path>> split_candidates{
+		{january.combine_file("a.mov")},
+		{december.combine_file("b.mov")},
+		{january.combine_file("c.mov"), december.combine_file("c.mov")},
+	};
+
+	const auto split = choose_movie_sources(split_stored, split_candidates, {}, {});
+	assert_equal(true, split[2].match == movie_source_match::ambiguous, "a tied vote is no answer");
 }
 
 // A timeline built from a selection is not an edit the user made: it has nothing to save and nothing
@@ -1155,4 +1416,7 @@ void register_movie_tests(view_state& state, test_registry& tests)
 	tests.add("Should refuse a deeply nested movie project"s, should_refuse_a_deeply_nested_movie_project);
 	tests.add("Should read a movie project it did not write"s, should_read_a_movie_project_it_did_not_write);
 	tests.add("Should import a movie maker project"s, should_import_a_movie_maker_project);
+	tests.add("Should import a movie maker project as movie maker writes it"s,
+	          should_import_a_movie_maker_project_as_movie_maker_writes_it);
+	tests.add("Should find moved movie sources"s, should_find_moved_movie_sources);
 }

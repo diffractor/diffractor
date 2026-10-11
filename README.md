@@ -47,6 +47,34 @@ documented in [docs/implementation.md](docs/implementation.md), whose links lead
 the specialized subject documents. Contributor routing and repository rules are in
 [AGENTS.md](AGENTS.md).
 
+## Rendering Movie projects from the command line
+
+Movie projects can be checked, imported and rendered without opening a window. Import turns each
+Windows Live Movie Maker `.wlmp` project into a native `.otio` one, finding its moved sources in your
+collection; render makes a movie from a native project. How moved sources are found again is described
+in [docs/movie.md](docs/movie.md#6-project-files), and the switches in
+[docs/movie.md](docs/movie.md#9-command-line).
+
+| Switch | Effect |
+|--------|--------|
+| `-movie-check:<project or folder>` | Reports what import would make of each `.wlmp`, or what render would find in each `.otio`. Writes nothing |
+| `-movie-import:<project or folder>` | Writes a native `.otio` project for each `.wlmp`, with sources found in the collection |
+| `-movie-render:<project or folder>` | Writes an `.mp4` for each `.otio` project whose sources are all usable |
+| `-movie-media:<folder>` | Also searches this folder and its subfolders, by name, for sources missing from their stored paths |
+| `-movie-out:<folder>` | Sets where imported projects or rendered movies go. By default each goes beside its project |
+| `-movie-overwrite` | Replaces a project or movie that already exists instead of skipping it |
+| `-movie-skip-missing` | Renders without the clips whose source cannot be used |
+
+```powershell
+.\exe\diffractor64.exe -movie-check:D:\Projects | Out-Host
+.\exe\diffractor64.exe -movie-import:D:\Projects | Out-Host
+.\exe\diffractor64.exe -movie-render:D:\Projects -movie-out:D:\Movies | Out-Host
+```
+
+Paths must be full paths. Quote the whole switch when a path contains a space, as in
+`"-movie-import:D:\My Projects\trip.wlmp"`. Piping into `Out-Host` makes PowerShell wait and show the
+report as it is written.
+
 ## Contributing
 
 Contributions are coordinated through [GitHub issues](https://github.com/diffractor/diffractor/issues).

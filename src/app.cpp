@@ -446,6 +446,25 @@ void command_line_t::parse(const std::string_view command_line_text)
 				dup_report_folder = value;
 			}
 			else if (switch_value(op, "dup-report-out:", value)) dup_report_output = value;
+			else if (switch_value(op, "movie-check:", value))
+			{
+				movie_batch.projects = value;
+				movie_batch.mode = movie_batch_mode::check;
+			}
+			else if (switch_value(op, "movie-import:", value))
+			{
+				movie_batch.projects = value;
+				movie_batch.mode = movie_batch_mode::import;
+			}
+			else if (switch_value(op, "movie-render:", value))
+			{
+				movie_batch.projects = value;
+				movie_batch.mode = movie_batch_mode::render;
+			}
+			else if (switch_value(op, "movie-media:", value)) movie_batch.media = value;
+			else if (switch_value(op, "movie-out:", value)) movie_batch.output = value;
+			else if (is_switch(op, "movie-overwrite")) movie_batch.overwrite = true;
+			else if (is_switch(op, "movie-skip-missing")) movie_batch.skip_missing = true;
 #ifdef _DEBUG
 			else if (is_switch(op, "test-reset-graphics")) test_action = "reset-graphics";
 			else if (is_switch(op, "test-crash")) test_action = "crash";

@@ -75,6 +75,7 @@ Membership is not a label; it is the precondition for every whole-collection cap
 | [Related items](design.md#related-items) | An item's copies, album, series, capture time, and capture place are answered from members only, so "what else belongs with this?" has a defined population too. |
 | [Presence](design.md#collection-presence) | An outside file can be compared against members to answer "do I already have this?". |
 | Import and Sync | Both name a collection side, so their direction and effect are stated against a defined set rather than against an ad-hoc folder pair. |
+| [Movie](movie.md#6-project-files) import | An old Movie Maker project's moved sources are found again among members, by name and by the length the project recorded, so the search has a defined population instead of the whole disk. |
 | Totals | "The collection contains N items" is meaningful because N has a definition the user can inspect. |
 
 The corollary is that a scope outside the collection cannot honestly offer these. When the current scope is not in the collection, that fact is reported plainly — the items shown are not from the collection. Where the report explains an empty or partial result, it also carries the action that would widen the collection, so the explanation and its remedy are the same surface. Silently returning empty or partial aggregates for a non-member scope would read as a broken product rather than as a scope distinction.
@@ -171,6 +172,7 @@ Presence wording and confidence values belong to [design.md](design.md#collectio
 | Duplicate grouping and the perceptual-hash stage | [model_index_duplicates.cpp](../src/model_index_duplicates.cpp) — `index_state::update_predictions`; [app_dup_report.cpp](../src/app_dup_report.cpp) measures it over a real library |
 | The bounded nearest-match sets a related search answers with | [model_related.h](../src/model_related.h) |
 | Presence evaluation for a file outside the collection | [model_index_duplicates.cpp](../src/model_index_duplicates.cpp) — `index_state::queue_update_presence`, [model_search.cpp](../src/model_search.cpp) |
+| Finding a Movie Maker project's moved sources among members | [view_movie.cpp](../src/view_movie.cpp) — `import_movie_maker_project`; [model_movie.cpp](../src/model_movie.cpp) — `choose_movie_sources`; [app_movie_batch.cpp](../src/app_movie_batch.cpp) walks the member folders for the command line |
 | Persistence of the cached index | [model_db.cpp](../src/model_db.cpp), [model_db_pack.h](../src/model_db_pack.h) |
 
 The three redundancy surfaces in [§7](#7-redundancy-one-relation-three-questions) read one relation,

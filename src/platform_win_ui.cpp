@@ -4719,6 +4719,18 @@ int WINAPI wWinMain(const HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, cons
 
 				return report_result;
 			}
+
+			// Handle /movie-check, /movie-import and /movie-render: read Movie projects in console
+			// mode, report how their sources resolve, import or render them when asked, and exit.
+			if (!command_line.movie_batch.projects.empty())
+			{
+				setup_headless_console();
+
+				df::start_time = platform::now();
+				resources.init(get_resource_instance);
+
+				return run_movie_batch(command_line.movie_batch);
+			}
 		}
 
 #if defined(_M_IX86) || defined(_M_X64)

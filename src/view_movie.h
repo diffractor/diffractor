@@ -7,7 +7,8 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: The Movie task view. Assembles photos and videos into one video: the timeline strip,
-// the composed preview and its transport, and the settings panel. docs/movie.md owns the
+// the composed preview and its transport, and the settings panel, plus the source probe, the Movie
+// Maker import and the render, which the headless command line shares. docs/movie.md owns the
 // behaviour; model_movie.h owns the document and every rule about it.
 
 #pragma once
@@ -36,6 +37,85 @@ struct movie_probe_result
 	double duration = 0;
 	double frame_rate = 0;
 };
+
+// Opens one source and measures it. File I/O and decoding, so it runs off the UI thread: on the
+// view's probe worker, or on the command line's own thread before any window exists.
+movie_probe_result probe_movie_source(df::file_path path);
+
+// What a probe makes of the clip it measured. One rule for the view and the command line, so a
+// project renders the same clips from both.
+inline movie_clip apply_movie_probe(movie_clip clip, const movie_probe_result& probe, const double photo_seconds)
+{
+	clip.is_probed = true;
+
+	// A source that was not there is now known to be gone rather than merely unexamined. It keeps
+	// its stored times, so a relink restores the clip and not just the file.
+	if (!probe.found)
+	{
+		clip.is_missing = true;
+		return clip;
+	}
+
+	clip.is_missing = false;
+	clip.is_photo = probe.is_photo;
+	clip.extent = probe.extent;
+	clip.frame_rate = probe.frame_rate;
+
+	if (probe.is_photo)
+	{
+		clip.start = 0;
+		if (clip.duration() <= 0) clip.end = photo_seconds;
+	}
+	else
+	{
+		clip.source_duration = probe.duration;
+		// A project read from disk already carries a trim; only a clip with no end of its own -- one
+		// just added, or one that runs to the end of its source -- takes the whole source.
+		if (clip.duration() <= 0) clip.end = probe.duration;
+		clip.end = std::min(clip.end, probe.duration);
+		clip.start = std::clamp(clip.start, 0.0, clip.end);
+	}
+
+	return clip;
+}
+
+// For each path in `missing`, the files elsewhere that carry its name. The app answers from the
+// collection's index; the command line walks the collection's folders. Either way it runs off the
+// UI thread, and it is asked once per import, with every missing source at once.
+using movie_source_finder = std::function<std::vector<std::vector<df::file_path>>(
+	const std::vector<df::file_path>& missing)>;
+
+// What an import did with one source the project names.
+struct movie_import_source
+{
+	df::file_path stored;
+	movie_source_match match = movie_source_match::stored;
+	// Where the timeline points now: the stored path, or the file chosen for it.
+	df::file_path path;
+	double recorded_seconds = 0;
+	// The files that carry its name, each with the length it measured; zero where it was not measured.
+	std::vector<std::pair<df::file_path, double>> candidates;
+	movie_probe_result probe;
+};
+
+struct movie_import
+{
+	movie_load_result loaded;
+	// In timeline order, one per source however many clips use it.
+	std::vector<movie_import_source> sources;
+	int relinked_clips = 0;
+};
+
+// Reads a Movie Maker project and settles where each source is: at its stored path, or the
+// collection file `find` offers that the rules in docs/movie.md#6-project-files choose. Every source
+// is measured, so the clips arrive probed; a clip whose source changed while it was measured is left
+// unprobed for the caller to measure again. File I/O and decoding, so it never runs on the UI thread.
+movie_import import_movie_maker_project(std::string_view xml, df::folder_path project_folder,
+                                        const movie_source_finder& find);
+
+// Writes `text` to a staged file beside `path`, and replaces `path` only once all of it is written,
+// so a failed save leaves the project that was there. Answers a failure in words, or nothing.
+std::string write_movie_project_file(df::file_path path, std::string_view text);
 
 struct movie_probe_retry_updates
 {
@@ -81,6 +161,37 @@ struct movie_render_control
 		return claim.compare_exchange_strong(expected, 2);
 	}
 };
+
+// An immutable snapshot of the document, taken when Render was pressed. Editing the timeline while
+// a render runs changes the next render, not the running one.
+struct movie_render_request
+{
+	std::vector<movie_clip> clips;
+	movie_settings settings;
+	movie_output output;
+	df::file_path path;
+};
+
+struct movie_render_result
+{
+	bool ok = false;
+	bool cancelled = false;
+	movie_render_error reason = movie_render_error::none;
+	// Only for a failure the operating system has already worded in the user's language, such as a
+	// refused replace. Everything else is a reason the caller translates.
+	std::string message;
+	// The clip whose frame could not be made, and where in its source, when that stopped the render.
+	df::file_path source;
+	double source_time = 0;
+};
+
+// Renders a resolved timeline to `request.path`, staged beside it and moved into place only on
+// success. Decodes and encodes on the calling thread with no display device, so it runs on a
+// worker or on the command line's own thread. `report` receives the fraction done.
+movie_render_result render_movie_to_file(const movie_render_request& request,
+                                         const std::function<void(double)>& report,
+                                         const df::cancel_token& token,
+                                         const std::shared_ptr<movie_render_control>& control);
 
 struct movie_frame_cache_completion_decision
 {

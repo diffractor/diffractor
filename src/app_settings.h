@@ -420,3 +420,7 @@ public:
 extern settings_t setting;
 
 std::vector<std::string_view> split_collection_folders(std::string_view text);
+
+// The collection roots the settings name, includes and excludes alike. Defined with the index
+// workers that start from it; the Movie command line reads the same roots to search the collection.
+df::index_roots index_folders(const settings_t::index_t& collection);

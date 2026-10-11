@@ -2356,6 +2356,42 @@ static void should_extract_threaded_video_frames_sequentially_to_eof()
 	dec.close();
 }
 
+// A container can run past its last picture -- sound a frame or two longer than video is common in
+// camera files -- and Movie gives an untrimmed clip the container's end. The render walks a decoder
+// frame by frame up to that end. A decoder that handed out the last frame without reading to the end
+// of the stream walked off it on the next request and answered nothing, failing the render of any
+// project holding such a clip. Past the last frame the last frame is the nearest there is, which is
+// what a seek to the same time already answered.
+static void should_answer_with_the_last_frame_past_the_end_of_the_picture()
+{
+	const auto path = test_files_folder.combine("excluded1").combine_file("h264-10bit.mp4");
+
+	for (const auto threads : {false, true})
+	{
+		av_format_decoder dec;
+		assert_equal(true, dec.open(path, media_intent::thumbnail), "fixture opened");
+		dec.init_streams(-1, -1, false, true, threads);
+
+		const auto step = 1.0 / std::clamp(dec.video_frame_rate(), 1.0, 120.0);
+		const auto end = dec.end_time();
+		auto last = -1.0;
+
+		for (auto target = dec.start_time(); target <= end; target += step)
+		{
+			ui::surface_ptr frame;
+			assert_equal(true, dec.extract_frame_at(frame, {256, 256}, target, step / 2.0),
+			             std::format("a frame is answered at {:.3f}s of {:.3f}s, threads {}", target, end, threads));
+			if (!is_valid(frame)) break;
+			last = frame->time();
+		}
+
+		ui::surface_ptr past;
+		assert_equal(true, dec.extract_frame_at(past, {256, 256}, end, step / 2.0),
+		             std::format("the container's end is answered, threads {}", threads));
+		assert_equal(true, is_valid(past) && df::equiv(last, past->time()), "with the last frame there is");
+	}
+}
+
 // The Movie trim control draws where the sound is, because a trim is usually aimed at the start or
 // the end of someone talking and that is invisible in a picture. Peaks are per bucket over the
 // whole stream, so a stream with content must produce buckets that differ from one another - a
@@ -2680,6 +2716,8 @@ void register_av_tests(view_state& state, test_registry& tests)
 	// MEDIA-006 - frame-threaded sequential extraction can run to source EOF.
 	tests.add("Should extract threaded video frames sequentially to EOF"s,
 	          should_extract_threaded_video_frames_sequentially_to_eof);
+	tests.add("Should answer with the last video frame past the end of the picture"s,
+	          should_answer_with_the_last_frame_past_the_end_of_the_picture);
 	tests.add("Should measure audio peaks"s, should_measure_audio_peaks);
 	tests.add("Should decode audio into a buffer"s, should_decode_audio_into_a_buffer);
 	tests.add("Should read an audio range as the stream holds it"s, should_read_an_audio_range_as_the_stream_holds_it);

@@ -230,6 +230,7 @@ set(DIFFRACTOR_PORTABLE_SOURCES
         src/app_dialogs.cpp
         src/app.cpp
         src/app_dup_report.cpp
+        src/app_movie_batch.cpp
         src/app_search.cpp
         src/app_toolbar.cpp
         src/app_workers.cpp

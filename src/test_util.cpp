@@ -1022,6 +1022,32 @@ static void should_parse_command_line()
 	cl9.parse("-run-tests");
 	assert_equal(true, cl9.console_test, "run-tests alias");
 
+	command_line_t cl_movie_check;
+	cl_movie_check.parse(
+		"-movie-check:C:\\movies -movie-media:D:\\media \"-movie-out:E:\\rendered movies\" --movie-overwrite");
+	assert_equal("C:\\movies"sv, cl_movie_check.movie_batch.projects, "movie projects");
+	assert_equal(true, cl_movie_check.movie_batch.mode == movie_batch_mode::check, "a check only reports");
+	assert_equal("D:\\media"sv, cl_movie_check.movie_batch.media, "movie media folder");
+	assert_equal("E:\\rendered movies"sv, cl_movie_check.movie_batch.output, "a quoted output folder keeps its space");
+	assert_equal(true, cl_movie_check.movie_batch.overwrite, "movie overwrite");
+
+	command_line_t cl_movie_import;
+	cl_movie_import.parse("-movie-import:C:\\movies\\trip.wlmp");
+	assert_equal("C:\\movies\\trip.wlmp"sv, cl_movie_import.movie_batch.projects, "a project to import");
+	assert_equal(true, cl_movie_import.movie_batch.mode == movie_batch_mode::import, "import imports");
+
+	command_line_t cl_movie_render;
+	cl_movie_render.parse("-MOVIE-RENDER:C:\\movies\\trip.otio -movie-skip-missing");
+	assert_equal("C:\\movies\\trip.otio"sv, cl_movie_render.movie_batch.projects, "a single movie project");
+	assert_equal(true, cl_movie_render.movie_batch.mode == movie_batch_mode::render, "render renders");
+	assert_equal(false, cl_movie_render.movie_batch.overwrite, "and replaces nothing unless asked");
+	assert_equal(true, cl_movie_render.movie_batch.skip_missing, "skipping missing sources is asked for");
+	assert_equal(false, cl_movie_check.movie_batch.skip_missing, "and never assumed");
+
+	command_line_t cl_no_movie;
+	cl_no_movie.parse("-movie-check: -no-gpu");
+	assert_equal(true, cl_no_movie.movie_batch.projects.empty(), "a movie switch with no path starts no batch");
+
 	// AutoPlay passes the inserted volume with "**", the address box's spelling for its subfolders.
 	const auto recursive_text = std::string(test_files_folder.text()) + df::preferred_path_sep + "**";
 	command_line_t cl_recursive;

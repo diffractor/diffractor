@@ -7,9 +7,10 @@
 // This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY
 
 // Purpose: The Movie document. An ordered list of trimmed clips, the settings applied across them,
-// the derived output geometry, the project file read and written for both, and what entering Movie
-// does with the timeline it holds. docs/movie.md owns the behaviour; nothing here decodes, encodes,
-// draws or touches the UI.
+// the derived output geometry, the project file read and written for both, which of several
+// same-named files a moved source most likely became, and what entering Movie does with the
+// timeline it holds. docs/movie.md owns the behaviour; nothing here decodes, encodes, draws or
+// touches the UI.
 
 #pragma once
 
@@ -182,10 +183,20 @@ struct movie_load_result
 {
 	movie_load_status status = movie_load_status::unreadable;
 	std::vector<movie_clip> clips;
+	// For each clip, the length of its source as the project recorded it, and zero where it recorded
+	// none. Empty for a format that records no lengths. A source found again whose measured length
+	// differs is probably another file with the same name.
+	std::vector<double> recorded_seconds;
 	movie_settings settings;
 	// Named for the report, not for a dialog: the count of elements the file carried that Movie
 	// has no answer for. docs/movie.md#6-project-files owns what becomes of them.
 	int ignored_elements = 0;
+	// The same count by what the file calls each thing -- an element, an effect template, a clip
+	// setting -- in the order first met, for a report that has to say more than a number.
+	std::vector<std::pair<std::string, int>> omitted;
+
+	// The only way a reader counts something it left out, so the total and the breakdown agree.
+	void omit(std::string_view name, int count = 1);
 
 	explicit operator bool() const { return status == movie_load_status::ok; }
 };
@@ -197,8 +208,45 @@ std::string write_otio(const std::vector<movie_clip>& clips, const movie_setting
 movie_load_result read_otio(std::string_view json, df::folder_path project_folder);
 
 // Windows Live Movie Maker. The format is undocumented, so the reader scrapes rather than
-// validates: see the note on the implementation.
-movie_load_result read_wlmp(std::string_view xml);
+// validates: see the note on the implementation. A relative media path is relative to the folder
+// the project is in.
+movie_load_result read_wlmp(std::string_view xml, df::folder_path project_folder);
+
+// How a source a project names was resolved: where the project stored it, found again by name
+// under a search folder or the collection, or not at all. docs/movie.md#6-project-files owns the
+// rules; choose_movie_sources decides among the namesakes and never answers `stored`.
+enum class movie_source_match
+{
+	stored,
+	missing,
+	other_length,
+	only_name,
+	same_folders,
+	same_length,
+	siblings,
+	ambiguous,
+};
+
+// How far a measured length may stray from the one a project recorded and still be the same file.
+// Movie Maker measured with other decoders, so the two disagree by a frame or two, not by seconds.
+inline constexpr double movie_source_length_tolerance = 0.5;
+
+struct movie_source_choice
+{
+	movie_source_match match = movie_source_match::missing;
+	// Empty unless one candidate was chosen.
+	df::file_path path;
+};
+
+// `candidates[i]` lists the files under the search folder named as `stored[i]` is, and
+// `recorded_seconds[i]` is the length the project recorded for it, or zero. `measure_seconds`
+// answers a candidate's length, or zero when it has none to measure; it is the one place I/O can
+// enter, so the rules are tested with a stand-in and no disk. It is asked only about the candidates
+// of a source with a recorded length.
+std::vector<movie_source_choice> choose_movie_sources(const std::vector<df::file_path>& stored,
+                                                      const std::vector<std::vector<df::file_path>>& candidates,
+                                                      const std::vector<double>& recorded_seconds,
+                                                      const std::function<double(df::file_path)>& measure_seconds);
 
 // The timeline as a document: ordered, editable, and undoable. UI-thread-owned; the render takes a
 // detached copy of `clips()` and `settings()` and never reads this object again.

@@ -8,8 +8,9 @@
 
 // Purpose: Implements the Movie document -- timeline edits and undo, transition and duration
 // arithmetic, the derived output geometry, the decision entering Movie makes about the timeline it
-// holds, the OpenTimelineIO project file, and the Windows Live Movie Maker reader. Pure: no I/O, no
-// decoding, no UI. docs/movie.md owns the behaviour.
+// holds, the OpenTimelineIO project file, the Windows Live Movie Maker reader, and the choice among
+// same-named files for a source that has moved. Pure: no I/O, no decoding, no UI. docs/movie.md
+// owns the behaviour.
 
 #include "pch.h"
 #include "model_movie.h"
@@ -315,6 +316,15 @@ static std::optional<std::string> decode_url_path(const std::string_view url)
 	return result;
 }
 
+// A path relative to the project's folder, which is how a project and the media beside it move
+// together. The caller has already put the separators in the form this platform reads.
+static df::file_path resolve_in_project_folder(const std::string_view relative, const df::folder_path project_folder)
+{
+	const auto resolved = (std::filesystem::path(project_folder.text().sv()) / std::filesystem::path(relative))
+		.lexically_normal();
+	return df::file_path(resolved.string());
+}
+
 static df::file_path from_url(const std::string_view url, const df::folder_path project_folder)
 {
 	if (url.empty()) return {};
@@ -358,9 +368,7 @@ static df::file_path from_url(const std::string_view url, const df::folder_path 
 	if (project_folder.is_empty()) return {};
 
 	for (auto&& c : native) if (c == '/') c = df::preferred_path_sep;
-	const auto resolved = (std::filesystem::path(project_folder.text().sv()) / std::filesystem::path(native))
-		.lexically_normal();
-	return df::file_path(resolved.string());
+	return resolve_in_project_folder(native, project_folder);
 }
 
 using json_writer = rapidjson::Writer<rapidjson::StringBuffer>;
@@ -590,6 +598,17 @@ static bool is_schema(const json_value& v, const std::string_view prefix)
 	return str::starts(found->value.GetString(), prefix);
 }
 
+void movie_load_result::omit(const std::string_view name, const int count)
+{
+	if (count <= 0) return;
+
+	ignored_elements += count;
+
+	const auto found = std::ranges::find_if(omitted, [name](const auto& entry) { return entry.first == name; });
+	if (found != omitted.end()) found->second += count;
+	else omitted.emplace_back(std::string(name), count);
+}
+
 movie_load_result read_otio(const std::string_view json, const df::folder_path project_folder)
 {
 	movie_load_result result;
@@ -627,7 +646,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		}
 		else
 		{
-			++result.ignored_elements;
+			result.omit(kind.empty() ? "Track"s : std::format("{} track", kind));
 		}
 	}
 
@@ -708,7 +727,8 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		if (!is_schema(child, "Clip"))
 		{
 			if (pending_transition) foreign_transition_positions_valid = false;
-			++result.ignored_elements;
+			const auto schema = df::util::json::safe_string(child, "OTIO_SCHEMA");
+			result.omit(schema.empty() ? "unknown element"sv : schema);
 			continue;
 		}
 
@@ -719,7 +739,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		if (path.is_empty())
 		{
 			if (pending_transition) foreign_transition_positions_valid = false;
-			++result.ignored_elements;
+			result.omit("clip with no media file");
 			continue;
 		}
 
@@ -737,7 +757,7 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		if (!std::isfinite(clip.start) || !std::isfinite(clip.end) || clip.start < 0 || clip_duration <= 0)
 		{
 			if (pending_transition) foreign_transition_positions_valid = false;
-			++result.ignored_elements;
+			result.omit("clip with no usable range");
 			continue;
 		}
 
@@ -792,12 +812,12 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 		}
 		else
 		{
-			result.ignored_elements += foreign_transition_count;
+			result.omit("Transition", foreign_transition_count);
 		}
 	}
 	else if (!has_diffractor_settings)
 	{
-		result.ignored_elements += foreign_transition_count;
+		result.omit("Transition", foreign_transition_count);
 	}
 
 	result.status = result.clips.empty() && !has_diffractor_settings ? movie_load_status::empty : movie_load_status::ok;
@@ -810,9 +830,11 @@ movie_load_result read_otio(const std::string_view json, const df::folder_path p
 
 // A tolerant scraper, not a parser. The .wlmp schema is undocumented and has never been stable
 // across the tools that wrote it, so matching on exact element names would break on the next file.
-// It reads attributes off any element that looks like a media item or an extent and ignores the
-// document's structure entirely. It resolves no entity it was not given inline and follows no
-// reference, so there is no external-entity surface here.
+// It reads attributes off any element that looks like a media item or an extent, and takes only
+// two things from the document's structure: the track bound to the "Main" placeholder, which is
+// the timeline, and which extent the effects and settings it meets belong to. It resolves no
+// entity it was not given inline and follows no reference, so there is no external-entity surface
+// here.
 namespace
 {
 	struct xml_element
@@ -949,18 +971,45 @@ namespace
 	}
 
 	// from_chars rather than stod: stod reads the C locale's decimal point, and a project file's
-	// numbers are always '.' whatever the user's regional settings say. A malformed number means
-	// "this attribute is absent", so the caller falls back to the clip's other timings.
-	double parse_seconds(const std::string* text)
+	// numbers are always '.' whatever the user's regional settings say. A setting that is absent or
+	// malformed reads as `fallback`, the value it would have had.
+	double parse_number(const std::string* text, const double fallback)
 	{
-		if (!text || text->empty()) return -1;
+		if (!text || text->empty()) return fallback;
 
 		double value = 0;
 		const auto* const first = text->data();
 		const auto* const last = first + text->size();
 		const auto [ptr, ec] = std::from_chars(first, last, value);
 
-		return ec != std::errc{} || !std::isfinite(value) ? -1 : value;
+		return ec != std::errc{} || !std::isfinite(value) ? fallback : value;
+	}
+
+	// A malformed time means "this attribute is absent", so the caller falls back to the clip's
+	// other timings.
+	double parse_seconds(const std::string* text)
+	{
+		return parse_number(text, -1);
+	}
+
+	bool is_named(const xml_element& element, const std::string_view name)
+	{
+		return str::icmp(element.name, name) == 0;
+	}
+
+	// Movie Maker ran on Windows, so a drive letter or a UNC prefix is absolute wherever the file is
+	// read, and either separator divides a relative path. A relative path is how it records media
+	// kept beneath the project's own folder.
+	df::file_path wlmp_media_path(const std::string_view text, const df::folder_path project_folder)
+	{
+		const auto drive = text.size() >= 3 && text[1] == ':' && df::is_path_sep(text[2]);
+		const auto unc = text.size() >= 2 && df::is_path_sep(text[0]) && df::is_path_sep(text[1]);
+		if (drive || unc || is_qualified_path(text)) return df::file_path(text);
+		if (project_folder.is_empty()) return {};
+
+		auto relative = std::string(text);
+		for (auto&& c : relative) if (df::is_path_sep(c)) c = df::preferred_path_sep;
+		return resolve_in_project_folder(relative, project_folder);
 	}
 
 	bool is_ignored_extent(const std::string_view name)
@@ -979,101 +1028,405 @@ namespace
 	}
 }
 
-movie_load_result read_wlmp(const std::string_view xml)
+movie_load_result read_wlmp(const std::string_view xml, const df::folder_path project_folder)
 {
 	movie_load_result result;
 
 	const auto elements = scan_xml(xml);
 	if (elements.empty()) return result;
 
-	df::hash_map<std::string, df::file_path, df::ihash, df::ieq> media;
-
-	struct positioned_clip
+	struct wlmp_media
 	{
-		movie_clip clip;
-		double position = -1;
+		df::file_path path;
+		double recorded_seconds = 0;
 	};
 
-	std::vector<positioned_clip> clips;
+	df::hash_map<std::string, wlmp_media, df::ihash, df::ieq> media;
+	const std::string* main_track = nullptr;
 
 	for (const auto& element : elements)
 	{
+		if (const auto placeholder = element.find("placeholderID");
+			placeholder && str::icmp(*placeholder, "Main") == 0)
+		{
+			main_track = element.find("extentID");
+		}
+
 		const auto id = element.find("id");
 		const auto file = element.find("filePath");
 		if (!id || !file || id->empty() || file->empty()) continue;
-		if (!is_qualified_path(*file)) continue;
 
-		media.insert_or_assign(*id, df::file_path(*file));
+		const auto path = wlmp_media_path(*file, project_folder);
+		if (path.is_empty()) continue;
+
+		media.insert_or_assign(*id, wlmp_media{path, std::max(0.0, parse_seconds(element.find("duration")))});
 	}
 
 	if (media.empty()) return result;
 
+	// A clip and what Movie Maker attached to it. Those count as left out only if the clip is placed:
+	// a clip off the timeline is one omission, not one plus everything it carried.
+	struct wlmp_clip
+	{
+		std::string id;
+		movie_clip clip;
+		double recorded_seconds = 0;
+		double position = -1;
+		std::vector<std::string_view> omitted;
+	};
+
+	std::vector<wlmp_clip> clips;
+	std::vector<std::string_view> main_refs;
+	auto has_main_track = false;
+
+	// The scraper sees opening tags only, so an element belongs to the extent opened last. That is
+	// how Movie Maker writes them: an extent, its effects, transitions and settings, then the next.
+	auto owner_is_clip = false;
+	auto owner_is_main_track = false;
+	auto in_transitions = false;
+
 	for (const auto& element : elements)
 	{
-		if (is_ignored_extent(element.name))
+		if (element.find("placeholderID"))
 		{
-			++result.ignored_elements;
+			// The placeholders follow the extents, and nothing after them belongs to one.
+			owner_is_clip = false;
+			owner_is_main_track = false;
 			continue;
 		}
 
-		const auto reference = element.find("mediaItemID");
-		if (!reference) continue;
-
-		const auto found = media.find(*reference);
-
-		if (found == media.end())
+		if (const auto extent_id = element.find("extentID"))
 		{
-			++result.ignored_elements;
+			owner_is_clip = false;
+			owner_is_main_track = false;
+			in_transitions = false;
+
+			if (is_named(element, "ExtentSelector"))
+			{
+				owner_is_main_track = main_track && str::icmp(*extent_id, *main_track) == 0;
+				has_main_track = has_main_track || owner_is_main_track;
+				continue;
+			}
+
+			const auto reference = element.find("mediaItemID");
+
+			if (!reference || is_ignored_extent(element.name))
+			{
+				result.omit(element.name);
+				continue;
+			}
+
+			const auto found = media.find(*reference);
+
+			if (found == media.end())
+			{
+				result.omit("clip with no media file");
+				continue;
+			}
+
+			const auto mt = files::file_type_from_name(found->second.path);
+			const auto photo_by_name = mt && mt->group == file_group::photo;
+
+			movie_clip clip;
+			clip.path = found->second.path;
+			clip.is_photo = str::contains(element.name, "image") || str::contains(element.name, "photo") ||
+				(!str::contains(element.name, "video") && photo_by_name);
+			clip.photo_duration_is_default = false;
+
+			const auto start = std::max(0.0, parse_seconds(element.find("inTime")));
+			const auto out_time = parse_seconds(element.find("outTime"));
+			const auto duration = parse_seconds(element.find("duration"));
+
+			if (out_time > start)
+			{
+				clip.start = start;
+				clip.end = out_time;
+			}
+			else if (duration > 0)
+			{
+				clip.start = start;
+				clip.end = start + duration;
+			}
+			else if (!clip.is_photo && out_time <= 0)
+			{
+				// No out point, or one of zero, is how Movie Maker writes a clip that runs to the end
+				// of its source. Only the probe can measure where that is, so the end is left at zero
+				// as a newly added video's is, and the probe gives the clip the rest of its source.
+				clip.start = start;
+				clip.end = 0;
+			}
+			else
+			{
+				result.omit("clip with no usable range");
+				continue;
+			}
+
+			bound_clip_range(clip);
+			clip.source_duration = clip.end;
+
+			wlmp_clip entry{
+				*extent_id, std::move(clip), found->second.recorded_seconds, parse_seconds(element.find("position")), {}
+			};
+			if (std::abs(parse_number(element.find("speed"), 1.0) - 1.0) > 0.0001) entry.omitted.emplace_back("speed");
+
+			clips.emplace_back(std::move(entry));
+			owner_is_clip = true;
 			continue;
 		}
 
-		const auto mt = files::file_type_from_name(found->second);
-		const auto photo_by_name = mt && mt->group == file_group::photo;
-
-		movie_clip clip;
-		clip.path = found->second;
-		clip.is_photo = str::contains(element.name, "image") || str::contains(element.name, "photo") ||
-			(!str::contains(element.name, "video") && photo_by_name);
-		clip.photo_duration_is_default = false;
-
-		const auto in_time = parse_seconds(element.find("inTime"));
-		const auto out_time = parse_seconds(element.find("outTime"));
-		const auto duration = parse_seconds(element.find("duration"));
-
-		if (in_time >= 0 && out_time > in_time)
+		if (owner_is_main_track && is_named(element, "ExtentRef"))
 		{
-			clip.start = in_time;
-			clip.end = out_time;
+			if (const auto id = element.find("id")) main_refs.emplace_back(*id);
+			continue;
 		}
-		else if (duration > 0)
+
+		if (!owner_is_clip) continue;
+
+		auto& omitted = clips.back().omitted;
+
+		if (is_named(element, "Effects") || is_named(element, "Transitions"))
 		{
-			clip.start = std::max(0.0, in_time);
-			clip.end = clip.start + duration;
+			in_transitions = is_named(element, "Transitions");
+			continue;
+		}
+
+		if (const auto effect = element.find("effectTemplateID"))
+		{
+			// Movie draws its own crossfade between every pair of clips. That stands in for Movie
+			// Maker's crossfades, but not for its other transitions, and no effect has an equivalent.
+			if (!in_transitions || !str::contains(*effect, "crossfade")) omitted.emplace_back(*effect);
+			continue;
+		}
+
+		const auto setting = element.find("Name");
+		if (!setting) continue;
+
+		const auto value = element.find("Value");
+
+		if (str::icmp(*setting, "rotateStepNinety") == 0 && parse_number(value, 0.0) != 0.0)
+		{
+			omitted.emplace_back("rotateStepNinety");
+		}
+		else if (str::icmp(*setting, "Mute") == 0 && value && str::icmp(*value, "true") == 0)
+		{
+			omitted.emplace_back("Mute");
+		}
+		else if (str::icmp(*setting, "Volume") == 0 && std::abs(parse_number(value, 1.0) - 1.0) > 0.0001)
+		{
+			omitted.emplace_back("Volume");
+		}
+	}
+
+	std::vector<size_t> order;
+
+	if (has_main_track)
+	{
+		// The main track is the timeline. A clip it does not place is one Movie Maker kept but no
+		// longer showed; a title it places was counted where it was read.
+		df::hash_map<std::string, size_t, df::ihash, df::ieq> by_id;
+		for (size_t i = 0; i < clips.size(); ++i) by_id.try_emplace(clips[i].id, i);
+
+		std::vector<bool> placed(clips.size(), false);
+
+		for (const auto ref : main_refs)
+		{
+			const auto found = by_id.find(std::string(ref));
+			if (found == by_id.end()) continue;
+
+			placed[found->second] = true;
+			order.emplace_back(found->second);
+		}
+
+		for (size_t i = 0; i < clips.size(); ++i)
+		{
+			if (!placed[i]) result.omit("clip off the main track");
+		}
+	}
+	else
+	{
+		// Without a main track, a stated timeline position orders the clips, and the file's own order
+		// does where there is none.
+		for (size_t i = 0; i < clips.size(); ++i) order.emplace_back(i);
+
+		if (std::any_of(clips.begin(), clips.end(), [](const wlmp_clip& clip) { return clip.position >= 0; }))
+		{
+			std::stable_sort(order.begin(), order.end(), [&clips](const size_t left, const size_t right)
+			{
+				const auto left_position = clips[left].position;
+				const auto right_position = clips[right].position;
+				if (left_position < 0) return false;
+				if (right_position < 0) return true;
+				return left_position < right_position;
+			});
+		}
+	}
+
+	for (const auto i : order)
+	{
+		for (const auto name : clips[i].omitted) result.omit(name);
+		result.clips.emplace_back(clips[i].clip);
+		result.recorded_seconds.emplace_back(clips[i].recorded_seconds);
+	}
+
+	result.status = result.clips.empty() ? movie_load_status::empty : movie_load_status::ok;
+	return result;
+}
+
+//
+// Finding moved sources
+//
+
+// How many components two paths share, counted back from the name. The candidates were found by
+// name, so the name always matches and 2 means the folder holding it has the same name too.
+static size_t shared_trailing_components(const std::string_view left, const std::string_view right)
+{
+	size_t shared = 0;
+	auto left_end = left.size();
+	auto right_end = right.size();
+
+	while (left_end > 0 && right_end > 0)
+	{
+		const auto left_sep = left.find_last_of("\\/", left_end - 1);
+		const auto right_sep = right.find_last_of("\\/", right_end - 1);
+		const auto left_begin = left_sep == std::string_view::npos ? 0 : left_sep + 1;
+		const auto right_begin = right_sep == std::string_view::npos ? 0 : right_sep + 1;
+
+		if (str::icmp(left.substr(left_begin, left_end - left_begin),
+		              right.substr(right_begin, right_end - right_begin)) != 0) break;
+
+		++shared;
+		if (left_sep == std::string_view::npos || right_sep == std::string_view::npos) break;
+		left_end = left_sep;
+		right_end = right_sep;
+	}
+
+	return shared;
+}
+
+static std::string folder_move_key(const df::folder_path from, const df::folder_path to)
+{
+	auto key = std::string(from.text());
+	key += '\n';
+	key += to.text();
+	return key;
+}
+
+std::vector<movie_source_choice> choose_movie_sources(const std::vector<df::file_path>& stored,
+                                                      const std::vector<std::vector<df::file_path>>& candidates,
+                                                      const std::vector<double>& recorded_seconds,
+                                                      const std::function<double(df::file_path)>& measure_seconds)
+{
+	std::vector<movie_source_choice> result(stored.size());
+	// What is left to choose between once a recorded length has ruled files out.
+	std::vector<std::vector<df::file_path>> remaining(stored.size());
+
+	for (size_t i = 0; i < stored.size() && i < candidates.size(); ++i)
+	{
+		auto found = candidates[i];
+		if (found.empty()) continue;
+
+		// A length is a measurement of the file itself, so it rules out a namesake however well its
+		// folders fit. A camera that numbers its files from zero again names a dozen clips alike,
+		// and the one carrying the name may not be the one the project used. A candidate with no
+		// length to measure is not evidence either way, so it stays.
+		const auto recorded = i < recorded_seconds.size() ? recorded_seconds[i] : 0.0;
+		auto ruled_out = false;
+
+		if (recorded > 0 && measure_seconds)
+		{
+			const auto before = found.size();
+
+			std::erase_if(found, [&measure_seconds, recorded](const df::file_path path)
+			{
+				const auto measured = measure_seconds(path);
+				return measured > 0 && std::abs(measured - recorded) > movie_source_length_tolerance;
+			});
+
+			if (found.empty())
+			{
+				result[i].match = movie_source_match::other_length;
+				continue;
+			}
+
+			ruled_out = found.size() < before;
+		}
+
+		if (found.size() == 1)
+		{
+			result[i] = {ruled_out ? movie_source_match::same_length : movie_source_match::only_name, found.front()};
+			continue;
+		}
+
+		const auto original = stored[i].pack();
+		size_t best = 0;
+		size_t best_count = 0;
+		size_t best_index = 0;
+
+		for (size_t j = 0; j < found.size(); ++j)
+		{
+			const auto shared = shared_trailing_components(original, found[j].pack());
+
+			if (shared > best)
+			{
+				best = shared;
+				best_count = 1;
+				best_index = j;
+			}
+			else if (shared == best)
+			{
+				++best_count;
+			}
+		}
+
+		if (best >= 2 && best_count == 1)
+		{
+			result[i] = {movie_source_match::same_folders, found[best_index]};
 		}
 		else
 		{
-			++result.ignored_elements;
-			continue;
+			result[i].match = movie_source_match::ambiguous;
+			remaining[i] = std::move(found);
+		}
+	}
+
+	// Files kept together are usually moved together, so every source settled above is a vote for
+	// where the folder it was stored in went. Only a clear winner settles a tie between same names.
+	df::hash_map<std::string, int, df::ihash, df::ieq> votes;
+
+	for (size_t i = 0; i < result.size(); ++i)
+	{
+		if (!result[i].path.is_empty()) ++votes[folder_move_key(stored[i].folder(), result[i].path.folder())];
+	}
+
+	for (size_t i = 0; i < result.size(); ++i)
+	{
+		if (result[i].match != movie_source_match::ambiguous) continue;
+
+		const auto& found = remaining[i];
+		auto best = 0;
+		size_t best_count = 0;
+		size_t best_index = 0;
+
+		for (size_t j = 0; j < found.size(); ++j)
+		{
+			const auto vote = votes.find(folder_move_key(stored[i].folder(), found[j].folder()));
+			const auto count = vote == votes.end() ? 0 : vote->second;
+
+			if (count > best)
+			{
+				best = count;
+				best_count = 1;
+				best_index = j;
+			}
+			else if (count == best)
+			{
+				++best_count;
+			}
 		}
 
-		bound_clip_range(clip);
-		clip.source_duration = clip.end;
-		clips.emplace_back(positioned_clip{std::move(clip), parse_seconds(element.find("position"))});
+		if (best > 0 && best_count == 1) result[i] = {movie_source_match::siblings, found[best_index]};
 	}
 
-	if (std::any_of(clips.begin(), clips.end(), [](const positioned_clip& clip) { return clip.position >= 0; }))
-	{
-		std::stable_sort(clips.begin(), clips.end(), [](const positioned_clip& left, const positioned_clip& right)
-		{
-			if (left.position < 0) return false;
-			if (right.position < 0) return true;
-			return left.position < right.position;
-		});
-	}
-
-	for (auto&& clip : clips) result.clips.emplace_back(std::move(clip.clip));
-
-	result.status = result.clips.empty() ? movie_load_status::empty : movie_load_status::ok;
 	return result;
 }
 

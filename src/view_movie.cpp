@@ -16,6 +16,7 @@
 #include "app_text.h"
 #include "av_format.h"
 #include "files.h"
+#include "model_index.h"
 #include "ui_elements.h"
 
 namespace
@@ -1798,14 +1799,21 @@ bool movie_view_controls::update_for_document()
 	show_text(_output_text, _shown_output_text, output_text);
 
 	// What the view is holding that the user did not ask for and cannot see anywhere else: elements
-	// an imported project carried that Movie dropped, and clips whose source has gone. Both are
-	// stated here rather than in a dialog, because neither is a thing to dismiss.
+	// an imported project carried that Movie dropped, clips the import pointed at other files than the
+	// project named, and clips whose source has gone. They are stated here rather than in a dialog,
+	// because none is a thing to dismiss.
 	std::string info(tt.movie_info.sv());
 
 	if (_movie_state.import_ignored > 0)
 	{
 		info += "\n\n";
 		info += format_plural_text(tt.movie_ignored_fmt, _movie_state.import_ignored);
+	}
+
+	if (_movie_state.import_relinked > 0)
+	{
+		info += "\n\n";
+		info += format_plural_text(tt.movie_relink_fmt, _movie_state.import_relinked);
 	}
 
 	if (const auto missing = std::count_if(project.clips().begin(), project.clips().end(),
@@ -1996,6 +2004,7 @@ void movie_view::seed_from(const std::vector<df::file_path>& paths)
 	if (should_clear_movie_probe_retries_after_document_replace(true)) _probe_retries.clear();
 	project.reset({}, project.settings(), {});
 	_movie_state.import_ignored = 0;
+	_movie_state.import_relinked = 0;
 	add_paths_at(paths, 0);
 	project.mark_seeded();
 	if (_timeline) _timeline->reveal(0);
@@ -2012,6 +2021,7 @@ void movie_view::discard_timeline()
 	if (should_clear_movie_probe_retries_after_document_replace(true)) _probe_retries.clear();
 	project.reset({}, project.settings(), {});
 	_movie_state.import_ignored = 0;
+	_movie_state.import_relinked = 0;
 	_movie_state.playhead = 0;
 	_preview_override.reset();
 	_show_focus_frame = false;
@@ -3435,6 +3445,151 @@ void movie_view::undo()
 
 // Probing is I/O, so it runs on a worker and comes back as detached values matched to clips by
 // path. A clip whose source has moved keeps its stored times and stays marked missing.
+movie_probe_result probe_movie_source(const df::file_path path)
+{
+	const auto attributes_before = platform::file_attributes(path);
+	movie_probe_result probe;
+	probe.path = path;
+
+	const auto* const mt = files::file_type_from_name(path);
+	probe.is_photo = mt && mt->group == file_group::photo;
+
+	if (probe.is_photo)
+	{
+		const auto loaded = files{}.load(path, true);
+		probe.found = loaded.success;
+		probe.extent = upright_movie_extent(loaded.dimensions(), loaded.orientation());
+	}
+	else
+	{
+		av_format_decoder decoder;
+
+		if (decoder.open(path, media_intent::metadata))
+		{
+			decoder.init_streams(-1, -1, false, true, false);
+
+			const auto info = decoder.info();
+			probe.found = info.has_video;
+			probe.extent = upright_movie_extent(info.display_dimensions, info.display_orientation);
+			probe.duration = std::max(0.0, info.end - info.start);
+			probe.frame_rate = info.video_frame_rate;
+		}
+	}
+
+	const auto attributes_after = platform::file_attributes(path);
+	probe.changed_during_probe = attributes_before.exists() != attributes_after.exists() ||
+		attributes_before.modified != attributes_after.modified ||
+		attributes_before.size != attributes_after.size;
+	return probe;
+}
+
+movie_import import_movie_maker_project(const std::string_view xml, const df::folder_path project_folder,
+                                        const movie_source_finder& find)
+{
+	movie_import result;
+	result.loaded = read_wlmp(xml, project_folder);
+	if (!result.loaded) return result;
+
+	auto& clips = result.loaded.clips;
+	const auto& recorded = result.loaded.recorded_seconds;
+	df::hash_map<df::file_path, size_t, df::ihash, df::ieq> source_index;
+
+	for (size_t i = 0; i < clips.size(); ++i)
+	{
+		if (!source_index.try_emplace(clips[i].path, result.sources.size()).second) continue;
+
+		movie_import_source source;
+		source.stored = clips[i].path;
+		source.path = clips[i].path;
+		source.recorded_seconds = i < recorded.size() ? recorded[i] : 0.0;
+		result.sources.emplace_back(std::move(source));
+	}
+
+	// Every probe the import makes, kept: a candidate measured to settle a choice is not opened
+	// again when its clip is measured.
+	df::hash_map<df::file_path, movie_probe_result, df::ihash, df::ieq> probes;
+
+	const auto probe = [&probes](const df::file_path path) -> const movie_probe_result&
+	{
+		const auto known = probes.find(path);
+		if (known != probes.end()) return known->second;
+		return probes.emplace(path, probe_movie_source(path)).first->second;
+	};
+
+	std::vector<size_t> missing_sources;
+	std::vector<df::file_path> missing;
+
+	for (size_t i = 0; i < result.sources.size(); ++i)
+	{
+		if (result.sources[i].stored.exists()) continue;
+
+		missing_sources.emplace_back(i);
+		missing.emplace_back(result.sources[i].stored);
+	}
+
+	if (!missing.empty())
+	{
+		auto candidates = find ? find(missing) : std::vector<std::vector<df::file_path>>{};
+		candidates.resize(missing.size());
+
+		std::vector<double> lengths;
+		for (const auto i : missing_sources) lengths.emplace_back(result.sources[i].recorded_seconds);
+
+		const auto measure = [&probe](const df::file_path path)
+		{
+			const auto& measured = probe(path);
+			return measured.found && !measured.is_photo ? measured.duration : 0.0;
+		};
+
+		const auto choices = choose_movie_sources(missing, candidates, lengths, measure);
+
+		for (size_t j = 0; j < missing.size(); ++j)
+		{
+			auto& source = result.sources[missing_sources[j]];
+			source.match = choices[j].match;
+			if (!choices[j].path.is_empty()) source.path = choices[j].path;
+
+			for (const auto& candidate : candidates[j])
+			{
+				const auto measured = probes.find(candidate);
+				const auto seconds = measured != probes.end() && measured->second.found ? measured->second.duration : 0.0;
+				source.candidates.emplace_back(candidate, seconds);
+			}
+		}
+	}
+
+	for (auto& source : result.sources) source.probe = probe(source.path);
+
+	for (auto& clip : clips)
+	{
+		const auto& source = result.sources[source_index.at(clip.path)];
+
+		if (source.path != source.stored)
+		{
+			clip.path = source.path;
+			++result.relinked_clips;
+		}
+
+		// A reading taken while the file changed may already be wrong, so that clip is left for the
+		// caller's own probe, which retries a moving source.
+		if (!source.probe.changed_during_probe)
+		{
+			clip = apply_movie_probe(clip, source.probe, result.loaded.settings.photo_seconds);
+		}
+
+		// A clip that runs to the end of a source nothing could measure keeps the length the project
+		// recorded. Left at zero, the timeline would show it as nothing and a saved project would
+		// refuse it on reading, losing the clip a relink could still restore.
+		if (clip.is_lost() && !clip.is_photo && clip.duration() <= 0 && source.recorded_seconds > clip.start)
+		{
+			clip.end = source.recorded_seconds;
+			clip.source_duration = source.recorded_seconds;
+		}
+	}
+
+	return result;
+}
+
 void movie_view::probe_clips()
 {
 	std::vector<df::file_path> wanted;
@@ -3458,47 +3613,7 @@ void movie_view::probe_clips()
 
 		for (const auto& path : wanted)
 		{
-			const auto attributes_before = platform::file_attributes(path);
-			movie_probe_result probe;
-			probe.path = path;
-
-			const auto* const mt = files::file_type_from_name(path);
-			probe.is_photo = mt && mt->group == file_group::photo;
-
-			if (probe.is_photo)
-			{
-				const auto loaded = files{}.load(path, true);
-				probe.found = loaded.success;
-				probe.extent = upright_movie_extent(loaded.dimensions(), loaded.orientation());
-			}
-			else
-			{
-				av_format_decoder decoder;
-
-				if (decoder.open(path, media_intent::metadata))
-				{
-					decoder.init_streams(-1, -1, false, true, false);
-
-					const auto info = decoder.info();
-					probe.found = info.has_video;
-					probe.extent = upright_movie_extent(info.display_dimensions, info.display_orientation);
-					probe.duration = std::max(0.0, info.end - info.start);
-					probe.frame_rate = info.video_frame_rate;
-				}
-			}
-
-			const auto attributes_after = platform::file_attributes(path);
-			if (attributes_before.exists() == attributes_after.exists() &&
-				attributes_before.modified == attributes_after.modified &&
-				attributes_before.size == attributes_after.size)
-			{
-				results.emplace_back(probe);
-			}
-			else
-			{
-				probe.changed_during_probe = true;
-				results.emplace_back(probe);
-			}
+			results.emplace_back(probe_movie_source(path));
 		}
 
 		s.queue_ui([weak, generation, revision, results = std::move(results)]
@@ -3551,39 +3666,8 @@ void movie_view::apply_probe(const std::vector<movie_probe_result>& results)
 			continue;
 		}
 
-		updated.is_probed = true;
 		_probe_retries.erase(clip.path);
-
-		// A source that was not there is now known to be gone rather than merely unexamined. It
-		// keeps its stored times, so a relink restores the clip and not just the file.
-		if (!found->found)
-		{
-			project.replace_quietly(i, updated);
-			changed_any = true;
-			continue;
-		}
-
-		updated.is_missing = false;
-		updated.is_photo = found->is_photo;
-		updated.extent = found->extent;
-		updated.frame_rate = found->frame_rate;
-
-		if (found->is_photo)
-		{
-			updated.start = 0;
-			if (updated.duration() <= 0) updated.end = project.settings().photo_seconds;
-		}
-		else
-		{
-			updated.source_duration = found->duration;
-			// A project read from disk already carries a trim; only a freshly added clip takes the
-			// whole source.
-			if (updated.duration() <= 0) updated.end = found->duration;
-			updated.end = std::min(updated.end, found->duration);
-			updated.start = std::clamp(updated.start, 0.0, updated.end);
-		}
-
-		project.replace_quietly(i, updated);
+		project.replace_quietly(i, apply_movie_probe(clip, *found, project.settings().photo_seconds));
 		changed_any = true;
 	}
 
@@ -3634,19 +3718,42 @@ namespace
 		return result;
 	}
 
-	std::string write_project_file(const df::file_path path, const std::string_view text)
+	// The collection files that carry each missing source's name. Answered from the index rather
+	// than the disk: it already lists every member, so the search is one pass over memory instead of
+	// a walk of the collection. Runs on the import's worker; the index publishes immutable folder
+	// snapshots for readers on any thread.
+	std::vector<std::vector<df::file_path>> find_in_collection(const index_state& index,
+	                                                           const std::vector<df::file_path>& missing)
 	{
-		const auto staged = platform::temp_file(".otio", path.folder());
-		const auto cleanup = df::scope_exit([&staged] { platform::delete_file(staged); });
+		df::hash_map<std::string, std::vector<size_t>, df::ihash, df::ieq> wanted;
+		for (size_t i = 0; i < missing.size(); ++i) wanted[std::string(missing[i].name())].emplace_back(i);
 
-		if (!df::blob_save_to_file({std::bit_cast<const uint8_t*>(text.data()), text.size()}, staged))
+		std::vector<std::vector<df::file_path>> result(missing.size());
+
+		for (const auto& path : index.all_indexed_items())
 		{
-			return "could not write the staged project";
+			const auto found = wanted.find(std::string(path.name()));
+			if (found == wanted.end()) continue;
+
+			for (const auto i : found->second) result[i].emplace_back(path);
 		}
 
-		const auto moved = platform::replace_file(path, staged);
-		return moved.failed() ? moved.format_error() : std::string{};
+		return result;
 	}
+}
+
+std::string write_movie_project_file(const df::file_path path, const std::string_view text)
+{
+	const auto staged = platform::temp_file(".otio", path.folder());
+	const auto cleanup = df::scope_exit([&staged] { platform::delete_file(staged); });
+
+	if (!df::blob_save_to_file({std::bit_cast<const uint8_t*>(text.data()), text.size()}, staged))
+	{
+		return "could not write the staged project";
+	}
+
+	const auto moved = platform::replace_file(path, staged);
+	return moved.failed() ? moved.format_error() : std::string{};
 }
 
 void movie_view::load_project(const df::file_path path, const bool is_wlmp)
@@ -3664,15 +3771,39 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 	const auto revision = _movie_state.project.edit_revision();
 	_state.invalidate_view(view_invalid::command_state);
 
-	_state.queue_async(async_queue::load, [weak, path, is_wlmp, generation, revision, &s = _state]
+	// Importing measures every source, which for a long Movie Maker project takes seconds, so the
+	// wait is said rather than shown as nothing. A render's own status is left alone.
+	if (is_wlmp && !_progress.active)
+	{
+		_status = std::string(tt.loading.sv());
+		_state.invalidate_view(view_invalid::status);
+	}
+
+	_state.queue_async(async_queue::load,
+	                   [weak, path, is_wlmp, generation, revision, &index = _state.item_index, &s = _state]
 	{
 		movie_load_result loaded;
+		auto relinked = 0;
 
 		try
 		{
 			const auto text = read_text_file(path);
-			loaded = text.empty() ? movie_load_result{} :
-				is_wlmp ? read_wlmp(text) : read_otio(text, path.folder());
+
+			if (!text.empty() && is_wlmp)
+			{
+				const auto find = [&index](const std::vector<df::file_path>& missing)
+				{
+					return find_in_collection(index, missing);
+				};
+
+				auto imported = import_movie_maker_project(text, path.folder(), find);
+				relinked = imported.relinked_clips;
+				loaded = std::move(imported.loaded);
+			}
+			else if (!text.empty())
+			{
+				loaded = read_otio(text, path.folder());
+			}
 		}
 		catch (const std::exception& e)
 		{
@@ -3683,13 +3814,19 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 			df::log(__FUNCTION__, "project read failed");
 		}
 
-		s.queue_ui([weak, path, is_wlmp, generation, revision, loaded = std::move(loaded)]() mutable
+		s.queue_ui([weak, path, is_wlmp, generation, revision, relinked, loaded = std::move(loaded)]() mutable
 		{
 			const auto self = weak.lock();
 			if (!self || generation != self->_project_io_generation) return;
 
 			self->_project_io_active = false;
 			self->_state.invalidate_view(view_invalid::command_state);
+
+			if (!self->_progress.active && self->_status == tt.loading.sv())
+			{
+				self->_status.clear();
+				self->_state.invalidate_view(view_invalid::status);
+			}
 
 			if (!loaded)
 			{
@@ -3700,7 +3837,7 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 			}
 
 			auto result = std::make_shared<movie_load_result>(std::move(loaded));
-			const auto apply = [weak, path, is_wlmp, result]
+			const auto apply = [weak, path, is_wlmp, relinked, result]
 			{
 				const auto current = weak.lock();
 				if (!current) return;
@@ -3714,8 +3851,11 @@ void movie_view::load_project(const df::file_path path, const bool is_wlmp)
 				}
 				current->_movie_state.project.reset(std::move(result->clips), result->settings, project_path);
 				current->_movie_state.import_ignored = result->ignored_elements;
+				current->_movie_state.import_relinked = relinked;
 				current->_probe_retries.clear();
 				current->read_document();
+				// An import arrives measured; this probes what it could not, and everything an opened
+				// project names.
 				current->probe_clips();
 				if (current->_timeline) current->_timeline->reveal(0);
 				if (should_rewind_movie_clip_after_document_focus_change(true)) current->rewind_clip_player();
@@ -3803,7 +3943,7 @@ void movie_view::save_project(std::function<void(bool)> complete)
 
 		try
 		{
-			error = write_project_file(path, json);
+			error = write_movie_project_file(path, json);
 		}
 		catch (const std::exception& e)
 		{
@@ -3978,26 +4118,6 @@ namespace
 	// One per clip a crossfade can hold open. The half-clip ceiling in movie_overlap stops a third
 	// reaching across a short clip, so two is the whole of it.
 	constexpr size_t render_slot_count = 2;
-
-	// An immutable snapshot of the document, taken when Render was pressed. Editing the timeline
-	// while a render runs changes the next render, not the running one.
-	struct movie_render_request
-	{
-		std::vector<movie_clip> clips;
-		movie_settings settings;
-		movie_output output;
-		df::file_path path;
-	};
-
-	struct movie_render_result
-	{
-		bool ok = false;
-		bool cancelled = false;
-		movie_render_error reason = movie_render_error::none;
-		// Only for a failure the operating system has already worded in the user's language, such as a
-		// refused replace. Everything else is a reason the view translates.
-		std::string message;
-	};
 
 	// The decoders and audio buffers the render keeps open. Worker-owned and shared with nothing:
 	// the request is a detached value, and so is everything opened from it.
@@ -4206,184 +4326,147 @@ namespace
 		const auto fitted = ui::scale_dimensions(source, canvas, false);
 		return recti(fitted).offset(recti(canvas).center() - recti(fitted).center());
 	}
+}
 
-	movie_render_result render_movie_to_file(const movie_render_request& request,
-	                                         const std::function<void(double)>& report,
-	                                         const df::cancel_token& token,
-	                                         const std::shared_ptr<movie_render_control>& control)
+movie_render_result render_movie_to_file(const movie_render_request& request,
+                                         const std::function<void(double)>& report,
+                                         const df::cancel_token& token,
+                                         const std::shared_ptr<movie_render_control>& control)
+{
+	movie_render_result result;
+
+	const auto timing = calc_movie_timing(request.clips, request.settings);
+	const auto frame_rate = std::max(1, request.output.frame_rate);
+	const auto sample_rate = std::max(8000, request.output.sample_rate);
+
+	if (timing.duration <= 0 || request.output.extent.cx <= 0 || request.output.extent.cy <= 0)
 	{
-		movie_render_result result;
+		result.reason = movie_render_error::no_length;
+		return result;
+	}
 
-		const auto timing = calc_movie_timing(request.clips, request.settings);
-		const auto frame_rate = std::max(1, request.output.frame_rate);
-		const auto sample_rate = std::max(8000, request.output.sample_rate);
+	// The output is replaced only after the last clip has been read, so an output that names a
+	// clip would consume that source without the timeline ever showing it gone. Refused here,
+	// where the replace is owned, rather than trusted to whichever caller chose the path.
+	if (movie_output_names_a_clip(request.clips, request.path))
+	{
+		result.reason = movie_render_error::output_is_source;
+		return result;
+	}
 
-		if (timing.duration <= 0 || request.output.extent.cx <= 0 || request.output.extent.cy <= 0)
+	// Staged beside the destination and moved into place on success, the rule docs/file-io.md
+	// already owns: a cancelled or failed render leaves no partial file behind.
+	const auto staged = platform::temp_file(".mp4", request.path.folder());
+
+	platform::movie_writer_request writer_request;
+	writer_request.path = staged;
+	writer_request.extent = request.output.extent;
+	writer_request.frame_rate = frame_rate;
+	writer_request.video_bitrate = request.output.video_bitrate;
+	writer_request.sample_rate = sample_rate;
+	writer_request.channels = request.output.channels;
+	writer_request.audio_bitrate = request.output.audio_bitrate;
+	writer_request.with_audio = std::any_of(request.clips.begin(), request.clips.end(),
+	                                        [](const movie_clip& c) { return !c.is_photo && !c.is_missing; });
+
+	const auto writer = platform::create_movie_writer(writer_request);
+
+	if (!writer)
+	{
+		result.reason = movie_render_error::no_encoder;
+		return result;
+	}
+
+	movie_render_sources sources(frame_rate, token);
+
+	av_scaler scaler;
+
+	const auto canvas = std::make_shared<ui::surface>();
+	if (!canvas->alloc(request.output.extent, ui::texture_format::RGB))
+	{
+		result.reason = movie_render_error::no_memory;
+		writer->abandon();
+		return result;
+	}
+
+	ui::surface_ptr fitted;
+	std::vector<int16_t> chunk;
+
+	const auto frames = std::ceil(timing.duration * frame_rate);
+
+	// The document bounds its own durations, but a frame count that does not fit the arithmetic
+	// that walks it is not a movie to attempt: the conversion below would be undefined.
+	if (!std::isfinite(frames) || frames > static_cast<double>(movie_max_frames))
+	{
+		result.reason = movie_render_error::no_length;
+		return result;
+	}
+
+	const auto frame_count = std::max<int64_t>(1, static_cast<int64_t>(frames));
+	int64_t samples_written = 0;
+
+	for (int64_t i = 0; i < frame_count; ++i)
+	{
+		if (token.is_cancelled())
 		{
-			result.reason = movie_render_error::no_length;
-			return result;
-		}
-
-		// The output is replaced only after the last clip has been read, so an output that names a
-		// clip would consume that source without the timeline ever showing it gone. Refused here,
-		// where the replace is owned, rather than trusted to whichever caller chose the path.
-		if (movie_output_names_a_clip(request.clips, request.path))
-		{
-			result.reason = movie_render_error::output_is_source;
-			return result;
-		}
-
-		// Staged beside the destination and moved into place on success, the rule docs/file-io.md
-		// already owns: a cancelled or failed render leaves no partial file behind.
-		const auto staged = platform::temp_file(".mp4", request.path.folder());
-
-		platform::movie_writer_request writer_request;
-		writer_request.path = staged;
-		writer_request.extent = request.output.extent;
-		writer_request.frame_rate = frame_rate;
-		writer_request.video_bitrate = request.output.video_bitrate;
-		writer_request.sample_rate = sample_rate;
-		writer_request.channels = request.output.channels;
-		writer_request.audio_bitrate = request.output.audio_bitrate;
-		writer_request.with_audio = std::any_of(request.clips.begin(), request.clips.end(),
-		                                        [](const movie_clip& c) { return !c.is_photo && !c.is_missing; });
-
-		const auto writer = platform::create_movie_writer(writer_request);
-
-		if (!writer)
-		{
-			result.reason = movie_render_error::no_encoder;
-			return result;
-		}
-
-		movie_render_sources sources(frame_rate, token);
-
-		av_scaler scaler;
-
-		const auto canvas = std::make_shared<ui::surface>();
-		if (!canvas->alloc(request.output.extent, ui::texture_format::RGB))
-		{
-			result.reason = movie_render_error::no_memory;
 			writer->abandon();
+			result.cancelled = true;
 			return result;
 		}
 
-		ui::surface_ptr fitted;
-		std::vector<int16_t> chunk;
+		const auto time = static_cast<double>(i) / frame_rate;
+		const auto frame = calc_movie_frame(request.clips, request.settings, timing, time);
 
-		const auto frames = std::ceil(timing.duration * frame_rate);
+		canvas->make_blank();
 
-		// The document bounds its own durations, but a frame count that does not fit the arithmetic
-		// that walks it is not a movie to attempt: the conversion below would be undefined.
-		if (!std::isfinite(frames) || frames > static_cast<double>(movie_max_frames))
+		const auto draw = [&](const movie_frame_source& source, const size_t slot)
 		{
-			result.reason = movie_render_error::no_length;
-			return result;
-		}
+			if (source.index < 0 || source.weight <= 0.0) return true;
 
-		const auto frame_count = std::max<int64_t>(1, static_cast<int64_t>(frames));
-		int64_t samples_written = 0;
+			const auto& clip = request.clips[source.index];
+			if (clip.is_missing) return false;
 
-		for (int64_t i = 0; i < frame_count; ++i)
+			// Square, on the output's longer side: the limit applies to the stored frame, and a quarter-
+			// turned source is stored the other way round, so an output-shaped limit would decode it at
+			// a fraction of the size it is drawn and stretch it back up.
+			const auto decode_side = std::max(request.output.extent.cx, request.output.extent.cy);
+			const auto surface = sources.frame(slot, clip, source.source_time, {decode_side, decode_side});
+			if (!is_valid(surface)) return false;
+
+			const auto target = fit_into(surface->dimensions(), request.output.extent);
+			if (target.width() <= 0 || target.height() <= 0) return false;
+			if (!scaler.scale_surface(surface, fitted, target.extent())) return false;
+
+			add_weighted(*canvas, *fitted, target.top_left(), source.weight);
+			return true;
+		};
+
+		const movie_frame_source* failed = nullptr;
+		if (!draw(frame.a, 0)) failed = &frame.a;
+		else if (!draw(frame.b, 1)) failed = &frame.b;
+
+		if (failed)
 		{
+			writer->abandon();
+
 			if (token.is_cancelled())
 			{
-				writer->abandon();
 				result.cancelled = true;
-				return result;
+			}
+			else
+			{
+				result.reason = movie_render_error::undecodable;
+				result.source = request.clips[failed->index].path;
+				result.source_time = failed->source_time;
+				df::log(__FUNCTION__, std::format("no frame from {} at {:.3f}s", result.source, result.source_time));
 			}
 
-			const auto time = static_cast<double>(i) / frame_rate;
-			const auto frame = calc_movie_frame(request.clips, request.settings, timing, time);
-
-			canvas->make_blank();
-
-			const auto draw = [&](const movie_frame_source& source, const size_t slot)
-			{
-				if (source.index < 0 || source.weight <= 0.0) return true;
-
-				const auto& clip = request.clips[source.index];
-				if (clip.is_missing) return false;
-
-				// Square, on the output's longer side: the limit applies to the stored frame, and a quarter-
-				// turned source is stored the other way round, so an output-shaped limit would decode it at
-				// a fraction of the size it is drawn and stretch it back up.
-				const auto decode_side = std::max(request.output.extent.cx, request.output.extent.cy);
-				const auto surface = sources.frame(slot, clip, source.source_time, {decode_side, decode_side});
-				if (!is_valid(surface)) return false;
-
-				const auto target = fit_into(surface->dimensions(), request.output.extent);
-				if (target.width() <= 0 || target.height() <= 0) return false;
-				if (!scaler.scale_surface(surface, fitted, target.extent())) return false;
-
-				add_weighted(*canvas, *fitted, target.top_left(), source.weight);
-				return true;
-			};
-
-			if (!draw(frame.a, 0) || !draw(frame.b, 1))
-			{
-				writer->abandon();
-				if (token.is_cancelled()) result.cancelled = true;
-				else result.reason = movie_render_error::undecodable;
-				return result;
-			}
-
-			if (frame.fade_to_black > 0) darken(*canvas, frame.fade_to_black);
-
-			if (!writer->write_frame(canvas, time))
-			{
-				df::log(__FUNCTION__, writer->last_error());
-				result.reason = movie_render_error::encoder_failed;
-				writer->abandon();
-				return result;
-			}
-
-			if (writer_request.with_audio)
-			{
-				// Counted from the sample the last chunk ended on rather than from the frame index,
-				// so a rate that does not divide the frame rate cannot drift the sound off the
-				// picture over a long movie.
-				const auto next = static_cast<int64_t>(
-					std::llround(static_cast<double>(i + 1) / frame_rate * sample_rate));
-				const auto frames = std::max<int64_t>(0, next - samples_written);
-
-				chunk.assign(static_cast<size_t>(frames) * 2, 0);
-
-				const auto mix = [&](const movie_frame_source& source, const size_t slot)
-				{
-					if (source.index < 0 || source.weight <= 0.0) return;
-
-					const auto& clip = request.clips[source.index];
-					if (clip.is_photo || clip.is_missing) return;
-
-					// The fade at the movie's ends is a fade of the movie, not of its picture: an
-					// image fading to black over a soundtrack still at full level is the thing
-					// nobody means by "fade out".
-					auto buffer_start = source.source_time;
-					const auto& pcm = sources.audio(slot, clip, sample_rate, source.source_time, buffer_start);
-					add_weighted_audio(chunk, pcm, source.source_time - buffer_start,
-					                   sample_rate, source.weight * (1.0 - frame.fade_to_black));
-				};
-
-				mix(frame.a, 0);
-				mix(frame.b, 1);
-
-				if (!chunk.empty() && !writer->write_audio(chunk.data(), chunk.size(),
-				                                           static_cast<double>(samples_written) / sample_rate))
-				{
-					df::log(__FUNCTION__, writer->last_error());
-					result.reason = movie_render_error::encoder_failed;
-					writer->abandon();
-					return result;
-				}
-
-				samples_written = next;
-			}
-
-			report(static_cast<double>(i + 1) / static_cast<double>(frame_count));
+			return result;
 		}
 
-		if (!writer->close())
+		if (frame.fade_to_black > 0) darken(*canvas, frame.fade_to_black);
+
+		if (!writer->write_frame(canvas, time))
 		{
 			df::log(__FUNCTION__, writer->last_error());
 			result.reason = movie_render_error::encoder_failed;
@@ -4391,29 +4474,81 @@ namespace
 			return result;
 		}
 
-		// Cancel and this replace decide each other here: only one of them can claim the render, so a
-		// cancel that lands while the encoder was closing discards the file, and one that lands after
-		// this point leaves the movie the user already has.
-		if (!control || !control->claim_publication())
+		if (writer_request.with_audio)
 		{
-			platform::delete_file(staged);
-			result.cancelled = true;
-			return result;
+			// Counted from the sample the last chunk ended on rather than from the frame index,
+			// so a rate that does not divide the frame rate cannot drift the sound off the
+			// picture over a long movie.
+			const auto next = static_cast<int64_t>(
+				std::llround(static_cast<double>(i + 1) / frame_rate * sample_rate));
+			const auto frames = std::max<int64_t>(0, next - samples_written);
+
+			chunk.assign(static_cast<size_t>(frames) * 2, 0);
+
+			const auto mix = [&](const movie_frame_source& source, const size_t slot)
+			{
+				if (source.index < 0 || source.weight <= 0.0) return;
+
+				const auto& clip = request.clips[source.index];
+				if (clip.is_photo || clip.is_missing) return;
+
+				// The fade at the movie's ends is a fade of the movie, not of its picture: an
+				// image fading to black over a soundtrack still at full level is the thing
+				// nobody means by "fade out".
+				auto buffer_start = source.source_time;
+				const auto& pcm = sources.audio(slot, clip, sample_rate, source.source_time, buffer_start);
+				add_weighted_audio(chunk, pcm, source.source_time - buffer_start,
+				                   sample_rate, source.weight * (1.0 - frame.fade_to_black));
+			};
+
+			mix(frame.a, 0);
+			mix(frame.b, 1);
+
+			if (!chunk.empty() && !writer->write_audio(chunk.data(), chunk.size(),
+			                                           static_cast<double>(samples_written) / sample_rate))
+			{
+				df::log(__FUNCTION__, writer->last_error());
+				result.reason = movie_render_error::encoder_failed;
+				writer->abandon();
+				return result;
+			}
+
+			samples_written = next;
 		}
 
-		const auto moved = platform::replace_file(request.path, staged);
+		report(static_cast<double>(i + 1) / static_cast<double>(frame_count));
+	}
 
-		if (moved.failed())
-		{
-			platform::delete_file(staged);
-			// Already worded by the operating system in the user's own language.
-			result.message = moved.format_error();
-			return result;
-		}
-
-		result.ok = true;
+	if (!writer->close())
+	{
+		df::log(__FUNCTION__, writer->last_error());
+		result.reason = movie_render_error::encoder_failed;
+		writer->abandon();
 		return result;
 	}
+
+	// Cancel and this replace decide each other here: only one of them can claim the render, so a
+	// cancel that lands while the encoder was closing discards the file, and one that lands after
+	// this point leaves the movie the user already has.
+	if (!control || !control->claim_publication())
+	{
+		platform::delete_file(staged);
+		result.cancelled = true;
+		return result;
+	}
+
+	const auto moved = platform::replace_file(request.path, staged);
+
+	if (moved.failed())
+	{
+		platform::delete_file(staged);
+		// Already worded by the operating system in the user's own language.
+		result.message = moved.format_error();
+		return result;
+	}
+
+	result.ok = true;
+	return result;
 }
 
 void movie_view::render_movie()
