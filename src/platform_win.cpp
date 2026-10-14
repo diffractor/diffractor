@@ -1943,33 +1943,309 @@ FILETIME ts_to_ft(const uint64_t ts)
 	return ft;
 }
 
+namespace
+{
+	constexpr uint64_t ticks_per_ms = 10'000;
+	constexpr uint64_t ticks_per_week = 7ull * 24 * 60 * 60 * 1000 * ticks_per_ms;
+
+	thread_local uint64_t time_zone_queries = 0;
+
+	std::optional<uint64_t> add_offset(const uint64_t ts, const int64_t offset)
+	{
+		const auto magnitude = offset < 0 ? 0ull - static_cast<uint64_t>(offset) : static_cast<uint64_t>(offset);
+		if (offset < 0 ? ts < magnitude : ts > UINT64_MAX - magnitude) return {};
+		return offset < 0 ? ts - magnitude : ts + magnitude;
+	}
+
+	// SYSTEMTIME carries milliseconds, so the offset is taken at the millisecond and the finer
+	// FILETIME fraction is carried across unchanged.
+	std::optional<int64_t> system_offset(const uint64_t ts, const TIME_ZONE_INFORMATION& rules, const bool to_local)
+	{
+		++time_zone_queries;
+		const auto ft = ts_to_ft(ts - ts % ticks_per_ms);
+		SYSTEMTIME source = {};
+		SYSTEMTIME converted = {};
+		FILETIME result = {};
+
+		if (!FileTimeToSystemTime(&ft, &source) ||
+			!(to_local
+				  ? SystemTimeToTzSpecificLocalTime(&rules, &source, &converted)
+				  : TzSpecificLocalTimeToSystemTime(&rules, &source, &converted)) ||
+			!SystemTimeToFileTime(&converted, &result))
+		{
+			return {};
+		}
+
+		return static_cast<int64_t>(ft_to_ts(result)) - static_cast<int64_t>(ft_to_ts(ft));
+	}
+
+	// The offsets one calendar year of input receives, as the instants at which each takes effect.
+	// A count of zero means the year is answered by the system on every call.
+	struct year_offsets
+	{
+		static constexpr size_t max_segments = 3;
+
+		uint32_t generation = 0;
+		uint8_t count = 0;
+		std::array<uint64_t, max_segments> starts = {};
+		std::array<int64_t, max_segments> offsets = {};
+
+		int64_t at(const uint64_t ts) const
+		{
+			auto i = static_cast<size_t>(count) - 1;
+			while (i > 0 && ts < starts[i]) --i;
+			return offsets[i];
+		}
+	};
+
+	// The system conversion costs microseconds and dates are converted per item, so each year is
+	// sampled once instead. A rule set changes the offset at most twice a year, months apart: weekly
+	// samples bracket every change and bisection places it to the millisecond. A year that does not
+	// fit that shape is left to the system.
+	year_offsets tabulate_year(const WORD year, const TIME_ZONE_INFORMATION& rules, const bool to_local)
+	{
+		const SYSTEMTIME first = {year, 1, 0, 1, 0, 0, 0, 0};
+		const SYSTEMTIME next = {static_cast<WORD>(year + 1), 1, 0, 1, 0, 0, 0, 0};
+		FILETIME first_time = {};
+		FILETIME next_time = {};
+
+		if (year >= 30827 || !SystemTimeToFileTime(&first, &first_time) ||
+			!SystemTimeToFileTime(&next, &next_time))
+		{
+			return {};
+		}
+
+		const auto begin = ft_to_ts(first_time);
+		const auto last = ft_to_ts(next_time) - ticks_per_ms;
+		auto before_time = begin;
+		auto before = system_offset(begin, rules, to_local);
+		if (!before) return {};
+
+		year_offsets result;
+		result.starts[0] = begin;
+		result.offsets[0] = *before;
+		result.count = 1;
+
+		while (before_time < last)
+		{
+			const auto after_time = std::min(before_time + ticks_per_week, last);
+			const auto after = system_offset(after_time, rules, to_local);
+			if (!after) return {};
+
+			if (*after != *before)
+			{
+				auto low = before_time;
+				auto high = after_time;
+
+				while (high - low > ticks_per_ms)
+				{
+					const auto middle = low + (high - low) / (2 * ticks_per_ms) * ticks_per_ms;
+					const auto value = system_offset(middle, rules, to_local);
+					if (value == before) low = middle;
+					else if (value == after) high = middle;
+					else return {};
+				}
+
+				if (result.count == year_offsets::max_segments) return {};
+				result.starts[result.count] = high;
+				result.offsets[result.count] = *after;
+				++result.count;
+				before = after;
+			}
+
+			before_time = after_time;
+		}
+
+		return result;
+	}
+
+	constexpr WORD first_tabulated_year = 1601;
+	constexpr size_t tabulated_years = 512;
+
+	platform::mutex zone_mutex;
+	_Guarded_by_(zone_mutex) std::array<std::array<year_offsets, tabulated_years>, 2> zone_years;
+	_Guarded_by_(zone_mutex) DYNAMIC_TIME_ZONE_INFORMATION zone_identity = {};
+	std::atomic_uint32_t zone_generation = 1;
+	std::atomic_uint64_t zone_checked_at = 0;
+
+	bool same_zone(const DYNAMIC_TIME_ZONE_INFORMATION& a, const DYNAMIC_TIME_ZONE_INFORMATION& b)
+	{
+		return a.Bias == b.Bias && a.StandardBias == b.StandardBias && a.DaylightBias == b.DaylightBias &&
+			a.DynamicDaylightTimeDisabled == b.DynamicDaylightTimeDisabled &&
+			memcmp(&a.StandardDate, &b.StandardDate, sizeof(SYSTEMTIME)) == 0 &&
+			memcmp(&a.DaylightDate, &b.DaylightDate, sizeof(SYSTEMTIME)) == 0 &&
+			wcsncmp(a.TimeZoneKeyName, b.TimeZoneKeyName, std::size(a.TimeZoneKeyName)) == 0;
+	}
+
+	// Tabulated years belong to the zone they were sampled in. The zone is rechecked at most once a
+	// second, so a change of time zone takes effect within that second.
+	uint32_t current_zone_generation()
+	{
+		constexpr uint64_t recheck_ms = 1000;
+		const auto now = GetTickCount64();
+		auto checked = zone_checked_at.load(std::memory_order_relaxed);
+
+		if ((checked == 0 || now - checked >= recheck_ms) &&
+			zone_checked_at.compare_exchange_strong(checked, std::max<uint64_t>(now, 1), std::memory_order_relaxed))
+		{
+			DYNAMIC_TIME_ZONE_INFORMATION current = {};
+
+			if (GetDynamicTimeZoneInformation(&current) != TIME_ZONE_ID_INVALID)
+			{
+				platform::exclusive_lock lock(zone_mutex);
+
+				if (!same_zone(current, zone_identity))
+				{
+					zone_identity = current;
+					zone_generation.fetch_add(1, std::memory_order_relaxed);
+				}
+			}
+		}
+
+		return zone_generation.load(std::memory_order_relaxed);
+	}
+
+	bool current_zone_rules(const WORD year, TIME_ZONE_INFORMATION& rules)
+	{
+		DYNAMIC_TIME_ZONE_INFORMATION current = {};
+
+		if (GetDynamicTimeZoneInformation(&current) == TIME_ZONE_ID_INVALID ||
+			!GetTimeZoneInformationForYear(year, &current, &rules))
+		{
+			return false;
+		}
+
+		// With automatic daylight adjustment turned off the zone keeps its standard offset all year.
+		if (current.DynamicDaylightTimeDisabled)
+		{
+			rules.StandardDate.wMonth = 0;
+			rules.DaylightDate.wMonth = 0;
+		}
+
+		return true;
+	}
+
+	std::optional<uint64_t> convert_current_zone(const uint64_t ts, const WORD year, const bool to_local)
+	{
+		const auto slot = static_cast<size_t>(year - first_tabulated_year);
+
+		if (slot < tabulated_years)
+		{
+			const auto generation = current_zone_generation();
+			year_offsets offsets;
+
+			{
+				platform::shared_lock lock(zone_mutex);
+				offsets = zone_years[to_local][slot];
+			}
+
+			if (offsets.generation != generation)
+			{
+				TIME_ZONE_INFORMATION rules = {};
+				if (!current_zone_rules(year, rules)) return {};
+				offsets = tabulate_year(year, rules, to_local);
+				offsets.generation = generation;
+
+				platform::exclusive_lock lock(zone_mutex);
+				zone_years[to_local][slot] = offsets;
+			}
+
+			if (offsets.count > 0) return add_offset(ts, offsets.at(ts));
+		}
+
+		TIME_ZONE_INFORMATION rules = {};
+		if (!current_zone_rules(year, rules)) return {};
+		const auto offset = system_offset(ts, rules, to_local);
+		return offset ? add_offset(ts, *offset) : std::nullopt;
+	}
+}
+
+static uint64_t convert_time_zone(const uint64_t ts, const TIME_ZONE_INFORMATION* zone,
+                                  const bool to_local)
+{
+	if (ts == 0) return 0;
+	const auto ft = ts_to_ft(ts);
+	SYSTEMTIME source = {};
+
+	if (FileTimeToSystemTime(&ft, &source))
+	{
+		if (zone)
+		{
+			if (const auto offset = system_offset(ts, *zone, to_local))
+			{
+				if (const auto converted = add_offset(ts, *offset)) return *converted;
+			}
+		}
+		else if (const auto converted = convert_current_zone(ts, source.wYear, to_local))
+		{
+			return *converted;
+		}
+	}
+
+	df::log_once(__FUNCTION__, "Cannot convert a timestamp between UTC and local time");
+	return ts;
+}
+
+uint64_t platform::utc_to_local(const uint64_t ts, const TIME_ZONE_INFORMATION* zone)
+{
+	return convert_time_zone(ts, zone, true);
+}
+
+uint64_t platform::local_to_utc(const uint64_t ts, const TIME_ZONE_INFORMATION* zone)
+{
+	return convert_time_zone(ts, zone, false);
+}
+
 uint64_t platform::utc_to_local(const uint64_t ts)
 {
-	const auto ft = ts_to_ft(ts);
-	FILETIME result = {};
-	// The conversion fails for timestamps outside the representable range. Returning `result`
-	// regardless would hand back an uninitialised stack value as a date.
-	if (!FileTimeToLocalFileTime(&ft, &result)) return ts;
-	return ft_to_ts(result);
+	return utc_to_local(ts, nullptr);
 }
 
 uint64_t platform::local_to_utc(const uint64_t ts)
 {
-	const auto ft = ts_to_ft(ts);
-	FILETIME result = {};
-	if (!LocalFileTimeToFileTime(&ft, &result)) return ts;
-	return ft_to_ts(result);
+	return local_to_utc(ts, nullptr);
+}
+
+std::vector<uint64_t> platform::tabulated_time_zone_conversions(const std::span<const uint64_t> stamps,
+                                                                const TIME_ZONE_INFORMATION& zone,
+                                                                const bool to_local)
+{
+	std::map<WORD, year_offsets> years;
+	std::vector<uint64_t> result;
+	result.reserve(stamps.size());
+
+	for (const auto ts : stamps)
+	{
+		const auto ft = ts_to_ft(ts);
+		SYSTEMTIME source = {};
+		std::optional<uint64_t> converted;
+
+		if (ts != 0 && FileTimeToSystemTime(&ft, &source))
+		{
+			auto found = years.find(source.wYear);
+			if (found == years.end())
+				found = years.emplace(source.wYear, tabulate_year(source.wYear, zone, to_local)).first;
+			if (found->second.count > 0) converted = add_offset(ts, found->second.at(ts));
+		}
+
+		result.push_back(converted.value_or(0));
+	}
+
+	return result;
+}
+
+uint64_t platform::time_zone_system_queries()
+{
+	return time_zone_queries;
 }
 
 df::date_t platform::dos_date_to_ts(const uint16_t dos_date, const uint16_t dos_time)
 {
 	FILETIME ft_local = {};
-	FILETIME ft_utc = {};
 	// A zip/archive entry can carry an out-of-range DOS date; treat that as "no date" rather than
 	// reading whatever happened to be on the stack.
 	if (!DosDateTimeToFileTime(dos_date, dos_time, &ft_local)) return {};
-	if (!LocalFileTimeToFileTime(&ft_local, &ft_utc)) return {};
-	return df::date_t(ft_to_ts(ft_utc));
+	return df::date_t(local_to_utc(ft_to_ts(ft_local)));
 }
 
 std::string platform::format_date_time(const df::date_t d)

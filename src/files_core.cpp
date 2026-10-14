@@ -2888,6 +2888,22 @@ static int archive_read_open_native(archive* a, const std::string& path, const s
 	return archive_read_open_filename(a, path.c_str(), block_size);
 }
 
+static df::date_t archive_entry_created(archive_entry* entry)
+{
+	if (!archive_entry_ctime_is_set(entry)) return {};
+	const auto seconds = static_cast<int64_t>(archive_entry_ctime(entry));
+	const auto nanos = archive_entry_ctime_nsec(entry);
+	constexpr auto ticks = df::date_t::intervals_per_second;
+	constexpr auto epoch_seconds = static_cast<int64_t>(df::date_t::offset_1970 / ticks);
+	if (nanos < 0 || nanos >= 1000000000 || seconds < -epoch_seconds ||
+		seconds > static_cast<int64_t>((UINT64_MAX - 9999999) / ticks) - epoch_seconds)
+	{
+		df::log_once(__FUNCTION__, "Archive timestamp is outside the supported range");
+		return {};
+	}
+	return df::date_t(static_cast<uint64_t>(seconds + epoch_seconds) * ticks + static_cast<uint64_t>(nanos) / 100);
+}
+
 std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 {
 	std::vector<archive_item> results;
@@ -2914,8 +2930,22 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 
 		archive_entry* entry = nullptr;
 
-		while (results.size() < max_entries && archive_read_next_header(a, &entry) == ARCHIVE_OK)
+		for (auto examined = 0_z; examined < max_entries; ++examined)
 		{
+			const auto status = archive_read_next_header(a, &entry);
+			if (status == ARCHIVE_EOF) break;
+			if (status != ARCHIVE_OK)
+			{
+				const auto* error = archive_error_string(a);
+				df::log_once(__FUNCTION__, error ? error : "Cannot read archive entry");
+				if (status != ARCHIVE_WARN) break;
+			}
+			if (!entry)
+			{
+				df::log_once(__FUNCTION__, "Archive reader returned no entry");
+				break;
+			}
+
 			// Null for entries whose stored name is not valid UTF-8, which is common
 			// in older zip/rar archives using a local code page.
 			const auto* const pathname = archive_entry_pathname_utf8(entry);
@@ -2926,7 +2956,7 @@ std::vector<archive_item> files::list_archive(const df::file_path zip_file_path)
 			archive_item result_info;
 			result_info.filename = str::utf8_cast(pathname);
 			result_info.uncompressed_size = df::file_size(archive_entry_size(entry));
-			result_info.created = df::date_t(archive_entry_ctime(entry));
+			result_info.created = archive_entry_created(entry);
 			results.emplace_back(std::move(result_info));
 		}
 	}

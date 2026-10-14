@@ -673,6 +673,7 @@ bool reject_over_budget_source(load_diagnostic* diagnostic, sizei source_dimensi
 
 ui::surface_ptr load_psd(read_stream& s, load_diagnostic* diagnostic = nullptr);
 file_load_result load_raw(df::file_path path, bool can_load_preview);
+ui::orientation translate_libraw_orientation(int flip);
 ui::surface_ptr load_png(df::cspan data);
 ui::surface_ptr load_webp(df::cspan data, bool can_use_yuv = false, sizei target_extent = {});
 ui::surface_ptr load_heif(read_stream& s, load_diagnostic* diagnostic = nullptr);

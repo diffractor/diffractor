@@ -362,14 +362,20 @@ jpeg_encoder::jpeg_encoder()
 	if (_impl)
 	{
 		_impl->cinfo.err = jpeg_std_error(&_impl->jerr);
-
-		jpeg_create_compress(&_impl->cinfo);
+		_impl->jerr.error_exit = handle_error_exit;
+		_impl->jerr.output_message = handle_output_message;
+		try
+		{
+			jpeg_create_compress(&_impl->cinfo);
+		}
+		catch (...)
+		{
+			jpeg_destroy_compress(&_impl->cinfo);
+			throw;
+		}
 
 		_impl->cinfo.dest = &_impl->jdms;
 		_impl->cinfo.client_data = this;
-
-		_impl->jerr.error_exit = handle_error_exit;
-		_impl->jerr.output_message = handle_output_message;
 
 		_impl->jdms.init_destination = init_buffer;
 		_impl->jdms.empty_output_buffer = empty_buffer;
@@ -723,6 +729,7 @@ df::blob jpeg_encoder::encode(const uint32_t cx, const uint32_t cy, const uint8_
 	start(cx, cy, orientation, metadata, params);
 
 	const auto rows = df::unique_alloc<uint8_t*>(cy * sizeof(uint8_t*));
+	if (!rows) throw std::bad_alloc();
 
 	for (auto i = 0u; i < cy; i++)
 	{
@@ -785,14 +792,20 @@ void jpeg_decoder_x::create()
 	if (_impl)
 	{
 		_impl->dinfo.err = jpeg_std_error(&_impl->jerr);
-
-		jpeg_create_decompress(&_impl->dinfo);
+		_impl->jerr.error_exit = handle_error_exit;
+		_impl->jerr.output_message = handle_output_message;
+		try
+		{
+			jpeg_create_decompress(&_impl->dinfo);
+		}
+		catch (...)
+		{
+			jpeg_destroy_decompress(&_impl->dinfo);
+			throw;
+		}
 
 		_impl->dinfo.src = &_impl->mem_source;
 		_impl->dinfo.client_data = this;
-
-		_impl->jerr.error_exit = handle_error_exit;
-		_impl->jerr.output_message = handle_output_message;
 
 		_impl->mem_source.init_source = source_noop;
 		_impl->mem_source.fill_input_buffer = fill_input_buffer;
@@ -858,10 +871,9 @@ bool jpeg_decoder_x::start_decompress(const int scale_hint, const bool yuv, cons
 		_impl->dinfo.out_color_space = JCS_CMYK;
 		_impl->dinfo.raw_data_out = 0;
 	}
-	else if (_impl->dinfo.data_precision > 8 && _impl->dinfo.jpeg_color_space == JCS_GRAYSCALE)
+	else if (_impl->dinfo.jpeg_color_space == JCS_GRAYSCALE)
 	{
-		// 16-bit JPEG only exists in lossless mode, where libjpeg allows no colour conversion at all.
-		// Grayscale has to stay grayscale; read_rgb expands it across the surface.
+		// Lossless grayscale permits no color conversion, even at eight bits.
 		_impl->dinfo.out_color_space = JCS_GRAYSCALE;
 		_impl->dinfo.raw_data_out = 0;
 	}
@@ -934,6 +946,7 @@ bool jpeg_decoder_x::read_nv12(uint8_t* pixels, const int stride, const int buff
 	const auto uv_buffer_stride = ui::calc_stride(static_cast<int>(cx) + DCTSIZE, 1);
 	const auto uv_buffer_len = uv_buffer_stride * max_chunk * 3;
 	const auto uv_buffer = df::unique_alloc<uint8_t>(uv_buffer_len);
+	if (!uv_buffer) throw std::bad_alloc();
 
 	const auto cy_div2 = cy & ~1;
 	const auto cx_div2 = cx & ~1;
@@ -1074,7 +1087,7 @@ bool jpeg_decoder_x::read_rgb(uint8_t* p, const int stride, const int buffer_siz
 				wide_rows[i] = scratch.data() + static_cast<size_t>(wide_row_samples) * i;
 			}
 
-			read = precision == 12
+			read = precision <= 12
 				       ? jpeg12_read_scanlines(&_impl->dinfo, reinterpret_cast<J12SAMPARRAY>(wide_rows), chunk)
 				       : jpeg16_read_scanlines(&_impl->dinfo, wide_rows, chunk);
 
@@ -1106,6 +1119,21 @@ bool jpeg_decoder_x::read_rgb(uint8_t* p, const int stride, const int buffer_siz
 		else
 		{
 			read = jpeg_read_scanlines(&_impl->dinfo, rows, chunk);
+			if (wide_components == 1)
+			{
+				for (auto i = 0u; i < read; ++i)
+				{
+					auto* const row = rows[i];
+					for (auto x = wide_cx; x-- > 0;)
+					{
+						const auto value = row[x];
+						row[x * 4 + 0] = value;
+						row[x * 4 + 1] = value;
+						row[x * 4 + 2] = value;
+						row[x * 4 + 3] = 0xff;
+					}
+				}
+			}
 		}
 
 		if (read <= 0)
@@ -1368,7 +1396,8 @@ df::blob jpeg_decoder_x::transform(const df::cspan src, jpeg_encoder& encoder,
 			if (marker->marker == XMP_EXIF_MARKER &&
 				is_exif_signature(block))
 			{
-				const auto fixed = metadata_exif::fix_dims(block, _impl->dinfo.image_width, _impl->dinfo.image_height);
+				const auto fixed = metadata_exif::fix_dims(block, encoder._impl->cinfo.image_width,
+				                                           encoder._impl->cinfo.image_height);
 				marker->data = static_cast<uint8_t*>(_impl->dinfo.mem->alloc_large(
 					std::bit_cast<j_common_ptr>(&_impl->dinfo), JPOOL_IMAGE, fixed.size()));
 				marker->original_length = static_cast<unsigned int>(fixed.size());

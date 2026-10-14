@@ -818,7 +818,7 @@ namespace ui
 				throw app_exception("invalid surface crop"s);
 			}
 
-			alloc(r.extent(), s.format(), s.orientation(), s.time());
+			if (!alloc(r.extent(), s.format(), s.orientation(), s.time())) throw std::bad_alloc();
 
 			const ptrdiff_t stride_out = _stride;
 			const ptrdiff_t stride_in = s._stride;
@@ -848,6 +848,7 @@ namespace ui
 		}
 
 		void swap_rb();
+		void unpremultiply_alpha();
 
 		void set_pixel(const int x, const int y, const color32 c) const
 		{

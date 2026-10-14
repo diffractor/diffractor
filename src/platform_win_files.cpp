@@ -343,11 +343,9 @@ STDMETHODIMP CEnumFORMATETCImpl::Next(const ULONG celt, LPFORMATETC lpFormatEtc,
 STDMETHODIMP CEnumFORMATETCImpl::Skip(const ULONG celt)
 {
 	df::trace(__FUNCTION__);
-	if (_cur + static_cast<int>(celt) >= _formats.size())
-		return S_FALSE;
-
-	_cur += celt;
-	return S_OK;
+	const auto skipped = std::min(static_cast<size_t>(celt), _formats.size() - _cur);
+	_cur += skipped;
+	return skipped == celt ? S_OK : S_FALSE;
 }
 
 STDMETHODIMP CEnumFORMATETCImpl::Reset()
@@ -364,8 +362,18 @@ STDMETHODIMP CEnumFORMATETCImpl::Clone(IEnumFORMATETC FAR* FAR* ppCloneEnumForma
 	if (ppCloneEnumFormatEtc == nullptr)
 		return E_POINTER;
 
-	*ppCloneEnumFormatEtc = new CEnumFORMATETCImpl(_formats);
-	return S_OK;
+	*ppCloneEnumFormatEtc = nullptr;
+	try
+	{
+		auto* const clone = new CEnumFORMATETCImpl(_formats);
+		clone->_cur = _cur;
+		*ppCloneEnumFormatEtc = clone;
+		return S_OK;
+	}
+	catch (const std::bad_alloc&)
+	{
+		return E_OUTOFMEMORY;
+	}
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -788,6 +796,8 @@ STDMETHODIMP items_data_object::GetData(FORMATETC* pformatetcIn, STGMEDIUM* pmed
 	{
 		return E_INVALIDARG;
 	}
+	const auto available = QueryGetData(pformatetcIn);
+	if (FAILED(available)) return available;
 
 	try
 	{
@@ -925,25 +935,18 @@ STDMETHODIMP items_data_object::GetDataHere(FORMATETC* pformatetc, STGMEDIUM* pm
 STDMETHODIMP items_data_object::QueryGetData(FORMATETC* pformatetc)
 {
 	df::trace(__FUNCTION__);
+	if (!pformatetc) return E_INVALIDARG;
+	if (pformatetc->dwAspect != DVASPECT_CONTENT) return DV_E_DVASPECT;
+	if (pformatetc->lindex != -1) return DV_E_LINDEX;
 
 	const auto has_paths = !_files.empty() || !_folders.empty();
-
-	if ((pformatetc->cfFormat == CF_DIB || pformatetc->cfFormat == CF_BITMAP) && (_has_image || _loaded.success))
-	{
-		return S_OK;
-	}
-
-	if (pformatetc->cfFormat == CF_HDROP && has_paths)
-	{
-		return S_OK;
-	}
-
-	if (pformatetc->cfFormat == clipboard_formats::SHELLIDLIST && has_paths)
-	{
-		return S_OK;
-	}
-
-	return E_NOTIMPL;
+	const auto format = pformatetc->cfFormat;
+	const auto available = ((format == CF_DIB || format == CF_BITMAP) && (_has_image || _loaded.success)) ||
+		((format == CF_HDROP || format == clipboard_formats::SHELLIDLIST) && has_paths) ||
+		(format == clipboard_formats::PREFERREDDROPEFFECT && _has_preferred_drop);
+	if (!available) return DV_E_FORMATETC;
+	const auto medium = format == CF_BITMAP ? TYMED_GDI : TYMED_HGLOBAL;
+	return (pformatetc->tymed & medium) != 0 ? S_OK : DV_E_TYMED;
 }
 
 STDMETHODIMP items_data_object::GetCanonicalFormatEtc(FORMATETC* pformatectIn, FORMATETC* pformatetcOut)
@@ -2433,19 +2436,26 @@ bool platform::is_writable(const df::folder_path path)
 
 	// Directory attributes do not reflect ACL-based denial (a Store package folder looks normal),
 	// so the only reliable probe is creating a file. The handle deletes itself when closed.
-	const auto name = std::format("df-write-probe-{:08x}.tmp", static_cast<uint32_t>(GetCurrentProcessId()));
-	const auto w = to_file_system_path(path.combine_file(name));
-
-	const auto h = CreateFileW(w.c_str(), GENERIC_WRITE, FILE_SHARE_DELETE, nullptr, CREATE_ALWAYS,
-	                           FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
-
-	if (h == INVALID_HANDLE_VALUE)
+	for (auto attempt = 0; attempt < 32; ++attempt)
 	{
-		return false;
+		const auto pid = static_cast<uint32_t>(GetCurrentProcessId());
+		const auto name = attempt == 0 ? std::format("df-write-probe-{:08x}.tmp", pid)
+		                              : std::format("df-write-probe-{:08x}-{}.tmp", pid, attempt);
+		const auto w = to_file_system_path(path.combine_file(name));
+		const auto h = CreateFileW(w.c_str(), GENERIC_WRITE, FILE_SHARE_DELETE, nullptr, CREATE_NEW,
+		                           FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+
+		if (h != INVALID_HANDLE_VALUE)
+		{
+			CloseHandle(h);
+			return true;
+		}
+
+		const auto error = GetLastError();
+		if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS) return false;
 	}
 
-	CloseHandle(h);
-	return true;
+	return false;
 }
 
 bool platform::open(const df::file_path path)
@@ -2695,6 +2705,11 @@ bool platform::browse_for_folder(df::folder_path& path)
 }
 
 
+std::wstring platform::dialog_default_extension(const std::string_view extension)
+{
+	return str::utf8_to_utf16(extension.starts_with('.') ? extension.substr(1) : extension);
+}
+
 bool platform::prompt_for_save_path(df::file_path& path)
 {
 	OPENFILENAME ofn = {};
@@ -2710,7 +2725,7 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	{
 		wcscpy_s(w, initial_name.c_str());
 	}
-	const auto extension = str::utf8_to_utf16(path.extension());
+	const auto extension = dialog_default_extension(path.extension());
 
 	std::string filter_a;
 	filter_a += std::format("{} (*.jpg)|*.jpg;*.jpe;*.jpeg|", tt.jpeg_best);
@@ -2733,8 +2748,8 @@ bool platform::prompt_for_save_path(df::file_path& path)
 	ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT;
 	ofn.lpstrDefExt = extension.c_str();
 	ofn.nFilterIndex = 1;
-	if (str::icmp(extension, L".png") == 0) ofn.nFilterIndex = 2;
-	if (str::icmp(extension, L".webp") == 0) ofn.nFilterIndex = 3;
+	if (str::icmp(extension, L"png") == 0) ofn.nFilterIndex = 2;
+	if (str::icmp(extension, L"webp") == 0) ofn.nFilterIndex = 3;
 
 	const auto success = GetSaveFileName(&ofn) != 0;
 	path = df::file_path(str::utf16_to_utf8(w));
@@ -2821,7 +2836,7 @@ bool platform::prompt_for_save_path(df::file_path& path, const std::vector<file_
 	const auto initial_name = to_shell_path(path);
 	if (initial_name.size() < std::size(w)) wcscpy_s(w, initial_name.c_str());
 
-	const auto extension = str::utf8_to_utf16(path.extension());
+	const auto extension = dialog_default_extension(path.extension());
 	const auto filter = build_dialog_filter(filters);
 
 	OPENFILENAME ofn = {};
@@ -3411,6 +3426,34 @@ platform::drop_effect platform::perform_drag(const std::any& frame_handle, const
 }
 
 static platform::data_object_probe probe_drag_data_object_impl(items_data_object* data);
+
+platform::clipboard_contract_probe platform::probe_clipboard_contracts()
+{
+	clipboard_contract_probe result;
+	ComPtr<IEnumFORMATETC> formats;
+	formats.Attach(new CEnumFORMATETCImpl({clipboard_formats::Drop, clipboard_formats::Bitmap}));
+	FORMATETC first{};
+	FORMATETC next{};
+	ComPtr<IEnumFORMATETC> clone;
+	result.clone_keeps_position = formats->Next(1, &first, nullptr) == S_OK &&
+		formats->Clone(&clone) == S_OK && clone->Next(1, &next, nullptr) == S_OK &&
+		next.cfFormat == CF_BITMAP;
+
+	formats->Reset();
+	result.skip_to_end = formats->Skip(2) == S_OK && formats->Next(1, &next, nullptr) == S_FALSE;
+	formats->Reset();
+	result.skip_past_end = formats->Skip(ULONG_MAX) == S_FALSE && formats->Next(1, &next, nullptr) == S_FALSE;
+
+	const ComPtr<items_data_object> data = new items_data_object();
+	data->set_for_move(true);
+	auto preferred = clipboard_formats::PDE;
+	result.preferred_effect = data->QueryGetData(&preferred) == S_OK;
+	preferred.tymed = TYMED_GDI;
+	STGMEDIUM medium{};
+	result.rejects_wrong_medium = data->QueryGetData(&preferred) == DV_E_TYMED &&
+		data->GetData(&preferred, &medium) == DV_E_TYMED;
+	return result;
+}
 
 platform::data_object_probe platform::probe_drag_data_object(const std::vector<df::file_path>& files,
                                                              const std::vector<df::folder_path>& folders)
@@ -4050,23 +4093,22 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 
 		do // begin do
 		{
-			PSHARE_INFO_502 BufPtr = nullptr;
+			PSHARE_INFO_1 BufPtr = nullptr;
 			DWORD er = 0, tr = 0;
-			res = NetShareEnum(const_cast<wchar_t*>(path.c_str()), 502, std::bit_cast<LPBYTE*>(&BufPtr),
+			res = NetShareEnum(const_cast<wchar_t*>(path.c_str()), 1, std::bit_cast<LPBYTE*>(&BufPtr),
 			                   MAX_PREFERRED_LENGTH, &er, &tr, &resume);
+			const df::scope_exit free_shares([BufPtr] { if (BufPtr) NetApiBufferFree(BufPtr); });
 
 			if (res == ERROR_SUCCESS || res == ERROR_MORE_DATA)
 			{
-				results.success = true;
 				auto* p = BufPtr;
 
 				for (auto i = 1u; i <= er; i++)
 				{
-					if (STYPE_DISKTREE == p->shi502_type &&
-						IsValidSecurityDescriptor(p->shi502_security_descriptor))
+					if (STYPE_DISKTREE == p->shi1_type)
 					{
 						folder_info i;
-						i.name = str::cache(str::utf16_to_utf8(p->shi502_netname));
+						i.name = str::cache(str::utf16_to_utf8(p->shi1_netname));
 						i.attributes.presence = file_presence::found;
 						i.attributes.is_readonly = true;
 						results.folders.emplace_back(i);
@@ -4074,11 +4116,15 @@ platform::folder_contents platform::iterate_file_items(const df::folder_path fol
 
 					p++;
 				}
-
-				NetApiBufferFree(BufPtr);
 			}
 		}
 		while (res == ERROR_MORE_DATA);
+		results.success = res == ERROR_SUCCESS;
+		if (!results.success)
+		{
+			results.folders.clear();
+			df::log(__FUNCTION__, std::format("Share enumeration of {} failed: {}", folder.text(), res));
+		}
 	}
 	else if (enumerate_error == ERROR_FILE_NOT_FOUND ||
 		(enumerate_error == ERROR_PATH_NOT_FOUND && parent_folder_is_available(folder)))

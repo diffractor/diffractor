@@ -302,7 +302,7 @@ static void edit_paste_invoke(view_state& s, const ui::control_frame_ptr& parent
 	}
 	else if (data->has_bitmap())
 	{
-		auto bitmap = data->capture_bitmap();
+		auto bitmap = ui_owned(s._async, data->capture_bitmap());
 		if (!bitmap)
 		{
 			result.error_message = tt.error_save_image;

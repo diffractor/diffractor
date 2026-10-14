@@ -725,6 +725,7 @@ ui::surface_ptr load_psd(read_stream& s, load_diagnostic* const diagnostic)
 	// A bitmap-mode row is packed eight pixels to the byte; every other mode is one byte each.
 	const int plane_bytes = is_bitmap ? (cx + 7) / 8 : cx;
 	const auto plane_buffer = df::unique_alloc<uint8_t>(plane_bytes);
+	if (!plane_buffer) throw std::bad_alloc();
 	auto* const plane_data = plane_buffer.get();
 
 	if (compression == 1)

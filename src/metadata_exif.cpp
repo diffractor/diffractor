@@ -330,22 +330,9 @@ public:
 						return str::strip_and_cache(aligned);
 					}
 
-					const auto buffer = df::unique_alloc<uint8_t>(length + 2);
-					auto* const dst = buffer.get();
-					size_t pos = 0;
-
-
-					// length is not forced even, so stopping at pos < length could read one byte
-					// past the tag payload on a malformed record.
-					while (pos + 1 < length)
-					{
-						dst[pos] = p[pos + 1];
-						dst[pos + 1] = p[pos];
-						pos += 2;
-					}
-
 					std::u16string aligned(char_length, u'\0');
-					std::memcpy(aligned.data(), dst, char_length * sizeof(char16_t));
+					for (auto pos = 0_z; pos < char_length; ++pos)
+						aligned[pos] = static_cast<char16_t>((p[pos * 2] << 8) | p[pos * 2 + 1]);
 					return str::strip_and_cache(aligned);
 				}
 			}
@@ -1832,6 +1819,7 @@ metadata_kv_list metadata_exif::to_info(const df::cspan data)
 	{
 		constexpr auto buffer_size = df::sixty_four_k;
 		const auto buffer_alloc = df::unique_alloc<char>(buffer_size);
+		if (!buffer_alloc) throw std::bad_alloc();
 		auto* const buffer = buffer_alloc.get();
 
 		// Exif is a set of image file directories, and which directory a tag lives in is part of what

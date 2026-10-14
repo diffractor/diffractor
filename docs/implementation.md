@@ -174,10 +174,14 @@ cancellation. Cancellation stops future work and does not claim to undo complete
 
 Settings use the platform settings store. SQLite data, thumbnails, import history, web cache, and map
 tiles are rebuildable. User metadata belongs in media or sidecars.
+New Windows INI settings files explicitly select Unicode before the first property is written;
+opening an existing settings file never recreates it.
 
 Updates, crash reports, dictionaries, maps, and location lookup are separate network capabilities.
 Transport stays in platform/web modules; application settings decide whether a capability is used.
 Feature-use and performance counters are relaxed aggregate diagnostics and never control behavior.
+Server browsing requests share names and types without security descriptors; an enumeration failure
+does not publish a partial listing as complete.
 
 ## Crash-Loop Protection
 

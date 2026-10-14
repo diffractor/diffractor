@@ -47,16 +47,40 @@ ui::surface_ptr platform::capture_window_surface(const std::any& window_handle)
 	const auto width = bounds.right - bounds.left;
 	const auto height = bounds.bottom - bounds.top;
 	if (width < 1 || height < 1) return nullptr;
+	const auto failed = [](const std::string_view step) -> ui::surface_ptr
+	{
+		df::log(__FUNCTION__, std::format("Window capture {} failed: {}", step, GetLastError()));
+		return {};
+	};
 
 	const auto screen_dc = GetDC(nullptr);
+	if (!screen_dc) return failed("GetDC");
+	const df::scope_exit release_screen([screen_dc] { ReleaseDC(nullptr, screen_dc); });
 	const auto memory_dc = CreateCompatibleDC(screen_dc);
+	if (!memory_dc) return failed("CreateCompatibleDC");
+	const df::scope_exit release_memory([memory_dc] { DeleteDC(memory_dc); });
 	const auto bitmap = CreateCompatibleBitmap(screen_dc, width, height);
+	if (!bitmap) return failed("CreateCompatibleBitmap");
+	const df::scope_exit release_bitmap([bitmap] { DeleteObject(bitmap); });
 	const auto previous = SelectObject(memory_dc, bitmap);
+	if (!previous || previous == HGDI_ERROR) return failed("SelectObject");
 	const auto captured = BitBlt(memory_dc, 0, 0, width, height, screen_dc, bounds.left, bounds.top,
 	                             SRCCOPY | CAPTUREBLT) != FALSE;
+	const auto capture_error = captured ? ERROR_SUCCESS : GetLastError();
+	SelectObject(memory_dc, previous);
+	if (!captured)
+	{
+		df::log(__FUNCTION__, std::format("Window capture BitBlt failed: {}", capture_error));
+		return nullptr;
+	}
 
 	auto surface = std::make_shared<ui::surface>();
 	const auto allocated = surface->alloc(width, height, ui::texture_format::ARGB, ui::orientation::top_left);
+	if (!allocated)
+	{
+		df::log(__FUNCTION__, "Cannot allocate window capture surface");
+		return nullptr;
+	}
 	BITMAPINFO bitmap_info{};
 	bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 	bitmap_info.bmiHeader.biWidth = width;
@@ -66,8 +90,8 @@ ui::surface_ptr platform::capture_window_surface(const std::any& window_handle)
 	bitmap_info.bmiHeader.biCompression = BI_RGB;
 	const auto row_bytes = static_cast<size_t>(width) * 4;
 	std::vector<uint8_t> bitmap_pixels(row_bytes * height);
-	const auto copied = captured && allocated && GetDIBits(memory_dc, bitmap, 0, height, bitmap_pixels.data(),
-	                                                       &bitmap_info, DIB_RGB_COLORS) == height;
+	const auto copied = GetDIBits(memory_dc, bitmap, 0, height, bitmap_pixels.data(), &bitmap_info, DIB_RGB_COLORS) == height;
+	if (!copied) return failed("GetDIBits");
 	if (copied)
 	{
 		for (auto y = 0; y < height; ++y)
@@ -77,11 +101,6 @@ ui::surface_ptr platform::capture_window_surface(const std::any& window_handle)
 			for (auto x = 0; x < width; ++x) pixels[x] |= 0xff000000u;
 		}
 	}
-
-	SelectObject(memory_dc, previous);
-	DeleteObject(bitmap);
-	DeleteDC(memory_dc);
-	ReleaseDC(nullptr, screen_dc);
 
 	return copied ? surface : nullptr;
 }
@@ -139,6 +158,19 @@ static ui::key_state to_key_state(const WPARAM wParam)
 	result.control = (wParam & MK_CONTROL) != 0;
 	result.shift = (wParam & MK_SHIFT) != 0;
 	return result;
+}
+
+ui::key_state platform::wheel_key_state(const uint32_t message, const WPARAM parameter,
+                                       const ui::key_state keyboard)
+{
+	return message == 0x024e || message == 0x024f ? keyboard : to_key_state(parameter);
+}
+
+static ui::key_state wheel_key_state(const uint32_t message, const WPARAM parameter)
+{
+	return platform::wheel_key_state(message, parameter,
+	                                 {GetKeyState(VK_CONTROL) < 0, GetKeyState(VK_SHIFT) < 0,
+		                                 GetKeyState(VK_MENU) < 0});
 }
 
 ui::key_state ui::current_key_state()
@@ -1777,7 +1809,7 @@ public:
 
 		bool was_handled = false;
 		const auto h = _host.lock();
-		if (h) h->on_mouse_wheel({loc.x, loc.y}, static_cast<short>(HIWORD(wParam)), to_key_state(wParam), was_handled);
+		if (h) h->on_mouse_wheel({loc.x, loc.y}, static_cast<short>(HIWORD(wParam)), wheel_key_state(uMsg, wParam), was_handled);
 		if (!was_handled && IsWindow(GetParent(m_hWnd)))
 			SendMessage(GetParent(m_hWnd), uMsg, wParam, lParam);
 		return 0;
@@ -1789,7 +1821,7 @@ public:
 		ScreenToClient(m_hWnd, &loc);
 		bool was_handled = false;
 		const auto h = _host.lock();
-		if (h) h->on_mouse_hwheel({loc.x, loc.y}, GET_WHEEL_DELTA_WPARAM(wParam), to_key_state(wParam), was_handled);
+		if (h) h->on_mouse_hwheel({loc.x, loc.y}, GET_WHEEL_DELTA_WPARAM(wParam), wheel_key_state(uMsg, wParam), was_handled);
 		return was_handled ? 0 : DefWindowProc(m_hWnd, uMsg, wParam, lParam);
 	}
 
@@ -2434,7 +2466,7 @@ public:
 		if (uMsg == WM_XBUTTONUP) return on_mouse_x_button_up(uMsg, wParam, lParam);
 		if (uMsg == WM_MOUSELEAVE) return on_mouse_leave(uMsg, wParam, lParam);
 		if (uMsg == WM_MOUSEMOVE) return on_mouse_move(uMsg, wParam, lParam);
-		if (uMsg == WM_MOUSEWHEEL) return on_mouse_wheel(uMsg, wParam, lParam);
+		if (uMsg == WM_MOUSEWHEEL || uMsg == 0x024e) return on_mouse_wheel(uMsg, wParam, lParam);
 		if (uMsg == WM_LBUTTONDBLCLK) return on_mouse_left_button_double_click(uMsg, wParam, lParam);
 		if (uMsg == WM_NCHITTEST) return on_window_nc_hit_test(uMsg, wParam, lParam);
 		if (uMsg == DM_GETDEFID) return on_get_def_id(uMsg, wParam, lParam);
@@ -2685,7 +2717,7 @@ public:
 
 		bool was_handled = false;
 		const auto h = _host.lock();
-		if (h) h->on_mouse_wheel({loc.x, loc.y}, static_cast<short>(HIWORD(wParam)), to_key_state(wParam), was_handled);
+		if (h) h->on_mouse_wheel({loc.x, loc.y}, static_cast<short>(HIWORD(wParam)), wheel_key_state(uMsg, wParam), was_handled);
 		if (!was_handled && IsWindow(GetParent(m_hWnd)))
 			SendMessage(GetParent(m_hWnd), uMsg, wParam, lParam);
 		return 0;
@@ -3141,11 +3173,26 @@ public:
 				AdjustWindowRectEx(&bounds, new_style, FALSE, new_ex_style);
 				_full_screen_bounds = bounds;
 
+				// One placement restores a maximized window and positions it together, so it is never
+				// drawn at its normal size on the way. Placement is in workspace coordinates.
 				auto wp = restore_window_placement;
 				wp.showCmd = SW_SHOWNORMAL;
 				wp.rcNormalPosition = bounds;
-
+				MONITORINFO info = {sizeof(MONITORINFO)};
+				const auto monitor = MonitorFromRect(&bounds, MONITOR_DEFAULTTONEAREST);
+				if (monitor && GetMonitorInfo(monitor, &info))
+				{
+					wp.rcNormalPosition = win_rect(platform::screen_to_placement(
+						bounds, win_rect(info.rcMonitor), win_rect(info.rcWork)));
+				}
 				SetWindowPlacement(m_hWnd, &wp);
+
+				// The exact screen bounds, and the frame the style change removed.
+				if (!SetWindowPos(m_hWnd, nullptr, bounds.left, bounds.top, bounds.right - bounds.left,
+				                  bounds.bottom - bounds.top, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED))
+				{
+					df::log(__FUNCTION__, std::format("Cannot position fullscreen window: {}", GetLastError()));
+				}
 			}
 			else
 			{
@@ -5447,6 +5494,20 @@ recti platform::fit_window_to_work_area(const recti saved, const recti work_area
 	return {x, y, x + width, y + height};
 }
 
+recti platform::placement_to_screen(const recti saved, const recti monitor, const recti work_area)
+{
+	const auto x = work_area.left - monitor.left;
+	const auto y = work_area.top - monitor.top;
+	return {saved.left + x, saved.top + y, saved.right + x, saved.bottom + y};
+}
+
+recti platform::screen_to_placement(const recti screen, const recti monitor, const recti work_area)
+{
+	const auto x = work_area.left - monitor.left;
+	const auto y = work_area.top - monitor.top;
+	return {screen.left - x, screen.top - y, screen.right - x, screen.bottom - y};
+}
+
 bool platform::window_needs_refit(const recti saved, const recti work_area, const bool reaches_a_display)
 {
 	if (!reaches_a_display) return true;
@@ -5490,15 +5551,18 @@ ui::control_frame_ptr win32_app::create_app_frame(const platform::setting_file_p
 			// the app off-screen or silently shrank a window that merely straddled two displays.
 			if (!IsRectEmpty(&wp.rcNormalPosition))
 			{
-				const auto reaches_a_display = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONULL) != nullptr;
 				const auto nearest = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST);
 				MONITORINFO info = {sizeof(MONITORINFO)};
 
 				if (nearest && GetMonitorInfo(nearest, &info))
 				{
-					const recti saved(wp.rcNormalPosition.left, wp.rcNormalPosition.top, wp.rcNormalPosition.right,
-					                  wp.rcNormalPosition.bottom);
+					const recti placement(wp.rcNormalPosition.left, wp.rcNormalPosition.top, wp.rcNormalPosition.right,
+					                      wp.rcNormalPosition.bottom);
+					const recti monitor(info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom);
 					const recti work(info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom);
+					const auto saved = platform::placement_to_screen(placement, monitor, work);
+					wp.rcNormalPosition = win_rect(saved);
+					const auto reaches_a_display = MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONULL) != nullptr;
 
 					if (platform::window_needs_refit(saved, work, reaches_a_display))
 					{

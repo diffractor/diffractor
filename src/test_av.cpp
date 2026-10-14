@@ -31,6 +31,9 @@ extern "C"
 #include <libavcodec/avcodec.h>
 }
 
+extern thread_local std::function<void(AVFrame&)> test_audio_pcm_frame;
+extern thread_local std::function<int(int)> test_audio_receive_status;
+
 static void should_format_audio_stream_names()
 {
 	av_stream_info stream;
@@ -2516,6 +2519,60 @@ static void should_decode_audio_into_a_buffer()
 	assert_equal(true, video_only.extract_audio_pcm(rate, cap_seconds).empty(), "no audio stream means no buffer");
 }
 
+// A damaged packet is a decode error for that packet alone, and FFmpeg goes on to decode the ones
+// after it. One such error used to discard the whole waveform and the whole PCM range.
+static void should_keep_audio_around_a_damaged_packet()
+{
+	df::file_path voiced_path;
+
+	for (const auto* const name : {"indy.mp4", "gizmo.mp4", "tagged.mkv", "tagged.webm", "anamorphic.mp4"})
+	{
+		const auto candidate = test_files_folder.combine_file(name);
+		av_format_decoder probe;
+		if (!probe.open(candidate, media_intent::metadata)) continue;
+		probe.init_streams(-1, -1, false, false, false);
+
+		if (probe.has_audio())
+		{
+			voiced_path = candidate;
+			break;
+		}
+	}
+
+	assert_equal(false, voiced_path.is_empty(), "a test file with audio is available");
+
+	auto received = 0;
+	test_audio_receive_status = [&received](const int status)
+	{
+		return status == 0 && ++received == 1 ? AVERROR_INVALIDDATA : status;
+	};
+	const df::scope_exit restore([] { test_audio_receive_status = {}; });
+
+	constexpr int buckets = 64;
+	av_format_decoder waveform;
+	assert_equal(true, waveform.open(voiced_path, media_intent::playback), "waveform decoder opened");
+	waveform.init_streams(-1, -1, false, false, false);
+	const auto peaks = waveform.extract_audio_peaks(buckets);
+	assert_equal(true, received > 1, "frames after the damaged packet are still decoded for the waveform");
+	assert_equal(static_cast<size_t>(buckets), peaks.size(), "the waveform survives a damaged packet");
+	assert_equal(true, *std::ranges::max_element(peaks) > 0, "and still measures the soundtrack");
+
+	// A frame of this stream can hold a second of audio, so the range spans several.
+	received = 0;
+	constexpr int rate = 48000;
+	constexpr double seconds = 20.0;
+	av_format_decoder clip;
+	assert_equal(true, clip.open(voiced_path, media_intent::playback), "PCM decoder opened");
+	clip.init_streams(-1, -1, false, false, false);
+	const auto samples = clip.extract_audio_pcm_range(rate, 0, seconds);
+	assert_equal(true, received > 1, std::format("frames after the damaged packet are still decoded for the clip "
+	                                             "({} frames, {} samples)", received, samples.size()));
+	assert_equal(static_cast<size_t>(seconds * rate) * 2, samples.size(),
+	             "the clip keeps its audio around a damaged packet");
+	assert_equal(true, std::ranges::any_of(samples, [](const int16_t v) { return v != 0; }),
+	             "and the rest of it still carries signal");
+}
+
 // The Movie preview reads a clip's sound in windows and the render in longer ones, and each window is
 // its own seek. A window must hold what the stream holds at those instants. A decoder flushed by the
 // seek starts without the frame its first frame overlaps, and a window that began on that frame
@@ -2593,6 +2650,120 @@ static void should_read_an_audio_range_as_the_stream_holds_it()
 	                         ratio, boundary));
 }
 
+static df::file_path write_resampling_wave(const int input_rate, const bool step)
+{
+	const auto path = _temps.next_path(".wav");
+	std::string wave;
+	const auto append = [&wave](const uint32_t value, const int bytes)
+	{
+		for (auto i = 0; i < bytes; ++i) wave.push_back(static_cast<char>((value >> (i * 8)) & 0xff));
+	};
+	const auto data_bytes = input_rate / 2 * 4;
+	wave += "RIFF";
+	append(36 + data_bytes, 4);
+	wave += "WAVEfmt ";
+	append(16, 4);
+	append(1, 2);
+	append(2, 2);
+	append(input_rate, 4);
+	append(input_rate * 4, 4);
+	append(4, 2);
+	append(16, 2);
+	wave += "data";
+	append(data_bytes, 4);
+	for (auto i = 0; i < input_rate / 2; ++i)
+	{
+		const auto sign = step && i >= input_rate / 4 ? -1 : 1;
+		append(static_cast<uint16_t>(sign * 10000), 2);
+		append(static_cast<uint16_t>(sign * -12000), 2);
+	}
+	write_test_file(path, wave);
+	return path;
+}
+
+static void should_reset_audio_resampling_after_a_seek()
+{
+	audio_info_t source;
+	source.channel_layout = av_get_def_channel_layout(2);
+	source.sample_rate = 44100;
+	source.sample_fmt = prop::audio_sample_t::signed_16bit;
+	auto output = source;
+	output.sample_rate = 48000;
+	auto* frame = av_frame_alloc();
+	assert_equal(true, frame != nullptr, "audio frame allocated");
+	const df::scope_exit release([&frame] { av_frame_free(&frame); });
+	frame->format = AV_SAMPLE_FMT_S16;
+	frame->sample_rate = source.sample_rate;
+	frame->nb_samples = 441;
+	assert_equal(0, av_channel_layout_copy(&frame->ch_layout, source.channel_layout.get()), "audio layout copied");
+	assert_equal(0, av_frame_get_buffer(frame, 0), "audio frame samples allocated");
+	auto* samples = reinterpret_cast<int16_t*>(frame->data[0]);
+	std::fill_n(samples, frame->nb_samples * 2, int16_t{20000});
+	audio_resampler reused(source);
+	audio_buffer discarded;
+	discarded.init(output);
+	reused.resample(*frame, discarded, 0.0, 0);
+	reused.flush();
+
+	std::fill_n(samples, frame->nb_samples * 2, int16_t{-10000});
+	audio_buffer after_seek;
+	after_seek.init(output);
+	reused.resample(*frame, after_seek, 1.0, 1);
+	reused.drain(after_seek, 1);
+	audio_resampler fresh(source);
+	audio_buffer expected;
+	expected.init(output);
+	fresh.resample(*frame, expected, 1.0, 1);
+	fresh.drain(expected, 1);
+	assert_equal(true, expected.used_bytes() > 0, "fresh resampler produces audio");
+	assert_equal(expected.used_bytes(), after_seek.used_bytes(), "seek reset retains the complete resampled tail");
+	assert_equal(true, std::equal(expected.cdata().data, expected.cdata().data + expected.used_bytes(), after_seek.cdata().data),
+	             "seek reset discards old filter history");
+}
+
+static void should_follow_midstream_pcm_sample_rate()
+{
+	const auto path = write_resampling_wave(48000, true);
+	av_format_decoder decoder;
+	assert_equal(true, decoder.open(path, media_intent::playback), "changing-rate fixture opened");
+	decoder.init_streams(-1, -1, false, false, false);
+	auto frames = 0;
+	test_audio_pcm_frame = [&frames](AVFrame& frame)
+	{
+		if (++frames <= 2) return;
+		assert_equal(AV_SAMPLE_FMT_S16, frame.format, "fixture decoder produces packed signed PCM");
+		const auto count = frame.nb_samples;
+		const auto* source = reinterpret_cast<const int16_t*>(frame.data[0]);
+		auto* replacement = av_frame_alloc();
+		assert_equal(true, replacement != nullptr, "replacement frame allocated");
+		const df::scope_exit release([&replacement] { av_frame_free(&replacement); });
+		assert_equal(0, av_frame_copy_props(replacement, &frame), "timestamps retained across rate change");
+		replacement->format = AV_SAMPLE_FMT_S16P;
+		replacement->sample_rate = frame.sample_rate * 2;
+		replacement->nb_samples = count * 2;
+		assert_equal(0, av_channel_layout_copy(&replacement->ch_layout, &frame.ch_layout), "channel layout retained");
+		assert_equal(0, av_frame_get_buffer(replacement, 0), "higher-rate samples allocated");
+		for (auto i = 0; i < count; ++i)
+			for (auto channel = 0; channel < 2; ++channel)
+			{
+				auto* destination = reinterpret_cast<int16_t*>(replacement->extended_data[channel]);
+				destination[i * 2] = source[i * 2 + channel];
+				destination[i * 2 + 1] = source[i * 2 + channel];
+			}
+		av_frame_unref(&frame);
+		av_frame_move_ref(&frame, replacement);
+	};
+	const df::scope_exit restore([] { test_audio_pcm_frame = {}; });
+	const auto pcm = decoder.extract_audio_pcm_range(48000, 0, 0.5);
+	assert_equal(true, frames > 2, "fixture crossed a real decoded-frame format boundary");
+	assert_equal(48000_z, pcm.size(), "requested stereo duration is retained");
+	for (auto frame = 14400_z; frame < 19200_z; ++frame)
+	{
+		assert_equal(-10000, pcm[frame * 2], "the signal transition stays at its source timestamp");
+		assert_equal(12000, pcm[frame * 2 + 1], "both channels follow the new input rate");
+	}
+}
+
 static void should_keep_resampled_audio_continuous()
 {
 	constexpr int output_rate = 48000;
@@ -2601,32 +2772,7 @@ static void should_keep_resampled_audio_continuous()
 
 	for (const auto input_rate : {44100, 96000})
 	{
-		const auto path = _temps.next_folder("audio-resample").combine_file("constant.wav");
-		std::string wave;
-		const auto append = [&wave](const uint32_t value, const int bytes)
-		{
-			for (auto i = 0; i < bytes; ++i) wave.push_back(static_cast<char>((value >> (i * 8)) & 0xff));
-		};
-		const auto data_bytes = input_rate / 2 * 4;
-		wave += "RIFF";
-		append(36 + data_bytes, 4);
-		wave += "WAVEfmt ";
-		append(16, 4);
-		append(1, 2);
-		append(2, 2);
-		append(input_rate, 4);
-		append(input_rate * 4, 4);
-		append(4, 2);
-		append(16, 2);
-		wave += "data";
-		append(data_bytes, 4);
-
-		for (auto i = 0; i < input_rate / 2; ++i)
-		{
-			append(static_cast<uint16_t>(left), 2);
-			append(static_cast<uint16_t>(right), 2);
-		}
-		write_test_file(path, wave);
+		const auto path = write_resampling_wave(input_rate, false);
 
 		// Window starts align to both rates so seek rounding cannot masquerade as resampler delay.
 		for (const auto [start, duration] : {std::pair{0.0, 0.25}, {0.1, 0.25}, {0.0, 0.5}})
@@ -2655,6 +2801,8 @@ static void should_keep_resampled_audio_continuous()
 void register_av_tests(view_state& state, test_registry& tests)
 
 {
+	tests.add("Should reset audio resampling after a seek"s, should_reset_audio_resampling_after_a_seek);
+	tests.add("Should follow midstream PCM sample format and rate"s, should_follow_midstream_pcm_sample_rate);
 	//
 	// Resume
 	//
@@ -2779,6 +2927,7 @@ void register_av_tests(view_state& state, test_registry& tests)
 	          should_answer_with_the_last_frame_past_the_end_of_the_picture);
 	tests.add("Should measure audio peaks"s, should_measure_audio_peaks);
 	tests.add("Should decode audio into a buffer"s, should_decode_audio_into_a_buffer);
+	tests.add("Should keep audio around a damaged packet"s, should_keep_audio_around_a_damaged_packet);
 	tests.add("Should read an audio range as the stream holds it"s, should_read_an_audio_range_as_the_stream_holds_it);
 	// Release review: input timestamps do not include the resampler's buffered delay.
 	tests.add("Should keep resampled audio continuous"s, should_keep_resampled_audio_continuous);

@@ -306,6 +306,7 @@ static df::blob png_inflate_text(const uint8_t* const compressed, const size_t c
 
 	std::array<uint8_t, 4096> temp = {};
 	auto ok = true;
+	auto complete = false;
 
 	do
 	{
@@ -330,13 +331,18 @@ static df::blob png_inflate_text(const uint8_t* const compressed, const size_t c
 
 		if (ret == Z_STREAM_END)
 		{
+			complete = true;
 			break;
 		}
 	}
 	while (z.avail_out == 0 || z.avail_in != 0);
 
 	inflateEnd(&z);
-	if (!ok) return {};
+	if (!ok || !complete)
+	{
+		df::log_once(__FUNCTION__, "Invalid or incomplete compressed PNG metadata");
+		return {};
+	}
 	return result;
 }
 

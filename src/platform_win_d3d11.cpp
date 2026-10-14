@@ -1008,7 +1008,7 @@ public:
 
 	HRESULT STDMETHODCALLTYPE GetCurrentTransform(void* clientDrawingContext, DWRITE_MATRIX* transform) override
 	{
-		*transform = {};
+		*transform = {1, 0, 0, 1, 0, 0};
 		return S_OK;
 	}
 
@@ -3950,7 +3950,7 @@ void d3d11_text_renderer::draw_text(const std::shared_ptr<text_layout_impl>& tex
 	_clr = clr;
 	ui::clear_text_highlights(_highlights);
 	if (!text || !text->_renderer || !ensure_font()) return;
-	text->_renderer->draw(_canvas.get(), this, text->_layout.Get(), bounds, clr, bg);
+	font_renderer::draw(_canvas.get(), this, text->_layout.Get(), bounds, clr, bg);
 }
 
 void d3d11_text_renderer::reset(const std::shared_ptr<d3d11_draw_context_impl>& c, const factories_ptr& f,
@@ -4039,11 +4039,21 @@ void d3d11_text_renderer::draw_text(const std::string_view text, const std::vect
 
 HRESULT d3d11_text_renderer::GetPixelsPerDip(void* clientDrawingContext, FLOAT* pixelsPerDip)
 {
-	{
-		*pixelsPerDip = 96.0;
-	}
-
+	*pixelsPerDip = 1.0f;
 	return S_OK;
+}
+
+bool platform::probe_d3d11_pixel_snapping()
+{
+	d3d11_text_renderer renderer;
+	DWRITE_MATRIX matrix{};
+	float scale = 0;
+	BOOL disabled = TRUE;
+	return renderer.GetCurrentTransform(nullptr, &matrix) == S_OK &&
+		renderer.GetPixelsPerDip(nullptr, &scale) == S_OK &&
+		renderer.IsPixelSnappingDisabled(nullptr, &disabled) == S_OK &&
+		matrix.m11 == 1.0f && matrix.m22 == 1.0f && matrix.m12 == 0.0f && matrix.m21 == 0.0f &&
+		matrix.dx == 0.0f && matrix.dy == 0.0f && scale == 1.0f && !disabled;
 }
 
 HRESULT d3d11_text_renderer::DrawGlyphRun(void* clientDrawingContext, const FLOAT baselineOriginX,

@@ -23,9 +23,27 @@
 #include "webp/encode.h"
 #include "webp/mux.h"
 #include <zlib.h>
+#include <cstdio>
+#include <jxl/encode.h>
+#include <jxl/color_encoding.h>
+#include <libexif/exif-data.h>
+#include <libexif/exif-utils.h>
+
+#define LIBARCHIVE_STATIC
+#include "libarchive/libarchive/archive.h"
+#include "libarchive/libarchive/archive_entry.h"
+#undef min
+#undef max
+#undef GetObject
+
+extern "C" {
+#include <jpeglib.h>
+}
 
 #define LIBHEIF_STATIC_BUILD 1
 #include <libheif/heif.h>
+#include <libheif/heif_items.h>
+#include <libheif/heif_properties.h>
 
 static void should_check_overwrite()
 {
@@ -170,6 +188,95 @@ static void should_round_trip_zip_entry_names()
 	             "an entry name beyond the ZIP 16-bit length is refused");
 }
 
+// ZIP64 headers are reserved for entries that need them: a small archive keeps the classic headers
+// every reader accepts, while an entry past 4 GiB of archive, or holding nearly that much, still fits.
+static void should_write_utf8_zip_entries()
+{
+	const auto source = _temps.next_path(".bin");
+	write_test_file(source, "archive content");
+	const auto path = _temps.next_path(".zip");
+	const std::string name = "\xe6\x9d\xb1\xe4\xba\xac.bin";
+	df::zip_file zip;
+	assert_equal(true, zip.create(path), "ZIP created");
+	assert_equal(true, zip.add(source, name), "Unicode entry written");
+	assert_equal(true, zip.close(), "ZIP closed");
+	const auto bytes = df::blob_from_file(path);
+	assert_equal(true, bytes.size() >= 30, "local ZIP header present");
+	const auto flags = bytes[6] | bytes[7] << 8;
+	assert_equal(true, (flags & (1 << 11)) != 0, "entry declares UTF-8 rather than relying on the reader's code page");
+	const auto version = bytes[4] | bytes[5] << 8;
+	assert_equal(true, version < 45, "a small entry keeps classic headers");
+	const auto listed = files::list_archive(path);
+	assert_equal(1_z, listed.size(), "independent libarchive reader finds the entry");
+	assert_equal(name, listed.front().filename, "independent reader preserves its Unicode name");
+
+	constexpr uint64_t last_classic_offset = 0xFFFFFFFEull;
+	constexpr uint64_t large_size = 0xFFFFFFFFull - 2ull * 1024 * 1024;
+	assert_equal(false, df::zip_entry_needs_zip64(last_classic_offset, 15), "the last 32-bit offset is classic");
+	assert_equal(true, df::zip_entry_needs_zip64(last_classic_offset + 1, 15), "an entry beyond it needs ZIP64");
+	assert_equal(false, df::zip_entry_needs_zip64(0, large_size - 1), "a size with deflate headroom is classic");
+	assert_equal(true, df::zip_entry_needs_zip64(0, large_size), "a size that could overflow needs ZIP64");
+}
+
+static void should_keep_archive_entries_after_warnings()
+{
+	const auto source = _temps.next_path(".bin");
+	write_test_file(source, "archive content");
+	const auto path = _temps.next_path(".zip");
+	df::zip_file zip;
+	assert_equal(true, zip.create(path), "warning fixture created");
+	assert_equal(true, zip.add(source, "first.bin"), "first entry written");
+	assert_equal(true, zip.add(source, "second.bin"), "second entry written");
+	assert_equal(true, zip.close(), "warning fixture closed");
+	auto bytes = df::blob_from_file(path);
+	assert_equal(true, bytes.size() > 18, "local header contains CRC");
+	bytes[14] = 1;
+	bytes[15] = bytes[16] = bytes[17] = 0;
+	assert_equal(true, df::blob_save_to_file(bytes, path), "mismatched local CRC stored");
+
+	const std::unique_ptr<archive, decltype(&archive_read_free)> reader(archive_read_new(), archive_read_free);
+	assert_equal(true, reader != nullptr, "archive reader allocated");
+	archive_read_support_format_zip(reader.get());
+	assert_equal(ARCHIVE_OK, archive_read_open_memory(reader.get(), bytes.data(), bytes.size()), "warning fixture opened");
+	archive_entry* entry = nullptr;
+	assert_equal(ARCHIVE_WARN, archive_read_next_header(reader.get(), &entry), "fixture produces a recoverable header warning");
+
+	const auto listed = files::list_archive(path);
+	assert_equal(2_z, listed.size(), "a usable warned entry and its successor both remain visible");
+	assert_equal("second.bin", listed.back().filename, "listing continued beyond the warning");
+}
+
+static void should_convert_archive_unix_timestamps()
+{
+	std::array<uint8_t, 2560> bytes{};
+	const auto header = [&bytes](const size_t offset, const std::string_view name, const char type, const unsigned long size)
+	{
+		auto* data = reinterpret_cast<char*>(bytes.data() + offset);
+		std::copy(name.begin(), name.end(), data);
+		std::memcpy(data + 100, "0000644", 7);
+		assert_equal(11, std::snprintf(data + 124, 12, "%011lo", size), "TAR size field fits");
+		assert_equal(11, std::snprintf(data + 136, 12, "%011lo", 1704164645ul), "TAR time field fits");
+		std::memset(data + 148, ' ', 8);
+		data[156] = type;
+		std::memcpy(data + 257, "ustar", 5);
+		std::memcpy(data + 263, "00", 2);
+		const auto checksum = std::accumulate(bytes.begin() + offset, bytes.begin() + offset + 512, 0u);
+		assert_equal(6, std::snprintf(data + 148, 7, "%06o", checksum), "TAR checksum field fits");
+		data[155] = ' ';
+	};
+	constexpr std::string_view pax = "28 ctime=1704164645.1234567\n";
+	static_assert(pax.size() == 28);
+	header(0, "PaxHeader", 'x', static_cast<unsigned long>(pax.size()));
+	std::copy(pax.begin(), pax.end(), bytes.begin() + 512);
+	header(1024, "dated.bin", '0', 0);
+	const auto path = _temps.next_path(".tar");
+	assert_equal(true, df::blob_save_to_file({bytes.data(), bytes.size()}, path), "PAX fixture stored");
+	const auto listed = files::list_archive(path);
+	assert_equal(1_z, listed.size(), "dated archive entry found");
+	assert_equal(df::date_t(2024, 1, 2, 3, 4, 5).to_int64() + 1234567,
+	             listed.front().created.to_int64(), "Unix epoch, seconds and fractional precision are converted");
+}
+
 static void should_round_trip_zip_entry_dates()
 {
 	const auto source = _temps.next_path(".bin");
@@ -270,6 +377,49 @@ static void should_report_move_or_copy_collision_paths()
 }
 
 #ifndef _WIN32
+static void should_report_linux_file_operation_errors()
+{
+	const platform::file_op_result collision{platform::file_op_result_code::ALREADY_EXISTS};
+	const platform::file_op_result failure{platform::file_op_result_code::FAILED};
+	assert_equal(true, collision.failed(), "an existing destination is a failure");
+	assert_equal(false, collision.format_error().empty(), "a collision cannot look like an empty success message");
+	assert_equal(false, failure.format_error().empty(), "an unspecified failure still has a diagnostic");
+}
+
+static void should_reject_linux_folder_file_collisions()
+{
+	const auto root = _temps.next_folder("linux-folder-collision");
+	const auto file = root.combine_file("occupied");
+	write_test_file(file, "not a directory");
+
+	assert_equal(true, platform::create_folder(root.combine("occupied")).failed(),
+	             "an existing file is not a successful mkdir");
+	assert_equal("not a directory", read_test_file(file), "the colliding file is unchanged");
+
+	const auto link = root.combine("dangling");
+	std::filesystem::create_directory_symlink(platform::to_stream_path(root.combine("missing")),
+	                                           platform::to_stream_path(link));
+	assert_equal(true, platform::create_folder(link).failed(), "a dangling symlink is not a directory");
+	assert_equal(true, platform::create_folder(root.combine("directory")).success(), "a new directory is created");
+	assert_equal(true, platform::create_folder(root.combine("directory")).success(), "an existing directory is accepted");
+}
+
+static void should_preserve_linux_directory_move_on_unsupported_no_replace()
+{
+	const auto root = _temps.next_folder("linux-directory-move");
+	const auto source = root.combine("source");
+	const auto destination = root.combine("destination");
+	assert_equal(true, platform::create_folder(source).success(), "source directory exists");
+	write_test_file(source.combine_file("original.txt"), "original");
+
+	platform::test_linux_move_file_failures({true, false});
+	const df::scope_exit restore([] { platform::test_linux_clear_move_file_failures(); });
+	const auto result = platform::move_file(source, destination);
+	assert_equal(true, result.failed(), "unsupported atomic directory rename is a reported failure");
+	assert_equal("original", read_test_file(source.combine_file("original.txt")), "source is retained");
+	assert_equal(false, destination.exists(), "an unsafe fallback did not publish a destination");
+}
+
 static void should_refuse_linux_copy_identity_overwrites()
 {
 	const auto root = _temps.next_folder("linux-copy-identity");
@@ -1955,6 +2105,53 @@ static void should_rotate_lossless()
 	assert_equal(expected->height, actual->height);
 }
 
+static void should_rotate_lossless_exif_dimensions()
+{
+	const auto surface = std::make_shared<ui::surface>();
+	assert_equal(true, surface->alloc(32, 16, ui::texture_format::RGB) != nullptr, "rotation fixture allocated");
+	surface->make_blank();
+	metadata_parts metadata;
+	metadata.exif = {
+		'E', 'x', 'i', 'f', 0, 0, 'I', 'I', 42, 0, 8, 0, 0, 0,
+		1, 0, 0x69, 0x87, 4, 0, 1, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0,
+		2, 0, 2, 0xa0, 4, 0, 1, 0, 0, 0, 32, 0, 0, 0,
+		3, 0xa0, 4, 0, 1, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0
+	};
+	jpeg_encoder encoder;
+	const auto source = encoder.encode(32, 16, surface->pixels(), static_cast<uint32_t>(surface->stride()),
+	                                   ui::orientation::top_left, metadata, {});
+	jpeg_decoder_x decoder;
+	jpeg_encoder rotated_encoder;
+	const auto rotated = decoder.transform(source, rotated_encoder, simple_transform::rot_90);
+	assert_equal(false, rotated.empty(), "aligned JPEG rotated losslessly");
+	const auto path = _temps.next_path(".jpg");
+	assert_equal(true, df::blob_save_to_file(rotated, path), "rotated fixture saved");
+	files codecs;
+	const auto scanned = ff_scan_file(codecs, path);
+	auto exif_bytes = scanned.metadata.exif.clone();
+	if (!is_exif_signature(exif_bytes))
+		exif_bytes.insert(exif_bytes.begin(), exif_signature.begin(), exif_signature.end());
+	const std::unique_ptr<ExifData, decltype(&exif_data_unref)> exif(
+		exif_data_new_from_data(exif_bytes.data(), static_cast<unsigned int>(exif_bytes.size())), exif_data_unref);
+	assert_equal(true, exif != nullptr, "rotated EXIF is readable independently of JPEG header dimensions");
+	const auto dimension = [&exif](const ExifTag tag)
+	{
+		const auto* entry = exif_content_get_entry(exif->ifd[EXIF_IFD_EXIF], tag);
+		assert_equal(true, entry && entry->format == EXIF_FORMAT_LONG && entry->size >= 4, "dimension tag is present");
+		return exif_get_long(entry->data, exif_data_get_byte_order(exif.get()));
+	};
+	assert_equal(16u, dimension(EXIF_TAG_PIXEL_X_DIMENSION), "EXIF width describes the rotated destination");
+	assert_equal(32u, dimension(EXIF_TAG_PIXEL_Y_DIMENSION), "EXIF height describes the rotated destination");
+}
+
+static void should_translate_all_libraw_flip_values()
+{
+	constexpr int expected[] = {1, 2, 4, 3, 5, 8, 6, 7};
+	for (auto flip = 0; flip < 8; ++flip)
+		assert_equal(expected[flip], static_cast<int>(translate_libraw_orientation(flip)),
+		             "LibRaw flip bits map to EXIF orientation values");
+}
+
 // Every 8-bit YCbCr JPEG belongs on the GPU NV12 path; read_nv12 averages whatever chroma the
 // source carries down to one pair per 2x2 block. Only formats it cannot pack take the RGB path.
 static bool jpeg_uses_nv12(files& ff, const char* const name)
@@ -2097,6 +2294,187 @@ static void should_decode_bands(const char* const name, const std::initializer_l
 static void should_decode_deep_precision_jpeg(const char* const name)
 {
 	should_decode_bands(name, {0, 85, 170, 255}, 2);
+}
+
+static void should_decode_lossless_grayscale_jpeg(const int precision)
+{
+	jpeg_compress_struct encoder{};
+	jpeg_error_mgr error{};
+	encoder.err = jpeg_std_error(&error);
+	error.error_exit = [](j_common_ptr info)
+	{
+		char message[JMSG_LENGTH_MAX]{};
+		info->err->format_message(info, message);
+		throw test_assert_exception(message);
+	};
+	const df::scope_exit destroy([&encoder] { jpeg_destroy_compress(&encoder); });
+	jpeg_create_compress(&encoder);
+	unsigned char* encoded = nullptr;
+	unsigned long encoded_size = 0;
+	const df::scope_exit free_encoded([&encoded] { std::free(encoded); });
+	jpeg_mem_dest(&encoder, &encoded, &encoded_size);
+	encoder.image_width = 3;
+	encoder.image_height = 1;
+	encoder.input_components = 1;
+	encoder.in_color_space = JCS_GRAYSCALE;
+	jpeg_set_defaults(&encoder);
+	encoder.data_precision = precision;
+	jpeg_enable_lossless(&encoder, 1, 0);
+	jpeg_start_compress(&encoder, TRUE);
+
+	const auto maximum = (1u << precision) - 1u;
+	if (precision == 8)
+	{
+		JSAMPLE samples[] = {0, 85, 255};
+		JSAMPROW row = samples;
+		assert_equal(1u, jpeg_write_scanlines(&encoder, &row, 1), "grayscale fixture encoded");
+	}
+	else if (precision <= 12)
+	{
+		J12SAMPLE samples[] = {0, static_cast<J12SAMPLE>(maximum / 3), static_cast<J12SAMPLE>(maximum)};
+		J12SAMPROW row = samples;
+		assert_equal(1u, jpeg12_write_scanlines(&encoder, &row, 1), "wide grayscale fixture encoded");
+	}
+	else
+	{
+		J16SAMPLE samples[] = {0, static_cast<J16SAMPLE>(maximum / 3), static_cast<J16SAMPLE>(maximum)};
+		J16SAMPROW row = samples;
+		assert_equal(1u, jpeg16_write_scanlines(&encoder, &row, 1), "deep grayscale fixture encoded");
+	}
+	jpeg_finish_compress(&encoder);
+
+	jpeg_decoder_x decoder;
+	assert_equal(true, decoder.read_header({encoded, encoded_size}), "lossless grayscale header decodes");
+	assert_equal(true, decoder.start_decompress(1, false, false), "lossless grayscale decompression starts");
+	const auto surface = std::make_shared<ui::surface>();
+	assert_equal(true, surface->alloc(decoder.dimensions_out(), ui::texture_format::RGB) != nullptr,
+	             "grayscale output allocated");
+	assert_equal(true, decoder.read_rgb(surface->pixels(), static_cast<int>(surface->stride()),
+	                                   static_cast<int>(surface->size()), {}),
+	             "the JPEG wrapper decodes without another codec's fallback");
+	decoder.close();
+	constexpr uint8_t expected[] = {0, 85, 255};
+	for (auto x = 0; x < 3; ++x)
+		for (auto channel = 0; channel < 3; ++channel)
+			assert_equal(expected[x], surface->pixels_line(0)[x * 4 + channel], "grayscale expands and scales correctly");
+}
+
+static void should_decode_associated_alpha_jxl()
+{
+	const std::unique_ptr<JxlEncoder, decltype(&JxlEncoderDestroy)> encoder(JxlEncoderCreate(nullptr), JxlEncoderDestroy);
+	assert_equal(true, encoder != nullptr, "JXL encoder created");
+	JxlBasicInfo info{};
+	JxlEncoderInitBasicInfo(&info);
+	info.xsize = 2;
+	info.ysize = 1;
+	info.bits_per_sample = 8;
+	info.uses_original_profile = JXL_TRUE;
+	info.num_color_channels = 3;
+	info.num_extra_channels = 1;
+	info.alpha_bits = 8;
+	info.alpha_premultiplied = JXL_TRUE;
+	assert_equal(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(encoder.get(), &info), "JXL basic info accepted");
+	JxlColorEncoding color{};
+	JxlColorEncodingSetToSRGB(&color, JXL_FALSE);
+	assert_equal(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(encoder.get(), &color), "JXL color encoding accepted");
+	auto* settings = JxlEncoderFrameSettingsCreate(encoder.get(), nullptr);
+	assert_equal(true, settings != nullptr, "JXL frame settings created");
+	assert_equal(JXL_ENC_SUCCESS, JxlEncoderSetFrameLossless(settings, JXL_TRUE), "lossless JXL fixture");
+	const JxlPixelFormat format{4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+	constexpr uint8_t pixels[] = {64, 32, 16, 128, 255, 128, 0, 255};
+	assert_equal(JXL_ENC_SUCCESS, JxlEncoderAddImageFrame(settings, &format, pixels, sizeof(pixels)), "JXL pixels accepted");
+	JxlEncoderCloseInput(encoder.get());
+	std::array<uint8_t, 4096> encoded{};
+	auto* next = encoded.data();
+	auto available = encoded.size();
+	assert_equal(JXL_ENC_SUCCESS, JxlEncoderProcessOutput(encoder.get(), &next, &available), "JXL fixture encoded");
+
+	mem_read_stream stream(df::cspan{encoded.data(), encoded.size() - available});
+	const auto surface = load_jxl(stream);
+	assert_equal(true, is_valid(surface), "associated-alpha JXL decodes");
+	constexpr int expected[] = {32, 64, 128};
+	for (auto channel = 0; channel < 3; ++channel)
+		assert_equal(true, std::abs(static_cast<int>(surface->pixels_line(0)[channel]) - expected[channel]) <= 1,
+		             "JXL float-to-byte quantization stays within one level of straight alpha");
+	assert_equal(128, surface->pixels_line(0)[3], "unpremultiplication preserves alpha");
+	assert_equal(0xffff8000u, surface->get_pixel(1, 0), "opaque colors remain unchanged");
+}
+
+static void should_decode_associated_alpha_heif()
+{
+	const std::unique_ptr<heif_context, decltype(&heif_context_free)> context(heif_context_alloc(), heif_context_free);
+	assert_equal(true, context != nullptr, "HEIF context created");
+	heif_image* raw_image = nullptr;
+	assert_equal(heif_error_Ok, heif_image_create(2, 1, heif_colorspace_RGB, heif_chroma_interleaved_RGB, &raw_image).code,
+	             "HEIF image created");
+	const std::unique_ptr<heif_image, decltype(&heif_image_release)> image(raw_image, heif_image_release);
+	assert_equal(heif_error_Ok, heif_image_add_plane(image.get(), heif_channel_interleaved, 2, 1, 8).code,
+	             "HEIF plane allocated");
+	int stride = 0;
+	auto* plane = heif_image_get_plane(image.get(), heif_channel_interleaved, &stride);
+	assert_equal(true, plane != nullptr && stride >= 6, "HEIF plane available");
+	std::memset(plane, 0, stride);
+	constexpr uint8_t pixels[] = {64, 32, 16, 255, 128, 0};
+	std::memcpy(plane, pixels, sizeof(pixels));
+	heif_image_set_premultiplied_alpha(image.get(), true);
+
+	heif_encoder* raw_encoder = nullptr;
+	assert_equal(heif_error_Ok, heif_context_get_encoder_for_format(context.get(), heif_compression_uncompressed,
+	                                                               &raw_encoder).code, "uncompressed HEIF encoder available");
+	const std::unique_ptr<heif_encoder, decltype(&heif_encoder_release)> encoder(raw_encoder, heif_encoder_release);
+	heif_image_handle* raw_handle = nullptr;
+	assert_equal(heif_error_Ok, heif_context_encode_image(context.get(), image.get(), encoder.get(), nullptr, &raw_handle).code,
+	             "associated-alpha HEIF encoded");
+	const std::unique_ptr<heif_image_handle, decltype(&heif_image_handle_release)> handle(raw_handle, heif_image_handle_release);
+	// The uncompressed encoder does not create external-alpha prem/auxl references.
+	heif_image* raw_alpha = nullptr;
+	assert_equal(heif_error_Ok, heif_image_create(2, 1, heif_colorspace_monochrome, heif_chroma_monochrome, &raw_alpha).code,
+	             "HEIF auxiliary alpha image created");
+	const std::unique_ptr<heif_image, decltype(&heif_image_release)> alpha(raw_alpha, heif_image_release);
+	assert_equal(heif_error_Ok, heif_image_add_plane(alpha.get(), heif_channel_Y, 2, 1, 8).code, "HEIF alpha plane allocated");
+	auto* alpha_plane = heif_image_get_plane(alpha.get(), heif_channel_Y, &stride);
+	assert_equal(true, alpha_plane && stride >= 2, "HEIF alpha plane available");
+	std::memset(alpha_plane, 0, stride);
+	alpha_plane[0] = 128;
+	alpha_plane[1] = 255;
+	heif_image_handle* raw_alpha_handle = nullptr;
+	assert_equal(heif_error_Ok, heif_context_encode_image(context.get(), alpha.get(), encoder.get(), nullptr,
+	                                                    &raw_alpha_handle).code, "HEIF auxiliary alpha encoded");
+	const std::unique_ptr<heif_image_handle, decltype(&heif_image_handle_release)> alpha_handle(
+		raw_alpha_handle, heif_image_handle_release);
+	const auto image_id = heif_image_handle_get_item_id(handle.get());
+	const auto alpha_id = heif_image_handle_get_item_id(alpha_handle.get());
+	constexpr char alpha_type[] = "\0\0\0\0urn:mpeg:mpegB:cicp:systems:auxiliary:alpha";
+	assert_equal(heif_error_Ok, heif_item_add_raw_property(context.get(), alpha_id, heif_fourcc('a', 'u', 'x', 'C'),
+	                                                     nullptr, reinterpret_cast<const uint8_t*>(alpha_type),
+	                                                     sizeof(alpha_type), true, nullptr).code, "alpha role declared");
+	assert_equal(heif_error_Ok, heif_context_add_item_reference(context.get(), heif_fourcc('a', 'u', 'x', 'l'),
+	                                                          alpha_id, image_id).code, "alpha attached");
+	assert_equal(heif_error_Ok, heif_context_add_item_reference(context.get(), heif_fourcc('p', 'r', 'e', 'm'),
+	                                                          image_id, alpha_id).code, "associated alpha declared");
+	const auto path = _temps.next_path(".heif");
+	assert_equal(heif_error_Ok, heif_context_write_to_file(context.get(), path.str().c_str()).code, "HEIF fixture saved");
+	const std::unique_ptr<heif_context, decltype(&heif_context_free)> check_context(heif_context_alloc(), heif_context_free);
+	assert_equal(true, check_context != nullptr, "HEIF validation context created");
+	const auto opened = heif_context_read_from_file(check_context.get(), path.str().c_str(), nullptr);
+	assert_equal(heif_error_Ok, opened.code, opened.message);
+	heif_image_handle* raw_check_handle = nullptr;
+	const auto primary = heif_context_get_primary_image_handle(check_context.get(), &raw_check_handle);
+	const std::unique_ptr<heif_image_handle, decltype(&heif_image_handle_release)> check_handle(
+		raw_check_handle, heif_image_handle_release);
+	assert_equal(heif_error_Ok, primary.code, primary.message);
+	assert_equal(true, heif_image_handle_is_premultiplied_alpha(check_handle.get()) != 0, "fixture declares associated alpha");
+	heif_image* raw_decoded = nullptr;
+	const auto decoded = heif_decode_image(check_handle.get(), &raw_decoded, heif_colorspace_RGB,
+	                                       heif_chroma_interleaved_RGBA, nullptr);
+	const std::unique_ptr<heif_image, decltype(&heif_image_release)> decoded_image(raw_decoded, heif_image_release);
+	assert_equal(heif_error_Ok, decoded.code, decoded.message);
+	file_read_stream stream;
+	assert_equal(true, stream.open(path), "HEIF fixture opened");
+	const auto surface = load_heif(stream);
+	assert_equal(true, is_valid(surface), "associated-alpha HEIF decodes");
+	assert_equal(0x80804020u, surface->get_pixel(0, 0), "HEIF associated colors become straight-alpha BGRA");
+	assert_equal(0xffff8000u, surface->get_pixel(1, 0), "HEIF opaque colors remain unchanged");
 }
 
 // Scaling 16-bit samples gives 1, 33, 65, 97 where the old truncation gave 0, 32, 64, 96, so this
@@ -3233,6 +3611,16 @@ static void should_not_crash(const std::string_view name)
 
 void register_files_tests(view_state& state, test_registry& tests)
 {
+	tests.add("Should write UTF8 ZIP entries"s, should_write_utf8_zip_entries);
+	tests.add("Should keep archive entries after warnings"s, should_keep_archive_entries_after_warnings);
+	tests.add("Should convert archive Unix timestamps"s, should_convert_archive_unix_timestamps);
+	for (const auto precision : {8, 9, 10, 11, 12, 13, 16})
+		tests.add(std::format("Should decode lossless {} bit grayscale JPEG", precision),
+		          [precision] { should_decode_lossless_grayscale_jpeg(precision); });
+	tests.add("Should decode associated alpha JXL"s, should_decode_associated_alpha_jxl);
+	tests.add("Should decode associated alpha HEIF"s, should_decode_associated_alpha_heif);
+	tests.add("Should rotate lossless EXIF dimensions"s, should_rotate_lossless_exif_dimensions);
+	tests.add("Should translate all LibRaw flip values"s, should_translate_all_libraw_flip_values);
 	//
 	// Write path
 	//
@@ -3247,6 +3635,10 @@ void register_files_tests(view_state& state, test_registry& tests)
 	tests.add("Should report move or copy collision paths"s, should_report_move_or_copy_collision_paths);
 #ifndef _WIN32
 	// PLAT-007 - Linux replacement copy truncated source/destination aliases before reading.
+	tests.add("Should reject Linux folder file collisions"s, should_reject_linux_folder_file_collisions);
+	tests.add("Should report Linux file operation errors"s, should_report_linux_file_operation_errors);
+	tests.add("Should preserve Linux directory move on unsupported no replace"s,
+	          should_preserve_linux_directory_move_on_unsupported_no_replace);
 	tests.add("Should refuse Linux copy identity overwrites"s, should_refuse_linux_copy_identity_overwrites);
 	// PLAT-007 - Linux copy ignored short writes and delayed close failures.
 	tests.add("Should report Linux copy flush failures"s, should_report_linux_copy_flush_failures);

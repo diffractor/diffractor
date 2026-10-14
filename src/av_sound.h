@@ -102,6 +102,11 @@ public:
 		return end_pos - start_pos;
 	}
 
+	df::cspan cdata() const
+	{
+		return {data ? data + start_pos : nullptr, used_bytes()};
+	}
+
 	uint32_t avail_bytes() const
 	{
 		return size - end_pos;

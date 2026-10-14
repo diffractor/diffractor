@@ -1270,7 +1270,7 @@ public:
 	{
 		_clr = clr;
 		ui::clear_text_highlights(_highlights);
-		text->_renderer->draw(_ctx, this, text->_layout.Get(), bounds, clr, bg);
+		font_renderer::draw(_ctx, this, text->_layout.Get(), bounds, clr, bg);
 	}
 
 	const render_char_result& glyph(const uint16_t index, const DWRITE_GLYPH_RUN* glyph_run)

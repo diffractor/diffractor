@@ -25,6 +25,19 @@ static uint8_t blend_opaque_channel(const uint8_t dest, const float src, const f
 	return static_cast<uint8_t>(std::clamp(static_cast<int>(src * alpha + dest * (1.0f - alpha) + 0.5f), 0, 255));
 }
 
+static void should_unpremultiply_surface_alpha()
+{
+	ui::surface surface;
+	assert_equal(true, surface.alloc(3, 1, ui::texture_format::ARGB) != nullptr, "alpha fixture allocated");
+	surface.set_pixel(0, 0, 0x80402010u);
+	surface.set_pixel(1, 0, 0x00112233u);
+	surface.set_pixel(2, 0, 0xff336699u);
+	surface.unpremultiply_alpha();
+	assert_equal(0x80804020u, surface.get_pixel(0, 0), "associated channels are divided by alpha");
+	assert_equal(0u, surface.get_pixel(1, 0), "transparent pixels have defined zero colors");
+	assert_equal(0xff336699u, surface.get_pixel(2, 0), "opaque pixels are unchanged");
+}
+
 static uint8_t blend_opaque_normalized_channel(const uint8_t dest, const float src, const float alpha)
 {
 	const auto value = src * alpha + (dest / 255.0f) * (1.0f - alpha);
@@ -1894,6 +1907,7 @@ static void should_keep_an_overlapped_month_selectable()
 
 void register_render_tests(view_state& state, test_registry& tests)
 {
+	tests.add("Should unpremultiply surface alpha"s, should_unpremultiply_surface_alpha);
 #if defined(COMPILE_SIMD_INTRINSIC)
 	// TEST-007 - registration follows the compiled assertion body.
 	tests.add("Should match SIMD software blends"s, should_match_simd_software_blends);

@@ -20,6 +20,7 @@ class setting_file_ini final : public platform::setting_file
 {
 	std::wstring _ini_path;
 	bool _root_created = false;
+	bool _initialization_failed = false;
 
 public:
 	explicit setting_file_ini(const df::folder_path folder)
@@ -32,7 +33,38 @@ public:
 		// Ensure the folder exists
 		if (!folder.exists())
 		{
-			platform::create_folder(folder);
+			const auto created = platform::create_folder(folder);
+			if (created.failed())
+			{
+				_initialization_failed = true;
+				df::log(__FUNCTION__, created.format_error());
+				return;
+			}
+		}
+
+		const auto file = CreateFileW(_ini_path.c_str(), GENERIC_WRITE | DELETE, 0, nullptr, CREATE_NEW,
+		                              FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (file == INVALID_HANDLE_VALUE)
+		{
+			const auto error = GetLastError();
+			if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS)
+			{
+				_initialization_failed = true;
+				df::log(__FUNCTION__, std::format("Cannot initialize INI settings: {}", error));
+			}
+			return;
+		}
+
+		const df::scope_exit close([file] { CloseHandle(file); });
+		constexpr uint8_t bom[] = {0xff, 0xfe};
+		DWORD written = 0;
+		if (!WriteFile(file, bom, sizeof(bom), &written, nullptr) || written != sizeof(bom))
+		{
+			_initialization_failed = true;
+			df::log(__FUNCTION__, std::format("Cannot write Unicode INI header: {}", GetLastError()));
+			FILE_DISPOSITION_INFO disposition{TRUE};
+			if (!SetFileInformationByHandle(file, FileDispositionInfo, &disposition, sizeof(disposition)))
+				df::log(__FUNCTION__, "Cannot remove incomplete INI settings file");
 		}
 	}
 
@@ -53,15 +85,18 @@ public:
 
 	bool write(const std::string_view section, const std::string_view name, const std::string_view v) override
 	{
+		if (_initialization_failed) return false;
 		const auto section_w = str::utf8_to_utf16(section);
 		const auto name_w = str::utf8_to_utf16(name);
 		const auto value_w = str::utf8_to_utf16(std::format("\"{}\"", v));
 
-		return WritePrivateProfileStringW(
+		const auto written = WritePrivateProfileStringW(
 			section_w.c_str(),
 			name_w.c_str(),
 			value_w.c_str(),
 			_ini_path.c_str()) != 0;
+		if (!written) df::log(__FUNCTION__, std::format("Cannot write INI settings: {}", GetLastError()));
+		return written;
 	}
 
 	bool write(const std::string_view section, const std::string_view name, const df::cspan cs) override

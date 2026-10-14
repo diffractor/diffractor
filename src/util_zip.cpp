@@ -19,6 +19,8 @@
 
 #include "zlib.h"
 #include "minizip/mz.h"
+#include "minizip/mz_os.h"
+#include "minizip/mz_strm.h"
 #include "minizip/compat/zip.h"
 #include "minizip/compat/unzip.h"
 
@@ -72,6 +74,13 @@ namespace
 		zi.tmz_date.tm_sec = ft.second;
 		return true;
 	}
+}
+
+bool df::zip_entry_needs_zip64(const uint64_t offset, const uint64_t size)
+{
+	// minizip-ng's allowance for deflate output exceeding its input (MZ_ZIP_UNCOMPR_SIZE64_CUSHION).
+	constexpr uint64_t expansion_margin = 2ull * 1024 * 1024;
+	return offset >= UINT32_MAX || size >= UINT32_MAX - expansion_margin;
 }
 
 df::zip_file::~zip_file()
@@ -130,8 +139,15 @@ bool df::zip_file::add(const file_path path, const std::string_view name_in, con
 			return false;
 		}
 
-		auto err = zipOpenNewFileInZip(std::any_cast<zipFile>(_handle), str::utf8_cast2(name).c_str(), &zi, nullptr, 0,
-		                               nullptr, 0, nullptr, Z_DEFLATED, Z_BEST_COMPRESSION);
+		// Classic headers are read by every tool, so ZIP64 is reserved for an entry whose size or
+		// position does not fit 32 bits. The compatibility API offers only forced or disabled.
+		const auto archive = std::any_cast<zipFile>(_handle);
+		const auto offset = mz_stream_tell(zipGetStream_MZ(archive));
+		const auto zip64 = offset < 0 || zip_entry_needs_zip64(static_cast<uint64_t>(offset), attributes.size);
+		auto err = zipOpenNewFileInZip4_64(archive, name.c_str(), &zi, nullptr, 0,
+		                                  nullptr, 0, nullptr, Z_DEFLATED, Z_BEST_COMPRESSION, 0, -MAX_WBITS, 8,
+		                                  Z_DEFAULT_STRATEGY, nullptr, 0, MZ_VERSION_MADEBY, MZ_ZIP_FLAG_UTF8,
+		                                  zip64 ? 1 : 0);
 
 		if (err != ZIP_OK)
 		{

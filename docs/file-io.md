@@ -18,6 +18,8 @@ read-back, and failure outcomes. [Metadata](metadata.md) owns property-to-tag ma
 - Approved in-place metadata writes trade full rollback for bounded cost; failure is reported and
   the result is rescanned. They do not carry the staged path's prior-byte guarantee.
 - A successful write publishes the bytes and modified time actually written, including on SMB.
+- A writability probe exclusively claims its own temporary file; an existing file at a probe name
+  is a collision, never permission to truncate or remove it.
 
 ## Reading: The Display Phase Ladder
 
@@ -44,12 +46,19 @@ Bitmap thumbnail scans obey the same encoded-byte ceiling as whole-file loads: a
 ceiling may still contribute header and metadata, but it is not read into memory or published as a
 partial thumbnail.
 
+Archive listings retain usable entries after recoverable header warnings and bound the number of
+headers examined, including entries whose names cannot be read. Known archive timestamps are converted
+from Unix time into the application's UTC storage units. ZIP export declares UTF-8 names and keeps
+classic headers, switching an entry to ZIP64 only when its size or archive offset does not fit 32 bits.
+
 ### When An Image Cannot Be Shown
 
 Header dimensions, estimated decoded bytes, codec limits, and available memory are checked before a
 large allocation. A refused image reports its source dimensions and a bounded failure reason rather
 than retaining a thumbnail that could be mistaken for the full image. Decode errors are isolated to
 the item; a malformed file does not retire the worker.
+Codec initialization and scratch-buffer allocation failures follow the same item-level failure
+contract. Compressed metadata is accepted only after its compressed stream completes successfully.
 
 ## Writing
 
@@ -70,6 +79,8 @@ cleaned on every bounded failure path.
 Pasted clipboard bitmaps follow the same publication rule: the encoder writes an owned temporary
 file off the UI thread, then publishes it to the chosen auto-numbered destination only after the
 stream and encoder commit successfully.
+The captured clipboard medium remains alive during encoding and is released on the apartment that
+obtained it, including when worker execution fails or is cancelled.
 
 A requested `.original` is created before replacement and never overwrites an existing backup.
 Metadata commands do not imply a backup: callers request one explicitly.
@@ -134,7 +145,9 @@ surviving paths.
 ## Where this lives
 
 - [files_core.cpp](../src/files_core.cpp): `files::load`, `files::update`, staging, sidecars, and
-  write result publication.
+  write result publication, plus archive listing.
+- [util_zip.cpp](../src/util_zip.cpp): ZIP creation, entry names, per-entry ZIP64 headers, and entry
+  timestamps.
 - [files_formats.cpp](../src/files_formats.cpp): the still image formats recognised by signature,
   one entry each for detection, header scanning, loading, and decoding.
 - [model.cpp](../src/model.cpp), [model.h](../src/model.h) and [model_display.h](../src/model_display.h):

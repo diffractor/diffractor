@@ -33,4 +33,7 @@ namespace df
 
 		static std::vector<archive_item> list(file_path zip_file_path);
 	};
+
+	// Whether an entry starting at this archive offset and holding this many bytes needs ZIP64 headers.
+	bool zip_entry_needs_zip64(uint64_t offset, uint64_t size);
 }

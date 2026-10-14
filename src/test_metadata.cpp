@@ -957,6 +957,17 @@ static std::string png_test_xmp(const int rating)
 }
 
 // SRC-019 - trailing PNG ancillary metadata is valid and must be read without decoding pixels.
+static void should_reject_incomplete_png_compressed_metadata()
+{
+	auto payload = make_png_text_chunk_payload(true, png_test_xmp(5));
+	assert_equal(true, payload.size() > 4, "compressed metadata fixture exists");
+	payload.resize(payload.size() - 2);
+	const auto path = write_png_with_trailing_chunk("iTXt", payload);
+	files codecs;
+	const auto scanned = ff_scan_file(codecs, path);
+	assert_equal(true, scanned.metadata.xmp.empty(), "truncated zlib checksum does not publish partial metadata");
+}
+
 static void should_read_png_metadata_after_idat()
 {
 	const auto before_path = [&]
@@ -3177,6 +3188,7 @@ void register_metadata_tests(view_state& state, test_registry& tests)
 	tests.add("Should scan avif metadata"s, should_scan_avif);
 	// SRC-019 - PNG metadata may be stored after IDAT.
 	tests.add("Should read png metadata after idat"s, should_read_png_metadata_after_idat);
+	tests.add("Should reject incomplete PNG compressed metadata"s, should_reject_incomplete_png_compressed_metadata);
 	tests.add("Should parse Xmp"s, should_parse_xmp);
 	tests.add("Should apply Xmp GPS as a pair"s, should_apply_xmp_gps_as_a_pair);
 	tests.add("Should read Xmp disc number"s, should_read_xmp_disc_number);

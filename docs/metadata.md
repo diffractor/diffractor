@@ -63,6 +63,12 @@ equivalent floating local value, but the pack keeps incompatible representations
 instant and a floating wall-clock reading that display alike on the current machine remain separate
 candidate values. Invalid, placeholder, and out-of-range dates are ignored.
 
+UTC/local conversion uses the timezone rules for the timestamp's date, not today's daylight-saving
+offset, and preserves the timestamp's fractional precision. Ambiguous or skipped local times follow
+the operating system's timezone rules. Each year's offsets are taken from the operating system once
+per time zone and reused, so converting every item's date stays cheap. Filesystem creation is a
+birth-time fact; inode-change time is not substituted when a filesystem cannot supply it.
+
 The date pack is self-describing: readers consume fields they understand and skip later additions.
 Source-bit meanings are never reused. Compatibility fields permit older builds to recover useful
 dates when they encounter a newer cache row; the cache remains disposable and may be rescanned.
@@ -84,6 +90,7 @@ edit draws the stored orientation into the pixels it writes, so saving one reset
 upright rather than leaving the tag to turn the saved image a second time. Embedded
 thumbnails and ICC profiles are parsed with the image and invalidated when their source metadata
 changes.
+Stored image dimensions follow transformed pixels, including lossless JPEG rotation.
 
 Unknown tags are not rewritten merely because Diffractor does not display them. XMP updates begin
 from the existing packet and reconcile only fields managed by the toolkit and Diffractor's fork.
@@ -125,6 +132,9 @@ is discarded. These values feed [zoom.md](zoom.md#panorama) and are not written 
 `@panorama` and `@pano` search the stored projection classification and canonicalize to one term.
 
 ## Where this lives
+
+- [platform_win.cpp](../src/platform_win.cpp) and [platform_linux.cpp](../src/platform_linux.cpp):
+  date-sensitive conversion between UTC and local wall time.
 
 - [model_dates.h](../src/model_dates.h): date sources, retained candidates, and resolution.
 - [metadata_exif.cpp](../src/metadata_exif.cpp), [metadata_iptc.cpp](../src/metadata_iptc.cpp), and

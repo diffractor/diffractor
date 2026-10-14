@@ -9,7 +9,8 @@
 // Purpose: Tests for Windows platform integration. These are the only tests whose subject is the
 // operating system itself -- extended path syntax, DXGI device loss, adapter classification and the
 // texture budget taken from it, the adapter the decode device is made on, texture recycling, the
-// crash-guard recovery session, the system font stack, the registry settings store, the shell drag
+// crash-guard recovery session, the system font stack, the registry settings store, time zone
+// conversion, the shell drag
 // data object and the common-control paint contract the flicker-free control buffering depends on.
 // Keeping them here is what lets every other test file stay free of system headers.
 
@@ -33,6 +34,18 @@ static void should_recognise_network_locations()
 	assert_equal(false, platform::is_network_location(test_files_folder), "the local test folder is not");
 }
 
+static void should_preserve_writability_probe_collisions()
+{
+	const auto folder = _temps.next_folder("write-probe");
+	const auto name = std::format("df-write-probe-{:08x}.tmp", static_cast<uint32_t>(GetCurrentProcessId()));
+	const auto collision = folder.combine_file(name);
+	write_test_file(collision, "existing file");
+
+	assert_equal(true, platform::is_writable(folder), "a probe collision does not make a writable folder read-only");
+	assert_equal("existing file", read_test_file(collision), "the probe must not truncate or delete an existing file");
+	assert_equal(1_z, platform::iterate_file_items(folder, true).files.size(), "the probe cleans up only its own file");
+}
+
 static void should_convert_extended_file_system_paths()
 {
 	const auto long_unc = std::string("\\\\server\\share\\") + std::string(MAX_PATH, 'x');
@@ -43,6 +56,224 @@ static void should_convert_extended_file_system_paths()
 	const auto extended = std::wstring(L"\\\\?\\C:\\") + std::wstring(MAX_PATH, L'x');
 	assert_equal(extended, platform::to_file_system_path(df::folder_path(str::utf16_to_utf8(extended))),
 	             "extended path unchanged");
+}
+
+static void should_convert_dates_with_their_own_dst_offset()
+{
+	TIME_ZONE_INFORMATION zone{};
+	zone.Bias = 300;
+	zone.DaylightBias = -60;
+	zone.DaylightDate = {0, 3, 0, 2, 2, 0, 0, 0};
+	zone.StandardDate = {0, 11, 0, 1, 2, 0, 0, 0};
+	constexpr uint64_t fraction = 1234567;
+
+	for (const auto month : {1, 7})
+	{
+		const auto utc = df::date_t(2024, month, 15, 12, 0, 0).to_int64() + fraction;
+		const auto local = df::date_t(2024, month, 15, month == 1 ? 7 : 8, 0, 0).to_int64() + fraction;
+		assert_equal(local, platform::utc_to_local(utc, &zone), "conversion uses the timestamp's season");
+		assert_equal(utc, platform::local_to_utc(local, &zone), "reverse conversion preserves every tick");
+	}
+
+	const auto after_jump = df::date_t(2024, 3, 10, 3, 30, 0).to_int64();
+	assert_equal(df::date_t(2024, 3, 10, 7, 30, 0).to_int64(), platform::local_to_utc(after_jump, &zone),
+	             "an unambiguous time after the spring transition uses daylight bias");
+	assert_equal(uint64_t{0}, platform::utc_to_local(0, &zone), "an absent timestamp remains absent");
+}
+
+namespace
+{
+	constexpr uint64_t test_ticks_per_ms = 10'000;
+	constexpr uint64_t test_ticks_per_minute = 60'000 * test_ticks_per_ms;
+
+	struct tabulation_case
+	{
+		std::string_view name;
+		TIME_ZONE_INFORMATION zone;
+		// 2024's transitions as UTC instants, and as the local readings the rules name.
+		std::vector<uint64_t> instants;
+		std::vector<uint64_t> readings;
+	};
+
+	TIME_ZONE_INFORMATION make_zone(const LONG bias, const LONG daylight_bias, const SYSTEMTIME daylight,
+	                                const SYSTEMTIME standard)
+	{
+		TIME_ZONE_INFORMATION zone{};
+		zone.Bias = bias;
+		zone.DaylightBias = daylight_bias;
+		zone.DaylightDate = daylight;
+		zone.StandardDate = standard;
+		return zone;
+	}
+
+	uint64_t stamp(const int month, const int day, const int hour, const int minute, const int second = 0,
+	               const int ms = 0)
+	{
+		return df::date_t(2024, month, day, hour, minute, second).to_int64() + static_cast<uint64_t>(ms) *
+			test_ticks_per_ms;
+	}
+
+	std::vector<uint64_t> samples_around(const std::vector<uint64_t>& changes, const bool include_gap_edges)
+	{
+		std::vector<uint64_t> result;
+		const auto year_start = stamp(1, 1, 0, 0);
+
+		for (auto hour = 0; hour < 366 * 24; hour += 6)
+			result.push_back(year_start + static_cast<uint64_t>(hour) * 60 * test_ticks_per_minute + 1234567);
+
+		for (const auto change : changes)
+		{
+			const auto at = [change](const int64_t minutes, const int64_t ms)
+			{
+				return static_cast<uint64_t>(static_cast<int64_t>(change) +
+					minutes * static_cast<int64_t>(test_ticks_per_minute) +
+					ms * static_cast<int64_t>(test_ticks_per_ms));
+			};
+
+			for (auto minute = -180; minute <= 180; ++minute)
+				result.push_back(at(minute, 0));
+
+			const auto edges = include_gap_edges ? std::vector<int>{-60, -30, 0, 30, 60} : std::vector<int>{0};
+			for (const auto edge : edges)
+			{
+				for (auto ms = -3; ms <= 3; ++ms)
+					result.push_back(at(edge, ms) + 4321);
+			}
+		}
+
+		return result;
+	}
+}
+
+// Dates are converted per item in search, grouping and summaries, and the system conversion costs
+// microseconds, so each year's offsets are tabulated from the system once. The tables must agree
+// with the system to the tick, including at the millisecond a transition takes effect, for zones
+// whose rules span the new year, move by half an hour, or change just before midnight. Shifting a
+// tabulated boundary by one millisecond fails this test.
+static void should_tabulate_time_zone_offsets_like_the_system()
+{
+	const std::vector<tabulation_case> cases = {
+		{
+			"northern", make_zone(300, -60, {0, 3, 0, 2, 2, 0, 0, 0}, {0, 11, 0, 1, 2, 0, 0, 0}),
+			{stamp(3, 10, 7, 0), stamp(11, 3, 6, 0)}, {stamp(3, 10, 2, 0), stamp(11, 3, 2, 0)}
+		},
+		{
+			"southern", make_zone(-600, -60, {0, 10, 0, 1, 2, 0, 0, 0}, {0, 4, 0, 1, 3, 0, 0, 0}),
+			{stamp(4, 6, 16, 0), stamp(10, 5, 16, 0)}, {stamp(4, 7, 3, 0), stamp(10, 6, 2, 0)}
+		},
+		{
+			"half-hour daylight", make_zone(-630, -30, {0, 10, 0, 1, 2, 0, 0, 0}, {0, 4, 0, 1, 2, 0, 0, 0}),
+			{stamp(4, 6, 15, 0), stamp(10, 5, 15, 30)}, {stamp(4, 7, 2, 0), stamp(10, 6, 2, 0)}
+		},
+		{
+			"before midnight", make_zone(-120, -60, {0, 3, 4, 5, 23, 59, 59, 999}, {0, 10, 5, 5, 1, 0, 0, 0}),
+			{stamp(3, 28, 21, 59, 59, 999), stamp(10, 24, 22, 0)},
+			{stamp(3, 28, 23, 59, 59, 999), stamp(10, 25, 1, 0)}
+		},
+		{"no daylight", make_zone(-330, 0, {}, {}), {}, {}},
+	};
+
+	for (const auto& c : cases)
+	{
+		for (const auto instant : c.instants)
+		{
+			const auto earlier = instant - test_ticks_per_ms;
+			assert_equal(true, platform::utc_to_local(earlier, &c.zone) - earlier !=
+			             platform::utc_to_local(instant, &c.zone) - instant,
+			             std::format("{}: the system changes offset at the stated instant", c.name));
+		}
+
+		for (const auto to_local : {true, false})
+		{
+			const auto stamps = samples_around(to_local ? c.instants : c.readings, !to_local);
+			const auto tabulated = platform::tabulated_time_zone_conversions(stamps, c.zone, to_local);
+			auto mismatches = 0;
+			std::string first;
+
+			for (auto i = 0u; i < stamps.size(); ++i)
+			{
+				const auto expected = to_local
+					                      ? platform::utc_to_local(stamps[i], &c.zone)
+					                      : platform::local_to_utc(stamps[i], &c.zone);
+				if (tabulated[i] != expected && mismatches++ == 0)
+					first = std::format(" first at {}: {} != {}", stamps[i], tabulated[i], expected);
+			}
+
+			assert_equal(0, mismatches, std::format("{} {} tabulation matches the system{}", c.name,
+			                                        to_local ? "UTC-to-local" : "local-to-UTC", first));
+		}
+	}
+}
+
+// The tables serve whatever zone this machine is in, through the same rule selection as the
+// per-call conversion: the year's dynamic rules, or standard time when adjustment is turned off.
+static void should_convert_the_current_zone_like_the_system()
+{
+	DYNAMIC_TIME_ZONE_INFORMATION current{};
+	assert_equal(true, GetDynamicTimeZoneInformation(&current) != TIME_ZONE_ID_INVALID, "current zone is known");
+
+	for (const auto year : {2006, 2007, 2019, 2024})
+	{
+		TIME_ZONE_INFORMATION rules{};
+		assert_equal(true, GetTimeZoneInformationForYear(static_cast<USHORT>(year), &current, &rules) != FALSE,
+		             "the year's rules are known");
+		if (current.DynamicDaylightTimeDisabled)
+		{
+			rules.StandardDate.wMonth = 0;
+			rules.DaylightDate.wMonth = 0;
+		}
+
+		auto mismatches = 0;
+		const auto start = df::date_t(year, 1, 1, 0, 0, 0).to_int64() + 7654321;
+
+		for (auto half_day = 0; half_day < 730; ++half_day)
+		{
+			const auto ts = start + static_cast<uint64_t>(half_day) * 720 * test_ticks_per_minute;
+			if (platform::utc_to_local(ts) != platform::utc_to_local(ts, &rules)) ++mismatches;
+			if (platform::local_to_utc(ts) != platform::local_to_utc(ts, &rules)) ++mismatches;
+		}
+
+		assert_equal(0, mismatches, std::format("{} converts as the system does", year));
+	}
+}
+
+// Converting each date through the system took about five microseconds; a large collection paid
+// that for every date in every search and grouping. Removing the year cache fails this test.
+static void should_tabulate_local_time_once_per_year()
+{
+	const auto start = df::date_t(2023, 1, 1, 0, 0, 0).to_int64();
+	constexpr uint64_t step = 31'536'000'000ull;
+	const auto before = platform::time_zone_system_queries();
+	uint64_t total = 0;
+
+	for (auto i = 0u; i < 10000; ++i)
+	{
+		const auto ts = start + i * step;
+		total += platform::utc_to_local(ts) / 10000000;
+		total += platform::local_to_utc(ts) / 10000000;
+	}
+
+	const auto queries = platform::time_zone_system_queries() - before;
+	assert_equal(true, queries <= 1000,
+	             std::format("{} system conversions for 20000 dates (checksum {})", queries, total));
+}
+
+static void should_initialize_unicode_ini_settings()
+{
+	const auto folder = _temps.next_folder("unicode-ini");
+	const auto ini = folder.combine_file("diffractor.ini");
+	const auto settings = platform::create_ini_file_settings(folder);
+	const std::string value = "C:\\\xe6\x9d\xb1\xe4\xba\xac\\\xf0\x9f\x8e\xac.mp4";
+	assert_equal(true, settings->write("paths", "movie", value), "Unicode setting is written");
+	const auto bytes = df::blob_from_file(ini);
+	assert_equal(true, bytes.size() >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe,
+	             "new INI files explicitly select Unicode independent of the ANSI code page");
+
+	const auto reopened = platform::create_ini_file_settings(folder);
+	std::string read;
+	assert_equal(true, reopened->read("paths", "movie", read), "setting remains readable after reopening");
+	assert_equal(value, read, "the complete Unicode path survives");
+	assert_equal(false, reopened->root_created(), "existing configuration is not replaced");
 }
 
 // The measured length excludes the terminator a string_view does not carry, so converting with -1
@@ -113,6 +344,42 @@ static void should_classify_dxgi_device_loss()
 	assert_equal(false, is_device_loss_error(DXGI_STATUS_OCCLUDED), "occlusion is not device loss");
 	assert_equal(false, is_device_loss_error(E_FAIL), "generic failure is not device loss");
 	assert_equal(false, is_device_loss_error(S_OK), "success is not device loss");
+}
+
+static void should_use_screen_coordinates_for_saved_window_placement()
+{
+	const recti placement(100, 100, 900, 700);
+	const auto top_taskbar = platform::placement_to_screen(placement, {0, 0, 1920, 1080}, {0, 40, 1920, 1080});
+	assert_equal(140, top_taskbar.top, "workspace origin is below a top taskbar");
+	assert_equal(800, top_taskbar.width(), "conversion does not resize the window");
+	const auto left_taskbar = platform::placement_to_screen(placement, {0, 0, 1920, 1080}, {48, 0, 1920, 1080});
+	assert_equal(148, left_taskbar.left, "workspace origin is beside a left taskbar");
+	const auto secondary = platform::placement_to_screen({-1800, 100, -1000, 700},
+	                                                    {-1920, 0, 0, 1080}, {-1920, 40, 0, 1080});
+	assert_equal(-1800, secondary.left, "secondary-monitor screen origin is retained");
+	assert_equal(140, secondary.top, "secondary-monitor work offset is applied once");
+
+	// Full screen goes the other way: monitor bounds in screen coordinates become a placement.
+	const auto full_screen = platform::screen_to_placement({0, 0, 1920, 1080}, {0, 0, 1920, 1080}, {48, 0, 1920, 1080});
+	assert_equal(-48, full_screen.left, "monitor bounds start left of a left taskbar's workspace origin");
+	assert_equal(1920, full_screen.width(), "conversion does not resize a full-screen window");
+	const auto round_trip = platform::screen_to_placement(secondary, {-1920, 0, 0, 1080}, {-1920, 40, 0, 1080});
+	assert_equal(100, round_trip.top, "screen to placement inverts placement to screen");
+	assert_equal(-1800, round_trip.left, "on both axes");
+}
+
+static void should_not_treat_pointer_wheel_ids_as_modifiers()
+{
+	for (const auto message : {0x024eu, 0x024fu})
+	{
+		const auto none = platform::wheel_key_state(message, MAKEWPARAM(12, WHEEL_DELTA), {});
+		assert_equal(false, none.control || none.shift, "pointer ID bits are not modifier flags");
+		const auto held = platform::wheel_key_state(message, MAKEWPARAM(1, WHEEL_DELTA), {true, true, false});
+		assert_equal(true, held.control && held.shift, "pointer wheels use keyboard state");
+	}
+	const auto mouse = platform::wheel_key_state(WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, WHEEL_DELTA), {});
+	assert_equal(true, mouse.control, "mouse wheel flags retain their existing meaning");
+	assert_equal(false, mouse.shift, "unpressed mouse modifiers stay clear");
 }
 
 // A machine with no working GPU driver is handed WARP posing as a hardware adapter. Drawn through, it
@@ -788,6 +1055,23 @@ static void should_materialize_advertised_clipboard_images()
 	assert_equal(static_cast<uint32_t>(TYMED_HGLOBAL), probe.image_tymed[1], "DIB uses global memory");
 }
 
+static void should_preserve_clipboard_format_contracts()
+{
+	const auto result = platform::probe_clipboard_contracts();
+	assert_equal(true, result.clone_keeps_position, "clones resume at the original enumeration cursor");
+	assert_equal(true, result.skip_to_end, "an exact skip succeeds and leaves the cursor at the end");
+	assert_equal(true, result.skip_past_end, "an oversized skip reports partial completion and advances to the end");
+	assert_equal(true, result.preferred_effect, "the advertised Cut effect passes capability negotiation");
+	assert_equal(true, result.rejects_wrong_medium, "query and retrieval reject incompatible media consistently");
+}
+
+static void should_pass_bare_save_dialog_extensions()
+{
+	assert_equal(L"png", platform::dialog_default_extension(".png"), "the leading dot is not passed to the dialog");
+	assert_equal(L"webp", platform::dialog_default_extension("webp"), "an already bare extension is unchanged");
+	assert_equal(L"", platform::dialog_default_extension(""), "an absent extension remains absent");
+}
+
 static void should_publish_pasted_bitmap_after_closing_stage()
 {
 	const auto folder = _temps.folder().combine(std::format("pasted-bitmap-{}", platform::tick_count()));
@@ -1112,6 +1396,14 @@ static void should_handle_unavailable_font_layout()
 	assert_equal(0, offsets[1], "middle unavailable offset");
 	assert_equal(0, offsets[2], "last unavailable offset");
 	assert_equal(true, should_retry_font_renderer(nullptr), "GPU renderer retries a transient null font");
+	font_renderer::draw(nullptr, nullptr, layout._layout.Get(), {0, 0, 100, 100}, {}, {});
+	assert_equal(true, layout._layout == nullptr, "drawing an unavailable layout leaves it unavailable");
+}
+
+static void should_snap_gpu_text_in_pixel_coordinates()
+{
+	assert_equal(true, platform::probe_d3d11_pixel_snapping(),
+	             "text callbacks report enabled snapping, identity transform and one pixel per DIP");
 }
 
 static void should_refuse_an_impossible_movie()
@@ -1140,6 +1432,17 @@ static void should_refuse_an_impossible_movie()
 
 void register_platform_tests(view_state& state, test_registry& tests)
 {
+	tests.add("Should preserve writability probe collisions"s, should_preserve_writability_probe_collisions);
+	tests.add("Should convert dates with their own DST offset"s, should_convert_dates_with_their_own_dst_offset);
+	tests.add("Should tabulate time zone offsets like the system"s, should_tabulate_time_zone_offsets_like_the_system);
+	tests.add("Should convert the current zone like the system"s, should_convert_the_current_zone_like_the_system);
+	tests.add("Should tabulate local time once per year"s, should_tabulate_local_time_once_per_year);
+	tests.add("Should initialize Unicode INI settings"s, should_initialize_unicode_ini_settings);
+	tests.add("Should use screen coordinates for saved window placement"s, should_use_screen_coordinates_for_saved_window_placement);
+	tests.add("Should not treat pointer wheel IDs as modifiers"s, should_not_treat_pointer_wheel_ids_as_modifiers);
+	tests.add("Should snap GPU text in pixel coordinates"s, should_snap_gpu_text_in_pixel_coordinates);
+	tests.add("Should preserve clipboard format contracts"s, should_preserve_clipboard_format_contracts);
+	tests.add("Should pass bare save dialog extensions"s, should_pass_bare_save_dialog_extensions);
 	tests.add("Should convert extended file system paths"s, should_convert_extended_file_system_paths);
 	tests.add("Should recognise network locations"s, should_recognise_network_locations);
 	tests.add("Should convert utf8 to ansi"s, should_convert_utf8_to_ansi);

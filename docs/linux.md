@@ -33,6 +33,12 @@ The Linux implementation currently provides:
 Path identity follows the filesystem: case-insensitive on Windows and case-sensitive on Linux.
 Case-folded comparisons remain appropriate for media types, tags, and other vocabulary, but not for
 path-keyed containers.
+Filesystem creation time is read from birth-time metadata when available; an absent birth time
+stays absent. Directory moves require atomic non-replacing rename support and report failure rather
+than emulating it with an existence check followed by a replacing rename.
+Startup selects the UTF-8 character locale for library filename conversions, independently of the
+shell's locale. A failed file operation always supplies a nonempty diagnostic, including collisions
+reported by an atomic move.
 
 ## Unsupported Surfaces
 

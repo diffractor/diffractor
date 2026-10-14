@@ -730,28 +730,31 @@ public:
 	int seek_ver = 0;
 	bool eof = false;
 
-	av_packet() noexcept : pkt(av_packet_alloc())
+	av_packet() : pkt(av_packet_alloc())
 	{
+		if (!pkt) throw std::bad_alloc();
 	}
 
-	av_packet(av_packet&& other) noexcept : pkt(av_packet_alloc()), seek_ver(other.seek_ver), eof(other.eof)
+	av_packet(av_packet&& other) : av_packet()
 	{
 		av_packet_move_ref(pkt, other.pkt);
+		seek_ver = other.seek_ver;
+		eof = other.eof;
 	}
 
-	av_packet(const av_packet& other) noexcept : pkt(av_packet_alloc()), seek_ver(other.seek_ver), eof(other.eof)
+	av_packet(const av_packet& other) : av_packet()
 	{
-		av_packet_ref(pkt, other.pkt);
+		copy(other.pkt);
+		seek_ver = other.seek_ver;
+		eof = other.eof;
 	}
 
-	av_packet& operator=(const av_packet& other) noexcept
+	av_packet& operator=(const av_packet& other)
 	{
 		if (this != &other)
 		{
-			av_packet_unref(pkt);
-			av_packet_ref(pkt, other.pkt);
-			seek_ver = other.seek_ver;
-			eof = other.eof;
+			av_packet copied(other);
+			*this = std::move(copied);
 		}
 		return *this;
 	}
@@ -770,13 +773,15 @@ public:
 
 	~av_packet() noexcept
 	{
-		av_packet_unref(pkt);
 		av_packet_free(&pkt);
 	}
 
 	void copy(const AVPacket* src_avpkt) const
 	{
-		av_packet_ref(pkt, src_avpkt);
+		if (src_avpkt == pkt) return;
+		av_packet_unref(pkt);
+		const auto result = av_packet_ref(pkt, src_avpkt);
+		if (result < 0) throw app_exception(std::format("Cannot reference audio/video packet: {}", result));
 	}
 
 	void move(AVPacket* src_avpkt) const
@@ -2615,6 +2620,26 @@ static double read_audio_sample(const uint8_t* base, const AVSampleFormat packed
 	}
 }
 
+// Confined to the test's calling thread; lets a test give one decoded audio frame the decode error a
+// damaged packet produces.
+thread_local std::function<int(int)> test_audio_receive_status;
+
+static int receive_audio_frame(AVCodecContext* const context, AVFrame* const frame)
+{
+	const auto status = avcodec_receive_frame(context, frame);
+	return test_audio_receive_status ? test_audio_receive_status(status) : status;
+}
+
+static audio_info_t frame_audio_info(const AVFrame& frame, const audio_info_t& fallback)
+{
+	audio_info_t result;
+	result.channel_layout = av_channel_layout_check(&frame.ch_layout)
+		                        ? av_copy_to_ptr(frame.ch_layout) : fallback.channel_layout;
+	result.sample_fmt = frame.format < 0 ? fallback.sample_fmt : to_sample_type(static_cast<AVSampleFormat>(frame.format));
+	result.sample_rate = frame.sample_rate == 0 ? fallback.sample_rate : frame.sample_rate;
+	return result;
+}
+
 // Peak, not mean: a level indicator exists so speech stands out at a glance, and averaging over a
 // bucket flattens exactly the thing being looked for.
 static void accumulate_audio_peaks(const AVFrame& frame, std::vector<uint8_t>& peaks,
@@ -2673,6 +2698,22 @@ std::vector<uint8_t> av_format_decoder::extract_audio_peaks(const int buckets, d
 	const df::scope_exit end_abandon([this] { _io_abandon = nullptr; });
 	const auto keep_video_unread = discard_video_while_reading_audio();
 
+	av_frame frame;
+	// A damaged packet costs only its own samples; the rest of the stream still draws its waveform.
+	const auto receive = [&]
+	{
+		int status = 0;
+		while ((status = receive_audio_frame(_audio_context, frame.frm)) == 0)
+		{
+			accumulate_audio_peaks(*frame.frm, result, samples_per_bucket, sample_index);
+			av_frame_unref(frame.frm);
+		}
+		if (status != AVERROR(EAGAIN) && status != AVERROR_EOF)
+		{
+			df::log_once(__FUNCTION__, std::format("Cannot decode waveform samples: {}", status));
+		}
+	};
+
 	for (;;)
 	{
 		if (df::is_closing || abandon.is_cancelled())
@@ -2684,6 +2725,20 @@ std::vector<uint8_t> av_format_decoder::extract_audio_peaks(const int buckets, d
 
 		if (!packet || packet->eof)
 		{
+			auto status = try_avcodec_send_packet(_audio_context, nullptr);
+			if (status == AVERROR(EAGAIN))
+			{
+				receive();
+				status = try_avcodec_send_packet(_audio_context, nullptr);
+			}
+			if (status < 0 && status != AVERROR_EOF)
+			{
+				df::log_once(__FUNCTION__, std::format("Cannot drain waveform decoder: {}", status));
+			}
+			else
+			{
+				receive();
+			}
 			break;
 		}
 
@@ -2692,18 +2747,18 @@ std::vector<uint8_t> av_format_decoder::extract_audio_peaks(const int buckets, d
 			continue;
 		}
 
-		if (try_avcodec_send_packet(_audio_context, packet->pkt) != 0)
+		auto status = try_avcodec_send_packet(_audio_context, packet->pkt);
+		if (status == AVERROR(EAGAIN))
 		{
+			receive();
+			status = try_avcodec_send_packet(_audio_context, packet->pkt);
+		}
+		if (status < 0)
+		{
+			df::log_once(__FUNCTION__, std::format("Cannot submit waveform packet: {}", status));
 			continue;
 		}
-
-		av_frame frame;
-
-		while (avcodec_receive_frame(_audio_context, frame.frm) == 0)
-		{
-			accumulate_audio_peaks(*frame.frm, result, samples_per_bucket, sample_index);
-			av_frame_unref(frame.frm);
-		}
+		receive();
 	}
 
 	return result;
@@ -2717,6 +2772,8 @@ double av_format_decoder::to_video_seconds(const int64_t vt) const
 // Interleaved stereo, so one sample pair is two adjacent values and a position in the clip is a
 // multiply. Every caller of this wants to play from a time, not to walk a packet stream.
 static constexpr int pcm_channels = 2;
+// Confined to the test's calling thread; other decoder workers never see injected frames.
+thread_local std::function<void(AVFrame&)> test_audio_pcm_frame;
 
 std::vector<int16_t> av_format_decoder::extract_audio_pcm(const int sample_rate, const double max_seconds,
                                                           df::cancel_token abandon)
@@ -2743,26 +2800,14 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 	if (!layout) return {};
 
 	SwrContext* swr = nullptr;
-
-	if (swr_alloc_set_opts2(&swr, layout.get(), AV_SAMPLE_FMT_S16, sample_rate,
-	                        &_audio_context->ch_layout, _audio_context->sample_fmt,
-	                        _audio_context->sample_rate, 0, nullptr) != 0 || !swr)
-	{
-		if (swr) swr_free(&swr);
-		return {};
-	}
-
-	if (swr_init(swr) != 0)
-	{
-		swr_free(&swr);
-		return {};
-	}
+	const df::scope_exit release_resampler([&swr] { swr_free(&swr); });
+	const auto stream_format = audio_info();
+	audio_info_t input_format;
 
 	const auto wanted_start = std::max(0.0, start_seconds);
 	const auto wanted_frames_double = std::ceil(duration_seconds * sample_rate);
 	if (wanted_frames_double > static_cast<double>(std::numeric_limits<size_t>::max() / pcm_channels))
 	{
-		swr_free(&swr);
 		return {};
 	}
 
@@ -2770,6 +2815,7 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 	std::vector<int16_t> result(wanted_frames * pcm_channels, 0);
 	std::vector<int16_t> converted;
 	auto finished = false;
+	auto failed = false;
 	std::optional<int64_t> next_destination_frame;
 
 	_io_abandon = &abandon;
@@ -2778,29 +2824,44 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 	// Sought before the video track is set aside: a demuxer that finds key frames by reading them
 	// needs that track to land the seek.
 	seek(wanted_start);
+	avcodec_flush_buffers(_audio_context);
+	_pts_aud.clear();
 	const auto keep_video_unread = discard_video_while_reading_audio();
 
 	// Shared by the decode loop and the flush that follows it, so the tail swr is holding is not
 	// left behind - a dropped tail is a click at the end of every clip.
 	const auto drain = [&](const AVFrame* frame, const double frame_time)
 	{
+		if (!swr) return 0;
 		const auto capacity = swr_get_out_samples(swr, frame ? frame->nb_samples : 0);
-		if (capacity <= 0) return;
+		if (capacity < 0)
+		{
+			df::log(__FUNCTION__, std::format("Cannot size PCM resampling output: {}", capacity));
+			failed = finished = true;
+			return 0;
+		}
+		if (capacity == 0) return 0;
 
 		converted.resize(static_cast<size_t>(capacity) * pcm_channels);
 
 		auto* out = std::bit_cast<uint8_t*>(converted.data());
-		const auto** in = frame ? const_cast<const uint8_t**>(frame->extended_data) : nullptr;
+		const auto in = frame ? frame->extended_data : nullptr;
 		// The rate product expresses the buffered delay exactly, including fractional output samples.
 		// A converted block starts before its input frame's timestamp by this delay.
 		const auto delayed_frames = frame
 			                            ? static_cast<double>(swr_get_delay(
-				                            swr, static_cast<int64_t>(_audio_context->sample_rate) * sample_rate)) /
-				                            _audio_context->sample_rate
+				                            swr, static_cast<int64_t>(input_format.sample_rate) * sample_rate)) /
+				                            input_format.sample_rate
 			                            : 0.0;
 		const auto produced = swr_convert(swr, &out, capacity, in, frame ? frame->nb_samples : 0);
 
-		if (produced <= 0) return;
+		if (produced < 0)
+		{
+			df::log(__FUNCTION__, std::format("Cannot resample PCM frame: {}", produced));
+			failed = finished = true;
+			return 0;
+		}
+		if (produced == 0) return 0;
 
 		const auto source_frames = static_cast<int64_t>(produced);
 
@@ -2840,19 +2901,53 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 		next_destination_frame = output_end;
 		if (destination_frame >= static_cast<int64_t>(wanted_frames) ||
 			destination_frame + take >= static_cast<int64_t>(wanted_frames)) finished = true;
+		return produced;
+	};
+
+	const auto drain_tail = [&]
+	{
+		while (!finished && swr)
+		{
+			const auto next_time = wanted_start + static_cast<double>(next_destination_frame.value_or(0)) / sample_rate;
+			if (drain(nullptr, next_time) == 0) break;
+		}
 	};
 
 	const auto receive = [&]
 	{
 		av_frame frame;
+		int status = AVERROR(EAGAIN);
 
-		while (!finished && avcodec_receive_frame(_audio_context, frame.frm) == 0)
+		while (!finished && (status = receive_audio_frame(_audio_context, frame.frm)) == 0)
 		{
+			if (test_audio_pcm_frame) test_audio_pcm_frame(*frame.frm);
+			const auto format = frame_audio_info(*frame.frm, stream_format);
+			if (!swr || format != input_format)
+			{
+				drain_tail();
+				if (finished) break;
+				swr_free(&swr);
+				if (!format.channel_layout || format.sample_rate <= 0 ||
+					swr_alloc_set_opts2(&swr, layout.get(), AV_SAMPLE_FMT_S16, sample_rate,
+					                   format.channel_layout.get(), to_AVSampleFormat(format.sample_fmt),
+					                   format.sample_rate, 0, nullptr) < 0 || !swr || swr_init(swr) < 0)
+				{
+					df::log(__FUNCTION__, "Cannot configure PCM resampling for decoded frame format");
+					failed = finished = true;
+					break;
+				}
+				input_format = format;
+			}
 			const auto pts = _pts_aud.guess(frame.frm->best_effort_timestamp, frame.frm->pts,
 			                                frame.frm->pkt_dts, frame.frm->duration);
 			const auto frame_time = calc_duration(pts, {_audio_base.num, _audio_base.den}, _audio_start_time);
 			drain(frame.frm, frame_time);
 			av_frame_unref(frame.frm);
+		}
+		// A damaged packet leaves its own span silent; later frames are still placed by timestamp.
+		if (!finished && status != AVERROR(EAGAIN) && status != AVERROR_EOF)
+		{
+			df::log_once(__FUNCTION__, std::format("Cannot decode PCM samples: {}", status));
 		}
 	};
 
@@ -2860,7 +2955,6 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 	{
 		if (df::is_closing || abandon.is_cancelled())
 		{
-			swr_free(&swr);
 			return {};
 		}
 
@@ -2876,8 +2970,16 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 			continue;
 		}
 
-		if (try_avcodec_send_packet(_audio_context, packet->pkt) != 0)
+		auto status = try_avcodec_send_packet(_audio_context, packet->pkt);
+		if (status == AVERROR(EAGAIN))
 		{
+			receive();
+			if (finished) break;
+			status = try_avcodec_send_packet(_audio_context, packet->pkt);
+		}
+		if (status < 0)
+		{
+			df::log_once(__FUNCTION__, std::format("Cannot submit PCM packet: {}", status));
 			continue;
 		}
 
@@ -2886,17 +2988,21 @@ std::vector<int16_t> av_format_decoder::extract_audio_pcm_range(const int sample
 
 	if (!finished)
 	{
-		avcodec_send_packet(_audio_context, nullptr);
-		receive();
-		if (!finished)
+		auto status = try_avcodec_send_packet(_audio_context, nullptr);
+		if (status == AVERROR(EAGAIN))
 		{
-			const auto next_time = wanted_start +
-				static_cast<double>(next_destination_frame.value_or(0)) / sample_rate;
-			drain(nullptr, next_time);
+			receive();
+			status = try_avcodec_send_packet(_audio_context, nullptr);
 		}
+		if (status < 0 && status != AVERROR_EOF)
+		{
+			df::log_once(__FUNCTION__, std::format("Cannot drain PCM decoder: {}", status));
+		}
+		receive();
+		drain_tail();
 	}
 
-	swr_free(&swr);
+	if (failed) return {};
 	return result;
 }
 
@@ -2986,19 +3092,10 @@ void audio_resampler::flush()
 		return;
 	}
 
-	// Discard whatever the resampler still holds. The scratch must be sized for the
-	// OUTPUT format: sizing it from the source stream (as this used to) overflows
-	// whenever the device rate/width exceeds the stream's.
-	const auto pending = swr_get_out_samples(_aud_resampler, 0);
-
-	if (pending > 0)
+	if (swr_init(_aud_resampler) < 0)
 	{
-		uint8_t* planes[AV_NUM_DATA_POINTERS] = {};
-
-		if (prepare_output(planes, pending, _output_info))
-		{
-			swr_convert(_aud_resampler, planes, pending, nullptr, 0);
-		}
+		df::log(__FUNCTION__, "Cannot reset audio resampler after discontinuity");
+		swr_free(&_aud_resampler);
 	}
 }
 
@@ -3099,23 +3196,17 @@ static void apply_audio_gain(uint8_t* const data, const int total_samples, const
 
 void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_buffer)
 {
-	audio_info_t source_format;
-	source_format.channel_layout = av_channel_layout_check(&frame->frm->ch_layout)
-		                               ? av_copy_to_ptr(frame->frm->ch_layout)
-		                               : _stream_info.channel_layout;
+	resample(*frame->frm, audio_buffer, frame->time, frame->gen);
+}
 
-	// AV_SAMPLE_FMT_NONE is -1 and is what an undecoded frame carries; 0 is
-	// AV_SAMPLE_FMT_U8, a valid format, so test for < 0 rather than == 0.
-	source_format.sample_fmt = frame->frm->format < 0
-		                           ? _stream_info.sample_fmt
-		                           : to_sample_type(static_cast<AVSampleFormat>(frame->frm->format));
-
-	source_format.sample_rate = frame->frm->sample_rate == 0 ? _stream_info.sample_rate : frame->frm->sample_rate;
+void audio_resampler::resample(const AVFrame& frame, audio_buffer& audio_buffer, const double time, const int generation)
+{
+	const auto source_format = frame_audio_info(frame, _stream_info);
 
 	const auto dest_format = audio_buffer.format;
 	const auto dest_sample_fmt = to_AVSampleFormat(dest_format.sample_fmt);
 
-	if (source_format != _frame_info || dest_format != _output_info)
+	if (!_aud_resampler || source_format != _frame_info || dest_format != _output_info)
 	{
 		SwrContext* swr = nullptr;
 		std::swap(swr, _aud_resampler);
@@ -3153,14 +3244,14 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 	const auto is_planar = av_sample_fmt_is_planar(to_AVSampleFormat(source_format.sample_fmt));
 	const int planes_expected = is_planar ? static_cast<int>(source_format.channel_count()) : 1;
 
-	auto is_valid = frame->frm->linesize[0] != 0 && frame->frm->extended_data != nullptr;
+	auto is_valid = frame.linesize[0] != 0 && frame.extended_data != nullptr;
 
 	for (int i = 0; is_valid && i < planes_expected; ++i)
 	{
-		is_valid = frame->frm->extended_data[i] != nullptr;
+		is_valid = frame.extended_data[i] != nullptr;
 	}
 
-	const auto expected_out_samples = swr_get_out_samples(_aud_resampler, frame->frm->nb_samples);
+	const auto expected_out_samples = swr_get_out_samples(_aud_resampler, frame.nb_samples);
 	const auto out_num_channels = dest_format.channel_count();
 	const auto out_sample_size = dest_format.bytes_per_sample();
 
@@ -3177,12 +3268,12 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 		// silence so the timeline does not jump.
 		const auto silence_size = expected_out_samples * out_num_channels * out_sample_size;
 		memset(planes[0], 0, silence_size);
-		audio_buffer.append(planes[0], silence_size, frame->time, frame->gen);
+		audio_buffer.append(planes[0], silence_size, time, generation);
 		return;
 	}
 
 	const auto out_samples = swr_convert(_aud_resampler, planes, expected_out_samples,
-	                                     frame->frm->extended_data, frame->frm->nb_samples);
+	                                     frame.extended_data, frame.nb_samples);
 
 	if (out_samples < 0)
 	{
@@ -3195,7 +3286,7 @@ void audio_resampler::resample(const av_frame_ptr& frame, audio_buffer& audio_bu
 		apply_audio_gain(planes[0], out_samples * out_num_channels, dest_sample_fmt, _gain);
 	}
 
-	audio_buffer.append(planes[0], out_samples * out_num_channels * out_sample_size, frame->time, frame->gen);
+	audio_buffer.append(planes[0], out_samples * out_num_channels * out_sample_size, time, generation);
 }
 
 av_scaler::~av_scaler()

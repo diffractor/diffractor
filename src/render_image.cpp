@@ -72,6 +72,22 @@ void ui::surface::swap_rb()
 }
 
 
+void ui::surface::unpremultiply_alpha()
+{
+	if (_format != texture_format::ARGB || empty()) return;
+	for (auto y = 0; y < _dimensions.cy; ++y)
+	{
+		auto* row = pixels_line(y);
+		for (auto x = 0; x < _dimensions.cx; ++x, row += 4)
+		{
+			const auto alpha = row[3];
+			for (auto channel = 0; channel < 3; ++channel)
+				row[channel] = alpha == 0 ? 0 :
+					static_cast<uint8_t>(std::min(255, (row[channel] * 255 + alpha / 2) / alpha));
+		}
+	}
+}
+
 ui::pixel_difference_result ui::surface::pixel_difference(const const_surface_ptr& other) const
 {
 	if (_dimensions != other->dimensions())

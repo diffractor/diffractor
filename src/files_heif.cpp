@@ -137,6 +137,7 @@ static ui::surface_ptr image_to_surface(const heif_image_handle* handle, const h
 	}
 
 	temp_surface->swap_rb();
+	if (has_alpha && heif_image_handle_is_premultiplied_alpha(handle)) temp_surface->unpremultiply_alpha();
 
 	// Only publish the surface once it is fully allocated and written.
 	return temp_surface;

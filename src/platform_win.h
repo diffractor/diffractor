@@ -108,6 +108,18 @@ extern HINSTANCE get_resource_instance;
 FILETIME ts_to_ft(uint64_t ts);
 uint64_t ft_to_ts(const FILETIME& ft);
 
+namespace platform
+{
+	uint64_t utc_to_local(uint64_t ts, const TIME_ZONE_INFORMATION* zone);
+	uint64_t local_to_utc(uint64_t ts, const TIME_ZONE_INFORMATION* zone);
+
+	// Test seams for the current zone's yearly offset tables: a rule set converted through its own
+	// tables (0 where a year could not be tabulated), and the system conversions made on this thread.
+	std::vector<uint64_t> tabulated_time_zone_conversions(std::span<const uint64_t> stamps,
+	                                                     const TIME_ZONE_INFORMATION& zone, bool to_local);
+	uint64_t time_zone_system_queries();
+}
+
 // Wrap an already-open Win32 file HANDLE in a platform::file. Takes ownership of the
 // handle (closed when the returned file_ptr is released). Used by replace_file to hand
 // back the still-open, cache-coherent handle it renamed through, so the file can be
@@ -153,6 +165,16 @@ namespace platform
 	data_object_probe probe_drag_data_object(const std::vector<df::file_path>& files,
 	                                         const std::vector<df::folder_path>& folders);
 	data_object_probe probe_drag_data_object(const file_load_result& loaded);
+	struct clipboard_contract_probe
+	{
+		bool clone_keeps_position = false;
+		bool skip_to_end = false;
+		bool skip_past_end = false;
+		bool preferred_effect = false;
+		bool rejects_wrong_medium = false;
+	};
+	clipboard_contract_probe probe_clipboard_contracts();
+	std::wstring dialog_default_extension(std::string_view extension);
 
 	shell_operation_probe probe_shell_file_operation_w(shell_file_operation_w_fn op);
 	shell_operation_probe probe_shell_file_operation_a(shell_file_operation_a_fn op);
@@ -170,6 +192,10 @@ namespace platform
 	// Brings a saved window rect back onto a display. Size is preserved where it fits and clamped to
 	// the work area where it does not; the position is nudged inside.
 	recti fit_window_to_work_area(recti saved, recti work_area);
+	recti placement_to_screen(recti saved, recti monitor, recti work_area);
+	recti screen_to_placement(recti screen, recti monitor, recti work_area);
+	ui::key_state wheel_key_state(uint32_t message, WPARAM parameter, ui::key_state keyboard);
+	bool probe_d3d11_pixel_snapping();
 
 	// True when a saved rect cannot be restored as it stands: it reaches no display at all, it is
 	// larger than the work area it would land in, or so little of it overlaps that there is nothing

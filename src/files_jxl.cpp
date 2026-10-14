@@ -184,7 +184,12 @@ ui::surface_ptr load_jxl(read_stream& s, load_diagnostic* const diagnostic)
 
 		// Match scan_jxl (and every other format): keep the bitstream geometry and carry the
 		// orientation on the surface, so scanned and loaded dimensions always agree.
-		JxlDecoderSetKeepOrientation(dec.get(), JXL_TRUE);
+		if (JxlDecoderSetKeepOrientation(dec.get(), JXL_TRUE) != JXL_DEC_SUCCESS ||
+			JxlDecoderSetUnpremultiplyAlpha(dec.get(), JXL_TRUE) != JXL_DEC_SUCCESS)
+		{
+			df::log(__FUNCTION__, "Cannot configure JXL orientation and straight alpha");
+			return result;
+		}
 
 		JxlDecoderSetInput(dec.get(), data.data, data.size);
 		JxlDecoderCloseInput(dec.get());

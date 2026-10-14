@@ -110,12 +110,16 @@ an atlas full at its size cap starts again empty rather than leaving new glyphs 
 Text measurement and drawing use the same shaping result. A font, DPI, locale, or device change
 invalidates both measurement and glyph resources so layout cannot describe different text from the
 pixels drawn.
+Both text backends report the identity pixel-space transform and one pixel per DIP to DirectWrite.
+A layout that could not be created is logged and left undrawn rather than dereferenced.
 
 ## Images And Pixel Formats
 
 Surfaces carry explicit color and alpha semantics. Upload maps supported RGB, YUV, and grayscale
 formats to backend textures without silently changing range, matrix, orientation, or premultiplication.
 Unsupported combinations convert through the shared rendering utilities before upload.
+Decoded associated-alpha images are normalized to straight alpha before publication, so drawing
+and subsequent encoding do not multiply their colors by alpha a second time.
 
 Color transforms and image edits are applied in the shared render layer. Backends perform sampling,
 composition, and presentation; they do not reinterpret metadata.
@@ -140,6 +144,10 @@ core count and by the memory each frame thread holds.
 Movie's bounded PCM reads place converted audio by its source timestamp minus the resampler's
 buffered delay. Continuous source audio stays continuous when its sample rate changes; genuine
 timestamp gaps remain gaps, and the resampler's delayed tail is drained at the end of a read.
+Rate, sample-format, and channel-layout changes are taken from decoded frames; pending audio is
+drained before changing conversion parameters. A seek instead resets filter history. Waveform
+extraction drains delayed decoder frames at end of stream as playback does. A packet the decoder
+rejects costs only its own samples; waveform and PCM extraction continue with the packets after it.
 
 AV1 has no FFmpeg software decoder of its own, so software AV1 decodes through libdav1d; FFmpeg's
 own `av1` decoder exists only to drive hardware acceleration.

@@ -20,6 +20,7 @@
 #include "util_base64.h"
 
 #include <condition_variable>
+#include <cstdio>
 #include <fcntl.h>
 #include <unistd.h>
 #include <pthread.h>
@@ -244,31 +245,60 @@ namespace
 	constexpr uint64_t ft_ticks_per_second = 10'000'000ull;
 	constexpr uint64_t ft_epoch_to_unix_seconds = 11'644'473'600ull;
 
-	int64_t local_utc_offset_seconds(const uint64_t ts)
+	std::optional<int64_t> local_utc_offset_seconds(const uint64_t ts)
 	{
 		const auto seconds = static_cast<int64_t>(ts / ft_ticks_per_second) -
 			static_cast<int64_t>(ft_epoch_to_unix_seconds);
 		auto when = static_cast<time_t>(seconds);
 		tm local = {};
-		if (localtime_r(&when, &local) == nullptr) return 0;
+		if (static_cast<int64_t>(when) != seconds || localtime_r(&when, &local) == nullptr)
+		{
+			df::log_once(__FUNCTION__, "UTC timestamp is outside the supported time range");
+			return {};
+		}
 		return local.tm_gmtoff;
 	}
 }
 
 uint64_t platform::utc_to_local(const uint64_t ts)
 {
-	const auto offset = local_utc_offset_seconds(ts) * static_cast<int64_t>(ft_ticks_per_second);
-	const auto result = static_cast<int64_t>(ts) + offset;
-	return result < 0 ? ts : static_cast<uint64_t>(result);
+	if (ts == 0) return 0;
+	const auto seconds = local_utc_offset_seconds(ts);
+	if (!seconds) return ts;
+	const auto offset = *seconds * static_cast<int64_t>(ft_ticks_per_second);
+	const auto magnitude = static_cast<uint64_t>(offset < 0 ? -offset : offset);
+	if ((offset < 0 && ts < magnitude) || (offset >= 0 && ts > UINT64_MAX - magnitude))
+	{
+		df::log_once(__FUNCTION__, "Local timestamp is outside the supported time range");
+		return ts;
+	}
+	return offset < 0 ? ts - magnitude : ts + magnitude;
 }
 
 uint64_t platform::local_to_utc(const uint64_t ts)
 {
-	// The offset is resolved at the local time being converted, which is the best available answer
-	// for a timestamp inside a daylight-saving transition.
-	const auto offset = local_utc_offset_seconds(ts) * static_cast<int64_t>(ft_ticks_per_second);
-	const auto result = static_cast<int64_t>(ts) - offset;
-	return result < 0 ? ts : static_cast<uint64_t>(result);
+	if (ts == 0) return 0;
+	const auto seconds = static_cast<int64_t>(ts / ft_ticks_per_second) -
+		static_cast<int64_t>(ft_epoch_to_unix_seconds);
+	const auto wall_time = static_cast<time_t>(seconds);
+	tm local = {};
+	if (static_cast<int64_t>(wall_time) != seconds || !gmtime_r(&wall_time, &local))
+	{
+		df::log_once(__FUNCTION__, "Local timestamp is outside the supported time range");
+		return ts;
+	}
+
+	local.tm_isdst = -1;
+	errno = 0;
+	const auto utc = mktime(&local);
+	const auto shifted = static_cast<int64_t>(utc) + static_cast<int64_t>(ft_epoch_to_unix_seconds);
+	if (errno == EOVERFLOW || shifted < 0 ||
+		static_cast<uint64_t>(shifted) > (UINT64_MAX - ts % ft_ticks_per_second) / ft_ticks_per_second)
+	{
+		df::log_once(__FUNCTION__, "Cannot convert local timestamp to UTC");
+		return ts;
+	}
+	return static_cast<uint64_t>(shifted) * ft_ticks_per_second + ts % ft_ticks_per_second;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -622,6 +652,16 @@ platform::file_op_result platform::move_file(const df::file_path existing, const
 	return {file_op_result_code::OK};
 }
 
+platform::file_op_result platform::move_file(const df::folder_path existing, const df::folder_path destination)
+{
+	if (rename_no_replace(std::string(existing.text()), std::string(destination.text())) == 0)
+		return {file_op_result_code::OK};
+
+	const auto error = errno;
+	if (error == EEXIST) return {file_op_result_code::ALREADY_EXISTS};
+	return {file_op_result_code::FAILED, std::format("Cannot atomically rename directory: {}", ::strerror(error))};
+}
+
 void platform::test_linux_move_file_failures(linux_move_file_test_failures failures)
 {
 	move_file_failures = failures;
@@ -763,6 +803,12 @@ bool platform::generate_random_bytes(uint8_t* buffer, const size_t len)
 
 int main(const int argc, const char* const argv[])
 {
+	if (!std::setlocale(LC_CTYPE, "C.UTF-8"))
+	{
+		std::fprintf(stderr, "Cannot initialize the UTF-8 character locale required for filenames.\n");
+		return 1;
+	}
+
 	// /test[:filter] runs the suite headless. The '-' forms are the Linux spelling; '/test' is
 	// accepted too because it is what the Windows documentation and habits say.
 	for (auto i = 1; i < argc; ++i)

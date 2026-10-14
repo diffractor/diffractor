@@ -304,11 +304,13 @@ public:
 	audio_resampler(const audio_info_t& info);
 	~audio_resampler() override;
 
+	// Reset after a discontinuity; unlike drain(), this discards filter history.
 	void flush();
 	// Emits any samples the resampler still has buffered (e.g. rate-conversion tail)
 	// into audio_buffer at end of stream so the audio is not cut short.
 	void drain(audio_buffer& audio_buffer, int gen);
 	void resample(const av_frame_ptr& frame, audio_buffer& audio_buffer);
+	void resample(const AVFrame& frame, audio_buffer& audio_buffer, double time, int generation);
 
 	// Software gain (>= 1.0) applied to resampled samples. Used for volume boost
 	// above 100%, which the device volume (0.0-1.0) cannot provide. 1.0 = no boost.

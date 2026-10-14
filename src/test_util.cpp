@@ -879,6 +879,35 @@ static void should_parse_dates()
 	assert_equal(true, d.parse("2006-01-14 15:51:60"), "a leap second still is");
 }
 
+#ifndef _WIN32
+static void should_convert_local_dates_with_date_specific_rules()
+{
+	assert_equal(uint64_t{0}, platform::utc_to_local(0), "an absent UTC timestamp remains absent");
+	assert_equal(uint64_t{0}, platform::local_to_utc(0), "an absent local timestamp remains absent");
+	const std::array days = {
+		df::day_t{2024, 1, 15, 12, 0, 0},
+		df::day_t{2024, 7, 15, 12, 0, 0},
+		df::day_t{2024, 3, 10, 3, 30, 0},
+		df::day_t{2024, 11, 3, 3, 30, 0}
+	};
+	for (const auto& day : days)
+	{
+		std::tm local{};
+		local.tm_year = day.year - 1900;
+		local.tm_mon = day.month - 1;
+		local.tm_mday = day.day;
+		local.tm_hour = day.hour;
+		local.tm_min = day.minute;
+		local.tm_isdst = -1;
+		const auto unix_time = std::mktime(&local);
+		constexpr uint64_t fraction = 1234567;
+		const auto expected = (static_cast<int64_t>(unix_time) + 11644473600ll) * 10000000ll + fraction;
+		const auto wall = df::date_t(day.year, day.month, day.day, day.hour, day.minute, 0).to_int64() + fraction;
+		assert_equal(expected, platform::local_to_utc(wall), "local conversion matches the date-specific timezone rule");
+	}
+}
+#endif
+
 static void should_extract_url()
 {
 	constexpr auto input1 = "Visit my website at https://www.example.com for more info.";
@@ -1934,6 +1963,9 @@ void register_util_tests(view_state& state, test_registry& tests)
 	tests.add("Should split genre"s, should_split_genre);
 	tests.add("Should extract url"s, should_extract_url);
 	tests.add("Should parse dates"s, should_parse_dates);
+#ifndef _WIN32
+	tests.add("Should convert local dates with date specific rules"s, should_convert_local_dates_with_date_specific_rules);
+#endif
 	tests.add("Should detect wildcard"s, should_detect_wildcard);
 	tests.add("Should match wildcard"s, should_match_wildcard);
 	tests.add("Should compare versions"s, should_compare_versions);

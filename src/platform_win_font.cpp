@@ -927,6 +927,7 @@ void text_layout_impl::update(const std::string_view text, const ui::style::text
 	else
 	{
 		_layout.Reset();
+		df::log(__FUNCTION__, std::format("CreateTextLayout failed: {:x}", static_cast<uint32_t>(hr)));
 	}
 }
 
@@ -1023,6 +1024,12 @@ void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, const st
 void font_renderer::draw(ui::draw_context* dc, IDWriteTextRenderer* tr, IDWriteTextLayout* layout, const recti bounds,
                          const ui::color color, const ui::color bg)
 {
+	if (!layout)
+	{
+		df::log_once(__FUNCTION__, "No text layout is available to draw");
+		return;
+	}
+
 	layout->SetMaxWidth(static_cast<float>(bounds.width()));
 	layout->SetMaxHeight(static_cast<float>(bounds.height()));
 

@@ -12,6 +12,7 @@
 // part of it that maps to a real operation lives in platform_linux_desktop.cpp.
 
 #include "pch.h"
+#include "app_text.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -44,9 +45,31 @@ namespace
 	platform::file_attributes_t attributes_from_stat(const std::string& path)
 	{
 		platform::file_attributes_t result;
+		struct statx extended = {};
 		struct stat st = {};
 
-		if (::stat(path.c_str(), &st) != 0)
+		if (::statx(AT_FDCWD, path.c_str(), AT_STATX_SYNC_AS_STAT, STATX_BASIC_STATS | STATX_BTIME, &extended) == 0)
+		{
+			result.size = extended.stx_size;
+			result.modified = to_ticks({extended.stx_mtime.tv_sec, extended.stx_mtime.tv_nsec});
+			if ((extended.stx_mask & STATX_BTIME) != 0)
+				result.created = to_ticks({extended.stx_btime.tv_sec, extended.stx_btime.tv_nsec});
+		}
+		else if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP)
+		{
+			if (::stat(path.c_str(), &st) == 0)
+			{
+				result.size = static_cast<uint64_t>(st.st_size);
+				result.modified = to_ticks(st.st_mtim);
+			}
+			else
+			{
+				result.presence = (errno == ENOENT || errno == ENOTDIR)
+					                  ? platform::file_presence::not_found : platform::file_presence::unknown;
+				return result;
+			}
+		}
+		else
 		{
 			// Only an unambiguous "it is not there" counts as absence; anything else stays unknown,
 			// so a caller that would overwrite on "not found" cannot act on a denied or offline path.
@@ -57,9 +80,6 @@ namespace
 		}
 
 		result.presence = platform::file_presence::found;
-		result.size = static_cast<uint64_t>(st.st_size);
-		result.modified = to_ticks(st.st_mtim);
-		result.created = to_ticks(st.st_ctim);
 		result.is_readonly = ::access(path.c_str(), W_OK) != 0;
 
 		const auto slash = path.find_last_of('/');
@@ -535,9 +555,15 @@ platform::file_op_result platform::create_folder(const df::folder_path path)
 			{
 				partial.assign(text, 0, i);
 
-				if (::mkdir(partial.c_str(), 0755) != 0 && errno != EEXIST)
+				if (::mkdir(partial.c_str(), 0755) != 0)
 				{
-					return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+					if (errno != EEXIST)
+						return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+					struct stat existing = {};
+					if (::stat(partial.c_str(), &existing) != 0)
+						return {file_op_result_code::FAILED, std::string(::strerror(errno))};
+					if (!S_ISDIR(existing.st_mode))
+						return {file_op_result_code::FAILED, std::string(::strerror(ENOTDIR))};
 				}
 			}
 		}
@@ -908,6 +934,12 @@ std::string platform::file_op_result::format_error(const std::string_view text, 
 		result += more_text;
 	}
 
+	if (result.empty() && failed())
+	{
+		result = code == file_op_result_code::ALREADY_EXISTS ? std::string(::strerror(EEXIST))
+		                                                   : std::string(tt.error_unknown.sv());
+	}
+
 	return result;
 }
 
@@ -1033,33 +1065,6 @@ df::count_and_size platform::calc_folder_summary(const df::folder_path folder, c
 platform::drives platform::scan_drives()
 {
 	return {};
-}
-
-platform::file_op_result platform::move_file(const df::folder_path existing, const df::folder_path destination)
-{
-	const auto from = std::string(existing.text());
-	const auto to = std::string(destination.text());
-
-	if (static_cast<int>(::syscall(SYS_renameat2, AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(),
-	                               RENAME_NOREPLACE)) == 0)
-	{
-		return {file_op_result_code::OK};
-	}
-
-	const auto rename_error = errno;
-	if (rename_error == EEXIST) return {file_op_result_code::ALREADY_EXISTS};
-
-	if (rename_error == ENOSYS || rename_error == EINVAL)
-	{
-		struct stat st = {};
-		if (::stat(to.c_str(), &st) == 0) return {file_op_result_code::ALREADY_EXISTS};
-		if (errno != ENOENT && errno != ENOTDIR) return {file_op_result_code::FAILED, std::string(::strerror(errno))};
-
-		if (::rename(from.c_str(), to.c_str()) == 0) return {file_op_result_code::OK};
-		return {file_op_result_code::FAILED, std::string(::strerror(errno))};
-	}
-
-	return {file_op_result_code::FAILED, std::string(::strerror(rename_error))};
 }
 
 // True for a UNC or network location on Windows. A Linux mount point carries no such marker in the

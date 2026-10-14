@@ -337,13 +337,16 @@ static const id2hr_t* lookup_id2hr(const uint64_t id, const id2hr_t* table, cons
 	return nullptr;
 }
 
-static ui::orientation translate_libraw_orientation(const int flip)
+ui::orientation translate_libraw_orientation(const int flip)
 {
-	// 3 if requires 180-deg rotation; 5 if 90 deg counterclockwise, 6 if 90 deg clockwise
-	auto result = flip;
-	if (result == 0) result = 1;
-	if (result == 5) result = 8;
-	return static_cast<ui::orientation>(result);
+	constexpr ui::orientation orientations[] = {
+		ui::orientation::top_left, ui::orientation::top_right, ui::orientation::bottom_left,
+		ui::orientation::bottom_right, ui::orientation::left_top, ui::orientation::left_bottom,
+		ui::orientation::right_top, ui::orientation::right_bottom
+	};
+	if (flip >= 0 && flip < static_cast<int>(std::size(orientations))) return orientations[flip];
+	df::log_once(__FUNCTION__, "Unknown LibRaw flip value; using upright orientation");
+	return ui::orientation::top_left;
 }
 
 static void add_metadata(metadata_kv_list& kv, const std::string_view name, const std::string_view val)
